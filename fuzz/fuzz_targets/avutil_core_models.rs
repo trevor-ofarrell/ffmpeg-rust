@@ -1,80 +1,73 @@
 #![no_main]
 
 use avutil::{
-    adler32, add_stable, av_error_description, av_make_error_string, av_strerror, compare_mod,
-    compare_ts, crc32_ieee, digest_to_base64, digest_to_hex, hash_name, md5, murmur3,
-    parse_color, rescale, rescale_delta, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax,
-    rescale_rnd, rescale_rnd_pass_minmax, ripemd128, ripemd160, ripemd256, ripemd320, sha1,
-    sha224, sha256, sha384, sha512, sha512_224, sha512_256, Adler32, AudioFrame, AvError,
-    AvErrorCode, AvErrorKind,
-    BufferPool,
-    AmbisonicChannelLayout, BufferPoolAllocation, BufferPoolCallbacks, BufferRef, Channel,
-    ChannelCustom, ChannelId, ChannelLayout, ChannelLayoutSpec, CustomChannelLayout, Crc32, Frame,
-    FrameA53ClosedCaptions, FrameActiveFormatDescription, FrameAlphaMode,
-    FrameAmbientViewingEnvironment, FrameChromaLocation, FrameColorPrimaries, FrameColorRange, FrameColorSpace,
-    FrameColorTransferCharacteristic,
-    NativeChannelMaskLayout,
-    FrameAudioServiceType,
-    Dictionary, FrameContentLightMetadata, FrameCrop, FrameCropFlags, FrameData,
-    FrameDecodeErrorFlags,
-    FrameDetectionBbox, FrameFifo, FrameFlags, FrameDetectionBboxes, FrameDisplayMatrix,
-    FrameDolbyVisionColorMetadata, FrameDolbyVisionDataMapping, FrameDolbyVisionDmData,
-    FrameDolbyVisionMetadata, FrameDolbyVisionRpuBuffer,
-    FrameDolbyVisionRpuDataHeader, FrameDownmixInfo, FrameDownmixType, FrameDynamicHdrPlus,
-    FrameDynamicHdrVivid, FrameExif, FrameExifColorSpace, FrameExifCompositeImage,
-    FrameExifContrast, FrameExifCustomRendered, FrameExifEndian, FrameExifEntry,
-    FrameExifExposureMode, FrameExifExposureProgram, FrameExifFileSource, FrameExifFlash,
-    FrameExifGainControl, FrameExifGpsAltitudeRef, FrameExifGpsDifferential,
+    add_stable, adler32, av_error_description, av_make_error_string, av_strerror,
+    clear_global_log_callback, clear_global_log_records, compare_mod, compare_ts, crc32_ieee,
+    digest_to_base64, digest_to_hex, flush_global_log_repeated,
+    frame_side_data_descriptor_for_value, frame_side_data_name_for_value,
+    global_formatted_log_records, global_log, global_log_flags, global_log_level, hash_name, md5,
+    murmur3, packet_pack_dictionary, packet_unpack_dictionary, parse_color, rescale, rescale_delta,
+    rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax, rescale_rnd, rescale_rnd_pass_minmax,
+    ripemd128, ripemd160, ripemd256, ripemd320, set_global_log_callback, set_global_log_flag,
+    set_global_log_flags, set_global_log_level, sha1, sha224, sha256, sha384, sha512, sha512_224,
+    sha512_256, take_global_log_records, Adler32, AmbisonicChannelLayout, AudioFrame, AvError,
+    AvErrorCode, AvErrorKind, BufferPool, BufferPoolAllocation, BufferPoolCallbacks, BufferRef,
+    Channel, ChannelCustom, ChannelId, ChannelLayout, ChannelLayoutSpec, Crc32,
+    CustomChannelLayout, Dictionary, Frame, FrameA53ClosedCaptions, FrameActiveFormatDescription,
+    FrameAlphaMode, FrameAmbientViewingEnvironment, FrameAudioServiceType, FrameChromaLocation,
+    FrameColorPrimaries, FrameColorRange, FrameColorSpace, FrameColorTransferCharacteristic,
+    FrameContentLightMetadata, FrameCrop, FrameCropFlags, FrameData, FrameDecodeErrorFlags,
+    FrameDetectionBbox, FrameDetectionBboxes, FrameDisplayMatrix, FrameDolbyVisionColorMetadata,
+    FrameDolbyVisionDataMapping, FrameDolbyVisionDmData, FrameDolbyVisionMetadata,
+    FrameDolbyVisionRpuBuffer, FrameDolbyVisionRpuDataHeader, FrameDownmixInfo, FrameDownmixType,
+    FrameDynamicHdrPlus, FrameDynamicHdrVivid, FrameExif, FrameExifColorSpace,
+    FrameExifCompositeImage, FrameExifContrast, FrameExifCustomRendered, FrameExifEndian,
+    FrameExifEntry, FrameExifExposureMode, FrameExifExposureProgram, FrameExifFileSource,
+    FrameExifFlash, FrameExifGainControl, FrameExifGpsAltitudeRef, FrameExifGpsDifferential,
     FrameExifGpsDirectionRef, FrameExifGpsDistanceRef, FrameExifGpsLatitudeRef,
     FrameExifGpsLongitudeRef, FrameExifGpsMeasureMode, FrameExifGpsSpeedRef, FrameExifGpsStatus,
     FrameExifIfdPointerKind, FrameExifLightSource, FrameExifMeteringMode, FrameExifNewSubfileType,
     FrameExifOrientation, FrameExifRational, FrameExifResolutionUnit, FrameExifSaturation,
     FrameExifSceneCaptureType, FrameExifSceneType, FrameExifSensingMethod,
     FrameExifSensitivityType, FrameExifSharpness, FrameExifSubjectArea,
-    FrameExifSubjectDistanceRange, FrameExifTiffType, FrameExifWhiteBalance,
+    FrameExifSubjectDistanceRange, FrameExifTiffType, FrameExifWhiteBalance, FrameFifo,
     FrameFilmGrainAomParams, FrameFilmGrainH274Params, FrameFilmGrainParams,
-    FrameFilmGrainParamsType, FrameGopTimecode, FrameHdrPlusColorTransformParams,
+    FrameFilmGrainParamsType, FrameFlags, FrameGopTimecode, FrameHdrPlusColorTransformParams,
     FrameHdrPlusOverlapProcessOption, FrameHdrVivid3SplineParams,
     FrameHdrVividColorToneMappingParams, FrameHdrVividColorTransformParams, FrameIccProfile,
     FrameLcevc, FrameMasteringDisplayMetadata, FrameMatrixEncoding, FrameMotionVector,
-    FrameMotionVectors, FrameOpaque, FramePanScan, FramePictureType, FrameRegionOfInterest, FrameRegionsOfInterest,
-    FrameReplayGain, FrameS12mTimecode, FrameSeiUnregistered, FrameSideData, FrameSideDataFlags,
-    FrameSideDataKind, FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason,
-    FrameSphericalMapping, FrameSphericalProjection, FrameStereo3d, FrameStereo3dFlags,
-    FrameStereo3dPrimaryEye, FrameStereo3dType, FrameStereo3dView, FrameThreeDReferenceDisplay,
-    FrameThreeDReferenceDisplays, FrameVideoBlockParams, FrameVideoEncParams,
-    FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId,
-    clear_global_log_callback, clear_global_log_records, flush_global_log_repeated,
-    frame_side_data_descriptor_for_value, frame_side_data_name_for_value,
-    global_formatted_log_records, global_log, global_log_flags, global_log_level,
-    set_global_log_callback, set_global_log_flag, set_global_log_flags, set_global_log_level,
-    take_global_log_records, LogColorMode, LogFlags, LogFormatOptions,
-    LogLevel, LogRecord, LogTimestamp, Logger, Md5, Packet, PacketA53ClosedCaptions,
-    PacketActiveFormatDescription,
+    FrameMotionVectors, FrameOpaque, FramePanScan, FramePictureType, FrameRegionOfInterest,
+    FrameRegionsOfInterest, FrameReplayGain, FrameS12mTimecode, FrameSeiUnregistered,
+    FrameSideData, FrameSideDataFlags, FrameSideDataKind, FrameSideDataProperties,
+    FrameSkipSamples, FrameSkipSamplesReason, FrameSphericalMapping, FrameSphericalProjection,
+    FrameStereo3d, FrameStereo3dFlags, FrameStereo3dPrimaryEye, FrameStereo3dType,
+    FrameStereo3dView, FrameThreeDReferenceDisplay, FrameThreeDReferenceDisplays,
+    FrameVideoBlockParams, FrameVideoEncParams, FrameVideoEncParamsType, FrameVideoHint,
+    FrameVideoHintType, FrameVideoRect, FrameViewId, HashAlgorithm, HashContext, LogColorMode,
+    LogFlags, LogFormatOptions, LogLevel, LogRecord, LogTimestamp, Logger, MatchMode, Md5, Murmur3,
+    NativeChannelMaskLayout, Packet, PacketA53ClosedCaptions, PacketActiveFormatDescription,
     PacketAmbientViewingEnvironment, PacketAudioServiceType, PacketContentLightMetadata,
     PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf, PacketDoviCompression,
     PacketDynamicHdr10Plus, PacketEncryptionInfo, PacketEncryptionInitInfo,
     PacketEncryptionSubsample, PacketExif, PacketFallbackTrack, PacketFifo, PacketFlags,
-    PacketFrameCropping, PacketH263MbInfo, PacketH263MbInfoEntry, PacketHdrPlusColorTransformParams,
-    PacketIccProfile, PacketIamfAnimationType, PacketIamfDemixingInfoParam, PacketIamfMixGainParam,
-    PacketIamfParamDefinitionType, PacketIamfReconGainInfoParam, PacketIamfReconGainSubblock,
-    PacketJpDualMono, PacketJpDualMonoSelection, PacketLcevc, PacketMasteringDisplayMetadata,
-    PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketNewExtradata, PacketPalette,
-    PacketOpaque, PacketParamChange, PacketPictureType, PacketProducerReferenceTime,
-    PacketQualityStats, PacketReplayGain, PacketRtcpSenderReport, PacketS12mTimecode,
-    PacketSideDataKind, PacketSideDataList, PacketSkipSamples, PacketSkipSamplesReason,
-    PacketSphericalMapping, PacketSphericalProjection, PacketStereo3d, PacketStereo3dFlags,
-    PacketStereo3dPrimaryEye, PacketStereo3dType,
-    PacketStereo3dView, PacketStringMetadata, PacketSubtitlePosition,
-    PacketThreeDReferenceDisplay, PacketThreeDReferenceDisplays, PacketWebVttIdentifier,
-    PacketWebVttSettings, PixelFormat, PixelFormatClass, Rational, Rounding, SampleFormat,
-    SampleFormatNumericKind, HashAlgorithm, HashContext, Murmur3, Ripemd128, Ripemd160,
-    Ripemd256, Ripemd320, Sha1, Sha224, Sha256, Sha384, Sha512, Sha512Trunc224,
-    Sha512Trunc256, SideData, VideoFrame, AV_ERROR_MAX_STRING_SIZE, AV_HASH_MAX_SIZE,
-    AV_BUFFER_FLAG_READONLY, AV_INPUT_BUFFER_PADDING_SIZE, AV_LOG_FORCE_COLOR_ENV,
-    AV_LOG_FORCE_NOCOLOR_ENV, AV_NUM_DATA_POINTERS, AV_TIME_BASE, AV_TIME_BASE_Q,
-    AVPALETTE_COUNT, AVPALETTE_SIZE, MatchMode, SetMode, packet_pack_dictionary,
-    packet_unpack_dictionary,
+    PacketFrameCropping, PacketH263MbInfo, PacketH263MbInfoEntry,
+    PacketHdrPlusColorTransformParams, PacketIamfAnimationType, PacketIamfDemixingInfoParam,
+    PacketIamfMixGainParam, PacketIamfParamDefinitionType, PacketIamfReconGainInfoParam,
+    PacketIamfReconGainSubblock, PacketIccProfile, PacketJpDualMono, PacketJpDualMonoSelection,
+    PacketLcevc, PacketMasteringDisplayMetadata, PacketMatroskaBlockAdditional,
+    PacketMpegTsStreamId, PacketNewExtradata, PacketOpaque, PacketPalette, PacketParamChange,
+    PacketPictureType, PacketProducerReferenceTime, PacketQualityStats, PacketReplayGain,
+    PacketRtcpSenderReport, PacketS12mTimecode, PacketSideDataKind, PacketSideDataList,
+    PacketSkipSamples, PacketSkipSamplesReason, PacketSphericalMapping, PacketSphericalProjection,
+    PacketStereo3d, PacketStereo3dFlags, PacketStereo3dPrimaryEye, PacketStereo3dType,
+    PacketStereo3dView, PacketStringMetadata, PacketSubtitlePosition, PacketThreeDReferenceDisplay,
+    PacketThreeDReferenceDisplays, PacketWebVttIdentifier, PacketWebVttSettings, PixelFormat,
+    PixelFormatClass, Rational, Ripemd128, Ripemd160, Ripemd256, Ripemd320, Rounding, SampleFormat,
+    SampleFormatNumericKind, SetMode, Sha1, Sha224, Sha256, Sha384, Sha512, Sha512Trunc224,
+    Sha512Trunc256, SideData, VideoFrame, AVPALETTE_COUNT, AVPALETTE_SIZE, AV_BUFFER_FLAG_READONLY,
+    AV_ERROR_MAX_STRING_SIZE, AV_HASH_MAX_SIZE, AV_INPUT_BUFFER_PADDING_SIZE,
+    AV_LOG_FORCE_COLOR_ENV, AV_LOG_FORCE_NOCOLOR_ENV, AV_NUM_DATA_POINTERS, AV_TIME_BASE,
+    AV_TIME_BASE_Q,
 };
 use libfuzzer_sys::fuzz_target;
 use std::cmp::Ordering;
@@ -201,9 +194,7 @@ fn assert_raw_channel_layout_retype_fixtures() {
         AvErrorKind::InvalidArgument
     );
     assert_eq!(
-        ChannelLayoutSpec::parse("2 channels ")
-            .unwrap_err()
-            .kind(),
+        ChannelLayoutSpec::parse("2 channels ").unwrap_err().kind(),
         AvErrorKind::InvalidArgument
     );
     let escaped_at = CustomChannelLayout::parse_channel_list("FL@Left\\@Name+FR").unwrap();
@@ -301,9 +292,7 @@ fn assert_raw_channel_layout_retype_fixtures() {
         AvErrorKind::InvalidArgument
     );
     assert_eq!(
-        ChannelLayoutSpec::parse("ambisonic 09")
-            .unwrap_err()
-            .kind(),
+        ChannelLayoutSpec::parse("ambisonic 09").unwrap_err().kind(),
         AvErrorKind::InvalidArgument
     );
     assert_eq!(
@@ -365,11 +354,12 @@ fn assert_raw_channel_layout_retype_fixtures() {
     );
 
     let raw_ambisonic_mask = 1u64 << 45;
-    let raw_ambisonic = ChannelLayoutSpec::Ambisonic(
-        AmbisonicChannelLayout::new(1, raw_ambisonic_mask).unwrap(),
-    );
+    let raw_ambisonic =
+        ChannelLayoutSpec::Ambisonic(AmbisonicChannelLayout::new(1, raw_ambisonic_mask).unwrap());
     assert_eq!(
-        raw_ambisonic.index_from_channel(ChannelId::User(45)).unwrap(),
+        raw_ambisonic
+            .index_from_channel(ChannelId::User(45))
+            .unwrap(),
         4
     );
     assert_eq!(raw_ambisonic.index_from_string("USR45").unwrap(), 4);
@@ -450,7 +440,10 @@ fn assert_channel_layout_default_fixtures() {
         assert_eq!(layout, ChannelLayoutSpec::unspecified(channels).unwrap());
         assert!(layout.is_unspecified());
         assert_eq!(layout.channel_count(), channels);
-        assert_eq!(layout.subset_mask(ChannelLayout::stereo().channel_mask()), 0);
+        assert_eq!(
+            layout.subset_mask(ChannelLayout::stereo().channel_mask()),
+            0
+        );
         assert_eq!(layout.channel_from_string("FL"), None);
         assert_eq!(
             layout.index_from_string("FL").unwrap_err().kind(),
@@ -487,8 +480,7 @@ fn assert_channel_layout_byte_parser_fixtures() {
     assert_eq!(raw_name.index_from_string_bytes(b"@\xff").unwrap(), 0);
     assert_eq!(raw_name.index_from_string_bytes(b"FL@\xff").unwrap(), 0);
 
-    let escaped_name =
-        CustomChannelLayout::parse_channel_list_bytes(b"FL@Left\\\xff+FR").unwrap();
+    let escaped_name = CustomChannelLayout::parse_channel_list_bytes(b"FL@Left\\\xff+FR").unwrap();
     assert_eq!(escaped_name.channels()[0].name_bytes(), b"Left\xff");
     assert_eq!(
         escaped_name.describe_bytes(),
@@ -497,12 +489,20 @@ fn assert_channel_layout_byte_parser_fixtures() {
 
     let described_raw = ChannelLayoutSpec::parse_bytes(b"2 channels (FL@\xff+FR)").unwrap();
     assert_eq!(described_raw.describe_bytes(), b"2 channels (FL@\xff+FR)");
-    assert_eq!(described_raw.index_from_string_bytes(b"FL@\xff").unwrap(), 0);
+    assert_eq!(
+        described_raw.index_from_string_bytes(b"FL@\xff").unwrap(),
+        0
+    );
 
     let truncated =
         CustomChannelLayout::parse_channel_list_bytes(b"FL@1234567890123456+FR").unwrap();
     assert_eq!(truncated.channels()[0].name_bytes(), b"123456789012345");
-    assert_eq!(truncated.index_from_string_bytes(b"@123456789012345").unwrap(), 0);
+    assert_eq!(
+        truncated
+            .index_from_string_bytes(b"@123456789012345")
+            .unwrap(),
+        0
+    );
     assert_eq!(
         truncated
             .index_from_string_bytes(b"@1234567890123456")
@@ -519,9 +519,7 @@ fn assert_channel_layout_byte_parser_fixtures() {
             AvErrorKind::InvalidArgument
         );
         assert_eq!(
-            ChannelLayoutSpec::parse_bytes(invalid)
-                .unwrap_err()
-                .kind(),
+            ChannelLayoutSpec::parse_bytes(invalid).unwrap_err().kind(),
             AvErrorKind::InvalidArgument
         );
     }
@@ -563,11 +561,7 @@ fn assert_channel_layout_compare_fixtures() {
     assert_compare("UNK+UNSD", "2C", false);
     assert_compare("2C", "2 channels", true);
     assert_compare("2C", "3C", false);
-    assert_compare(
-        "ambisonic 1+stereo",
-        "AMBI0+AMBI1+AMBI2+AMBI3+FL+FR",
-        true,
-    );
+    assert_compare("ambisonic 1+stereo", "AMBI0+AMBI1+AMBI2+AMBI3+FL+FR", true);
     assert_compare("ambisonic 1+stereo", "ambisonic 1+FL+FC", false);
     assert_compare("ambisonic +0x1", "ambisonic 1", true);
     assert_compare("ambisonic -0+0x5", "AMBI0+FL+FC", true);
@@ -622,7 +616,12 @@ fn assert_channel_layout_string_lookup_fixtures() {
         Some(ChannelId::Unused)
     );
     assert_eq!(unknown_unused.channel_from_string("FL"), None);
-    assert_eq!(ChannelLayoutSpec::parse("2C").unwrap().channel_from_string("FL"), None);
+    assert_eq!(
+        ChannelLayoutSpec::parse("2C")
+            .unwrap()
+            .channel_from_string("FL"),
+        None
+    );
 
     let ambisonic_extra = ChannelLayoutSpec::parse("ambisonic 1+0x200000000000").unwrap();
     assert_eq!(
@@ -657,10 +656,7 @@ fn assert_channel_layout_string_lookup_fixtures() {
 }
 
 fn assert_color_parser_fixtures() {
-    assert_eq!(
-        parse_color("red").unwrap().rgba(),
-        [0xFF, 0x00, 0x00, 0xFF]
-    );
+    assert_eq!(parse_color("red").unwrap().rgba(), [0xFF, 0x00, 0x00, 0xFF]);
     assert_eq!(
         parse_color("Darkorange@0x80").unwrap().rgba(),
         [0xFF, 0x8C, 0x00, 0x80]
@@ -679,17 +675,16 @@ fn assert_color_parser_fixtures() {
     );
     assert_eq!(
         parse_color("Blue@0.5").unwrap().rgba(),
-        [0x00, 0x00, 0xFF, 0x80]
+        [0x00, 0x00, 0xFF, 0x7F]
     );
-    assert_eq!(parse_color("white@").unwrap().alpha(), 0x00);
-
+    assert_eq!(parse_color("red@1.0").unwrap().alpha(), 0xFF);
     for invalid in [
         "",
         "#12345",
         "#11223z",
         "0X112233",
         "transparent",
-        "red@1.0",
+        "white@",
         "red@0x100",
         "red@@0.5",
     ] {
@@ -1272,8 +1267,14 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         },
     ));
     BufferRef::replace(&mut replace_dst, Some(&replace_source));
-    assert!(replace_dst.as_ref().unwrap().shares_storage(&replace_source));
-    assert_eq!(*replace_released.lock().unwrap(), vec![vec![0xcc; payload_len]]);
+    assert!(replace_dst
+        .as_ref()
+        .unwrap()
+        .shares_storage(&replace_source));
+    assert_eq!(
+        *replace_released.lock().unwrap(),
+        vec![vec![0xcc; payload_len]]
+    );
 
     let replace_same_source = BufferRef::copy_from_slice(&payload);
     let mut replace_same_dst = Some(BufferRef::ref_from(&replace_same_source));
@@ -1384,7 +1385,10 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     let custom_realloc = custom_realloc.expect("custom realloc stays present");
     assert_eq!(custom_realloc.len(), payload_len + 1);
     assert!(custom_realloc.is_writable());
-    assert_eq!(&custom_realloc.as_slice()[..payload_len], payload.as_slice());
+    assert_eq!(
+        &custom_realloc.as_slice()[..payload_len],
+        payload.as_slice()
+    );
     assert!(custom_realloc.opaque_ref::<usize>().is_none());
     assert_eq!(
         *custom_realloc_released.lock().unwrap(),
@@ -1436,8 +1440,8 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     } else {
         usize::from(cursor.next().unwrap_or_default()) % unique_offset_base.len()
     };
-    let unique_len =
-        usize::from(cursor.next().unwrap_or_default()) % (unique_offset_base.len() - unique_start + 1);
+    let unique_len = usize::from(cursor.next().unwrap_or_default())
+        % (unique_offset_base.len() - unique_start + 1);
     let mut unique_offset = unique_offset_base
         .ref_slice(unique_start, unique_len)
         .unwrap();
@@ -1493,7 +1497,10 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     }
     assert_eq!(offset_writable.offset(), 0);
     if offset_writable.is_empty() {
-        assert_eq!(offset_writable.as_slice(), expected_offset_visible.as_slice());
+        assert_eq!(
+            offset_writable.as_slice(),
+            expected_offset_visible.as_slice()
+        );
     }
     assert!(!offset_writable.shares_storage(&offset_ref));
     let mut offset_resized = offset_ref.clone();
@@ -1573,7 +1580,9 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     )
     .unwrap();
     let mut default_with_free_buffer = default_pool_with_free.get().unwrap();
-    assert!(default_with_free_buffer.pool_opaque_ref::<usize>().is_none());
+    assert!(default_with_free_buffer
+        .pool_opaque_ref::<usize>()
+        .is_none());
     if !default_with_free_buffer.is_empty() {
         default_with_free_buffer.make_mut()[0] = cursor.next().unwrap_or_default();
     }
@@ -1743,7 +1752,10 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     drop(custom_buffer);
     assert_eq!(
         *custom_releases.lock().unwrap(),
-        vec![(payload_len + padding_len, vec![0xaa; payload_len + padding_len])]
+        vec![(
+            payload_len + padding_len,
+            vec![0xaa; payload_len + padding_len]
+        )]
     );
     assert_eq!(*custom_pool_frees.lock().unwrap(), 1);
 
@@ -1925,7 +1937,11 @@ fn exercise_errors(cursor: &mut Cursor<'_>) {
             AvErrorKind::External,
             Some(AvErrorCode::EXTERNAL),
         ),
-        (AvError::bug("bug"), AvErrorKind::Bug, Some(AvErrorCode::BUG)),
+        (
+            AvError::bug("bug"),
+            AvErrorKind::Bug,
+            Some(AvErrorCode::BUG),
+        ),
     ] {
         assert_eq!(err.kind(), kind);
         assert_eq!(err.code(), code);
@@ -1976,7 +1992,10 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     }
 
     assert!(logger.log(LogRecord::new(LogLevel::Error, "", "next")));
-    assert!(logger.records().iter().any(|record| record.message() == "next"));
+    assert!(logger
+        .records()
+        .iter()
+        .any(|record| record.message() == "next"));
 
     logger.clear();
     assert!(logger.records().is_empty());
@@ -2029,8 +2048,7 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
         "\x1b[33m[warning] decoder: damaged packet\x1b[0m"
     );
     assert_eq!(
-        LogRecord::new(LogLevel::Info, "ffmpeg", "ready")
-            .format_line_with_options(color_options),
+        LogRecord::new(LogLevel::Info, "ffmpeg", "ready").format_line_with_options(color_options),
         "[info] ffmpeg: ready"
     );
     assert_eq!(
@@ -2065,11 +2083,8 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
         timestamped.format_line_with_options(env_color_options),
         "\x1b[31m[error] demuxer: bad header\x1b[0m"
     );
-    let terminal_color_options =
-        LogFormatOptions::new(LogFlags::PRINT_LEVEL).with_ffmpeg_env_color_vars_and_stderr(
-            |_| false,
-            true,
-        );
+    let terminal_color_options = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
+        .with_ffmpeg_env_color_vars_and_stderr(|_| false, true);
     assert_eq!(terminal_color_options.color_mode(), LogColorMode::Always);
     assert_eq!(
         LogRecord::new(LogLevel::Warning, "decoder", "damaged packet")
@@ -2109,11 +2124,7 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     );
     assert!(callback_logger.log(repeated));
     assert_eq!(callback_seen.lock().unwrap().len(), 1);
-    assert!(callback_logger.log(LogRecord::new(
-        LogLevel::Error,
-        "demuxer",
-        "bad header"
-    )));
+    assert!(callback_logger.log(LogRecord::new(LogLevel::Error, "demuxer", "bad header")));
     assert_eq!(
         callback_seen.lock().unwrap().as_slice(),
         [
@@ -2124,11 +2135,7 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     );
     assert!(callback_logger.clear_callback());
     assert!(!callback_logger.has_callback());
-    assert!(callback_logger.log(LogRecord::new(
-        LogLevel::Error,
-        "demuxer",
-        "after clear"
-    )));
+    assert!(callback_logger.log(LogRecord::new(LogLevel::Error, "demuxer", "after clear")));
     assert_eq!(callback_seen.lock().unwrap().len(), 3);
 
     clear_global_log_callback();
@@ -2178,8 +2185,7 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     assert_eq!(global_seen.lock().unwrap().len(), 2);
     assert_eq!(take_global_log_records().len(), 1);
     set_global_log_flags(callback_flags);
-    let global_flush_repeated =
-        LogRecord::new(LogLevel::Warning, "decoder", "global flush packet");
+    let global_flush_repeated = LogRecord::new(LogLevel::Warning, "decoder", "global flush packet");
     assert!(global_log(global_flush_repeated.clone()));
     assert!(global_log(global_flush_repeated));
     assert!(flush_global_log_repeated());
@@ -2191,10 +2197,14 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     time_flags.insert(LogFlags::PRINT_TIME);
     time_flags.insert(LogFlags::SKIP_REPEATED);
     let mut logger = Logger::new_with_flags(LogLevel::Warning, time_flags);
-    assert!(logger.log(LogRecord::new(LogLevel::Warning, "decoder", "damaged packet")
-        .with_timestamp(LogTimestamp::from_unix_micros(1_704_112_705_000_000))));
-    assert!(logger.log(LogRecord::new(LogLevel::Warning, "decoder", "damaged packet")
-        .with_timestamp(LogTimestamp::from_unix_micros(1_704_112_706_000_000))));
+    assert!(logger.log(
+        LogRecord::new(LogLevel::Warning, "decoder", "damaged packet")
+            .with_timestamp(LogTimestamp::from_unix_micros(1_704_112_705_000_000))
+    ));
+    assert!(logger.log(
+        LogRecord::new(LogLevel::Warning, "decoder", "damaged packet")
+            .with_timestamp(LogTimestamp::from_unix_micros(1_704_112_706_000_000))
+    ));
     assert_eq!(logger.records().len(), 2);
     assert!(!logger.flush_repeated());
 }
@@ -2266,9 +2276,7 @@ fn exercise_rational_and_timebase(cursor: &mut Cursor<'_>) {
         Rational::from_raw(-1, 0).to_int_float_bits().unwrap(),
         0x7f80_0000
     );
-    assert!(Rational::from_raw(i32::MIN, 1)
-        .to_int_float_bits()
-        .is_err());
+    assert!(Rational::from_raw(i32::MIN, 1).to_int_float_bits().is_err());
 
     let first_candidate = positive_rational_from(cursor.next(), cursor.next());
     let second_candidate = positive_rational_from(cursor.next(), cursor.next());
@@ -2287,10 +2295,7 @@ fn exercise_rational_and_timebase(cursor: &mut Cursor<'_>) {
             .unwrap(),
         nearest_relation.reverse()
     );
-    assert_eq!(
-        rational.find_nearest_index(&[]).unwrap(),
-        None
-    );
+    assert_eq!(rational.find_nearest_index(&[]).unwrap(), None);
     assert_eq!(
         rational
             .find_nearest_index(&[first_candidate, second_candidate])
@@ -2478,10 +2483,15 @@ fn exercise_rational_and_timebase(cursor: &mut Cursor<'_>) {
     assert_eq!(delta_last, expected_delta_last);
 
     let mut unchanged_delta_last = delta_last;
-    assert!(
-        rescale_delta(src, i64::MIN, fs_tb, delta_duration, &mut unchanged_delta_last, dst)
-            .is_err()
-    );
+    assert!(rescale_delta(
+        src,
+        i64::MIN,
+        fs_tb,
+        delta_duration,
+        &mut unchanged_delta_last,
+        dst
+    )
+    .is_err());
     assert_eq!(unchanged_delta_last, delta_last);
     assert!(rescale_delta(
         Rational::from_raw(0, 1),
@@ -2507,7 +2517,10 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     assert_eq!(descriptor.name, pixel_format.name());
     assert_eq!(descriptor.class, pixel_format.class());
     assert_eq!(descriptor.component_count, pixel_format.component_count());
-    assert_eq!(descriptor.bits_per_component, pixel_format.bits_per_component());
+    assert_eq!(
+        descriptor.bits_per_component,
+        pixel_format.bits_per_component()
+    );
     assert_eq!(descriptor.bits_per_pixel, pixel_format.bits_per_pixel());
     assert_eq!(descriptor.plane_count, pixel_format.plane_count());
     assert_eq!(descriptor.is_planar, pixel_format.is_planar());
@@ -2561,7 +2574,10 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         pixel_format.has_chroma_subsampling(),
         pixel_format.log2_chroma() != (0, 0)
     );
-    assert_eq!(PixelFormat::from_name(pixel_format.name()), Some(pixel_format));
+    assert_eq!(
+        PixelFormat::from_name(pixel_format.name()),
+        Some(pixel_format)
+    );
     assert_eq!(pixel_format.is_packed(), !pixel_format.is_planar());
     match pixel_format.class() {
         PixelFormatClass::Gray => {
@@ -2673,6 +2689,18 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                 pixel_format.has_chroma_subsampling(),
                 pixel_format.log2_chroma() != (0, 0)
             );
+        }
+        PixelFormatClass::Hardware => {
+            assert!(pixel_format.is_hardware());
+            assert!(!pixel_format.is_gray());
+            assert!(!pixel_format.is_rgb());
+            assert!(!pixel_format.is_xyz());
+            assert!(!pixel_format.is_yuv());
+            assert_eq!(pixel_format.component_count(), 0);
+            assert_eq!(pixel_format.bits_per_component(), 0);
+            assert_eq!(pixel_format.bits_per_pixel_integer(), Some(0));
+            assert_eq!(pixel_format.component_bit_depths(), vec![0]);
+            assert_eq!(pixel_format.plane_count(), 0);
         }
     }
     assert_eq!(
@@ -3183,10 +3211,7 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     let frame_opaque_address = usize::from(cursor.next().unwrap_or_default()) + 1;
     let frame_opaque = FrameOpaque::new(frame_opaque_address).unwrap();
     assert_eq!(frame_opaque.address(), frame_opaque_address);
-    assert_eq!(
-        frame_opaque.nonzero_address().get(),
-        frame_opaque_address
-    );
+    assert_eq!(frame_opaque.nonzero_address().get(), frame_opaque_address);
     assert_eq!(
         FrameOpaque::from_address(frame_opaque_address),
         Some(frame_opaque)
@@ -3225,15 +3250,12 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     );
     assert_eq!(frame.color_range(), frame_color_range);
 
-    let frame_color_primaries = pick_copy(cursor, &FrameColorPrimaries::KNOWN)
-        .unwrap_or(FrameColorPrimaries::Unspecified);
+    let frame_color_primaries =
+        pick_copy(cursor, &FrameColorPrimaries::KNOWN).unwrap_or(FrameColorPrimaries::Unspecified);
     frame.set_color_primaries(frame_color_primaries);
     assert_eq!(frame.color_primaries(), frame_color_primaries);
     assert_eq!(
-        frame
-            .set_color_primaries_from_raw(23)
-            .unwrap_err()
-            .kind(),
+        frame.set_color_primaries_from_raw(23).unwrap_err().kind(),
         AvErrorKind::InvalidData
     );
     assert_eq!(frame.color_primaries(), frame_color_primaries);
@@ -3241,10 +3263,7 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     let frame_color_transfer = pick_copy(cursor, &FrameColorTransferCharacteristic::KNOWN)
         .unwrap_or(FrameColorTransferCharacteristic::Unspecified);
     frame.set_color_transfer_characteristic(frame_color_transfer);
-    assert_eq!(
-        frame.color_transfer_characteristic(),
-        frame_color_transfer
-    );
+    assert_eq!(frame.color_transfer_characteristic(), frame_color_transfer);
     assert_eq!(
         frame
             .set_color_transfer_characteristic_from_raw(19)
@@ -3252,10 +3271,7 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             .kind(),
         AvErrorKind::InvalidData
     );
-    assert_eq!(
-        frame.color_transfer_characteristic(),
-        frame_color_transfer
-    );
+    assert_eq!(frame.color_transfer_characteristic(), frame_color_transfer);
 
     let frame_color_space =
         pick_copy(cursor, &FrameColorSpace::KNOWN).unwrap_or(FrameColorSpace::Unspecified);
@@ -3282,7 +3298,10 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     assert!(frame.is_writable());
     let shared_frame_payload = frame.clone();
     assert_eq!(shared_frame_payload.color_range(), frame_color_range);
-    assert_eq!(shared_frame_payload.color_primaries(), frame_color_primaries);
+    assert_eq!(
+        shared_frame_payload.color_primaries(),
+        frame_color_primaries
+    );
     assert_eq!(
         shared_frame_payload.color_transfer_characteristic(),
         frame_color_transfer
@@ -4737,7 +4756,10 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     let removed_duplicate_replay_gains =
         from_buf_frame.remove_all_side_data_kind(&FrameSideDataKind::ReplayGain);
     assert_eq!(removed_duplicate_replay_gains.len(), 2);
-    assert_eq!(removed_duplicate_replay_gains[0].data(), &[0x91, 0x92, 0x93]);
+    assert_eq!(
+        removed_duplicate_replay_gains[0].data(),
+        &[0x91, 0x92, 0x93]
+    );
     assert_eq!(removed_duplicate_replay_gains[1].data(), &[0x94]);
     assert_eq!(from_buf_frame.side_data().len(), 1);
     assert_eq!(
@@ -5230,11 +5252,8 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
         3 => 8,
         _ => 16,
     };
-    let sample_buffer_layout = sample_format.buffer_layout(
-        samples_per_channel,
-        channels,
-        buffer_alignment,
-    );
+    let sample_buffer_layout =
+        sample_format.buffer_layout(samples_per_channel, channels, buffer_alignment);
     if samples_per_channel == 0 {
         assert_eq!(
             sample_buffer_layout.unwrap_err().kind(),
@@ -5296,10 +5315,7 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
             1
         };
         assert_eq!(sample_buffer_layout.alignment(), expected_alignment);
-        assert_eq!(
-            sample_buffer_layout.samples_per_channel(),
-            expected_samples
-        );
+        assert_eq!(sample_buffer_layout.samples_per_channel(), expected_samples);
         assert_eq!(sample_buffer_layout.line_size(), expected_line_size);
         assert_eq!(sample_buffer_layout.plane_count(), expected_plane_count);
         assert_eq!(
@@ -5322,13 +5338,13 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
             expected_line_size * expected_plane_count
         );
         assert_eq!(sample_array_layout.plane_count(), expected_plane_count);
-        assert_eq!(
-            sample_array_layout.samples_per_channel(),
-            expected_samples
-        );
+        assert_eq!(sample_array_layout.samples_per_channel(), expected_samples);
         assert_eq!(sample_array_layout.alignment(), expected_alignment);
         assert_eq!(sample_array_layout.buffer_layout(), sample_buffer_layout);
-        assert_eq!(sample_array_layout.plane_ranges().len(), expected_plane_count);
+        assert_eq!(
+            sample_array_layout.plane_ranges().len(),
+            expected_plane_count
+        );
         for (plane_index, range) in sample_array_layout.plane_ranges().iter().enumerate() {
             assert_eq!(range.plane_index(), plane_index);
             assert_eq!(range.byte_offset(), plane_index * expected_line_size);
@@ -5343,10 +5359,7 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
         let split_planes = sample_array_layout.split_buffer(&contiguous).unwrap();
         assert_eq!(split_planes.len(), expected_plane_count);
         for (range, plane) in sample_array_layout.plane_ranges().iter().zip(&split_planes) {
-            assert_eq!(
-                *plane,
-                &contiguous[range.byte_offset()..range.byte_end()]
-            );
+            assert_eq!(*plane, &contiguous[range.byte_offset()..range.byte_end()]);
         }
         assert_eq!(
             sample_format
@@ -5375,10 +5388,7 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
         let short_len = sample_array_layout.buffer_size() - 1;
         let short = vec![0; short_len];
         assert_eq!(
-            sample_array_layout
-                .split_buffer(&short)
-                .unwrap_err()
-                .kind(),
+            sample_array_layout.split_buffer(&short).unwrap_err().kind(),
             AvErrorKind::InvalidArgument
         );
         let mut short_mut = short;
@@ -5401,17 +5411,17 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
             allocation.requested_samples_per_channel(),
             samples_per_channel
         );
-        assert_eq!(
-            allocation.effective_samples_per_channel(),
-            expected_samples
-        );
+        assert_eq!(allocation.effective_samples_per_channel(), expected_samples);
         assert_eq!(allocation.alignment(), expected_alignment);
         assert_eq!(allocation.buffer().len(), sample_array_layout.buffer_size());
         assert_eq!(
             allocation.buffer().allocated_len(),
             sample_array_layout.buffer_size()
         );
-        assert_eq!(allocation.plane_ranges(), sample_array_layout.plane_ranges());
+        assert_eq!(
+            allocation.plane_ranges(),
+            sample_array_layout.plane_ranges()
+        );
         let allocation_planes = allocation.planes().unwrap();
         assert_eq!(allocation_planes.len(), expected_plane_count);
         let allocation_silence = sample_format
@@ -5620,10 +5630,8 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
     let copy_dst_end = copy_dst_start + copy_range.byte_len();
     let copy_src_start = copy_range.src_byte_offset();
     let copy_src_end = copy_src_start + copy_range.byte_len();
-    for ((dst_plane, before), src_plane) in copy_dst_planes
-        .iter()
-        .zip(&before_copy)
-        .zip(&source_planes)
+    for ((dst_plane, before), src_plane) in
+        copy_dst_planes.iter().zip(&before_copy).zip(&source_planes)
     {
         assert_eq!(&dst_plane[..copy_dst_start], &before[..copy_dst_start]);
         assert_eq!(
@@ -6007,7 +6015,9 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
     );
     assert_eq!(
         ChannelLayoutSpec::parse(&format!("{}c", layout.channel_count())).unwrap(),
-        ChannelLayoutSpec::Native(ChannelLayout::default_for_count(layout.channel_count()).unwrap())
+        ChannelLayoutSpec::Native(
+            ChannelLayout::default_for_count(layout.channel_count()).unwrap()
+        )
     );
     assert_eq!(
         ChannelLayout::parse(&layout.channel_string()).unwrap(),
@@ -6058,9 +6068,7 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
         arbitrary_spec.subset_mask(Channel::FrontCenter.mask() | Channel::FrontRight.mask()),
         Channel::FrontCenter.mask()
     );
-    assert!(!arbitrary_spec.is_equivalent_to(ChannelLayoutSpec::Native(
-        ChannelLayout::stereo()
-    )));
+    assert!(!arbitrary_spec.is_equivalent_to(ChannelLayoutSpec::Native(ChannelLayout::stereo())));
     assert_eq!(
         ChannelLayoutSpec::parse("0x8000000000000000")
             .unwrap()
@@ -6087,8 +6095,7 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
         parsed_mixed.channel_from_index(3),
         Some(ChannelId::User(0x800))
     );
-    let escaped_custom =
-        CustomChannelLayout::parse_channel_list("FL@Left\\+Right+FR").unwrap();
+    let escaped_custom = CustomChannelLayout::parse_channel_list("FL@Left\\+Right+FR").unwrap();
     assert_eq!(escaped_custom.channels()[0].name(), "Left+Right");
     let escaped_at = CustomChannelLayout::parse_channel_list("FL@Left\\@Name+FR").unwrap();
     assert_eq!(escaped_at.channels()[0].name(), "Left@Name");
@@ -6190,10 +6197,7 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
         Some(ChannelId::Native(Channel::FrontRight))
     );
     assert_eq!(
-        parsed_ambisonic
-            .index_from_string("FC")
-            .unwrap_err()
-            .kind(),
+        parsed_ambisonic.index_from_string("FC").unwrap_err().kind(),
         AvErrorKind::InvalidArgument
     );
     assert_eq!(parsed_ambisonic.channel_from_string("AMBI4"), None);
@@ -6216,10 +6220,15 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
             )
         );
     }
-    let native_custom = ChannelLayoutSpec::Native(layout).to_custom_layout().unwrap();
+    let native_custom = ChannelLayoutSpec::Native(layout)
+        .to_custom_layout()
+        .unwrap();
     assert!(layout.is_equivalent_to_custom(&native_custom));
     assert_eq!(native_custom.channel_count(), layout.channel_count());
-    assert_eq!(native_custom.channel_from_index(0), layout.channel_from_index(0));
+    assert_eq!(
+        native_custom.channel_from_index(0),
+        layout.channel_from_index(0)
+    );
     let arbitrary_custom = arbitrary_spec.to_custom_layout().unwrap();
     assert_eq!(
         arbitrary_custom,
@@ -6241,8 +6250,7 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
         ChannelLayoutSpec::Ambisonic(parsed_ambisonic.as_ambisonic().unwrap())
     );
     let named_ambisonic_custom =
-        CustomChannelLayout::parse_channel_list("AMBI0@W+AMBI1+AMBI2+AMBI3+FL@Left+FR")
-            .unwrap();
+        CustomChannelLayout::parse_channel_list("AMBI0@W+AMBI1+AMBI2+AMBI3+FL@Left+FR").unwrap();
     assert_eq!(
         ChannelLayoutSpec::Custom(named_ambisonic_custom.clone())
             .retype_to_ambisonic_order(false)
@@ -6281,9 +6289,10 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
         canonical_sparse_custom.into_layout(),
         ChannelLayoutSpec::NativeMask(arbitrary_layout)
     );
-    let canonical_unknown_custom = ChannelLayoutSpec::Custom(CustomChannelLayout::unknown(3).unwrap())
-        .retype_to_canonical_order(false)
-        .unwrap();
+    let canonical_unknown_custom =
+        ChannelLayoutSpec::Custom(CustomChannelLayout::unknown(3).unwrap())
+            .retype_to_canonical_order(false)
+            .unwrap();
     assert!(!canonical_unknown_custom.is_lossy());
     assert_eq!(
         canonical_unknown_custom.into_layout(),
@@ -6360,11 +6369,8 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
     assert_eq!(
         parsed_ambisonic_sparse_extra.as_ambisonic(),
         Some(
-            AmbisonicChannelLayout::new(
-                1,
-                Channel::FrontLeft.mask() | Channel::FrontCenter.mask()
-            )
-            .unwrap()
+            AmbisonicChannelLayout::new(1, Channel::FrontLeft.mask() | Channel::FrontCenter.mask())
+                .unwrap()
         )
     );
     assert!(ChannelLayoutSpec::parse("AMBI0@W+AMBI1+AMBI2+AMBI3")
@@ -6383,11 +6389,7 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
         "ambisonic 1+2 channels (FL@Left+FR@Right)"
     );
     assert_eq!(
-        parsed_named_ambisonic
-            .as_custom()
-            .unwrap()
-            .channels()[4]
-            .name(),
+        parsed_named_ambisonic.as_custom().unwrap().channels()[4].name(),
         "Left"
     );
     for invalid_ambisonic in [
@@ -6404,8 +6406,14 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
             AvErrorKind::InvalidArgument
         );
     }
-    assert_eq!(ChannelLayout::from_channel_mask(layout.channel_mask()), Some(layout));
-    assert_eq!(ChannelLayout::from_channels(layout.channels()), Some(layout));
+    assert_eq!(
+        ChannelLayout::from_channel_mask(layout.channel_mask()),
+        Some(layout)
+    );
+    assert_eq!(
+        ChannelLayout::from_channels(layout.channels()),
+        Some(layout)
+    );
     assert_eq!(
         layout.channels().iter().fold(0u64, |mask, channel| {
             assert_eq!(Channel::from_name(channel.name()), Some(*channel));
@@ -6747,7 +6755,10 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     unpadded_grown_packet.grow_data(unpadded_grow_by).unwrap();
     let mut expected_unpadded_grown = payload.clone();
     expected_unpadded_grown.resize(payload.len() + unpadded_grow_by, 0);
-    assert_eq!(unpadded_grown_packet.data(), expected_unpadded_grown.as_slice());
+    assert_eq!(
+        unpadded_grown_packet.data(),
+        expected_unpadded_grown.as_slice()
+    );
     assert_eq!(
         unpadded_grown_packet.data_buffer().padding_len(),
         AV_INPUT_BUFFER_PADDING_SIZE
@@ -6911,7 +6922,10 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             .kind(),
         AvErrorKind::InvalidArgument
     );
-    assert_eq!((packet.pts(), packet.dts(), packet.duration()), rescaled_timing);
+    assert_eq!(
+        (packet.pts(), packet.dts(), packet.duration()),
+        rescaled_timing
+    );
 
     let opaque_len = usize::from(cursor.next().unwrap_or_default() % 16);
     let opaque_payload = payload_from(cursor, opaque_len);
@@ -6977,8 +6991,11 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     let typed_side_data_payload = payload_from(cursor, typed_side_data_len);
     let mut typed_side_data_packet = Packet::default();
     typed_side_data_packet.push_side_data(
-        SideData::new_with_kind(typed_side_data_kind.clone(), typed_side_data_payload.clone())
-            .unwrap(),
+        SideData::new_with_kind(
+            typed_side_data_kind.clone(),
+            typed_side_data_payload.clone(),
+        )
+        .unwrap(),
     );
     assert_eq!(
         typed_side_data_packet.side_data()[0].kind_id(),
@@ -7013,7 +7030,10 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     let taken_typed_side_data = typed_side_data_packet
         .take_side_data_kind(&typed_side_data_kind)
         .unwrap();
-    assert_eq!(taken_typed_side_data.data(), typed_side_data_payload.as_slice());
+    assert_eq!(
+        taken_typed_side_data.data(),
+        typed_side_data_payload.as_slice()
+    );
     assert!(typed_side_data_packet
         .side_data_by_kind_id(&typed_side_data_kind)
         .is_none());
@@ -7057,7 +7077,10 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     let new_side_data_replacement_len = usize::from(cursor.next().unwrap_or_default() % 16);
     let new_side_data_replacement = payload_from(cursor, new_side_data_replacement_len);
     let new_entry = new_side_data_packet
-        .new_side_data(typed_side_data_kind.clone(), new_side_data_replacement.len())
+        .new_side_data(
+            typed_side_data_kind.clone(),
+            new_side_data_replacement.len(),
+        )
         .unwrap();
     assert!(new_entry.data().iter().all(|byte| *byte == 0));
     new_entry
@@ -7116,8 +7139,9 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     );
     duplicate_packet
         .push_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x33]).unwrap());
-    duplicate_packet
-        .push_side_data(SideData::new_with_kind(PacketSideDataKind::SkipSamples, vec![0x44]).unwrap());
+    duplicate_packet.push_side_data(
+        SideData::new_with_kind(PacketSideDataKind::SkipSamples, vec![0x44]).unwrap(),
+    );
     assert_eq!(
         duplicate_packet
             .side_data_by_kind_id(&PacketSideDataKind::Palette)
@@ -7135,7 +7159,9 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(duplicate_packet.side_data()[0].data(), &[0x66, 0x77]);
     assert_eq!(duplicate_packet.side_data()[2].data(), &[0x33]);
     let replaced_packet_duplicate = duplicate_packet
-        .try_add_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x55]).unwrap())
+        .try_add_side_data(
+            SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x55]).unwrap(),
+        )
         .unwrap()
         .unwrap();
     assert_eq!(replaced_packet_duplicate.data(), &[0x66, 0x77]);
@@ -7184,10 +7210,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .copy_from_slice(typed_side_data_payload.as_slice());
     assert_eq!(side_data_list.len(), 1);
     assert_eq!(
-        side_data_list
-            .get(&typed_side_data_kind)
-            .unwrap()
-            .data(),
+        side_data_list.get(&typed_side_data_kind).unwrap().data(),
         typed_side_data_payload.as_slice()
     );
 
@@ -7202,10 +7225,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(replaced.data(), typed_side_data_payload.as_slice());
     assert_eq!(side_data_list.len(), 1);
     assert_eq!(
-        side_data_list
-            .get(&typed_side_data_kind)
-            .unwrap()
-            .data(),
+        side_data_list.get(&typed_side_data_kind).unwrap().data(),
         replacement_payload.as_slice()
     );
 
@@ -7223,8 +7243,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .unwrap();
     flags_entry.data_mut().copy_from_slice(&[0xc2, 0x58]);
     assert_eq!(side_data_list.len(), 3);
-    let mut caller_owned =
-        Some(SideData::new_with_kind(flags_kind.clone(), vec![0x5a]).unwrap());
+    let mut caller_owned = Some(SideData::new_with_kind(flags_kind.clone(), vec![0x5a]).unwrap());
     let replaced_flags = side_data_list
         .try_add_side_data_with_flags(&mut caller_owned, 1)
         .unwrap()
@@ -7232,21 +7251,11 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(replaced_flags.data(), &[0xc2, 0x58]);
     assert!(caller_owned.is_none());
     assert_eq!(side_data_list.len(), 3);
-    assert_eq!(
-        side_data_list
-            .get(&flags_kind)
-            .unwrap()
-            .data(),
-        &[0x5a]
-    );
-    let removed = side_data_list
-        .remove_kind(&typed_side_data_kind)
-        .unwrap();
+    assert_eq!(side_data_list.get(&flags_kind).unwrap().data(), &[0x5a]);
+    let removed = side_data_list.remove_kind(&typed_side_data_kind).unwrap();
     assert_eq!(removed.data(), replacement_payload.as_slice());
     assert_eq!(side_data_list.len(), 2);
-    assert!(side_data_list
-        .get(&flags_kind)
-        .is_some());
+    assert!(side_data_list.get(&flags_kind).is_some());
     assert!(side_data_list.get(&other_list_kind).is_some());
     assert!(side_data_list.remove_kind(&typed_side_data_kind).is_none());
     side_data_list.clear();
@@ -7348,10 +7357,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .try_add_side_data_owned(&mut extra_owned)
         .unwrap_err();
     assert_eq!(capacity_err.kind(), AvErrorKind::InvalidArgument);
-    assert_eq!(
-        capacity_err.code(),
-        Some(AvErrorCode::from_posix_errno(34))
-    );
+    assert_eq!(capacity_err.code(), Some(AvErrorCode::from_posix_errno(34)));
     let extra_owned = extra_owned.as_ref().unwrap();
     assert_eq!(extra_owned.kind(), "vendor.private.extra_packet_data");
     assert_eq!(extra_owned.data(), &[0xee]);
@@ -7387,7 +7393,9 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         PacketSideDataKind::MAX_FFMPEG_PACKET_SIDE_DATA_ELEMS
     );
     let replaced = capacity_list
-        .try_add_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xaa]).unwrap())
+        .try_add_side_data(
+            SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xaa]).unwrap(),
+        )
         .unwrap()
         .unwrap();
     assert_eq!(replaced.data(), &[0]);
@@ -7430,7 +7438,10 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     packet_fifo.write_move(&mut fifo_move_src).unwrap();
     assert!(fifo_move_src.is_empty());
     assert_eq!(packet_fifo.can_read(), 1);
-    assert_eq!(packet_fifo.peek(0).unwrap().data(), fifo_move_payload.as_slice());
+    assert_eq!(
+        packet_fifo.peek(0).unwrap().data(),
+        fifo_move_payload.as_slice()
+    );
     assert!(packet_fifo
         .peek(0)
         .unwrap()
@@ -7467,16 +7478,14 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
 
     let fifo_ref_replace_payload = vec![cursor.next().unwrap_or_default()];
     let mut fifo_ref_replace_src = Packet::from_data(fifo_ref_replace_payload.clone()).unwrap();
-    fifo_ref_replace_src
-        .push_side_data(SideData::new("skip_samples", vec![0x05, 0x06]).unwrap());
+    fifo_ref_replace_src.push_side_data(SideData::new("skip_samples", vec![0x05, 0x06]).unwrap());
     fifo_ref_replace_src.set_opaque_ref(Some(BufferRef::from_vec(vec![0x12, 0x34])));
     let fifo_ref_replace_storage = fifo_ref_replace_src.data_buffer().clone();
     let fifo_ref_replace_opaque = fifo_ref_replace_src.opaque_ref().unwrap().clone();
     packet_fifo.write_ref(&fifo_ref_replace_src).unwrap();
     assert_eq!(packet_fifo.can_read(), 1);
     let mut fifo_ref_replace_dst = Packet::new(vec![0x99], 77);
-    fifo_ref_replace_dst
-        .push_side_data(SideData::new("palette", vec![0xee]).unwrap());
+    fifo_ref_replace_dst.push_side_data(SideData::new("palette", vec![0xee]).unwrap());
     fifo_ref_replace_dst.set_opaque_ref(Some(BufferRef::from_vec(vec![0xfe])));
     let fifo_ref_replace_old_storage = fifo_ref_replace_dst.data_buffer().clone();
     let fifo_ref_replace_old_opaque = fifo_ref_replace_dst.opaque_ref().unwrap().clone();
@@ -7500,9 +7509,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .opaque_ref()
         .unwrap()
         .shares_storage(&fifo_ref_replace_old_opaque));
-    assert!(fifo_ref_replace_dst
-        .side_data_by_kind("palette")
-        .is_none());
+    assert!(fifo_ref_replace_dst.side_data_by_kind("palette").is_none());
     assert_eq!(
         fifo_ref_replace_dst
             .side_data_by_kind("skip_samples")
@@ -7513,8 +7520,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
 
     let fifo_move_replace_payload = vec![cursor.next().unwrap_or_default()];
     let mut fifo_move_replace_src = Packet::from_data(fifo_move_replace_payload.clone()).unwrap();
-    fifo_move_replace_src
-        .push_side_data(SideData::new("skip_samples", vec![0x07, 0x08]).unwrap());
+    fifo_move_replace_src.push_side_data(SideData::new("skip_samples", vec![0x07, 0x08]).unwrap());
     fifo_move_replace_src.set_opaque_ref(Some(BufferRef::from_vec(vec![0xab, 0xcd])));
     let fifo_move_replace_storage = fifo_move_replace_src.data_buffer().clone();
     let fifo_move_replace_opaque = fifo_move_replace_src.opaque_ref().unwrap().clone();
@@ -7522,14 +7528,11 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert!(fifo_move_replace_src.is_empty());
     assert_eq!(packet_fifo.can_read(), 1);
     let mut fifo_move_replace_dst = Packet::new(vec![0x66], 88);
-    fifo_move_replace_dst
-        .push_side_data(SideData::new("palette", vec![0xab]).unwrap());
+    fifo_move_replace_dst.push_side_data(SideData::new("palette", vec![0xab]).unwrap());
     fifo_move_replace_dst.set_opaque_ref(Some(BufferRef::from_vec(vec![0xcd])));
     let fifo_move_replace_old_storage = fifo_move_replace_dst.data_buffer().clone();
     let fifo_move_replace_old_opaque = fifo_move_replace_dst.opaque_ref().unwrap().clone();
-    packet_fifo
-        .read_move(&mut fifo_move_replace_dst)
-        .unwrap();
+    packet_fifo.read_move(&mut fifo_move_replace_dst).unwrap();
     assert_eq!(packet_fifo.can_read(), 0);
     assert_eq!(
         fifo_move_replace_dst.data(),
@@ -7549,9 +7552,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .opaque_ref()
         .unwrap()
         .shares_storage(&fifo_move_replace_old_opaque));
-    assert!(fifo_move_replace_dst
-        .side_data_by_kind("palette")
-        .is_none());
+    assert!(fifo_move_replace_dst.side_data_by_kind("palette").is_none());
     assert_eq!(
         fifo_move_replace_dst
             .side_data_by_kind("skip_samples")
@@ -7898,7 +7899,10 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         bridge_frame.side_data()[0].kind_id(),
         &FrameSideDataKind::ReplayGain
     );
-    assert_eq!(bridge_frame.side_data()[0].data(), bridge_payload.as_slice());
+    assert_eq!(
+        bridge_frame.side_data()[0].data(),
+        bridge_payload.as_slice()
+    );
 
     let duplicate_err = packet_side_data
         .add_to_frame(&mut bridge_frame, FrameSideDataFlags::EMPTY)
@@ -7906,7 +7910,10 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(duplicate_err.kind(), AvErrorKind::External);
     assert_eq!(duplicate_err.code(), Some(AvErrorCode::ENOMEM));
     assert_eq!(bridge_frame.side_data().len(), 1);
-    assert_eq!(bridge_frame.side_data()[0].data(), bridge_payload.as_slice());
+    assert_eq!(
+        bridge_frame.side_data()[0].data(),
+        bridge_payload.as_slice()
+    );
 
     SideData::new_with_kind(PacketSideDataKind::ReplayGain, bridge_replacement.clone())
         .unwrap()
@@ -8112,15 +8119,10 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     .max(PacketDolbyVisionConf::DATA_LEN + 1)
     .max(PacketDynamicHdr10Plus::DATA_LEN + 1)
     .max(
-        PacketExif::TIFF_HEADER_LEN
-            + PacketExif::IFD_COUNT_LEN
-            + PacketExif::IFD_ENTRY_LEN
-            + 4
-            + 1,
+        PacketExif::TIFF_HEADER_LEN + PacketExif::IFD_COUNT_LEN + PacketExif::IFD_ENTRY_LEN + 4 + 1,
     )
     .max(PacketIccProfile::MIN_DATA_LEN + PacketIccProfile::TAG_RECORD_LEN + 1);
-    let typed_payload_len =
-        usize::from(cursor.next().unwrap_or_default()) % typed_payload_max_len;
+    let typed_payload_len = usize::from(cursor.next().unwrap_or_default()) % typed_payload_max_len;
     let typed_payload = payload_from(cursor, typed_payload_len);
     let typed_payload_kind = packet_side_data_kind_from(cursor.next());
     let typed_payload_side_data =
@@ -8171,10 +8173,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         Ok(Some(value)) => {
             assert_eq!(typed_payload_kind, PacketSideDataKind::H263MbInfo);
             assert_eq!(value.data(), typed_payload.as_slice());
-            assert_eq!(
-                typed_payload.len() % PacketH263MbInfoEntry::DATA_LEN,
-                0
-            );
+            assert_eq!(typed_payload.len() % PacketH263MbInfoEntry::DATA_LEN, 0);
             assert_eq!(
                 value.entry_count(),
                 typed_payload.len() / PacketH263MbInfoEntry::DATA_LEN
@@ -8351,7 +8350,10 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
                 typed_payload_kind,
                 PacketSideDataKind::MasteringDisplayMetadata
             );
-            assert_eq!(typed_payload.len(), PacketMasteringDisplayMetadata::DATA_LEN);
+            assert_eq!(
+                typed_payload.len(),
+                PacketMasteringDisplayMetadata::DATA_LEN
+            );
             assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
             assert_eq!(
                 PacketMasteringDisplayMetadata::parse(&value.to_bytes()).unwrap(),
@@ -8384,7 +8386,10 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
                 PacketSphericalProjection::from_raw(value.projection().as_raw()).unwrap(),
                 value.projection()
             );
-            assert_eq!(PacketSphericalMapping::parse(&value.to_bytes()).unwrap(), value);
+            assert_eq!(
+                PacketSphericalMapping::parse(&value.to_bytes()).unwrap(),
+                value
+            );
             assert_eq!(
                 value.bounds(),
                 [
@@ -8471,10 +8476,8 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
                 PacketSideDataKind::ThreeDReferenceDisplays
             );
             assert_eq!(value.to_bytes(), typed_payload);
-            assert!(
-                (1..=PacketThreeDReferenceDisplays::MAX_REF_DISPLAYS)
-                    .contains(&value.nb_displays())
-            );
+            assert!((1..=PacketThreeDReferenceDisplays::MAX_REF_DISPLAYS)
+                .contains(&value.nb_displays()));
             assert!(value.prec_ref_display_width() <= 31);
             assert!(value.prec_ref_viewing_dist() <= 31);
             assert_eq!(
@@ -8611,9 +8614,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         Err(err) => {
             assert_eq!(err.kind(), AvErrorKind::InvalidData);
             assert_eq!(typed_payload_kind, PacketSideDataKind::DolbyVisionConf);
-            assert!(packet_dolby_vision_conf_payload_invalid(
-                &typed_payload
-            ));
+            assert!(packet_dolby_vision_conf_payload_invalid(&typed_payload));
         }
     }
     match typed_payload_side_data.dynamic_hdr10_plus() {
@@ -8646,25 +8647,17 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             }
             assert!(value.targeted_system_display_actual_peak_luminance_flag() <= 1);
             if value.targeted_system_display_actual_peak_luminance_flag() == 1 {
-                assert!(
-                    (2..=PacketDynamicHdr10Plus::MAX_PEAK_LUMINANCE_ROWS)
-                        .contains(&value.num_rows_targeted_system_display_actual_peak_luminance())
-                );
-                assert!(
-                    (2..=PacketDynamicHdr10Plus::MAX_PEAK_LUMINANCE_COLS)
-                        .contains(&value.num_cols_targeted_system_display_actual_peak_luminance())
-                );
+                assert!((2..=PacketDynamicHdr10Plus::MAX_PEAK_LUMINANCE_ROWS)
+                    .contains(&value.num_rows_targeted_system_display_actual_peak_luminance()));
+                assert!((2..=PacketDynamicHdr10Plus::MAX_PEAK_LUMINANCE_COLS)
+                    .contains(&value.num_cols_targeted_system_display_actual_peak_luminance()));
             }
             assert!(value.mastering_display_actual_peak_luminance_flag() <= 1);
             if value.mastering_display_actual_peak_luminance_flag() == 1 {
-                assert!(
-                    (2..=PacketDynamicHdr10Plus::MAX_PEAK_LUMINANCE_ROWS)
-                        .contains(&value.num_rows_mastering_display_actual_peak_luminance())
-                );
-                assert!(
-                    (2..=PacketDynamicHdr10Plus::MAX_PEAK_LUMINANCE_COLS)
-                        .contains(&value.num_cols_mastering_display_actual_peak_luminance())
-                );
+                assert!((2..=PacketDynamicHdr10Plus::MAX_PEAK_LUMINANCE_ROWS)
+                    .contains(&value.num_rows_mastering_display_actual_peak_luminance()));
+                assert!((2..=PacketDynamicHdr10Plus::MAX_PEAK_LUMINANCE_COLS)
+                    .contains(&value.num_cols_mastering_display_actual_peak_luminance()));
             }
             assert_eq!(PacketDynamicHdr10Plus::parse(value.data()).unwrap(), value);
         }
@@ -8672,9 +8665,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         Err(err) => {
             assert_eq!(err.kind(), AvErrorKind::InvalidData);
             assert_eq!(typed_payload_kind, PacketSideDataKind::DynamicHdr10Plus);
-            assert!(packet_dynamic_hdr10_plus_payload_invalid(
-                &typed_payload
-            ));
+            assert!(packet_dynamic_hdr10_plus_payload_invalid(&typed_payload));
         }
     }
     match typed_payload_side_data.iamf_mix_gain_param() {
@@ -8704,10 +8695,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
                 );
             }
             assert_eq!(value.subblock(value.subblock_count()), None);
-            assert_eq!(
-                definition.subblock_bytes(definition.subblock_count()),
-                None
-            );
+            assert_eq!(definition.subblock_bytes(definition.subblock_count()), None);
             assert_eq!(
                 PacketIamfMixGainParam::parse(definition.data()).unwrap(),
                 value
@@ -8717,9 +8705,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         Err(err) => {
             assert_eq!(err.kind(), AvErrorKind::InvalidData);
             assert_eq!(typed_payload_kind, PacketSideDataKind::IamfMixGainParam);
-            assert!(packet_iamf_mix_gain_param_payload_invalid(
-                &typed_payload
-            ));
+            assert!(packet_iamf_mix_gain_param_payload_invalid(&typed_payload));
         }
     }
     match typed_payload_side_data.iamf_demixing_info_param() {
@@ -9044,15 +9030,16 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
                 assert_eq!(entry.data_size(), entry.data().len());
             }
             assert_eq!(value.entry(value.entry_count()), None);
-            assert_eq!(PacketEncryptionInitInfo::parse(value.data()).unwrap(), value);
+            assert_eq!(
+                PacketEncryptionInitInfo::parse(value.data()).unwrap(),
+                value
+            );
         }
         Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::EncryptionInitInfo),
         Err(err) => {
             assert_eq!(err.kind(), AvErrorKind::InvalidData);
             assert_eq!(typed_payload_kind, PacketSideDataKind::EncryptionInitInfo);
-            assert!(packet_encryption_init_info_payload_invalid(
-                &typed_payload
-            ));
+            assert!(packet_encryption_init_info_payload_invalid(&typed_payload));
         }
     }
     match typed_payload_side_data.mpegts_stream_id() {
@@ -9087,7 +9074,10 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     }
     match typed_payload_side_data.matroska_block_additional() {
         Ok(Some(value)) => {
-            assert_eq!(typed_payload_kind, PacketSideDataKind::MatroskaBlockAdditional);
+            assert_eq!(
+                typed_payload_kind,
+                PacketSideDataKind::MatroskaBlockAdditional
+            );
             assert!(typed_payload.len() >= PacketMatroskaBlockAdditional::MIN_DATA_LEN);
             assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
             assert_eq!(
@@ -9095,10 +9085,16 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
                 value
             );
         }
-        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::MatroskaBlockAdditional),
+        Ok(None) => assert_ne!(
+            typed_payload_kind,
+            PacketSideDataKind::MatroskaBlockAdditional
+        ),
         Err(err) => {
             assert_eq!(err.kind(), AvErrorKind::InvalidData);
-            assert_eq!(typed_payload_kind, PacketSideDataKind::MatroskaBlockAdditional);
+            assert_eq!(
+                typed_payload_kind,
+                PacketSideDataKind::MatroskaBlockAdditional
+            );
             assert!(packet_matroska_block_additional_payload_invalid(
                 &typed_payload
             ));
@@ -9173,8 +9169,10 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             assert_eq!(typed_payload_kind, PacketSideDataKind::S12mTimecode);
             assert_eq!(typed_payload.len(), PacketS12mTimecode::DATA_LEN);
             assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
-            assert!((PacketS12mTimecode::MIN_TIMECODES..=PacketS12mTimecode::MAX_TIMECODES)
-                .contains(&value.count()));
+            assert!(
+                (PacketS12mTimecode::MIN_TIMECODES..=PacketS12mTimecode::MAX_TIMECODES)
+                    .contains(&value.count())
+            );
             assert_eq!(value.timecodes().len(), value.count());
             assert_eq!(
                 PacketS12mTimecode::parse(value.to_bytes().as_slice()).unwrap(),
@@ -9258,13 +9256,18 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             assert_eq!(typed_payload_kind, PacketSideDataKind::AudioServiceType);
             assert_eq!(typed_payload.len(), PacketAudioServiceType::DATA_LEN);
             assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
-            assert_eq!(PacketAudioServiceType::from_raw(value.as_raw()).unwrap(), value);
+            assert_eq!(
+                PacketAudioServiceType::from_raw(value.as_raw()).unwrap(),
+                value
+            );
             assert_eq!(
                 PacketAudioServiceType::parse(value.to_bytes().as_slice()).unwrap(),
                 value
             );
             assert!(PacketAudioServiceType::KNOWN.contains(&value));
-            assert!(value.ffmpeg_constant().starts_with("AV_AUDIO_SERVICE_TYPE_"));
+            assert!(value
+                .ffmpeg_constant()
+                .starts_with("AV_AUDIO_SERVICE_TYPE_"));
         }
         Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::AudioServiceType),
         Err(err) => {
@@ -9292,7 +9295,10 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(packet.side_data()[0].kind(), "fuzz_side_data");
     assert_eq!(packet.side_data()[0].data(), side_data_payload.as_slice());
     assert_eq!(packet.side_data()[0].len(), side_data_payload.len());
-    assert_eq!(packet.side_data()[0].is_empty(), side_data_payload.is_empty());
+    assert_eq!(
+        packet.side_data()[0].is_empty(),
+        side_data_payload.is_empty()
+    );
     assert_eq!(
         packet.side_data_by_kind("fuzz_side_data").unwrap().data(),
         side_data_payload.as_slice()
@@ -9338,17 +9344,14 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         AvErrorKind::InvalidArgument
     );
 
+    packet.push_side_data(SideData::new("ref_side_data", vec![0xbb, 0xcc]).unwrap());
     packet
-        .push_side_data(SideData::new("ref_side_data", vec![0xbb, 0xcc]).unwrap());
-    packet.push_side_data(
-        SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x11]).unwrap(),
-    );
+        .push_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x11]).unwrap());
     packet.push_side_data(
         SideData::new_with_kind(PacketSideDataKind::NewExtradata, vec![0x22]).unwrap(),
     );
-    packet.push_side_data(
-        SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x33]).unwrap(),
-    );
+    packet
+        .push_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x33]).unwrap());
     packet.push_side_data(
         SideData::new_with_kind(PacketSideDataKind::SkipSamples, vec![0x44]).unwrap(),
     );
@@ -9382,7 +9385,10 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert!(packet_ref.is_data_writable());
     assert!(packet_ref.data_mut().is_some());
     assert_eq!(
-        packet_ref.side_data_by_kind("ref_side_data").unwrap().data(),
+        packet_ref
+            .side_data_by_kind("ref_side_data")
+            .unwrap()
+            .data(),
         &[0xbb, 0xcc]
     );
     assert_eq!(
@@ -9425,9 +9431,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .opaque_ref()
         .unwrap()
         .shares_storage(packet.opaque_ref().unwrap()));
-    cloned_packet
-        .shrink_side_data("ref_side_data", 1)
-        .unwrap();
+    cloned_packet.shrink_side_data("ref_side_data", 1).unwrap();
     if let Some(first) = cloned_packet.make_data_writable().first_mut() {
         *first = first.wrapping_add(2);
     }
@@ -9448,7 +9452,10 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
 
     packet_ref.shrink_side_data("ref_side_data", 1).unwrap();
     assert_eq!(
-        packet_ref.side_data_by_kind("ref_side_data").unwrap().data(),
+        packet_ref
+            .side_data_by_kind("ref_side_data")
+            .unwrap()
+            .data(),
         &[0xbb]
     );
     assert_eq!(
@@ -9482,7 +9489,10 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert!(packet_ref.side_data().is_empty());
     assert_eq!(moved_packet.data(), expected_ref_payload.as_slice());
     assert_eq!(
-        moved_packet.side_data_by_kind("ref_side_data").unwrap().data(),
+        moved_packet
+            .side_data_by_kind("ref_side_data")
+            .unwrap()
+            .data(),
         &[0xbb]
     );
     assert_eq!(
@@ -9619,7 +9629,10 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(props_packet.time_base(), packet.time_base());
     assert_eq!(props_packet.opaque(), packet.opaque());
     assert_eq!(
-        props_packet.side_data_by_kind("ref_side_data").unwrap().data(),
+        props_packet
+            .side_data_by_kind("ref_side_data")
+            .unwrap()
+            .data(),
         &[0xbb, 0xcc]
     );
     assert_eq!(
@@ -9630,11 +9643,12 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .opaque_ref()
         .unwrap()
         .shares_storage(packet.opaque_ref().unwrap()));
-    props_packet
-        .shrink_side_data("ref_side_data", 1)
-        .unwrap();
+    props_packet.shrink_side_data("ref_side_data", 1).unwrap();
     assert_eq!(
-        props_packet.side_data_by_kind("ref_side_data").unwrap().data(),
+        props_packet
+            .side_data_by_kind("ref_side_data")
+            .unwrap()
+            .data(),
         &[0xbb]
     );
     assert_eq!(
@@ -9780,8 +9794,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(sha512_256_digest, sha512_256(&payload));
     assert_eq!(digest_to_hex(&sha512_256_digest).len(), 64);
 
-    let algorithm_index =
-        usize::from(cursor.next().unwrap_or_default()) % HashAlgorithm::ALL.len();
+    let algorithm_index = usize::from(cursor.next().unwrap_or_default()) % HashAlgorithm::ALL.len();
     let algorithm = HashAlgorithm::ALL[algorithm_index];
     assert_eq!(hash_name(algorithm_index), Some(algorithm.name()));
     assert_eq!(hash_name(HashAlgorithm::ALL.len()), None);
@@ -9805,7 +9818,10 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(generic_digest, expected_generic_digest);
     assert_eq!(generic_digest.len(), algorithm.size());
     assert_eq!(digest_to_hex(&generic_digest).len(), algorithm.size() * 2);
-    assert_eq!(digest_to_base64(&generic_digest).len(), algorithm.size().div_ceil(3) * 4);
+    assert_eq!(
+        digest_to_base64(&generic_digest).len(),
+        algorithm.size().div_ceil(3) * 4
+    );
 
     let bin_size =
         usize::from(cursor.next().unwrap_or_default()) % (algorithm.size().saturating_add(3));
@@ -9816,7 +9832,9 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         &generic_digest[..generic_digest.len().min(bin_size)]
     );
     if bin_size > generic_digest.len() {
-        assert!(generic_bin[generic_digest.len()..].iter().all(|byte| *byte == 0));
+        assert!(generic_bin[generic_digest.len()..]
+            .iter()
+            .all(|byte| *byte == 0));
     }
 
     let hex_buffer_size =
@@ -9850,6 +9868,22 @@ fn exercise_fixtures() {
     assert_channel_layout_compare_fixtures();
     assert_channel_layout_string_lookup_fixtures();
 
+    for format in PixelFormat::HARDWARE {
+        assert_eq!(PixelFormat::from_name(format.name()), Some(*format));
+        assert!(format.is_hardware());
+        assert_eq!(format.class(), PixelFormatClass::Hardware);
+        assert_eq!(format.component_count(), 0);
+        assert_eq!(format.bits_per_component(), 0);
+        assert_eq!(format.bits_per_pixel_integer(), Some(0));
+        assert_eq!(format.component_bit_depths(), vec![0]);
+        assert_eq!(format.plane_count(), 0);
+        assert_eq!(format.packed_bytes_per_pixel(), None);
+        assert_eq!(
+            format.plane_sizes(1, 1).unwrap_err().kind(),
+            AvErrorKind::Unsupported
+        );
+    }
+
     assert_eq!(PixelFormat::from_name("gray8"), Some(PixelFormat::Gray8));
     assert_eq!(
         PixelFormat::from_name("gray16le"),
@@ -9879,10 +9913,7 @@ fn exercise_fixtures() {
         PixelFormat::from_name("gray32le"),
         Some(PixelFormat::Gray32Le)
     );
-    assert_eq!(
-        PixelFormat::from_name("y32be"),
-        Some(PixelFormat::Gray32Be)
-    );
+    assert_eq!(PixelFormat::from_name("y32be"), Some(PixelFormat::Gray32Be));
     assert_eq!(PixelFormat::Gray32Be.frame_size(2, 2).unwrap(), 16);
     assert_eq!(PixelFormat::Gray32Le.bits_per_component(), 32);
     assert!(!PixelFormat::Gray32Le.has_alpha());
@@ -9925,10 +9956,7 @@ fn exercise_fixtures() {
     assert!(PixelFormat::Yaf32Be.has_alpha());
     assert_eq!(PixelFormat::from_name("gbrp"), Some(PixelFormat::Gbrp));
     assert_eq!(PixelFormat::Gbrp.frame_size(2, 2).unwrap(), 12);
-    assert_eq!(
-        PixelFormat::Gbrp.plane_sizes(2, 2).unwrap(),
-        vec![4, 4, 4]
-    );
+    assert_eq!(PixelFormat::Gbrp.plane_sizes(2, 2).unwrap(), vec![4, 4, 4]);
     assert!(PixelFormat::Gbrp.is_rgb());
     assert!(PixelFormat::Gbrp.is_planar());
     assert!(!PixelFormat::Gbrp.has_alpha());
@@ -10188,14 +10216,8 @@ fn exercise_fixtures() {
     assert_eq!(PixelFormat::from_name("y400a"), Some(PixelFormat::Ya8));
     assert_eq!(PixelFormat::Ya8.frame_size(2, 2).unwrap(), 8);
     assert!(PixelFormat::Ya8.has_alpha());
-    assert_eq!(
-        PixelFormat::from_name("ya16le"),
-        Some(PixelFormat::Ya16Le)
-    );
-    assert_eq!(
-        PixelFormat::from_name("ya16be"),
-        Some(PixelFormat::Ya16Be)
-    );
+    assert_eq!(PixelFormat::from_name("ya16le"), Some(PixelFormat::Ya16Le));
+    assert_eq!(PixelFormat::from_name("ya16be"), Some(PixelFormat::Ya16Be));
     assert_eq!(PixelFormat::Ya16Be.frame_size(2, 2).unwrap(), 16);
     assert_eq!(PixelFormat::Ya16Le.bits_per_component(), 16);
     assert!(PixelFormat::Ya16Le.has_alpha());
@@ -10232,14 +10254,7 @@ fn exercise_fixtures() {
     assert_eq!(PixelFormat::Pal8.plane_sizes(2, 2).unwrap(), vec![4]);
     assert_eq!(AVPALETTE_COUNT, 256);
     assert_eq!(AVPALETTE_SIZE, 1024);
-    for (
-        name,
-        format,
-        bits_per_component,
-        bits_per_pixel,
-        packed_bytes_per_pixel,
-        frame_size,
-    ) in [
+    for (name, format, bits_per_component, bits_per_pixel, packed_bytes_per_pixel, frame_size) in [
         ("rgb8", PixelFormat::Rgb8, 3, 8, Some(1), 4),
         ("bgr8", PixelFormat::Bgr8, 3, 8, Some(1), 4),
         ("rgb4", PixelFormat::Rgb4, 2, 4, None, 2),
@@ -10338,10 +10353,7 @@ fn exercise_fixtures() {
         assert_eq!(descriptor.component_count, 3);
         assert_eq!(descriptor.bits_per_component, bits_per_component);
         assert_eq!(descriptor.bits_per_pixel, bpp(bits_per_pixel));
-        assert_eq!(
-            descriptor.packed_bytes_per_pixel,
-            packed_bytes_per_pixel
-        );
+        assert_eq!(descriptor.packed_bytes_per_pixel, packed_bytes_per_pixel);
         assert_eq!(format.frame_size(2, 2).unwrap(), frame_size);
         assert_eq!(format.plane_sizes(2, 2).unwrap(), vec![frame_size]);
         assert_eq!(format.is_bayer(), name.starts_with("bayer_"));
@@ -10360,10 +10372,7 @@ fn exercise_fixtures() {
         assert_eq!(descriptor.component_count, components);
         assert_eq!(descriptor.bits_per_component, 8);
         assert_eq!(descriptor.bits_per_pixel, bpp(bits_per_pixel));
-        assert_eq!(
-            descriptor.packed_bytes_per_pixel,
-            packed_bytes_per_pixel
-        );
+        assert_eq!(descriptor.packed_bytes_per_pixel, packed_bytes_per_pixel);
         assert_eq!(descriptor.plane_count, 1);
         assert!(!descriptor.is_planar);
         assert_eq!(descriptor.has_alpha, alpha);
@@ -10372,14 +10381,7 @@ fn exercise_fixtures() {
         assert_eq!(format.frame_size(2, 2).unwrap(), frame_size);
         assert_eq!(format.plane_sizes(2, 2).unwrap(), vec![frame_size]);
     }
-    for (
-        name,
-        format,
-        bits_per_component,
-        bits_per_pixel,
-        packed_bytes_per_pixel,
-        frame_size,
-    ) in [
+    for (name, format, bits_per_component, bits_per_pixel, packed_bytes_per_pixel, frame_size) in [
         ("xv30le", PixelFormat::Xv30Le, 10, 30, Some(4), 16),
         ("xv30be", PixelFormat::Xv30Be, 10, 30, Some(4), 16),
         ("xv36le", PixelFormat::Xv36Le, 12, 36, Some(8), 32),
@@ -10396,10 +10398,7 @@ fn exercise_fixtures() {
         assert_eq!(descriptor.component_count, 3);
         assert_eq!(descriptor.bits_per_component, bits_per_component);
         assert_eq!(descriptor.bits_per_pixel, bpp(bits_per_pixel));
-        assert_eq!(
-            descriptor.packed_bytes_per_pixel,
-            packed_bytes_per_pixel
-        );
+        assert_eq!(descriptor.packed_bytes_per_pixel, packed_bytes_per_pixel);
         assert_eq!(descriptor.plane_count, 1);
         assert!(!descriptor.is_planar);
         assert!(!descriptor.has_alpha);
@@ -10430,7 +10429,10 @@ fn exercise_fixtures() {
         assert!(format.frame_size(3, 2).is_err());
     }
     let uyyvyy411 = PixelFormat::Uyyvyy411.descriptor();
-    assert_eq!(PixelFormat::from_name("uyyvyy411"), Some(PixelFormat::Uyyvyy411));
+    assert_eq!(
+        PixelFormat::from_name("uyyvyy411"),
+        Some(PixelFormat::Uyyvyy411)
+    );
     assert_eq!(uyyvyy411.name, "uyyvyy411");
     assert_eq!(uyyvyy411.class, PixelFormatClass::Yuv);
     assert_eq!(uyyvyy411.component_count, 3);
@@ -10467,14 +10469,7 @@ fn exercise_fixtures() {
         Some(PixelFormat::Rgb48Le)
     );
     assert_eq!(PixelFormat::Bgr48Be.frame_size(2, 2).unwrap(), 24);
-    for (
-        name,
-        format,
-        bits_per_component,
-        bits_per_pixel,
-        packed_bytes_per_pixel,
-        frame_size,
-    ) in [
+    for (name, format, bits_per_component, bits_per_pixel, packed_bytes_per_pixel, frame_size) in [
         ("rgbf16le", PixelFormat::RgbF16Le, 16, 48, Some(6), 24),
         ("rgbf16be", PixelFormat::RgbF16Be, 16, 48, Some(6), 24),
         ("rgbf32le", PixelFormat::RgbF32Le, 32, 96, Some(12), 48),
@@ -10487,10 +10482,7 @@ fn exercise_fixtures() {
         assert_eq!(descriptor.component_count, 3);
         assert_eq!(descriptor.bits_per_component, bits_per_component);
         assert_eq!(descriptor.bits_per_pixel, bpp(bits_per_pixel));
-        assert_eq!(
-            descriptor.packed_bytes_per_pixel,
-            packed_bytes_per_pixel
-        );
+        assert_eq!(descriptor.packed_bytes_per_pixel, packed_bytes_per_pixel);
         assert_eq!(descriptor.plane_count, 1);
         assert!(!descriptor.is_planar);
         assert!(!descriptor.has_alpha);
@@ -10537,10 +10529,7 @@ fn exercise_fixtures() {
         assert_eq!(descriptor.component_count, component_count);
         assert_eq!(descriptor.bits_per_component, 32);
         assert_eq!(descriptor.bits_per_pixel, bpp(bits_per_pixel));
-        assert_eq!(
-            descriptor.packed_bytes_per_pixel,
-            packed_bytes_per_pixel
-        );
+        assert_eq!(descriptor.packed_bytes_per_pixel, packed_bytes_per_pixel);
         assert_eq!(descriptor.plane_count, 1);
         assert!(!descriptor.is_planar);
         assert_eq!(descriptor.has_alpha, has_alpha);
@@ -10554,14 +10543,7 @@ fn exercise_fixtures() {
         PixelFormat::from_name("rgba64le"),
         Some(PixelFormat::Rgba64Le)
     );
-    for (
-        name,
-        format,
-        bits_per_component,
-        bits_per_pixel,
-        packed_bytes_per_pixel,
-        frame_size,
-    ) in [
+    for (name, format, bits_per_component, bits_per_pixel, packed_bytes_per_pixel, frame_size) in [
         ("rgbaf16le", PixelFormat::RgbaF16Le, 16, 64, Some(8), 32),
         ("rgbaf16be", PixelFormat::RgbaF16Be, 16, 64, Some(8), 32),
         ("rgbaf32le", PixelFormat::RgbaF32Le, 32, 128, Some(16), 64),
@@ -10574,10 +10556,7 @@ fn exercise_fixtures() {
         assert_eq!(descriptor.component_count, 4);
         assert_eq!(descriptor.bits_per_component, bits_per_component);
         assert_eq!(descriptor.bits_per_pixel, bpp(bits_per_pixel));
-        assert_eq!(
-            descriptor.packed_bytes_per_pixel,
-            packed_bytes_per_pixel
-        );
+        assert_eq!(descriptor.packed_bytes_per_pixel, packed_bytes_per_pixel);
         assert_eq!(descriptor.plane_count, 1);
         assert!(!descriptor.is_planar);
         assert!(descriptor.has_alpha);
@@ -10710,7 +10689,10 @@ fn exercise_fixtures() {
         assert_eq!(format.bits_per_component(), 8);
         assert_eq!(format.log2_chroma(), log2_chroma);
         assert_eq!(format.plane_sizes(width, height).unwrap(), expected);
-        assert_eq!(format.frame_size(width, height).unwrap(), expected.iter().sum());
+        assert_eq!(
+            format.frame_size(width, height).unwrap(),
+            expected.iter().sum()
+        );
     }
     for (name, format, bits, bits_per_pixel, log2_chroma, width, height, expected) in [
         (
@@ -10953,7 +10935,10 @@ fn exercise_fixtures() {
         assert!(format.is_yuv());
         assert!(format.is_planar());
         assert_eq!(format.plane_sizes(width, height).unwrap(), expected);
-        assert_eq!(format.frame_size(width, height).unwrap(), expected.iter().sum());
+        assert_eq!(
+            format.frame_size(width, height).unwrap(),
+            expected.iter().sum()
+        );
     }
     assert_eq!(
         PixelFormat::Yuv410p.plane_sizes(4, 4).unwrap(),
@@ -11044,10 +11029,7 @@ fn exercise_fixtures() {
         PixelFormat::Yuv444p12MsbBe.plane_sizes(3, 2).unwrap(),
         vec![12, 12, 12]
     );
-    assert_eq!(
-        PixelFormat::from_name("y210le"),
-        Some(PixelFormat::Y210Le)
-    );
+    assert_eq!(PixelFormat::from_name("y210le"), Some(PixelFormat::Y210Le));
     assert_eq!(PixelFormat::Y210Le.bits_per_component(), 10);
     assert_eq!(PixelFormat::Y210Le.bits_per_pixel(), bpp(20));
     assert_eq!(PixelFormat::Y210Le.plane_sizes(2, 2).unwrap(), vec![16]);
@@ -11100,10 +11082,7 @@ fn exercise_fixtures() {
     assert_eq!(PixelFormat::Vuya.packed_bytes_per_pixel(), Some(4));
     assert_eq!(PixelFormat::Vuyx.bits_per_pixel(), bpp(24));
     assert_eq!(PixelFormat::Vuyx.frame_size(2, 2).unwrap(), 16);
-    assert_eq!(
-        PixelFormat::from_name("xv30le"),
-        Some(PixelFormat::Xv30Le)
-    );
+    assert_eq!(PixelFormat::from_name("xv30le"), Some(PixelFormat::Xv30Le));
     assert_eq!(PixelFormat::Xv30Le.bits_per_component(), 10);
     assert_eq!(PixelFormat::Xv30Le.bits_per_pixel(), bpp(30));
     assert_eq!(PixelFormat::Xv30Le.packed_bytes_per_pixel(), Some(4));
@@ -11182,7 +11161,10 @@ fn exercise_fixtures() {
         .copy_from_slice(&[0xaa, 0xbb, 0xcc, 0xdd]);
     let packet_palette_side_data = SideData::new_palette(packet_palette.clone()).unwrap();
     let parsed_packet_palette = packet_palette_side_data.palette().unwrap().unwrap();
-    assert_eq!(packet_palette_side_data.kind_id(), &PacketSideDataKind::Palette);
+    assert_eq!(
+        packet_palette_side_data.kind_id(),
+        &PacketSideDataKind::Palette
+    );
     assert_eq!(parsed_packet_palette.data(), packet_palette.as_slice());
     assert_eq!(parsed_packet_palette.len(), PacketPalette::DATA_LEN);
     assert_eq!(
@@ -11205,15 +11187,11 @@ fn exercise_fixtures() {
         parsed_packet_palette.entry_native(PacketPalette::ENTRY_COUNT),
         None
     );
-    for data in [
-        Vec::new(),
-        vec![0; PacketPalette::DATA_LEN - 1],
-        {
-            let mut data = packet_palette.clone();
-            data.push(0);
-            data
-        },
-    ] {
+    for data in [Vec::new(), vec![0; PacketPalette::DATA_LEN - 1], {
+        let mut data = packet_palette.clone();
+        data.push(0);
+        data
+    }] {
         assert!(packet_palette_payload_invalid(&data));
         assert_eq!(
             SideData::new_with_kind(PacketSideDataKind::Palette, data)
@@ -11230,10 +11208,7 @@ fn exercise_fixtures() {
     let packet_new_extradata = vec![0x01, 0x64, 0x00, 0x1f, 0xff, 0xe1, 0xaa, 0xbb];
     let packet_new_extradata_side_data =
         SideData::new_extradata(packet_new_extradata.clone()).unwrap();
-    let parsed_packet_new_extradata = packet_new_extradata_side_data
-        .extradata()
-        .unwrap()
-        .unwrap();
+    let parsed_packet_new_extradata = packet_new_extradata_side_data.extradata().unwrap().unwrap();
     assert_eq!(
         packet_new_extradata_side_data.kind_id(),
         &PacketSideDataKind::NewExtradata
@@ -11302,14 +11277,11 @@ fn exercise_fixtures() {
         .unwrap()
         .unwrap()
         .is_empty());
-    for data in [
-        vec![0; PacketH263MbInfoEntry::DATA_LEN - 1],
-        {
-            let mut data = packet_h263_mb_info.clone();
-            data.push(0);
-            data
-        },
-    ] {
+    for data in [vec![0; PacketH263MbInfoEntry::DATA_LEN - 1], {
+        let mut data = packet_h263_mb_info.clone();
+        data.push(0);
+        data
+    }] {
         assert!(packet_h263_mb_info_payload_invalid(&data));
         assert_eq!(
             SideData::new_with_kind(PacketSideDataKind::H263MbInfo, data)
@@ -11362,7 +11334,10 @@ fn exercise_fixtures() {
         (2, PacketJpDualMonoSelection::Both),
     ] {
         let jp_dualmono = PacketJpDualMono::new(selection);
-        assert_eq!(PacketJpDualMonoSelection::from_byte(raw).unwrap(), selection);
+        assert_eq!(
+            PacketJpDualMonoSelection::from_byte(raw).unwrap(),
+            selection
+        );
         assert_eq!(jp_dualmono.to_bytes(), [raw]);
         assert_eq!(PacketJpDualMono::parse(&[raw]).unwrap(), jp_dualmono);
         assert_eq!(
@@ -11565,7 +11540,10 @@ fn exercise_fixtures() {
     let init_entry = parsed_packet_encryption_init_info.entry(0).unwrap();
     assert_eq!(init_entry.system_id(), b"sys1");
     assert_eq!(init_entry.key_id_size(), 3);
-    assert_eq!(init_entry.key_ids(), &[b"abc".as_slice(), b"def".as_slice()]);
+    assert_eq!(
+        init_entry.key_ids(),
+        &[b"abc".as_slice(), b"def".as_slice()]
+    );
     assert_eq!(init_entry.data(), b"hello");
     assert_eq!(
         SideData::new_encryption_init_info(packet_encryption_init_info.clone())
@@ -11576,7 +11554,9 @@ fn exercise_fixtures() {
         parsed_packet_encryption_init_info
     );
     assert_eq!(
-        PacketEncryptionInitInfo::parse(&0_u32.to_be_bytes()).unwrap().entry_count(),
+        PacketEncryptionInitInfo::parse(&0_u32.to_be_bytes())
+            .unwrap()
+            .entry_count(),
         0
     );
     for data in [
@@ -11606,9 +11586,7 @@ fn exercise_fixtures() {
         );
     }
     assert_eq!(
-        PacketMpegTsStreamId::parse(&[0, 1])
-            .unwrap_err()
-            .kind(),
+        PacketMpegTsStreamId::parse(&[0, 1]).unwrap_err().kind(),
         AvErrorKind::InvalidData
     );
     let packet_subtitle_position = PacketSubtitlePosition::new(1, 2, u32::MAX - 1, u32::MAX);
@@ -11636,10 +11614,8 @@ fn exercise_fixtures() {
         .kind(),
         AvErrorKind::InvalidData
     );
-    let packet_matroska_block_additional = PacketMatroskaBlockAdditional::new(
-        0x0102_0304_0506_0708,
-        vec![0xaa, 0xbb, 0xcc],
-    );
+    let packet_matroska_block_additional =
+        PacketMatroskaBlockAdditional::new(0x0102_0304_0506_0708, vec![0xaa, 0xbb, 0xcc]);
     let packet_matroska_block_additional_bytes = packet_matroska_block_additional.to_bytes();
     assert_eq!(
         PacketMatroskaBlockAdditional::parse(&packet_matroska_block_additional_bytes).unwrap(),
@@ -11708,15 +11684,12 @@ fn exercise_fixtures() {
         Some(packet_webvtt_settings)
     );
     assert_eq!(
-        PacketWebVttSettings::parse(b"line:0\n")
-            .unwrap_err()
-            .kind(),
+        PacketWebVttSettings::parse(b"line:0\n").unwrap_err().kind(),
         AvErrorKind::InvalidData
     );
     let packet_active_format_description = PacketActiveFormatDescription::SixteenNine;
     assert_eq!(
-        PacketActiveFormatDescription::parse(&packet_active_format_description.to_bytes())
-            .unwrap(),
+        PacketActiveFormatDescription::parse(&packet_active_format_description.to_bytes()).unwrap(),
         packet_active_format_description
     );
     assert_eq!(
@@ -11932,8 +11905,7 @@ fn exercise_fixtures() {
     packet_prft_with_padding[..8].copy_from_slice(&i64::MIN.to_ne_bytes());
     packet_prft_with_padding[8..12].copy_from_slice(&i32::MIN.to_ne_bytes());
     packet_prft_with_padding[12..].copy_from_slice(&[0xaa, 0xbb, 0xcc, 0xdd]);
-    let packet_prft_parsed =
-        PacketProducerReferenceTime::parse(&packet_prft_with_padding).unwrap();
+    let packet_prft_parsed = PacketProducerReferenceTime::parse(&packet_prft_with_padding).unwrap();
     assert_eq!(packet_prft_parsed.wallclock(), i64::MIN);
     assert_eq!(packet_prft_parsed.flags(), i32::MIN);
     assert_eq!(packet_prft_parsed.padding(), [0xaa, 0xbb, 0xcc, 0xdd]);
@@ -12095,10 +12067,7 @@ fn exercise_fixtures() {
     );
     assert!(!parsed_raw_packet_mastering_display.has_primaries());
     assert!(parsed_raw_packet_mastering_display.has_luminance());
-    assert_eq!(
-        parsed_raw_packet_mastering_display.has_luminance_raw(),
-        -3
-    );
+    assert_eq!(parsed_raw_packet_mastering_display.has_luminance_raw(), -3);
     assert_eq!(
         PacketMasteringDisplayMetadata::parse(
             &packet_mastering_display_bytes[..PacketMasteringDisplayMetadata::DATA_LEN - 1]
@@ -12228,8 +12197,7 @@ fn exercise_fixtures() {
     let non_packet_spherical =
         SideData::new_with_kind(PacketSideDataKind::ContentLightLevel, vec![0; 36]).unwrap();
     assert_eq!(non_packet_spherical.spherical_mapping().unwrap(), None);
-    let packet_s12m_timecode =
-        PacketS12mTimecode::new(&[0x0102_0304, 0xA0B0_C0D0]).unwrap();
+    let packet_s12m_timecode = PacketS12mTimecode::new(&[0x0102_0304, 0xA0B0_C0D0]).unwrap();
     let packet_s12m_timecode_bytes = packet_s12m_timecode.to_bytes();
     assert_eq!(
         PacketS12mTimecode::parse(&packet_s12m_timecode_bytes).unwrap(),
@@ -12256,7 +12224,7 @@ fn exercise_fixtures() {
     assert_eq!(
         PacketS12mTimecode::parse(&packet_s12m_timecode_bytes[..PacketS12mTimecode::DATA_LEN - 1])
             .unwrap_err()
-        .kind(),
+            .kind(),
         AvErrorKind::InvalidData
     );
     let packet_content_light = PacketContentLightMetadata::new(1000, 400);
@@ -12384,10 +12352,8 @@ fn exercise_fixtures() {
         non_packet_ambient.ambient_viewing_environment().unwrap(),
         None
     );
-    let packet_tdrdi_first =
-        PacketThreeDReferenceDisplay::new(0, 1, (12, 34), (5, 67), true, -11);
-    let packet_tdrdi_second =
-        PacketThreeDReferenceDisplay::new(2, 3, (10, 20), (4, 40), false, 0);
+    let packet_tdrdi_first = PacketThreeDReferenceDisplay::new(0, 1, (12, 34), (5, 67), true, -11);
+    let packet_tdrdi_second = PacketThreeDReferenceDisplay::new(2, 3, (10, 20), (4, 40), false, 0);
     let packet_tdrdi = PacketThreeDReferenceDisplays::new(
         31,
         true,
@@ -12449,8 +12415,7 @@ fn exercise_fixtures() {
         AvErrorKind::InvalidData
     );
     let invalid_packet_tdrdi =
-        PacketThreeDReferenceDisplays::new(31, true, 7, vec![packet_tdrdi_first])
-            .unwrap();
+        PacketThreeDReferenceDisplays::new(31, true, 7, vec![packet_tdrdi_first]).unwrap();
     let invalid_packet_tdrdi_bytes = invalid_packet_tdrdi.to_bytes();
     for data in [
         vec![0; PacketThreeDReferenceDisplays::HEADER_LEN - 1],
@@ -12595,10 +12560,7 @@ fn exercise_fixtures() {
     let packet_a53_payload = vec![0xfc, 0x80, 0x41, 0xfd, 0x80, 0x42];
     let packet_a53_side_data =
         SideData::new_a53_closed_captions(packet_a53_payload.clone()).unwrap();
-    let parsed_packet_a53 = packet_a53_side_data
-        .a53_closed_captions()
-        .unwrap()
-        .unwrap();
+    let parsed_packet_a53 = packet_a53_side_data.a53_closed_captions().unwrap().unwrap();
     assert_eq!(
         packet_a53_side_data.kind_id(),
         &PacketSideDataKind::A53ClosedCaptions
@@ -12641,7 +12603,10 @@ fn exercise_fixtures() {
     let packet_icc_profile = minimal_icc_profile_fixture();
     let packet_icc_side_data = SideData::new_icc_profile(packet_icc_profile.clone()).unwrap();
     let parsed_packet_icc = packet_icc_side_data.icc_profile().unwrap().unwrap();
-    assert_eq!(packet_icc_side_data.kind_id(), &PacketSideDataKind::IccProfile);
+    assert_eq!(
+        packet_icc_side_data.kind_id(),
+        &PacketSideDataKind::IccProfile
+    );
     assert_eq!(parsed_packet_icc.data(), packet_icc_profile.as_slice());
     assert_eq!(
         parsed_packet_icc.declared_size(),
@@ -12659,8 +12624,7 @@ fn exercise_fixtures() {
     );
     let packet_icc_with_tag_len = packet_icc_with_tag.len() as u32;
     packet_icc_with_tag[0..4].copy_from_slice(&packet_icc_with_tag_len.to_be_bytes());
-    packet_icc_with_tag
-        [PacketIccProfile::TAG_COUNT_OFFSET..PacketIccProfile::TAG_COUNT_OFFSET + 4]
+    packet_icc_with_tag[PacketIccProfile::TAG_COUNT_OFFSET..PacketIccProfile::TAG_COUNT_OFFSET + 4]
         .copy_from_slice(&1u32.to_be_bytes());
     packet_icc_with_tag[132..136].copy_from_slice(b"desc");
     packet_icc_with_tag[136..140]
@@ -12682,9 +12646,7 @@ fn exercise_fixtures() {
     );
     assert_eq!(parsed_packet_icc_with_tag.tag_count(), 1);
     assert_eq!(
-        SideData::new_icc_profile(Vec::new())
-            .unwrap_err()
-            .kind(),
+        SideData::new_icc_profile(Vec::new()).unwrap_err().kind(),
         AvErrorKind::InvalidData
     );
     let mut bad_packet_icc_size = packet_icc_profile.clone();
@@ -12720,11 +12682,8 @@ fn exercise_fixtures() {
         .kind(),
         AvErrorKind::InvalidData
     );
-    let non_packet_icc = SideData::new_with_kind(
-        PacketSideDataKind::ContentLightLevel,
-        packet_icc_profile,
-    )
-    .unwrap();
+    let non_packet_icc =
+        SideData::new_with_kind(PacketSideDataKind::ContentLightLevel, packet_icc_profile).unwrap();
     assert_eq!(non_packet_icc.icc_profile().unwrap(), None);
     let packet_dovi_conf = PacketDolbyVisionConf::new(
         1,
@@ -12748,8 +12707,7 @@ fn exercise_fixtures() {
         PacketDoviCompression::Limited.ffmpeg_constant(),
         "AV_DOVI_COMPRESSION_LIMITED"
     );
-    let packet_dovi_conf_side_data =
-        SideData::new_dolby_vision_conf(packet_dovi_conf).unwrap();
+    let packet_dovi_conf_side_data = SideData::new_dolby_vision_conf(packet_dovi_conf).unwrap();
     assert_eq!(
         packet_dovi_conf_side_data.kind_id(),
         &PacketSideDataKind::DolbyVisionConf
@@ -12835,13 +12793,11 @@ fn exercise_fixtures() {
         PacketDynamicHdr10Plus::APPLICATION_VERSION
     );
     assert_eq!(parsed_packet_dynamic_hdr10_plus.num_windows(), 1);
-    assert!(
-        parsed_packet_dynamic_hdr10_plus
-            .color_transform_params(0)
-            .unwrap()
-            .overlap_process_option()
-            .is_ok()
-    );
+    assert!(parsed_packet_dynamic_hdr10_plus
+        .color_transform_params(0)
+        .unwrap()
+        .overlap_process_option()
+        .is_ok());
     assert_eq!(
         PacketDynamicHdr10Plus::parse(parsed_packet_dynamic_hdr10_plus.data()).unwrap(),
         parsed_packet_dynamic_hdr10_plus
@@ -12876,9 +12832,7 @@ fn exercise_fixtures() {
     )
     .unwrap();
     assert_eq!(
-        non_packet_dynamic_hdr10_plus
-            .dynamic_hdr10_plus()
-            .unwrap(),
+        non_packet_dynamic_hdr10_plus.dynamic_hdr10_plus().unwrap(),
         None
     );
     let packet_skip_samples = PacketSkipSamples::new(
@@ -12971,11 +12925,9 @@ fn exercise_fixtures() {
             .round() as i32,
         -90
     );
-    assert!(
-        PacketDisplayMatrix::new([0; 9])
-            .counterclockwise_rotation_degrees()
-            .is_none()
-    );
+    assert!(PacketDisplayMatrix::new([0; 9])
+        .counterclockwise_rotation_degrees()
+        .is_none());
     let packet_affine_rotation = PacketDisplayMatrix::new([
         65_536,
         12_345,
@@ -12994,32 +12946,16 @@ fn exercise_fixtures() {
             .round() as i32,
         -21
     );
-    assert!(PacketDisplayMatrix::new([
-        0,
-        65_536,
-        0,
-        0,
-        65_536,
-        0,
-        0,
-        0,
-        1_073_741_824,
-    ])
-    .counterclockwise_rotation_degrees()
-    .is_none());
-    assert!(PacketDisplayMatrix::new([
-        65_536,
-        0,
-        0,
-        65_536,
-        0,
-        0,
-        0,
-        0,
-        1_073_741_824,
-    ])
-    .counterclockwise_rotation_degrees()
-    .is_none());
+    assert!(
+        PacketDisplayMatrix::new([0, 65_536, 0, 0, 65_536, 0, 0, 0, 1_073_741_824,])
+            .counterclockwise_rotation_degrees()
+            .is_none()
+    );
+    assert!(
+        PacketDisplayMatrix::new([65_536, 0, 0, 65_536, 0, 0, 0, 0, 1_073_741_824,])
+            .counterclockwise_rotation_degrees()
+            .is_none()
+    );
     assert_eq!(
         PacketDisplayMatrix::from_clockwise_rotation_degrees(f64::NAN)
             .unwrap_err()
@@ -13067,9 +13003,11 @@ fn exercise_fixtures() {
         Some(packet_display_matrix)
     );
     assert_eq!(
-        PacketDisplayMatrix::parse(&packet_display_matrix_bytes[..PacketDisplayMatrix::DATA_LEN - 1])
-            .unwrap_err()
-            .kind(),
+        PacketDisplayMatrix::parse(
+            &packet_display_matrix_bytes[..PacketDisplayMatrix::DATA_LEN - 1]
+        )
+        .unwrap_err()
+        .kind(),
         AvErrorKind::InvalidData
     );
     assert_eq!(
@@ -13083,9 +13021,11 @@ fn exercise_fixtures() {
         .kind(),
         AvErrorKind::InvalidData
     );
-    let non_packet_display_matrix =
-        SideData::new_with_kind(PacketSideDataKind::Lcevc, packet_display_matrix_bytes.to_vec())
-            .unwrap();
+    let non_packet_display_matrix = SideData::new_with_kind(
+        PacketSideDataKind::Lcevc,
+        packet_display_matrix_bytes.to_vec(),
+    )
+    .unwrap();
     assert_eq!(non_packet_display_matrix.display_matrix().unwrap(), None);
     let packet_stereo3d = PacketStereo3d::new(
         PacketStereo3dType::SideBySide,
@@ -13098,7 +13038,10 @@ fn exercise_fixtures() {
     )
     .unwrap();
     assert_eq!(PacketStereo3d::DATA_LEN, 36);
-    assert_eq!(packet_stereo3d.stereo_type(), PacketStereo3dType::SideBySide);
+    assert_eq!(
+        packet_stereo3d.stereo_type(),
+        PacketStereo3dType::SideBySide
+    );
     assert_eq!(packet_stereo3d.flags(), PacketStereo3dFlags::INVERT);
     assert!(packet_stereo3d.has_inverted_views());
     assert_eq!(packet_stereo3d.view(), PacketStereo3dView::Right);
@@ -13147,9 +13090,11 @@ fn exercise_fixtures() {
             .kind(),
         AvErrorKind::InvalidData
     );
-    let non_packet_stereo3d =
-        SideData::new_with_kind(PacketSideDataKind::Lcevc, packet_stereo3d.to_bytes().to_vec())
-            .unwrap();
+    let non_packet_stereo3d = SideData::new_with_kind(
+        PacketSideDataKind::Lcevc,
+        packet_stereo3d.to_bytes().to_vec(),
+    )
+    .unwrap();
     assert_eq!(non_packet_stereo3d.stereo3d().unwrap(), None);
     let packet_replay_gain = PacketReplayGain::new(
         120,
@@ -13168,7 +13113,10 @@ fn exercise_fixtures() {
         packet_replay_gain.album_gain(),
         PacketReplayGain::GAIN_UNKNOWN
     );
-    assert_eq!(packet_replay_gain.album_peak(), PacketReplayGain::PEAK_UNKNOWN);
+    assert_eq!(
+        packet_replay_gain.album_peak(),
+        PacketReplayGain::PEAK_UNKNOWN
+    );
     assert!(!packet_replay_gain.track_gain_unknown());
     assert!(!packet_replay_gain.track_peak_unknown());
     assert!(packet_replay_gain.album_gain_unknown());
@@ -13180,8 +13128,7 @@ fn exercise_fixtures() {
             .unwrap(),
         Some(packet_replay_gain)
     );
-    let packet_replay_gain_boundaries =
-        PacketReplayGain::new(i32::MIN, u32::MAX, i32::MAX, 0);
+    let packet_replay_gain_boundaries = PacketReplayGain::new(i32::MIN, u32::MAX, i32::MAX, 0);
     assert_eq!(
         PacketReplayGain::parse(&packet_replay_gain_boundaries.to_bytes()).unwrap(),
         packet_replay_gain_boundaries
@@ -13258,7 +13205,10 @@ fn exercise_fixtures() {
         assert_eq!(value.as_raw(), raw);
         assert_eq!(value.ffmpeg_constant(), constant);
         assert_eq!(PacketAudioServiceType::from_raw(raw).unwrap(), value);
-        assert_eq!(PacketAudioServiceType::parse(&value.to_bytes()).unwrap(), value);
+        assert_eq!(
+            PacketAudioServiceType::parse(&value.to_bytes()).unwrap(),
+            value
+        );
         assert_eq!(
             SideData::new_audio_service_type(value)
                 .unwrap()
@@ -13288,9 +13238,11 @@ fn exercise_fixtures() {
         .kind(),
         AvErrorKind::InvalidData
     );
-    let non_packet_audio_service =
-        SideData::new_with_kind(PacketSideDataKind::Lcevc, vec![0; PacketAudioServiceType::DATA_LEN])
-            .unwrap();
+    let non_packet_audio_service = SideData::new_with_kind(
+        PacketSideDataKind::Lcevc,
+        vec![0; PacketAudioServiceType::DATA_LEN],
+    )
+    .unwrap();
     assert_eq!(non_packet_audio_service.audio_service_type().unwrap(), None);
     let packet_lcevc_payload = vec![0x00, 0x00, 0x03, 0x7e, 0xaa];
     let packet_lcevc_side_data = SideData::new_lcevc(packet_lcevc_payload.clone()).unwrap();
@@ -13298,7 +13250,10 @@ fn exercise_fixtures() {
     assert_eq!(packet_lcevc.data(), packet_lcevc_payload.as_slice());
     assert_eq!(packet_lcevc.len(), packet_lcevc_payload.len());
     assert!(!packet_lcevc.is_empty());
-    assert_eq!(PacketLcevc::parse(packet_lcevc.data()).unwrap(), packet_lcevc);
+    assert_eq!(
+        PacketLcevc::parse(packet_lcevc.data()).unwrap(),
+        packet_lcevc
+    );
     assert!(SideData::new_lcevc(Vec::new())
         .unwrap()
         .lcevc()
@@ -13445,7 +13400,10 @@ fn exercise_fixtures() {
     assert_eq!(unspecified.as_native(), None);
     assert_eq!(unspecified.channel_count(), 9);
     assert_eq!(unspecified.describe(), "9 channels");
-    assert_eq!(unspecified.subset_mask(ChannelLayout::stereo().channel_mask()), 0);
+    assert_eq!(
+        unspecified.subset_mask(ChannelLayout::stereo().channel_mask()),
+        0
+    );
     assert_eq!(unspecified.channel_from_index(0), None);
     assert!(unspecified.is_equivalent_to(ChannelLayoutSpec::unspecified(9).unwrap()));
     assert!(!unspecified.is_equivalent_to(ChannelLayoutSpec::unspecified(8).unwrap()));
@@ -13464,14 +13422,8 @@ fn exercise_fixtures() {
     .unwrap();
     let extended_topology = extended_audio.buffer_topology();
     assert_eq!(extended_topology.data_pointer_count(), 10);
-    assert_eq!(
-        extended_topology.direct_data_slots(),
-        AV_NUM_DATA_POINTERS
-    );
-    assert_eq!(
-        extended_topology.direct_buffer_refs(),
-        AV_NUM_DATA_POINTERS
-    );
+    assert_eq!(extended_topology.direct_data_slots(), AV_NUM_DATA_POINTERS);
+    assert_eq!(extended_topology.direct_buffer_refs(), AV_NUM_DATA_POINTERS);
     assert_eq!(extended_topology.extended_buffer_refs(), 2);
     assert_eq!(
         extended_topology.writable_direct_buffer_refs(),
@@ -13597,9 +13549,7 @@ fn exercise_fixtures() {
         );
     }
     assert_eq!(
-        ChannelLayoutSpec::default_for_count(0)
-            .unwrap_err()
-            .kind(),
+        ChannelLayoutSpec::default_for_count(0).unwrap_err().kind(),
         AvErrorKind::InvalidArgument
     );
     let custom_spec = ChannelLayoutSpec::parse("FL@Left+FR@Right").unwrap();
@@ -13644,7 +13594,10 @@ fn exercise_fixtures() {
     ])
     .unwrap();
     assert_eq!(custom_layout.channel_count(), 4);
-    assert_eq!(custom_layout.channel_from_index(0), Some(ChannelId::Native(Channel::FrontLeft)));
+    assert_eq!(
+        custom_layout.channel_from_index(0),
+        Some(ChannelId::Native(Channel::FrontLeft))
+    );
     assert_eq!(custom_layout.channel_from_index(4), None);
     assert_eq!(
         custom_layout
@@ -13691,8 +13644,7 @@ fn exercise_fixtures() {
         parsed_mixed.channel_from_index(3),
         Some(ChannelId::User(0x800))
     );
-    let escaped_custom =
-        CustomChannelLayout::parse_channel_list("FL@Left\\+Right+FR").unwrap();
+    let escaped_custom = CustomChannelLayout::parse_channel_list("FL@Left\\+Right+FR").unwrap();
     assert_eq!(escaped_custom.channels()[0].name(), "Left+Right");
     let escaped_at = CustomChannelLayout::parse_channel_list("FL@Left\\@Name+FR").unwrap();
     assert_eq!(escaped_at.channels()[0].name(), "Left@Name");
@@ -13779,11 +13731,13 @@ fn exercise_fixtures() {
     );
     assert!(CustomChannelLayout::unknown(2)
         .unwrap()
-        .is_equivalent_to_custom(&CustomChannelLayout::new(vec![
-            ChannelCustom::new(ChannelId::Unknown, "A").unwrap(),
-            ChannelCustom::new(ChannelId::Unknown, "B").unwrap(),
-        ])
-        .unwrap()));
+        .is_equivalent_to_custom(
+            &CustomChannelLayout::new(vec![
+                ChannelCustom::new(ChannelId::Unknown, "A").unwrap(),
+                ChannelCustom::new(ChannelId::Unknown, "B").unwrap(),
+            ])
+            .unwrap()
+        ));
     assert!(!CustomChannelLayout::unknown(2)
         .unwrap()
         .is_equivalent_to_native(ChannelLayout::stereo()));
@@ -13860,11 +13814,9 @@ fn exercise_fixtures() {
         ChannelLayoutSpec::Native(ChannelLayout::stereo())
     );
     assert_eq!(
-        ChannelLayoutSpec::Custom(
-            CustomChannelLayout::parse_channel_list("FL+FC").unwrap()
-        )
-        .to_native_order_lossless()
-        .unwrap(),
+        ChannelLayoutSpec::Custom(CustomChannelLayout::parse_channel_list("FL+FC").unwrap())
+            .to_native_order_lossless()
+            .unwrap(),
         ChannelLayoutSpec::NativeMask(
             NativeChannelMaskLayout::new(Channel::FrontLeft.mask() | Channel::FrontCenter.mask())
                 .unwrap()
@@ -13900,11 +13852,10 @@ fn exercise_fixtures() {
             .into_layout(),
         ChannelLayoutSpec::Native(ChannelLayout::stereo())
     );
-    let lossy_custom_layout_native = ChannelLayoutSpec::Custom(
-        CustomChannelLayout::parse_channel_list("FL@Left+FR").unwrap(),
-    )
-    .retype_to_native_order(true)
-    .unwrap();
+    let lossy_custom_layout_native =
+        ChannelLayoutSpec::Custom(CustomChannelLayout::parse_channel_list("FL@Left+FR").unwrap())
+            .retype_to_native_order(true)
+            .unwrap();
     assert!(lossy_custom_layout_native.is_lossy());
     assert_eq!(
         lossy_custom_layout_native.into_layout(),
@@ -13937,7 +13888,7 @@ fn exercise_fixtures() {
         ChannelLayoutSpec::Ambisonic(explicit_ambisonic)
             .to_unspecified_order_lossless()
             .unwrap_err()
-        .kind(),
+            .kind(),
         AvErrorKind::Unsupported
     );
     let lossy_ambisonic_unspecified = ChannelLayoutSpec::Ambisonic(explicit_ambisonic)
@@ -13992,13 +13943,14 @@ fn exercise_fixtures() {
         "2 channels (AMBI0+AMBI1)"
     );
     assert_eq!(
-        custom_layout.index_from_string("FR@Left").unwrap_err().kind(),
+        custom_layout
+            .index_from_string("FR@Left")
+            .unwrap_err()
+            .kind(),
         AvErrorKind::InvalidArgument
     );
     assert_eq!(
-        ChannelCustom::new(ChannelId::None, "")
-            .unwrap_err()
-            .kind(),
+        ChannelCustom::new(ChannelId::None, "").unwrap_err().kind(),
         AvErrorKind::InvalidArgument
     );
     assert_eq!(
@@ -14133,7 +14085,10 @@ fn exercise_fixtures() {
     unref_frame.set_opaque_address(0x1111);
     unref_frame.set_opaque_ref(Some(BufferRef::copy_from_slice(&[0x11, 0x12])));
     unref_frame.set_alpha_mode(FrameAlphaMode::Straight);
-    unref_frame.metadata_mut().set("title", "before-unref").unwrap();
+    unref_frame
+        .metadata_mut()
+        .set("title", "before-unref")
+        .unwrap();
     unref_frame
         .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, side)
         .unwrap();
@@ -14253,7 +14208,10 @@ fn exercise_fixtures() {
         Rational::new(1, 90_000).unwrap()
     );
     assert_eq!(referenced_frame.sample_rate(), 44_100);
-    assert_eq!(referenced_frame.channel_layout(), Some(ChannelLayout::mono()));
+    assert_eq!(
+        referenced_frame.channel_layout(),
+        Some(ChannelLayout::mono())
+    );
     assert_eq!(referenced_frame.channel_count(), 1);
     assert_eq!(referenced_frame.opaque_address(), Some(0x2222));
     assert_eq!(
@@ -14337,7 +14295,10 @@ fn exercise_fixtures() {
         .metadata_mut()
         .set("title", "destination")
         .unwrap();
-    props_frame.metadata_mut().set("keep", "destination").unwrap();
+    props_frame
+        .metadata_mut()
+        .set("keep", "destination")
+        .unwrap();
     props_frame
         .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, props_old_side)
         .unwrap();
@@ -14376,8 +14337,13 @@ fn exercise_fixtures() {
     assert!(!props_video.plane_buffers()[0].shares_storage(&ref_plane));
     assert_eq!(props_frame.side_data().len(), 2);
     assert_eq!(props_frame.side_data()[0].data(), &[0x99]);
-    assert_eq!(props_frame.side_data()[1].data(), source_frame.side_data()[0].data());
-    assert!(!props_frame.side_data()[1].buffer().shares_storage(&ref_side));
+    assert_eq!(
+        props_frame.side_data()[1].data(),
+        source_frame.side_data()[0].data()
+    );
+    assert!(!props_frame.side_data()[1]
+        .buffer()
+        .shares_storage(&ref_side));
     assert!(!props_frame.side_data()[1]
         .buffer()
         .shares_storage(source_frame.side_data()[0].buffer()));
@@ -14423,17 +14389,16 @@ fn exercise_fixtures() {
             .code(),
         Some(AvErrorCode::EINVAL)
     );
-    assert_eq!(frame_fifo.drain(1).unwrap_err().code(), Some(AvErrorCode::EINVAL));
+    assert_eq!(
+        frame_fifo.drain(1).unwrap_err().code(),
+        Some(AvErrorCode::EINVAL)
+    );
     let fifo_move_plane = BufferRef::copy_from_slice(&[0x31, 0x32]);
     let fifo_move_side = BufferRef::copy_from_slice(&[0x33; 36]);
     let fifo_move_opaque = BufferRef::copy_from_slice(&[0x34]);
-    let fifo_move_video = VideoFrame::new_with_buffer_refs(
-        2,
-        1,
-        PixelFormat::Gray8,
-        vec![fifo_move_plane.clone()],
-    )
-    .unwrap();
+    let fifo_move_video =
+        VideoFrame::new_with_buffer_refs(2, 1, PixelFormat::Gray8, vec![fifo_move_plane.clone()])
+            .unwrap();
     let mut fifo_move = Frame::video(fifo_move_video);
     fifo_move.set_pts(Some(1234));
     fifo_move.set_opaque_ref(Some(fifo_move_opaque.clone()));
@@ -14443,7 +14408,10 @@ fn exercise_fixtures() {
     frame_fifo.write_move(&mut fifo_move).unwrap();
     assert!(fifo_move.is_empty());
     assert_eq!(frame_fifo.can_read(), 1);
-    assert_eq!(frame_fifo.peek(1).unwrap_err().code(), Some(AvErrorCode::EINVAL));
+    assert_eq!(
+        frame_fifo.peek(1).unwrap_err().code(),
+        Some(AvErrorCode::EINVAL)
+    );
     let mut fifo_move_dst = Frame::empty();
     frame_fifo.read_move(&mut fifo_move_dst).unwrap();
     assert_eq!(fifo_move_dst.pts(), Some(1234));
@@ -14460,13 +14428,9 @@ fn exercise_fixtures() {
         .shares_storage(&fifo_move_opaque));
 
     let fifo_ref_plane = BufferRef::copy_from_slice(&[0x41, 0x42]);
-    let fifo_ref_video = VideoFrame::new_with_buffer_refs(
-        2,
-        1,
-        PixelFormat::Gray8,
-        vec![fifo_ref_plane.clone()],
-    )
-    .unwrap();
+    let fifo_ref_video =
+        VideoFrame::new_with_buffer_refs(2, 1, PixelFormat::Gray8, vec![fifo_ref_plane.clone()])
+            .unwrap();
     let mut fifo_ref = Frame::video(fifo_ref_video);
     fifo_ref.set_pts(Some(2234));
     frame_fifo.write_ref(&fifo_ref).unwrap();
@@ -14532,7 +14496,10 @@ fn exercise_fixtures() {
         move_destination.time_base(),
         Rational::new(1, 48_000).unwrap()
     );
-    assert_eq!(move_destination.metadata().get("title"), Some("move-source"));
+    assert_eq!(
+        move_destination.metadata().get("title"),
+        Some("move-source")
+    );
     assert!(move_source.metadata().is_empty());
     assert!(matches!(move_destination.data(), FrameData::Video(_)));
     assert_eq!(
@@ -14711,9 +14678,8 @@ fn exercise_fixtures() {
         copy_video_destination_data.planes(),
         &[vec![1, 2, 7, 3, 4, 6]]
     );
-    let too_large_video_source = Frame::video(
-        VideoFrame::new(4, 2, PixelFormat::Gray8, vec![vec![0; 8]]).unwrap(),
-    );
+    let too_large_video_source =
+        Frame::video(VideoFrame::new(4, 2, PixelFormat::Gray8, vec![vec![0; 8]]).unwrap());
     let copy_video_before = copy_video_destination.clone();
     assert_eq!(
         copy_video_destination
@@ -14828,7 +14794,10 @@ fn exercise_fixtures() {
     };
     assert_eq!(rgb_aligned_crop_video.width(), 7);
     assert_eq!(rgb_aligned_crop_video.height(), 3);
-    assert_eq!(&rgb_aligned_crop_video.planes()[0][..6], &[16, 17, 18, 19, 20, 21]);
+    assert_eq!(
+        &rgb_aligned_crop_video.planes()[0][..6],
+        &[16, 17, 18, 19, 20, 21]
+    );
 
     let mut rgb_unaligned_crop = Frame::video(
         VideoFrame::new_with_line_sizes(
@@ -14879,7 +14848,10 @@ fn exercise_fixtures() {
     };
     assert_eq!(bgr_aligned_crop_video.width(), 7);
     assert_eq!(bgr_aligned_crop_video.height(), 3);
-    assert_eq!(&bgr_aligned_crop_video.planes()[0][..6], &[16, 17, 18, 19, 20, 21]);
+    assert_eq!(
+        &bgr_aligned_crop_video.planes()[0][..6],
+        &[16, 17, 18, 19, 20, 21]
+    );
 
     let mut bgr_unaligned_crop = Frame::video(
         VideoFrame::new_with_line_sizes(
@@ -14916,8 +14888,7 @@ fn exercise_fixtures() {
                 let mut plane = vec![0; 64 * height];
                 for row in 0..height {
                     for column in 0..width * sample_bytes {
-                        plane[row * 64 + column] =
-                            base.wrapping_add((row * 16 + column) as u8);
+                        plane[row * 64 + column] = base.wrapping_add((row * 16 + column) as u8);
                     }
                 }
                 storage.push(plane);
@@ -14964,9 +14935,18 @@ fn exercise_fixtures() {
     assert_eq!(yuv420p_default_crop.crop(), FrameCrop::default());
     assert_eq!(yuv420p_default_crop_video.width(), 6);
     assert_eq!(yuv420p_default_crop_video.height(), 2);
-    assert_eq!(&yuv420p_default_crop_video.planes()[0][..6], &[0x30, 0x31, 0x32, 0x33, 0x34, 0x35]);
-    assert_eq!(yuv420p_default_crop_video.planes()[1], vec![0x90, 0x91, 0x92]);
-    assert_eq!(yuv420p_default_crop_video.planes()[2], vec![0xd0, 0xd1, 0xd2]);
+    assert_eq!(
+        &yuv420p_default_crop_video.planes()[0][..6],
+        &[0x30, 0x31, 0x32, 0x33, 0x34, 0x35]
+    );
+    assert_eq!(
+        yuv420p_default_crop_video.planes()[1],
+        vec![0x90, 0x91, 0x92]
+    );
+    assert_eq!(
+        yuv420p_default_crop_video.planes()[2],
+        vec![0xd0, 0xd1, 0xd2]
+    );
 
     let mut yuv420p_unaligned_crop = Frame::video(
         VideoFrame::new_with_line_sizes(
@@ -15042,8 +15022,7 @@ fn exercise_fixtures() {
     yuv420p_odd_unaligned_crop
         .apply_cropping(FrameCropFlags::UNALIGNED)
         .unwrap();
-    let FrameData::Video(yuv420p_odd_unaligned_crop_video) =
-        yuv420p_odd_unaligned_crop.data()
+    let FrameData::Video(yuv420p_odd_unaligned_crop_video) = yuv420p_odd_unaligned_crop.data()
     else {
         panic!("constructed odd yuv420p unaligned crop frame changed variant");
     };
@@ -15078,14 +15057,8 @@ fn exercise_fixtures() {
     ] {
         let planar_storage = make_planar_yuv_storage(log2_chroma_w, log2_chroma_h);
         let mut planar_default_crop = Frame::video(
-            VideoFrame::new_with_line_sizes(
-                8,
-                4,
-                format,
-                planar_storage.clone(),
-                vec![64, 64, 64],
-            )
-            .unwrap(),
+            VideoFrame::new_with_line_sizes(8, 4, format, planar_storage.clone(), vec![64, 64, 64])
+                .unwrap(),
         );
         planar_default_crop.set_crop_offsets(1, 0, 1, 1);
         planar_default_crop
@@ -15277,14 +15250,8 @@ fn exercise_fixtures() {
         let planar_storage =
             make_planar_yuv_sample_storage(log2_chroma_w, log2_chroma_h, sample_bytes);
         let mut planar_default_crop = Frame::video(
-            VideoFrame::new_with_line_sizes(
-                8,
-                4,
-                format,
-                planar_storage.clone(),
-                vec![64, 64, 64],
-            )
-            .unwrap(),
+            VideoFrame::new_with_line_sizes(8, 4, format, planar_storage.clone(), vec![64, 64, 64])
+                .unwrap(),
         );
         planar_default_crop.set_crop_offsets(1, 0, 1, 1);
         let default_error = planar_default_crop
@@ -15467,8 +15434,7 @@ fn exercise_fixtures() {
     ] {
         let storage = make_bitstream_crop_storage(bits_per_pixel);
         let mut bitstream_default_crop = Frame::video(
-            VideoFrame::new_with_line_sizes(8, 4, format, vec![storage.clone()], vec![64])
-                .unwrap(),
+            VideoFrame::new_with_line_sizes(8, 4, format, vec![storage.clone()], vec![64]).unwrap(),
         );
         bitstream_default_crop.set_crop_offsets(1, 0, 1, 1);
         let before = bitstream_default_crop.clone();
@@ -15500,10 +15466,7 @@ fn exercise_fixtures() {
         bitstream_unaligned_crop
             .apply_cropping(FrameCropFlags::UNALIGNED)
             .unwrap();
-        assert_eq!(
-            bitstream_unaligned_crop.crop(),
-            FrameCrop::new(1, 0, 1, 0)
-        );
+        assert_eq!(bitstream_unaligned_crop.crop(), FrameCrop::new(1, 0, 1, 0));
         let FrameData::Video(bitstream_unaligned_video) = bitstream_unaligned_crop.data() else {
             panic!("constructed bitstream unaligned crop frame changed variant");
         };
@@ -15537,22 +15500,22 @@ fn exercise_fixtures() {
          log2_chroma_h: usize,
          sample_bytes: (usize, usize),
          chroma_line_size: usize| {
-        let mut luma = vec![0; 64 * 4];
-        for row in 0..4 {
-            for column in 0..8 * sample_bytes.0 {
-                luma[row * 64 + column] = 0x10 + (row * 16 + column) as u8;
+            let mut luma = vec![0; 64 * 4];
+            for row in 0..4 {
+                for column in 0..8 * sample_bytes.0 {
+                    luma[row * 64 + column] = 0x10 + (row * 16 + column) as u8;
+                }
             }
-        }
-        let chroma_height = 4 >> log2_chroma_h;
-        let chroma_width_bytes = (8 >> log2_chroma_w) * sample_bytes.1;
-        let mut chroma = vec![0; chroma_line_size * chroma_height];
-        for row in 0..chroma_height {
-            for column in 0..chroma_width_bytes {
-                chroma[row * chroma_line_size + column] = 0x80 + (row * 16 + column) as u8;
+            let chroma_height = 4 >> log2_chroma_h;
+            let chroma_width_bytes = (8 >> log2_chroma_w) * sample_bytes.1;
+            let mut chroma = vec![0; chroma_line_size * chroma_height];
+            for row in 0..chroma_height {
+                for column in 0..chroma_width_bytes {
+                    chroma[row * chroma_line_size + column] = 0x80 + (row * 16 + column) as u8;
+                }
             }
-        }
-        vec![luma, chroma]
-    };
+            vec![luma, chroma]
+        };
     for (format, log2_chroma_w, log2_chroma_h) in [
         (PixelFormat::Nv12, 1usize, 1usize),
         (PixelFormat::Nv21, 1usize, 1usize),
@@ -15565,12 +15528,8 @@ fn exercise_fixtures() {
         } else {
             vec![64, 64]
         };
-        let storage = make_semiplanar_crop_storage(
-            log2_chroma_w,
-            log2_chroma_h,
-            (1, 2),
-            line_sizes[1],
-        );
+        let storage =
+            make_semiplanar_crop_storage(log2_chroma_w, log2_chroma_h, (1, 2), line_sizes[1]);
         let mut semiplanar_default_crop = Frame::video(
             VideoFrame::new_with_line_sizes(8, 4, format, storage.clone(), line_sizes.clone())
                 .unwrap(),
@@ -15641,8 +15600,7 @@ fn exercise_fixtures() {
         semiplanar_even_unaligned_crop
             .apply_cropping(FrameCropFlags::UNALIGNED)
             .unwrap();
-        let FrameData::Video(semiplanar_even_video) = semiplanar_even_unaligned_crop.data()
-        else {
+        let FrameData::Video(semiplanar_even_video) = semiplanar_even_unaligned_crop.data() else {
             panic!("constructed semi-planar even crop frame changed variant");
         };
         assert_eq!(semiplanar_even_video.width(), 4);
@@ -15696,12 +15654,8 @@ fn exercise_fixtures() {
         } else {
             vec![64, 64]
         };
-        let storage = make_semiplanar_crop_storage(
-            log2_chroma_w,
-            log2_chroma_h,
-            (2, 4),
-            line_sizes[1],
-        );
+        let storage =
+            make_semiplanar_crop_storage(log2_chroma_w, log2_chroma_h, (2, 4), line_sizes[1]);
 
         let mut semiplanar_default_crop = Frame::video(
             VideoFrame::new_with_line_sizes(8, 4, format, storage.clone(), line_sizes.clone())
@@ -15711,7 +15665,10 @@ fn exercise_fixtures() {
         let err = semiplanar_default_crop
             .apply_cropping(FrameCropFlags::NONE)
             .unwrap_err();
-        assert_eq!(err.code().map(AvErrorCode::raw), Some(AvErrorCode::BUG.raw()));
+        assert_eq!(
+            err.code().map(AvErrorCode::raw),
+            Some(AvErrorCode::BUG.raw())
+        );
         assert_eq!(semiplanar_default_crop.crop(), FrameCrop::new(1, 0, 1, 1));
 
         let mut semiplanar_unaligned_crop = Frame::video(
@@ -15728,7 +15685,10 @@ fn exercise_fixtures() {
         };
         assert_eq!(semiplanar_unaligned_video.width(), 6);
         assert_eq!(semiplanar_unaligned_video.height(), 3);
-        assert_eq!(semiplanar_unaligned_video.line_sizes(), line_sizes.as_slice());
+        assert_eq!(
+            semiplanar_unaligned_video.line_sizes(),
+            line_sizes.as_slice()
+        );
         assert_eq!(
             semiplanar_unaligned_video.planes()[0].as_slice(),
             plane_visible_sample_bytes(0x10, 1, 1, 6, 3, 2).as_slice()
@@ -15754,8 +15714,14 @@ fn exercise_fixtures() {
         let err = semiplanar_even_default_crop
             .apply_cropping(FrameCropFlags::NONE)
             .unwrap_err();
-        assert_eq!(err.code().map(AvErrorCode::raw), Some(AvErrorCode::BUG.raw()));
-        assert_eq!(semiplanar_even_default_crop.crop(), FrameCrop::new(2, 0, 2, 2));
+        assert_eq!(
+            err.code().map(AvErrorCode::raw),
+            Some(AvErrorCode::BUG.raw())
+        );
+        assert_eq!(
+            semiplanar_even_default_crop.crop(),
+            FrameCrop::new(2, 0, 2, 2)
+        );
 
         let mut semiplanar_even_unaligned_crop = Frame::video(
             VideoFrame::new_with_line_sizes(8, 4, format, storage, line_sizes).unwrap(),
@@ -16046,24 +16012,15 @@ fn exercise_fixtures() {
     );
 
     let mut invalid_crop = Frame::video(
-        VideoFrame::new_with_line_sizes(
-            6,
-            4,
-            PixelFormat::Gray8,
-            vec![crop_storage],
-            vec![64],
-        )
-        .unwrap(),
+        VideoFrame::new_with_line_sizes(6, 4, PixelFormat::Gray8, vec![crop_storage], vec![64])
+            .unwrap(),
     );
     invalid_crop.set_crop_offsets(1, 0, 5, 1);
     let invalid_crop_before = invalid_crop.clone();
     let invalid_crop_error = invalid_crop
         .apply_cropping(FrameCropFlags::NONE)
         .unwrap_err();
-    assert_eq!(
-        invalid_crop_error.code().map(AvErrorCode::raw),
-        Some(-34)
-    );
+    assert_eq!(invalid_crop_error.code().map(AvErrorCode::raw), Some(-34));
     assert_eq!(invalid_crop, invalid_crop_before);
 
     let replace_source_plane = BufferRef::copy_from_slice(&[10, 11, 12, 13]);
@@ -16089,17 +16046,22 @@ fn exercise_fixtures() {
     replace_source.set_channel_layout(Some(ChannelLayout::mono()));
     replace_source.set_opaque_address(0x5151);
     replace_source.set_opaque_ref(Some(replace_source_opaque_ref.clone()));
-    replace_source.metadata_mut().set("title", "replace-source").unwrap();
     replace_source
-        .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, replace_source_side.clone())
+        .metadata_mut()
+        .set("title", "replace-source")
+        .unwrap();
+    replace_source
+        .set_side_data_kind_buffer(
+            FrameSideDataKind::DisplayMatrix,
+            replace_source_side.clone(),
+        )
         .unwrap();
     let replace_clone = replace_source.clone_ref();
     let FrameData::Video(replace_clone_video) = replace_clone.data() else {
         panic!("frame clone_ref changed source variant");
     };
     assert!(replace_clone_video.plane_buffers()[0].shares_storage(&replace_source_plane));
-    assert!(replace_clone
-        .side_data()[0]
+    assert!(replace_clone.side_data()[0]
         .buffer()
         .shares_storage(&replace_source_side));
     assert!(replace_clone
@@ -16122,7 +16084,10 @@ fn exercise_fixtures() {
         .unwrap();
     replace_destination.replace_from(&replace_source).unwrap();
     assert_eq!(replace_destination.pts(), Some(410));
-    assert_eq!(replace_destination.metadata().get("title"), Some("replace-source"));
+    assert_eq!(
+        replace_destination.metadata().get("title"),
+        Some("replace-source")
+    );
     assert_eq!(replace_destination.metadata().get("keep"), None);
     let FrameData::Video(replace_destination_video) = replace_destination.data() else {
         panic!("frame replace_from did not copy video data");
@@ -16150,7 +16115,9 @@ fn exercise_fixtures() {
         panic!("frame move_ref_from did not move video data");
     };
     assert!(move_replace_destination_video.plane_buffers()[0].shares_storage(&replace_source_plane));
-    assert!(!move_replace_destination_video.plane_buffers()[0].shares_storage(&old_move_replace_plane));
+    assert!(
+        !move_replace_destination_video.plane_buffers()[0].shares_storage(&old_move_replace_plane)
+    );
     assert!(move_replace_destination.side_data()[0]
         .buffer()
         .shares_storage(&replace_source_side));
@@ -25556,10 +25523,8 @@ fn packet_dolby_vision_conf_payload_invalid(data: &[u8]) -> bool {
     data[PacketDolbyVisionConf::RPU_PRESENT_FLAG_OFFSET] > 1
         || data[PacketDolbyVisionConf::EL_PRESENT_FLAG_OFFSET] > 1
         || data[PacketDolbyVisionConf::BL_PRESENT_FLAG_OFFSET] > 1
-        || PacketDoviCompression::from_byte(
-            data[PacketDolbyVisionConf::DV_MD_COMPRESSION_OFFSET],
-        )
-        .is_err()
+        || PacketDoviCompression::from_byte(data[PacketDolbyVisionConf::DV_MD_COMPRESSION_OFFSET])
+            .is_err()
 }
 
 fn packet_dynamic_hdr10_plus_payload_invalid(data: &[u8]) -> bool {
@@ -25649,10 +25614,9 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
         PixelFormat::Gray8 => vec![width],
         PixelFormat::MonoWhite | PixelFormat::MonoBlack => vec![one_bit_line_size(width)],
         PixelFormat::Ya8 => vec![width * 2],
-        PixelFormat::Ya16Le
-        | PixelFormat::Ya16Be
-        | PixelFormat::Yaf16Le
-        | PixelFormat::Yaf16Be => vec![width * 4],
+        PixelFormat::Ya16Le | PixelFormat::Ya16Be | PixelFormat::Yaf16Le | PixelFormat::Yaf16Be => {
+            vec![width * 4]
+        }
         PixelFormat::Gray9Le
         | PixelFormat::Gray9Be
         | PixelFormat::Gray10Le
@@ -25859,7 +25823,11 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
         | PixelFormat::Yuva444p16Le
         | PixelFormat::Yuva444p16Be => {
             let (log2_chroma_w, _) = pixel_format.log2_chroma();
-            let bytes_per_sample = if pixel_format.bits_per_component() > 8 { 2 } else { 1 };
+            let bytes_per_sample = if pixel_format.bits_per_component() > 8 {
+                2
+            } else {
+                1
+            };
             vec![
                 width * bytes_per_sample,
                 (width >> log2_chroma_w) * bytes_per_sample,
@@ -25912,6 +25880,25 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
                 (width >> log2_chroma_w) * 2,
             ]
         }
+        PixelFormat::Vaapi
+        | PixelFormat::Dxva2Vld
+        | PixelFormat::Vdpau
+        | PixelFormat::Qsv
+        | PixelFormat::Mmal
+        | PixelFormat::D3d11VaVld
+        | PixelFormat::Cuda
+        | PixelFormat::VideoToolboxVld
+        | PixelFormat::MediaCodec
+        | PixelFormat::D3d11
+        | PixelFormat::DrmPrime
+        | PixelFormat::OpenCl
+        | PixelFormat::Vulkan
+        | PixelFormat::D3d12
+        | PixelFormat::Amf
+        | PixelFormat::OhCodec => panic!(
+            "hardware pixel format `{}` does not expose expected Rust-owned line sizes",
+            pixel_format.name()
+        ),
     }
 }
 
@@ -25926,10 +25913,9 @@ fn expected_video_plane_shapes(
             vec![(one_bit_line_size(width), height)]
         }
         PixelFormat::Ya8 => vec![(width * 2, height)],
-        PixelFormat::Ya16Le
-        | PixelFormat::Ya16Be
-        | PixelFormat::Yaf16Le
-        | PixelFormat::Yaf16Be => vec![(width * 4, height)],
+        PixelFormat::Ya16Le | PixelFormat::Ya16Be | PixelFormat::Yaf16Le | PixelFormat::Yaf16Be => {
+            vec![(width * 4, height)]
+        }
         PixelFormat::Gray9Le
         | PixelFormat::Gray9Be
         | PixelFormat::Gray10Le
@@ -26159,7 +26145,11 @@ fn expected_video_plane_shapes(
         | PixelFormat::Yuva444p16Le
         | PixelFormat::Yuva444p16Be => {
             let (log2_chroma_w, log2_chroma_h) = pixel_format.log2_chroma();
-            let bytes_per_sample = if pixel_format.bits_per_component() > 8 { 2 } else { 1 };
+            let bytes_per_sample = if pixel_format.bits_per_component() > 8 {
+                2
+            } else {
+                1
+            };
             vec![
                 (width * bytes_per_sample, height),
                 (
@@ -26218,6 +26208,25 @@ fn expected_video_plane_shapes(
                 ((width >> log2_chroma_w) * 2, height >> log2_chroma_h),
             ]
         }
+        PixelFormat::Vaapi
+        | PixelFormat::Dxva2Vld
+        | PixelFormat::Vdpau
+        | PixelFormat::Qsv
+        | PixelFormat::Mmal
+        | PixelFormat::D3d11VaVld
+        | PixelFormat::Cuda
+        | PixelFormat::VideoToolboxVld
+        | PixelFormat::MediaCodec
+        | PixelFormat::D3d11
+        | PixelFormat::DrmPrime
+        | PixelFormat::OpenCl
+        | PixelFormat::Vulkan
+        | PixelFormat::D3d12
+        | PixelFormat::Amf
+        | PixelFormat::OhCodec => panic!(
+            "hardware pixel format `{}` does not expose expected Rust-owned plane shapes",
+            pixel_format.name()
+        ),
     }
 }
 

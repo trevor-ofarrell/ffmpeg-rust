@@ -16,6 +16,10 @@ struct PixelFormatRow {
 }
 
 impl PixelFormatRow {
+    fn is_hardware(&self) -> bool {
+        matches!(self.flags.as_bytes().get(2), Some(b'H'))
+    }
+
     fn is_paletted(&self) -> bool {
         matches!(self.flags.as_bytes().get(3), Some(b'P'))
     }
@@ -27,6 +31,7 @@ struct ExpectedPixelFormatRow {
     component_count: usize,
     bits_per_pixel: Option<usize>,
     bit_depths: Vec<u8>,
+    is_hardware: bool,
     is_paletted: bool,
 }
 
@@ -77,6 +82,12 @@ fn ffmpeg_pixel_format_inventory_contains_current_pixel_format_subset() {
             expected.name
         );
         assert_eq!(
+            actual.is_hardware(),
+            expected.is_hardware,
+            "ffmpeg -pix_fmts hardware flag diverged for `{}`",
+            expected.name
+        );
+        assert_eq!(
             actual.is_paletted(),
             expected.is_paletted,
             "ffmpeg -pix_fmts paletted flag diverged for `{}`",
@@ -95,11 +106,12 @@ I.... = Supported Input  format for conversion
 ..H.. = Hardware accelerated format
 ...P. = Paletted format
 ....B = Bitstream format
-FLAGS NAME            NB_COMPONENTS BITS_PER_PIXEL
+FLAGS NAME            NB_COMPONENTS BITS_PER_PIXEL BIT_DEPTHS
 -----
-IO... yuv420p                3            12
-IO..B monow                  1             1
-IO.P. pal8                   1             8
+IO... yuv420p                3            12      8-8-8
+IO..B monow                  1             1      1
+IO.P. pal8                   1             8      8
+..H.. vaapi                  0             0      0
 "#,
     );
 
@@ -113,6 +125,7 @@ IO.P. pal8                   1             8
             bit_depths: vec![8, 8, 8],
         })
     );
+    assert!(rows["vaapi"].is_hardware());
     assert!(!rows["monow"].is_paletted());
     assert!(rows["pal8"].is_paletted());
     assert_eq!(rows["monow"].bit_depths, vec![1]);
@@ -122,6 +135,7 @@ IO.P. pal8                   1             8
 fn expected_pixel_format_subset() -> Vec<ExpectedPixelFormatRow> {
     PixelFormat::ALL
         .iter()
+        .chain(PixelFormat::HARDWARE.iter())
         .map(|format| {
             let descriptor = format.descriptor();
             ExpectedPixelFormatRow {
@@ -129,6 +143,7 @@ fn expected_pixel_format_subset() -> Vec<ExpectedPixelFormatRow> {
                 component_count: descriptor.component_count,
                 bits_per_pixel: descriptor.bits_per_pixel_integer().map(usize::from),
                 bit_depths: format.component_bit_depths(),
+                is_hardware: format.is_hardware(),
                 is_paletted: descriptor.is_paletted,
             }
         })

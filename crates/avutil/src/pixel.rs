@@ -566,6 +566,25 @@ impl PixelFormat {
         Self::Yuv444p16Be,
     ];
 
+    pub const HARDWARE: &'static [Self] = &[
+        Self::Vaapi,
+        Self::Dxva2Vld,
+        Self::Vdpau,
+        Self::Qsv,
+        Self::Mmal,
+        Self::D3d11VaVld,
+        Self::Cuda,
+        Self::VideoToolboxVld,
+        Self::MediaCodec,
+        Self::D3d11,
+        Self::DrmPrime,
+        Self::OpenCl,
+        Self::Vulkan,
+        Self::D3d12,
+        Self::Amf,
+        Self::OhCodec,
+    ];
+
     pub fn name(self) -> &'static str {
         self.descriptor().name
     }
@@ -5594,27 +5613,9 @@ mod tests {
             assert_eq!(format.name(), name);
             assert_eq!(PixelFormat::from_name(name), Some(format));
         }
-        for (name, format) in [
-            ("vaapi", PixelFormat::Vaapi),
-            ("dxva2_vld", PixelFormat::Dxva2Vld),
-            ("vdpau", PixelFormat::Vdpau),
-            ("qsv", PixelFormat::Qsv),
-            ("mmal", PixelFormat::Mmal),
-            ("d3d11va_vld", PixelFormat::D3d11VaVld),
-            ("cuda", PixelFormat::Cuda),
-            ("videotoolbox_vld", PixelFormat::VideoToolboxVld),
-            ("mediacodec", PixelFormat::MediaCodec),
-            ("d3d11", PixelFormat::D3d11),
-            ("drm_prime", PixelFormat::DrmPrime),
-            ("opencl", PixelFormat::OpenCl),
-            ("vulkan", PixelFormat::Vulkan),
-            ("d3d12", PixelFormat::D3d12),
-            ("amf", PixelFormat::Amf),
-            ("ohcodec", PixelFormat::OhCodec),
-        ] {
+        for format in PixelFormat::HARDWARE {
             let descriptor = format.descriptor();
-            assert_eq!(format.name(), name);
-            assert_eq!(PixelFormat::from_name(name), Some(format));
+            assert_eq!(PixelFormat::from_name(format.name()), Some(*format));
             assert_eq!(descriptor.class, PixelFormatClass::Hardware);
             assert!(format.is_hardware());
             assert_eq!(format.component_count(), 0);
@@ -5629,6 +5630,7 @@ mod tests {
             );
         }
         assert_eq!(PixelFormat::ALL.len(), 251);
+        assert_eq!(PixelFormat::HARDWARE.len(), 16);
         assert_eq!(PixelFormat::Ya8.plane_count(), 1);
         assert_eq!(PixelFormat::Ya16Le.plane_count(), 1);
         assert_eq!(PixelFormat::Yaf16Le.plane_count(), 1);
