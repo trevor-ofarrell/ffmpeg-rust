@@ -183,6 +183,25 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         packet_fields(&rescaled_unknown),
     );
 
+    let mut rescaled_mixed = Packet::new(vec![0xaa, 0xbb], 2);
+    rescaled_mixed.set_dts(Some(90_000));
+    rescaled_mixed.set_duration(45_000).unwrap();
+    rescaled_mixed.set_pos(Some(123)).unwrap();
+    rescaled_mixed.set_key(true);
+    rescaled_mixed
+        .set_time_base(Rational::new(1, 90_000).unwrap())
+        .unwrap();
+    rescaled_mixed
+        .rescale_ts(
+            Rational::new(1, 90_000).unwrap(),
+            Rational::new(1, 1_000).unwrap(),
+        )
+        .unwrap();
+    rows.insert(
+        "packet:rescale-mixed".to_string(),
+        packet_fields(&rescaled_mixed),
+    );
+
     let src = packet_with_common_props();
     let mut copied = Packet::new(vec![0x99, 0x88], 1);
     copied.copy_props_from(&src);
@@ -5603,6 +5622,21 @@ int main(void) {
     pkt->stream_index = 3;
     av_packet_rescale_ts(pkt, (AVRational){ 1, 90000 }, (AVRational){ 1, 1000 });
     print_packet("packet:rescale-unknown", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    fail_if(av_new_packet(pkt, 2) < 0, "av_new_packet mixed rescale failed");
+    pkt->data[0] = 0xaa;
+    pkt->data[1] = 0xbb;
+    pkt->pts = AV_NOPTS_VALUE;
+    pkt->dts = 90000;
+    pkt->duration = 45000;
+    pkt->pos = 123;
+    pkt->stream_index = 2;
+    pkt->flags = AV_PKT_FLAG_KEY;
+    pkt->time_base = (AVRational){ 1, 90000 };
+    av_packet_rescale_ts(pkt, (AVRational){ 1, 90000 }, (AVRational){ 1, 1000 });
+    print_packet("packet:rescale-mixed", pkt);
     av_packet_free(&pkt);
 
     AVPacket *src = packet_with_common_props();

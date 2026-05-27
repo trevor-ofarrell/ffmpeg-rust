@@ -12804,6 +12804,25 @@ mod tests {
         assert_eq!(packet.pts(), None);
         assert_eq!(packet.dts(), None);
         assert_eq!(packet.duration(), 1_000);
+
+        let src = Rational::new(1, 90_000).unwrap();
+        let dst = Rational::new(1, 1_000).unwrap();
+        let mut mixed = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
+        mixed.set_dts(Some(90_000));
+        mixed.set_duration(45_000).unwrap();
+        mixed.set_pos(Some(123)).unwrap();
+        mixed.set_time_base(src).unwrap();
+        mixed.set_key(true);
+
+        mixed.rescale_ts(src, dst).unwrap();
+
+        assert_eq!(mixed.pts(), None);
+        assert_eq!(mixed.dts(), Some(1_000));
+        assert_eq!(mixed.duration(), 500);
+        assert_eq!(mixed.pos(), Some(123));
+        assert_eq!(mixed.time_base(), src);
+        assert!(mixed.flags().contains(PacketFlags::KEY));
+        assert_eq!(mixed.data(), &[0xaa, 0xbb]);
     }
 
     #[test]

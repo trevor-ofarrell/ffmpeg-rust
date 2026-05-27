@@ -2,6 +2,10 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest avutil-packet evidence: `packet:rescale-mixed` now proves pinned
+# FFmpeg 8.1.1 `av_packet_rescale_ts()` preserves `AV_NOPTS_VALUE` PTS while
+# rescaling valid DTS and duration fields, and leaves packet payload, byte
+# position, flags, stream index, and `time_base` unchanged.
 # Latest avutil-packet evidence: `packet:payload-grow-invalid-*` rows now
 # prove pinned FFmpeg 8.1.1 `av_grow_packet()` returns ENOMEM before mutation
 # when `grow_by` exceeds `INT_MAX - (pkt->size +

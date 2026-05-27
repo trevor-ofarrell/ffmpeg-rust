@@ -7048,6 +7048,23 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         rescaled_timing
     );
 
+    let mut mixed_rescale_packet = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
+    mixed_rescale_packet.set_dts(Some(90_000));
+    mixed_rescale_packet.set_duration(45_000).unwrap();
+    mixed_rescale_packet.set_pos(Some(123)).unwrap();
+    mixed_rescale_packet.set_time_base(rescale_src).unwrap();
+    mixed_rescale_packet.set_key(true);
+    mixed_rescale_packet
+        .rescale_ts(rescale_src, rescale_dst)
+        .unwrap();
+    assert_eq!(mixed_rescale_packet.pts(), None);
+    assert_eq!(mixed_rescale_packet.dts(), Some(1_000));
+    assert_eq!(mixed_rescale_packet.duration(), 500);
+    assert_eq!(mixed_rescale_packet.pos(), Some(123));
+    assert_eq!(mixed_rescale_packet.time_base(), rescale_src);
+    assert!(mixed_rescale_packet.flags().contains(PacketFlags::KEY));
+    assert_eq!(mixed_rescale_packet.data(), &[0xaa, 0xbb]);
+
     let opaque_len = usize::from(cursor.next().unwrap_or_default() % 16);
     let opaque_payload = payload_from(cursor, opaque_len);
     packet.set_opaque_ref(Some(BufferRef::copy_from_slice(&opaque_payload)));
