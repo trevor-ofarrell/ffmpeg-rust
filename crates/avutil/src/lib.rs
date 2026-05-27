@@ -117,8 +117,8 @@ pub use packet::{
     PacketStringMetadata, PacketStringMetadataEntry, PacketSubtitlePosition,
     PacketThreeDReferenceDisplay, PacketThreeDReferenceDisplays, PacketWebVttIdentifier,
     PacketWebVttSettings, SideData, AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE,
-    AV_PACKET_ABI_LAYOUT, AV_PACKET_LIST_ABI_LAYOUT, AV_PACKET_POS_UNKNOWN,
-    AV_PACKET_SIDE_DATA_ABI_LAYOUT,
+    AV_PACKET_ABI_LAYOUT, AV_PACKET_LIST_ABI_LAYOUT, AV_PACKET_MAX_PAYLOAD_SIZE,
+    AV_PACKET_POS_UNKNOWN, AV_PACKET_SIDE_DATA_ABI_LAYOUT,
 };
 pub use pixel::{
     PixelFormat, PixelFormatClass, PixelFormatDescriptor, AVPALETTE_COUNT, AVPALETTE_SIZE,

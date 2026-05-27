@@ -23,7 +23,8 @@ use avutil::{
     PacketStereo3dView, PacketSubtitlePosition, PacketThreeDReferenceDisplay,
     PacketThreeDReferenceDisplays, PacketWebVttIdentifier, PacketWebVttSettings, Rational, SetMode,
     SideData, AVPALETTE_SIZE, AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE, AV_PACKET_ABI_LAYOUT,
-    AV_PACKET_LIST_ABI_LAYOUT, AV_PACKET_POS_UNKNOWN, AV_PACKET_SIDE_DATA_ABI_LAYOUT,
+    AV_PACKET_LIST_ABI_LAYOUT, AV_PACKET_MAX_PAYLOAD_SIZE, AV_PACKET_POS_UNKNOWN,
+    AV_PACKET_SIDE_DATA_ABI_LAYOUT,
 };
 
 #[test]
@@ -1261,6 +1262,37 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:payload-new-zero".to_string(),
         payload_allocation_fields(&new_zero),
+    );
+
+    let mut new_packet_reset = packet_with_common_props();
+    new_packet_reset.alloc_new_packet_payload(3).unwrap();
+    new_packet_reset
+        .make_data_writable()
+        .copy_from_slice(&[0x10, 0x20, 0x30]);
+    rows.insert(
+        "packet:payload-new-packet-reset-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-new-packet-reset".to_string(),
+        packet_fields(&new_packet_reset),
+    );
+    rows.insert(
+        "packet:payload-new-packet-reset-payload".to_string(),
+        payload_fields(&new_packet_reset),
+    );
+
+    let mut new_packet_invalid = packet_with_common_props();
+    let invalid_ret = new_packet_invalid
+        .alloc_new_packet_payload(AV_PACKET_MAX_PAYLOAD_SIZE + 1)
+        .unwrap_err();
+    rows.insert(
+        "packet:payload-new-packet-invalid-ret".to_string(),
+        vec![invalid_ret.code().unwrap().raw().to_string()],
+    );
+    rows.insert(
+        "packet:payload-new-packet-invalid-preserve".to_string(),
+        packet_fields(&new_packet_invalid),
     );
 
     let from_data = Packet::from_data(vec![0xaa, 0xbb, 0xcc]).unwrap();
@@ -4918,6 +4950,23 @@ static void exercise_payload_api(void) {
     printf("packet:payload-new-zero-ret|%d\n", ret);
     fail_if(ret < 0, "av_new_packet zero-size payload allocation failed");
     print_payload_allocation("packet:payload-new-zero", pkt);
+    av_packet_free(&pkt);
+
+    pkt = packet_with_common_props();
+    ret = av_new_packet(pkt, 3);
+    printf("packet:payload-new-packet-reset-ret|%d\n", ret);
+    fail_if(ret < 0, "av_new_packet reset payload failed");
+    pkt->data[0] = 0x10;
+    pkt->data[1] = 0x20;
+    pkt->data[2] = 0x30;
+    print_packet("packet:payload-new-packet-reset", pkt);
+    print_payload("packet:payload-new-packet-reset-payload", pkt);
+    av_packet_free(&pkt);
+
+    pkt = packet_with_common_props();
+    ret = av_new_packet(pkt, INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE);
+    printf("packet:payload-new-packet-invalid-ret|%d\n", ret);
+    print_packet("packet:payload-new-packet-invalid-preserve", pkt);
     av_packet_free(&pkt);
 
     pkt = new_packet();

@@ -15,6 +15,7 @@ use std::num::NonZeroUsize;
 pub const AV_NOPTS_VALUE: i64 = i64::MIN;
 pub const AV_PACKET_POS_UNKNOWN: i64 = -1;
 pub const AV_INPUT_BUFFER_PADDING_SIZE: usize = 64;
+pub const AV_PACKET_MAX_PAYLOAD_SIZE: usize = i32::MAX as usize - AV_INPUT_BUFFER_PADDING_SIZE - 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PacketAbiField {
@@ -5134,10 +5135,7 @@ impl Packet {
     }
 
     pub fn new_zeroed(size: usize, stream_index: usize) -> AvResult<Self> {
-        Ok(Self::with_buffer(
-            BufferRef::zeroed_with_padding(size, AV_INPUT_BUFFER_PADDING_SIZE)?,
-            stream_index,
-        ))
+        Ok(Self::with_buffer(packet_alloc_buffer(size)?, stream_index))
     }
 
     pub fn with_buffer(data: BufferRef, stream_index: usize) -> Self {
@@ -5182,6 +5180,12 @@ impl Packet {
 
     pub fn make_data_writable(&mut self) -> &mut [u8] {
         self.data.make_mut()
+    }
+
+    pub fn alloc_new_packet_payload(&mut self, size: usize) -> AvResult<()> {
+        let data = packet_alloc_buffer(size)?;
+        *self = Self::with_buffer(data, 0);
+        Ok(())
     }
 
     pub fn make_refcounted(&mut self) -> AvResult<()> {
@@ -5770,6 +5774,18 @@ fn pos_option(value: i64) -> Option<i64> {
     } else {
         Some(value)
     }
+}
+
+fn packet_alloc_buffer(size: usize) -> AvResult<BufferRef> {
+    if size > AV_PACKET_MAX_PAYLOAD_SIZE {
+        return Err(AvError::with_code(
+            AvErrorKind::InvalidArgument,
+            AvErrorCode::EINVAL,
+            "packet payload allocation size exceeds FFmpeg limit",
+        ));
+    }
+
+    BufferRef::zeroed_with_padding(size, AV_INPUT_BUFFER_PADDING_SIZE)
 }
 
 fn find_nul(data: &[u8], offset: usize) -> Option<usize> {
@@ -11487,6 +11503,83 @@ mod tests {
             .iter()
             .all(|byte| *byte == 0));
         assert!(writable.is_data_writable());
+    }
+
+    #[test]
+    fn packet_alloc_new_packet_payload_resets_metadata_and_checks_size() {
+        let mut packet = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
+        packet.set_pts(Some(90_000));
+        packet.set_dts(Some(45_000));
+        packet.set_duration(180_000).unwrap();
+        packet.set_pos(Some(1_234)).unwrap();
+        packet.stream_index = 7;
+        packet.set_flag(PacketFlags::KEY, true);
+        packet.set_flag(PacketFlags::CORRUPT, true);
+        packet
+            .set_time_base(Rational::new(1, 90_000).unwrap())
+            .unwrap();
+        packet.push_side_data(SideData::new_extradata(vec![0x11, 0x22]).unwrap());
+        packet.set_opaque_address(0x1234);
+        packet.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad])));
+
+        packet.alloc_new_packet_payload(3).unwrap();
+
+        assert_eq!(packet.data(), &[0, 0, 0]);
+        assert_eq!(
+            packet.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(packet
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+        assert!(packet.is_data_writable());
+        assert_eq!(packet.stream_index(), 0);
+        assert_eq!(packet.pts(), None);
+        assert_eq!(packet.dts(), None);
+        assert_eq!(packet.duration(), 0);
+        assert_eq!(packet.pos(), None);
+        assert!(packet.flags().is_empty());
+        assert!(packet.side_data().is_empty());
+        assert!(packet.opaque().is_none());
+        assert!(packet.opaque_ref().is_none());
+        assert_eq!(packet.time_base(), Rational::ZERO);
+
+        let mut preserved = Packet::from_data(vec![0x44, 0x55]).unwrap();
+        preserved.set_pts(Some(12));
+        preserved.set_duration(34).unwrap();
+        preserved.stream_index = 5;
+        preserved.set_flag(PacketFlags::DISCARD, true);
+        preserved.push_side_data(SideData::new_extradata(vec![0x66]).unwrap());
+        preserved.set_opaque_address(0x5678);
+        preserved.set_opaque_ref(Some(BufferRef::from_vec(vec![0x77])));
+        let preserved_payload = preserved.data_buffer().clone();
+        let preserved_opaque = preserved.opaque_ref().unwrap().clone();
+
+        let err = preserved
+            .alloc_new_packet_payload(AV_PACKET_MAX_PAYLOAD_SIZE + 1)
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
+        assert_eq!(preserved.data(), &[0x44, 0x55]);
+        assert!(preserved.data_buffer().shares_storage(&preserved_payload));
+        assert_eq!(preserved.pts(), Some(12));
+        assert_eq!(preserved.duration(), 34);
+        assert_eq!(preserved.stream_index(), 5);
+        assert!(preserved.flags().contains(PacketFlags::DISCARD));
+        assert_eq!(
+            preserved.side_data_by_kind("new_extradata").unwrap().data(),
+            &[0x66]
+        );
+        assert_eq!(preserved.opaque_address(), Some(0x5678));
+        assert!(preserved
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(&preserved_opaque));
+
+        let err = Packet::new_zeroed(AV_PACKET_MAX_PAYLOAD_SIZE + 1, 0).unwrap_err();
+        assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
     }
 
     #[test]

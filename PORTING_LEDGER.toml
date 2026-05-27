@@ -331,6 +331,7 @@ unit_tests = [
   "packet::tests::packet_side_data_adds_to_frame_with_flags",
   "frame::tests::frame_add_side_data_with_flags_matches_array_insert_semantics",
   "packet::tests::packet_from_data_and_zeroed_constructors_add_input_padding",
+  "packet::tests::packet_alloc_new_packet_payload_resets_metadata_and_checks_size",
   "packet::tests::packet_grow_and_shrink_data_preserve_payload_and_padding",
   "packet::tests::packet_make_writable_detaches_shared_payload_with_padding",
   "packet::tests::packet_make_refcounted_adds_padding_without_detaching_padded_refs",
@@ -415,6 +416,14 @@ fuzz_targets = ["avutil_core_models"]
 # row is now mapped to avutil-packet, validating the Rust raw pcm_s16le
 # demuxer -> Packet -> WAV muxer path against pinned FFmpeg streamcopy bytes,
 # including FFmpeg's default RIFF LIST/INFO/ISFT encoder chunk.
+# Latest AVPacket payload allocation update: pinned libavcodec rows now
+# validate `av_new_packet()` on a pre-populated packet. The rows prove
+# successful allocation resets metadata, side data, opaque pointer metadata,
+# `opaque_ref`, stream index, flags, and time base while installing writable
+# padded payload storage, and prove the `INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE`
+# invalid-size boundary returns EINVAL without mutating the packet. Rust
+# `Packet::alloc_new_packet_payload` and unit/fuzz fixtures cover the same
+# reset/no-mutation split.
 # Latest generated WAV framecrc media-integration update: the generated WAV
 # framecrc oracle row is now mapped to avutil-packet, validating the Rust WAV
 # demuxer -> Packet -> framecrc muxer path against pinned FFmpeg streamcopy

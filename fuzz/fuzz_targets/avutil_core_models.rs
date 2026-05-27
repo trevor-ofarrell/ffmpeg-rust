@@ -66,8 +66,8 @@ use avutil::{
     SampleFormatNumericKind, SetMode, Sha1, Sha224, Sha256, Sha384, Sha512, Sha512Trunc224,
     Sha512Trunc256, SideData, VideoFrame, AVPALETTE_COUNT, AVPALETTE_SIZE, AV_BUFFER_FLAG_READONLY,
     AV_ERROR_MAX_STRING_SIZE, AV_HASH_MAX_SIZE, AV_INPUT_BUFFER_PADDING_SIZE,
-    AV_LOG_FORCE_COLOR_ENV, AV_LOG_FORCE_NOCOLOR_ENV, AV_NUM_DATA_POINTERS, AV_TIME_BASE,
-    AV_TIME_BASE_Q,
+    AV_LOG_FORCE_COLOR_ENV, AV_LOG_FORCE_NOCOLOR_ENV, AV_NUM_DATA_POINTERS,
+    AV_PACKET_MAX_PAYLOAD_SIZE, AV_TIME_BASE, AV_TIME_BASE_Q,
 };
 use libfuzzer_sys::fuzz_target;
 use std::cmp::Ordering;
@@ -6629,6 +6629,76 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         preserved_packet.opaque_ref().unwrap().as_slice(),
         &[0xde, 0xad, 0xbe]
     );
+
+    let mut new_packet_reset = Packet::from_data(vec![0x01, 0x02]).unwrap();
+    new_packet_reset.set_pts(Some(90_000));
+    new_packet_reset.set_dts(Some(45_000));
+    new_packet_reset.set_duration(180_000).unwrap();
+    new_packet_reset.set_pos(Some(1_234)).unwrap();
+    new_packet_reset.set_flag(PacketFlags::KEY, true);
+    new_packet_reset
+        .set_time_base(Rational::new(1, 90_000).unwrap())
+        .unwrap();
+    new_packet_reset.push_side_data(SideData::new_extradata(vec![0x11]).unwrap());
+    new_packet_reset.set_opaque(Some(PacketOpaque::new(0x1234).unwrap()));
+    new_packet_reset.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad])));
+    let new_payload_len = usize::from(cursor.next().unwrap_or_default()) % (MAX_PAYLOAD + 1);
+    new_packet_reset
+        .alloc_new_packet_payload(new_payload_len)
+        .unwrap();
+    assert_eq!(new_packet_reset.len(), new_payload_len);
+    assert!(new_packet_reset.data().iter().all(|byte| *byte == 0));
+    assert_eq!(
+        new_packet_reset.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(new_packet_reset
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    assert!(new_packet_reset.is_data_writable());
+    assert_eq!(new_packet_reset.stream_index(), 0);
+    assert_eq!(new_packet_reset.pts(), None);
+    assert_eq!(new_packet_reset.dts(), None);
+    assert_eq!(new_packet_reset.duration(), 0);
+    assert_eq!(new_packet_reset.pos(), None);
+    assert!(new_packet_reset.flags().is_empty());
+    assert!(new_packet_reset.side_data().is_empty());
+    assert!(new_packet_reset.opaque().is_none());
+    assert!(new_packet_reset.opaque_ref().is_none());
+    assert_eq!(new_packet_reset.time_base(), Rational::ZERO);
+
+    let mut invalid_new_packet = Packet::from_data(vec![0x33, 0x44]).unwrap();
+    invalid_new_packet.set_pts(Some(12));
+    invalid_new_packet.set_duration(34).unwrap();
+    invalid_new_packet.set_flag(PacketFlags::DISCARD, true);
+    invalid_new_packet.push_side_data(SideData::new_extradata(vec![0x55]).unwrap());
+    invalid_new_packet.set_opaque_ref(Some(BufferRef::from_vec(vec![0x66])));
+    let invalid_payload = invalid_new_packet.data_buffer().clone();
+    let invalid_opaque = invalid_new_packet.opaque_ref().unwrap().clone();
+    let err = invalid_new_packet
+        .alloc_new_packet_payload(AV_PACKET_MAX_PAYLOAD_SIZE + 1)
+        .unwrap_err();
+    assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
+    assert_eq!(invalid_new_packet.data(), &[0x33, 0x44]);
+    assert!(invalid_new_packet
+        .data_buffer()
+        .shares_storage(&invalid_payload));
+    assert_eq!(invalid_new_packet.pts(), Some(12));
+    assert_eq!(invalid_new_packet.duration(), 34);
+    assert!(invalid_new_packet.flags().contains(PacketFlags::DISCARD));
+    assert_eq!(
+        invalid_new_packet
+            .side_data_by_kind("new_extradata")
+            .unwrap()
+            .data(),
+        &[0x55]
+    );
+    assert!(invalid_new_packet
+        .opaque_ref()
+        .unwrap()
+        .shares_storage(&invalid_opaque));
 
     let mut empty_refcounted_packet = Packet::default();
     empty_refcounted_packet.make_refcounted().unwrap();
