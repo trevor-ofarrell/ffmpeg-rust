@@ -6918,6 +6918,36 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         unique_writable_ptr
     );
 
+    let mut readonly_bytes = payload.clone();
+    readonly_bytes.resize(payload.len() + AV_INPUT_BUFFER_PADDING_SIZE, 0);
+    let readonly_payload =
+        BufferRef::from_vec_with_len_readonly(readonly_bytes, payload.len()).unwrap();
+    let mut readonly_refcounted_packet = Packet::with_buffer(readonly_payload, stream_index);
+    let readonly_ptr = readonly_refcounted_packet.data_buffer().as_padded_ptr();
+    readonly_refcounted_packet.make_refcounted().unwrap();
+    assert_eq!(readonly_refcounted_packet.data(), payload.as_slice());
+    assert_eq!(
+        readonly_refcounted_packet.data_buffer().as_padded_ptr(),
+        readonly_ptr
+    );
+    assert!(!readonly_refcounted_packet.is_data_writable());
+    readonly_refcounted_packet.make_writable().unwrap();
+    assert_eq!(readonly_refcounted_packet.data(), payload.as_slice());
+    assert_ne!(
+        readonly_refcounted_packet.data_buffer().as_padded_ptr(),
+        readonly_ptr
+    );
+    assert!(readonly_refcounted_packet.is_data_writable());
+    assert_eq!(
+        readonly_refcounted_packet.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(readonly_refcounted_packet
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+
     let shared_src = Packet::from_data(payload.clone()).unwrap();
     let mut shared_dst = Packet::default();
     shared_dst.ref_from(&shared_src);

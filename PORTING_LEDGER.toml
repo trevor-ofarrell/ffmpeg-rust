@@ -15,6 +15,11 @@ default_profile = "ffmpeg-8.1.1-default-native"
 # `Packet::new_zeroed` now share the same safe payload-length guard through
 # `Packet::validate_payload_len`, with unit and `avutil_core_models`
 # fuzz-model boundary checks.
+# Latest avutil-packet evidence: `packet:payload-make-refcounted-readonly-*`
+# and `packet:payload-make-writable-readonly-*` rows now prove an existing
+# read-only `AVBufferRef` stays attached/non-writable through
+# `av_packet_make_refcounted()`, then detaches to writable padded storage
+# through `av_packet_make_writable()`.
 # Latest ffprobe MOV evidence: a generated two-frame RGB24 MOV oracle row now
 # compares selected default-output fields from Rust ffprobe-rs against pinned
 # FFmpeg 8.1.1 ffprobe for format counts/name/duration/size/probe score,
@@ -425,6 +430,13 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest readonly payload writability update: pinned libavcodec rows now
+# validate `av_packet_make_refcounted()` and `av_packet_make_writable()` on an
+# existing read-only refcounted packet payload. The rows prove make-refcounted
+# returns success without detaching and remains non-writable, while
+# make-writable detaches to writable padded storage and preserves payload
+# bytes. Rust packet unit tests and `avutil_core_models` cover the same
+# readonly refcounted split.
 # Latest AVPacket payload-from-data boundary update: pinned libavcodec rows now
 # validate `av_packet_from_data()` at the `INT_MAX -
 # AV_INPUT_BUFFER_PADDING_SIZE` invalid-size boundary. The row proves EINVAL

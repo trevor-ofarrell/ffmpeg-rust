@@ -1541,6 +1541,44 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_fields(&unique_refcounted),
     );
 
+    let mut readonly_bytes = vec![0xaa, 0xbb];
+    readonly_bytes.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0);
+    let readonly_payload = BufferRef::from_vec_with_len_readonly(readonly_bytes, 2).unwrap();
+    let mut readonly_refcounted = Packet::with_buffer(readonly_payload, 0);
+    let readonly_refcounted_ptr = readonly_refcounted.data_buffer().as_padded_ptr();
+    readonly_refcounted.make_refcounted().unwrap();
+    rows.insert(
+        "packet:payload-make-refcounted-readonly-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-refcounted-readonly-same-ptr".to_string(),
+        vec![u8::from(
+            readonly_refcounted.data_buffer().as_padded_ptr() == readonly_refcounted_ptr,
+        )
+        .to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-refcounted-readonly".to_string(),
+        payload_fields(&readonly_refcounted),
+    );
+    readonly_refcounted.make_writable().unwrap();
+    rows.insert(
+        "packet:payload-make-writable-readonly-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-writable-readonly-same-ptr".to_string(),
+        vec![u8::from(
+            readonly_refcounted.data_buffer().as_padded_ptr() == readonly_refcounted_ptr,
+        )
+        .to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-writable-readonly".to_string(),
+        payload_fields(&readonly_refcounted),
+    );
+
     let shared_refcounted_src = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
     let mut shared_refcounted_dst = Packet::default();
     shared_refcounted_dst.ref_from(&shared_refcounted_src);
@@ -5216,6 +5254,31 @@ static void exercise_payload_api(void) {
     printf("packet:payload-make-refcounted-unique-same-ptr|%d\n",
            pkt->data == unique_refcounted_ptr);
     print_payload("packet:payload-make-refcounted-unique", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    uint8_t *readonly_owned = av_mallocz(2 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!readonly_owned, "av_mallocz readonly payload failed");
+    readonly_owned[0] = 0xaa;
+    readonly_owned[1] = 0xbb;
+    pkt->buf = av_buffer_create(readonly_owned,
+                                2 + AV_INPUT_BUFFER_PADDING_SIZE,
+                                av_buffer_default_free, NULL,
+                                AV_BUFFER_FLAG_READONLY);
+    fail_if(!pkt->buf, "av_buffer_create readonly payload failed");
+    pkt->data = readonly_owned;
+    pkt->size = 2;
+    uint8_t *readonly_ptr = pkt->data;
+    ret = av_packet_make_refcounted(pkt);
+    printf("packet:payload-make-refcounted-readonly-ret|%d\n", ret);
+    printf("packet:payload-make-refcounted-readonly-same-ptr|%d\n",
+           pkt->data == readonly_ptr);
+    print_payload("packet:payload-make-refcounted-readonly", pkt);
+    ret = av_packet_make_writable(pkt);
+    printf("packet:payload-make-writable-readonly-ret|%d\n", ret);
+    printf("packet:payload-make-writable-readonly-same-ptr|%d\n",
+           pkt->data == readonly_ptr);
+    print_payload("packet:payload-make-writable-readonly", pkt);
     av_packet_free(&pkt);
 
     AVPacket *shared_src = new_packet();

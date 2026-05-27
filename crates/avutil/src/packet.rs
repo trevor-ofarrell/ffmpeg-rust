@@ -11675,6 +11675,16 @@ mod tests {
         assert!(!dst.is_data_writable());
         assert!(dst.data_buffer().shares_storage(src.data_buffer()));
         assert_eq!(dst.data_buffer().as_padded_ptr(), dst_ptr);
+
+        let mut readonly_bytes = vec![0xaa, 0xbb];
+        readonly_bytes.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0);
+        let readonly_payload = BufferRef::from_vec_with_len_readonly(readonly_bytes, 2).unwrap();
+        let mut readonly = Packet::with_buffer(readonly_payload, 0);
+        let readonly_ptr = readonly.data_buffer().as_padded_ptr();
+        readonly.make_refcounted().unwrap();
+        assert_eq!(readonly.data(), &[0xaa, 0xbb]);
+        assert!(!readonly.is_data_writable());
+        assert_eq!(readonly.data_buffer().as_padded_ptr(), readonly_ptr);
     }
 
     #[test]
@@ -11704,6 +11714,27 @@ mod tests {
         dst.make_data_writable()[0] = 0x33;
         assert_eq!(dst.data(), &[0x33, 0x22]);
         assert_eq!(src.data(), &[0x11, 0x22]);
+
+        let mut readonly_bytes = vec![0xaa, 0xbb];
+        readonly_bytes.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0);
+        let readonly_payload = BufferRef::from_vec_with_len_readonly(readonly_bytes, 2).unwrap();
+        let mut readonly = Packet::with_buffer(readonly_payload, 0);
+        let readonly_ptr = readonly.data_buffer().as_padded_ptr();
+
+        readonly.make_writable().unwrap();
+
+        assert_eq!(readonly.data(), &[0xaa, 0xbb]);
+        assert_ne!(readonly.data_buffer().as_padded_ptr(), readonly_ptr);
+        assert!(readonly.is_data_writable());
+        assert_eq!(
+            readonly.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(readonly
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
     }
 
     #[test]
