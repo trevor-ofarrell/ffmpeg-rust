@@ -634,6 +634,28 @@ fn exercise_fixtures() {
             .unwrap(),
         )
         .unwrap();
+    nullable_options
+        .define(
+            OptionDefinition::new(
+                "nullable_blob",
+                OptionKind::Binary,
+                OptionValue::NullBinary,
+                "nullable binary",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    nullable_options
+        .define(
+            OptionDefinition::new(
+                "nullable_dict",
+                OptionKind::Dictionary,
+                OptionValue::NullDictionary,
+                "nullable dictionary",
+            )
+            .unwrap(),
+        )
+        .unwrap();
     assert_eq!(
         nullable_options.get_avoption_string("nullable").unwrap(),
         ""
@@ -644,6 +666,34 @@ fn exercise_fixtures() {
             .unwrap(),
         None
     );
+    assert_eq!(
+        nullable_options
+            .get_avoption_string_nullable_with_flags(
+                "nullable_blob",
+                OptionSearchFlags::ALLOW_NULL,
+            )
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        nullable_options
+            .get_avoption_string_nullable_with_flags(
+                "nullable_dict",
+                OptionSearchFlags::ALLOW_NULL,
+            )
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        nullable_options
+            .get_avoption_binary("nullable_blob")
+            .unwrap(),
+        Vec::<u8>::new()
+    );
+    assert!(nullable_options
+        .get_avoption_dictionary("nullable_dict")
+        .unwrap()
+        .is_empty());
     nullable_options
         .set_avoption_from_str("nullable", "owned")
         .unwrap();

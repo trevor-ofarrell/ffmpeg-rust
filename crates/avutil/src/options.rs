@@ -17,7 +17,9 @@ pub enum OptionValue {
     ChannelLayout(ChannelLayoutSpec),
     VideoRate(Rational),
     Color(RgbaColor),
+    NullBinary,
     Binary(Vec<u8>),
+    NullDictionary,
     Dictionary(Dictionary),
     Array(Vec<OptionValue>),
     Float(f64),
@@ -2446,6 +2448,7 @@ impl OptionSet {
             )));
         }
         match &self.values[index] {
+            OptionValue::NullBinary => Ok(Vec::new()),
             OptionValue::Binary(value) => Ok(value.clone()),
             _ => Err(AvError::invalid_argument(format!(
                 "AVOption `{}` storage is not binary",
@@ -2462,6 +2465,7 @@ impl OptionSet {
             )));
         }
         match &self.values[index] {
+            OptionValue::NullDictionary => Ok(Dictionary::new()),
             OptionValue::Dictionary(value) => Ok(value.clone()),
             _ => Err(AvError::invalid_argument(format!(
                 "AVOption `{}` storage is not a dictionary",
@@ -3504,6 +3508,8 @@ fn avoption_numeric_input_from_value(
         OptionValue::Float(value) => Ok(Some(AvOptionNumericInput::Double(*value))),
         OptionValue::Rational(value) => Ok(Some(AvOptionNumericInput::Rational(*value))),
         OptionValue::NullString
+        | OptionValue::NullBinary
+        | OptionValue::NullDictionary
         | OptionValue::String(_)
         | OptionValue::ImageSize { .. }
         | OptionValue::ChannelLayout(_)
@@ -4073,12 +4079,12 @@ fn avoption_number_parts(name: &str, value: &OptionValue) -> AvResult<AvOptionNu
         OptionValue::Color(_) => Err(AvError::invalid_argument(format!(
             "AVOption `{name}` is not numeric"
         ))),
-        OptionValue::Binary(_) => Err(AvError::invalid_argument(format!(
-            "AVOption `{name}` is not numeric"
-        ))),
-        OptionValue::Dictionary(_) => Err(AvError::invalid_argument(format!(
-            "AVOption `{name}` is not numeric"
-        ))),
+        OptionValue::NullBinary | OptionValue::Binary(_) => Err(AvError::invalid_argument(
+            format!("AVOption `{name}` is not numeric"),
+        )),
+        OptionValue::NullDictionary | OptionValue::Dictionary(_) => Err(AvError::invalid_argument(
+            format!("AVOption `{name}` is not numeric"),
+        )),
         OptionValue::Array(_) => Err(AvError::invalid_argument(format!(
             "AVOption `{name}` is not numeric"
         ))),
@@ -4357,8 +4363,10 @@ fn validate_value_for_kind(kind: &OptionKind, value: &OptionValue) -> AvResult<(
             Ok(())
         }
         (OptionKind::Color, OptionValue::Color(_)) => Ok(()),
-        (OptionKind::Binary, OptionValue::Binary(_)) => Ok(()),
-        (OptionKind::Dictionary, OptionValue::Dictionary(_)) => Ok(()),
+        (OptionKind::Binary, OptionValue::NullBinary | OptionValue::Binary(_)) => Ok(()),
+        (OptionKind::Dictionary, OptionValue::NullDictionary | OptionValue::Dictionary(_)) => {
+            Ok(())
+        }
         (OptionKind::Array(array), OptionValue::Array(values)) => {
             validate_array_len(array, values.len(), "array option")?;
             for value in values {
@@ -5479,6 +5487,8 @@ fn format_avoption_value_for_kind_nullable(
         && matches!(
             (kind, value),
             (OptionKind::String { .. }, OptionValue::NullString)
+                | (OptionKind::Binary, OptionValue::NullBinary)
+                | (OptionKind::Dictionary, OptionValue::NullDictionary)
         )
     {
         None
@@ -5527,6 +5537,7 @@ fn format_avoption_value(value: &OptionValue) -> String {
                 rgba[0], rgba[1], rgba[2], rgba[3]
             )
         }
+        OptionValue::NullBinary => String::new(),
         OptionValue::Binary(value) => {
             let mut formatted = String::with_capacity(value.len() * 2);
             for byte in value {
@@ -5535,6 +5546,7 @@ fn format_avoption_value(value: &OptionValue) -> String {
             }
             formatted
         }
+        OptionValue::NullDictionary => String::new(),
         OptionValue::Dictionary(value) => value
             .to_pairs_string('=', ':')
             .expect("dictionary AVOption values use valid separators"),
@@ -7588,7 +7600,7 @@ mod tests {
     }
 
     #[test]
-    fn nullable_string_getter_models_allow_null_flag() {
+    fn nullable_string_binary_and_dictionary_getters_model_allow_null_flag() {
         let mut options = OptionSet::new();
         options
             .define(
@@ -7597,6 +7609,52 @@ mod tests {
                     OptionKind::String { allow_empty: true },
                     OptionValue::NullString,
                     "nullable string",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        options
+            .define(
+                OptionDefinition::new(
+                    "nullable_blob",
+                    OptionKind::Binary,
+                    OptionValue::NullBinary,
+                    "nullable binary",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        options
+            .define(
+                OptionDefinition::new(
+                    "blob",
+                    OptionKind::Binary,
+                    OptionValue::Binary(vec![0xDE, 0xAD]),
+                    "binary",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        options
+            .define(
+                OptionDefinition::new(
+                    "nullable_dict",
+                    OptionKind::Dictionary,
+                    OptionValue::NullDictionary,
+                    "nullable dictionary",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        let mut dictionary = Dictionary::new();
+        dictionary.set("key", "value").unwrap();
+        options
+            .define(
+                OptionDefinition::new(
+                    "dict",
+                    OptionKind::Dictionary,
+                    OptionValue::Dictionary(dictionary),
+                    "dictionary",
                 )
                 .unwrap(),
             )
@@ -7614,6 +7672,13 @@ mod tests {
             .unwrap();
 
         assert_eq!(options.get_avoption_string("nullable").unwrap(), "");
+        assert_eq!(options.get_avoption_string("nullable_blob").unwrap(), "");
+        assert_eq!(options.get_avoption_binary("nullable_blob").unwrap(), []);
+        assert_eq!(options.get_avoption_string("nullable_dict").unwrap(), "");
+        assert!(options
+            .get_avoption_dictionary("nullable_dict")
+            .unwrap()
+            .is_empty());
         assert_eq!(
             options.get_avoption_string_nullable("nullable").unwrap(),
             Some(String::new())
@@ -7621,6 +7686,24 @@ mod tests {
         assert_eq!(
             options
                 .get_avoption_string_nullable_with_flags("nullable", OptionSearchFlags::ALLOW_NULL,)
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            options
+                .get_avoption_string_nullable_with_flags(
+                    "nullable_blob",
+                    OptionSearchFlags::ALLOW_NULL,
+                )
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            options
+                .get_avoption_string_nullable_with_flags(
+                    "nullable_dict",
+                    OptionSearchFlags::ALLOW_NULL,
+                )
                 .unwrap(),
             None
         );
@@ -7635,6 +7718,18 @@ mod tests {
                 .get_avoption_string_nullable_with_flags("metadata", OptionSearchFlags::ALLOW_NULL,)
                 .unwrap(),
             Some("default".to_owned())
+        );
+        assert_eq!(
+            options
+                .get_avoption_string_nullable_with_flags("blob", OptionSearchFlags::ALLOW_NULL)
+                .unwrap(),
+            Some("DEAD".to_owned())
+        );
+        assert_eq!(
+            options
+                .get_avoption_string_nullable_with_flags("dict", OptionSearchFlags::ALLOW_NULL)
+                .unwrap(),
+            Some("key=value".to_owned())
         );
         assert_eq!(
             options

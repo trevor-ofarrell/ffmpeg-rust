@@ -1403,6 +1403,27 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
             ret_i64(binary_defaults.get_avoption_int("blob")),
         ],
     );
+    insert_row(
+        &mut rows,
+        "get:binary-allow-null",
+        [
+            ret_value(binary_defaults.get_avoption_string("nullable_blob")),
+            ret_nullable_value(binary_defaults.get_avoption_string_nullable_with_flags(
+                "nullable_blob",
+                OptionSearchFlags::ALLOW_NULL,
+            )),
+            ret_nullable_value(
+                binary_defaults
+                    .get_avoption_string_nullable_with_flags("blob", OptionSearchFlags::ALLOW_NULL),
+            ),
+            ret_nullable_value(binary_defaults.get_avoption_string_nullable_with_flags(
+                "nullable_blob",
+                OptionSearchFlags::from_bits_truncate(
+                    OptionSearchFlags::ALLOW_NULL.bits() | OptionSearchFlags::FAKE_OBJ.bits(),
+                ),
+            )),
+        ],
+    );
 
     let mut binary_set = binary_options();
     let ret_hex = ret(binary_set.set_avoption_from_str("blob", "0f10Aa"));
@@ -1509,6 +1530,29 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
             ret_value(dictionary_defaults.get_avoption_string("empty")),
             ret_dictionary(dictionary_defaults.get_avoption_dictionary("empty")),
             ret_i64(dictionary_defaults.get_avoption_int("dict")),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "get:dictionary-allow-null",
+        [
+            ret_value(dictionary_defaults.get_avoption_string("empty")),
+            ret_nullable_value(
+                dictionary_defaults.get_avoption_string_nullable_with_flags(
+                    "empty",
+                    OptionSearchFlags::ALLOW_NULL,
+                ),
+            ),
+            ret_nullable_value(
+                dictionary_defaults
+                    .get_avoption_string_nullable_with_flags("dict", OptionSearchFlags::ALLOW_NULL),
+            ),
+            ret_nullable_value(dictionary_defaults.get_avoption_string_nullable_with_flags(
+                "empty",
+                OptionSearchFlags::from_bits_truncate(
+                    OptionSearchFlags::ALLOW_NULL.bits() | OptionSearchFlags::FAKE_OBJ.bits(),
+                ),
+            )),
         ],
     );
 
@@ -2467,6 +2511,18 @@ fn binary_options() -> OptionSet {
     options
         .define(
             OptionDefinition::new_with_flags(
+                "nullable_blob",
+                OptionKind::Binary,
+                OptionValue::NullBinary,
+                "nullable binary",
+                OptionFlags::ENCODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+        .define(
+            OptionDefinition::new_with_flags(
                 "scalar",
                 OptionKind::Int { min: 0, max: 10 },
                 OptionValue::Int(4),
@@ -2502,7 +2558,7 @@ fn dictionary_options() -> OptionSet {
             OptionDefinition::new_with_flags(
                 "empty",
                 OptionKind::Dictionary,
-                OptionValue::Dictionary(Dictionary::new()),
+                OptionValue::NullDictionary,
                 "empty dictionary",
                 OptionFlags::ENCODING_PARAM,
             )
@@ -2898,6 +2954,7 @@ fn channel_layout_value(options: &OptionSet, name: &str) -> ChannelLayoutSpec {
 
 fn binary_value(options: &OptionSet, name: &str) -> Vec<u8> {
     match options.get(name) {
+        Some(OptionValue::NullBinary) => Vec::new(),
         Some(OptionValue::Binary(value)) => value.clone(),
         other => panic!("expected binary option `{name}`, got {other:?}"),
     }
@@ -2905,6 +2962,7 @@ fn binary_value(options: &OptionSet, name: &str) -> Vec<u8> {
 
 fn dictionary_value(options: &OptionSet, name: &str) -> Dictionary {
     match options.get(name) {
+        Some(OptionValue::NullDictionary) => Dictionary::new(),
         Some(OptionValue::Dictionary(value)) => value.clone(),
         other => panic!("expected dictionary option `{name}`, got {other:?}"),
     }
@@ -2936,7 +2994,9 @@ fn array_value_field(value: &OptionValue) -> String {
                 rgba[0], rgba[1], rgba[2], rgba[3]
             )
         }
+        OptionValue::NullBinary => "<null>".to_owned(),
         OptionValue::Binary(value) => binary_field(value),
+        OptionValue::NullDictionary => "<null>".to_owned(),
         OptionValue::Dictionary(value) => value
             .to_pairs_string('=', ':')
             .expect("dictionary AVOption values use valid separators"),
@@ -3445,6 +3505,8 @@ typedef struct BinaryOptions {
     const AVClass *av_class;
     uint8_t *blob;
     int blob_size;
+    uint8_t *nullable_blob;
+    int nullable_blob_size;
     int64_t scalar;
 } BinaryOptions;
 
@@ -3583,6 +3645,8 @@ static const AVOption channel_layout_options[] = {
 static const AVOption binary_options[] = {
     { "blob", "binary data", offsetof(BinaryOptions, blob),
       AV_OPT_TYPE_BINARY, { .str = "0001aaff" }, 0, 0, AV_OPT_FLAG_ENCODING_PARAM },
+    { "nullable_blob", "nullable binary", offsetof(BinaryOptions, nullable_blob),
+      AV_OPT_TYPE_BINARY, { .str = NULL }, 0, 0, AV_OPT_FLAG_ENCODING_PARAM },
     { "scalar", "scalar", offsetof(BinaryOptions, scalar),
       AV_OPT_TYPE_INT64, { .i64 = 4 }, 0, 10, AV_OPT_FLAG_ENCODING_PARAM },
     { NULL }
@@ -4724,6 +4788,12 @@ static void print_binary_rows(void) {
     print_get_value(&ctx, "blob");
     print_get_int_value(&ctx, "blob", 0);
     printf("\n");
+    printf("get:binary-allow-null");
+    print_get_value(&ctx, "nullable_blob");
+    print_get_value_flags(&ctx, "nullable_blob", AV_OPT_ALLOW_NULL);
+    print_get_value_flags(&ctx, "blob", AV_OPT_ALLOW_NULL);
+    print_get_value_flags(&ctx, "nullable_blob", AV_OPT_ALLOW_NULL | AV_OPT_SEARCH_FAKE_OBJ);
+    printf("\n");
 
     ret_hex = av_opt_set(&ctx, "blob", "0f10Aa", 0);
     after_hex_len = ctx.blob_size;
@@ -4822,6 +4892,12 @@ static void print_dictionary_rows(void) {
     print_get_value(&ctx, "empty");
     print_get_dict_value(&ctx, "empty", 0);
     print_get_int_value(&ctx, "dict", 0);
+    printf("\n");
+    printf("get:dictionary-allow-null");
+    print_get_value(&ctx, "empty");
+    print_get_value_flags(&ctx, "empty", AV_OPT_ALLOW_NULL);
+    print_get_value_flags(&ctx, "dict", AV_OPT_ALLOW_NULL);
+    print_get_value_flags(&ctx, "empty", AV_OPT_ALLOW_NULL | AV_OPT_SEARCH_FAKE_OBJ);
     printf("\n");
 
     ret_escaped = av_opt_set(&ctx, "dict", "artist=rust:comment=hello\\:there", 0);
