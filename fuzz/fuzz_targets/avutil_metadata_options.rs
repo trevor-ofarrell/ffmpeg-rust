@@ -622,6 +622,37 @@ fn exercise_fixtures() {
     let metadata_ranges = options.query_avoption_ranges("metadata").unwrap();
     assert_eq!(metadata_ranges.ranges()[0].value_min(), -1.0);
     assert_eq!(metadata_ranges.ranges()[0].component_max(), 0x10ffff as f64);
+    let mut nullable_options = OptionSet::new();
+    nullable_options
+        .define(
+            OptionDefinition::new(
+                "nullable",
+                OptionKind::String { allow_empty: true },
+                OptionValue::NullString,
+                "nullable string",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(
+        nullable_options.get_avoption_string("nullable").unwrap(),
+        ""
+    );
+    assert_eq!(
+        nullable_options
+            .get_avoption_string_nullable_with_flags("nullable", OptionSearchFlags::ALLOW_NULL)
+            .unwrap(),
+        None
+    );
+    nullable_options
+        .set_avoption_from_str("nullable", "owned")
+        .unwrap();
+    assert_eq!(
+        nullable_options
+            .get_avoption_string_nullable_with_flags("nullable", OptionSearchFlags::ALLOW_NULL)
+            .unwrap(),
+        Some("owned".to_owned())
+    );
     let aspect_ranges = options.query_avoption_ranges("aspect_ratio").unwrap();
     assert_eq!(aspect_ranges.ranges()[0].component_min(), i32::MIN as f64);
     assert_eq!(aspect_ranges.ranges()[0].component_max(), i32::MAX as f64);

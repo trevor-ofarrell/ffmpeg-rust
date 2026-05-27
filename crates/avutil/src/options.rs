@@ -22,6 +22,7 @@ pub enum OptionValue {
     Array(Vec<OptionValue>),
     Float(f64),
     Rational(Rational),
+    NullString,
     String(String),
 }
 
@@ -404,9 +405,13 @@ pub struct OptionSearchFlags {
 impl OptionSearchFlags {
     pub const CHILDREN: Self = Self { bits: 1 << 0 };
     pub const FAKE_OBJ: Self = Self { bits: 1 << 1 };
+    pub const ALLOW_NULL: Self = Self { bits: 1 << 2 };
     pub const ARRAY_REPLACE: Self = Self { bits: 1 << 3 };
 
-    const KNOWN_BITS: u32 = Self::CHILDREN.bits | Self::FAKE_OBJ.bits | Self::ARRAY_REPLACE.bits;
+    const KNOWN_BITS: u32 = Self::CHILDREN.bits
+        | Self::FAKE_OBJ.bits
+        | Self::ALLOW_NULL.bits
+        | Self::ARRAY_REPLACE.bits;
 
     pub const fn empty() -> Self {
         Self { bits: 0 }
@@ -1083,10 +1088,15 @@ impl OptionSet {
     }
 
     pub fn get_avoption_string(&self, name: &str) -> AvResult<String> {
+        Ok(self.get_avoption_string_nullable(name)?.unwrap_or_default())
+    }
+
+    pub fn get_avoption_string_nullable(&self, name: &str) -> AvResult<Option<String>> {
         let index = self.avoption_index(name)?;
-        Ok(format_avoption_value_for_kind(
+        Ok(format_avoption_value_for_kind_nullable(
             self.definitions[index].kind(),
             &self.values[index],
+            false,
         ))
     }
 
@@ -1095,23 +1105,40 @@ impl OptionSet {
         name: &str,
         search_flags: OptionSearchFlags,
     ) -> AvResult<String> {
+        Ok(self
+            .get_avoption_string_nullable_with_flags(name, search_flags)?
+            .unwrap_or_default())
+    }
+
+    pub fn get_avoption_string_nullable_with_flags(
+        &self,
+        name: &str,
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<Option<String>> {
         let search_flags = OptionSearchFlags::from_bits_truncate(search_flags.bits());
         if search_flags.contains(OptionSearchFlags::FAKE_OBJ) {
             return Err(avoption_not_found_error(name));
         }
 
+        let allow_null = search_flags.contains(OptionSearchFlags::ALLOW_NULL);
         if search_flags.contains(OptionSearchFlags::CHILDREN) {
             for child in &self.children {
                 if let Some(index) = child.options.find_exact_index(name) {
-                    return Ok(format_avoption_value_for_kind(
+                    return Ok(format_avoption_value_for_kind_nullable(
                         child.options.definitions[index].kind(),
                         &child.options.values[index],
+                        allow_null,
                     ));
                 }
             }
         }
 
-        self.get_avoption_string(name)
+        let index = self.avoption_index(name)?;
+        Ok(format_avoption_value_for_kind_nullable(
+            self.definitions[index].kind(),
+            &self.values[index],
+            allow_null,
+        ))
     }
 
     pub fn get_child_option(&self, child_name: &str, option_name: &str) -> AvResult<&OptionValue> {
@@ -3476,7 +3503,8 @@ fn avoption_numeric_input_from_value(
         )))),
         OptionValue::Float(value) => Ok(Some(AvOptionNumericInput::Double(*value))),
         OptionValue::Rational(value) => Ok(Some(AvOptionNumericInput::Rational(*value))),
-        OptionValue::String(_)
+        OptionValue::NullString
+        | OptionValue::String(_)
         | OptionValue::ImageSize { .. }
         | OptionValue::ChannelLayout(_)
         | OptionValue::VideoRate(_)
@@ -4067,9 +4095,9 @@ fn avoption_number_parts(name: &str, value: &OptionValue) -> AvResult<AvOptionNu
                 intnum: i64::from(value.num()),
             })
         }
-        OptionValue::String(_) => Err(AvError::invalid_argument(format!(
-            "AVOption `{name}` is not numeric"
-        ))),
+        OptionValue::NullString | OptionValue::String(_) => Err(AvError::invalid_argument(
+            format!("AVOption `{name}` is not numeric"),
+        )),
     }
 }
 
@@ -4360,6 +4388,7 @@ fn validate_value_for_kind(kind: &OptionKind, value: &OptionValue) -> AvResult<(
             }
             Ok(())
         }
+        (OptionKind::String { .. }, OptionValue::NullString) => Ok(()),
         (OptionKind::String { allow_empty }, OptionValue::String(value)) => {
             if !allow_empty && value.is_empty() {
                 return Err(AvError::invalid_argument(
@@ -5441,6 +5470,23 @@ fn format_avoption_value_for_kind(kind: &OptionKind, value: &OptionValue) -> Str
     format_avoption_value(value)
 }
 
+fn format_avoption_value_for_kind_nullable(
+    kind: &OptionKind,
+    value: &OptionValue,
+    allow_null: bool,
+) -> Option<String> {
+    if allow_null
+        && matches!(
+            (kind, value),
+            (OptionKind::String { .. }, OptionValue::NullString)
+        )
+    {
+        None
+    } else {
+        Some(format_avoption_value_for_kind(kind, value))
+    }
+}
+
 fn format_avoption_array(values: &[OptionValue], separator: char) -> String {
     let mut output = String::new();
     for (index, value) in values.iter().enumerate() {
@@ -5495,6 +5541,7 @@ fn format_avoption_value(value: &OptionValue) -> String {
         OptionValue::Array(values) => format_avoption_array(values, ','),
         OptionValue::Float(value) => format!("{value:.6}"),
         OptionValue::Rational(value) => format!("{}/{}", value.num(), value.den()),
+        OptionValue::NullString => String::new(),
         OptionValue::String(value) => value.clone(),
     }
 }
@@ -5621,18 +5668,21 @@ mod tests {
     fn option_search_flags_match_ffmpeg_bits_and_truncate_unknown_bits() {
         assert_eq!(OptionSearchFlags::CHILDREN.bits(), 1 << 0);
         assert_eq!(OptionSearchFlags::FAKE_OBJ.bits(), 1 << 1);
+        assert_eq!(OptionSearchFlags::ALLOW_NULL.bits(), 1 << 2);
         assert_eq!(OptionSearchFlags::ARRAY_REPLACE.bits(), 1 << 3);
 
         let truncated = OptionSearchFlags::from_bits_truncate(u32::MAX);
 
         assert!(truncated.contains(OptionSearchFlags::CHILDREN));
         assert!(truncated.contains(OptionSearchFlags::FAKE_OBJ));
+        assert!(truncated.contains(OptionSearchFlags::ALLOW_NULL));
         assert!(truncated.contains(OptionSearchFlags::ARRAY_REPLACE));
         assert!(truncated.intersects(OptionSearchFlags::CHILDREN));
         assert_eq!(
             truncated.bits(),
             OptionSearchFlags::CHILDREN.bits()
                 | OptionSearchFlags::FAKE_OBJ.bits()
+                | OptionSearchFlags::ALLOW_NULL.bits()
                 | OptionSearchFlags::ARRAY_REPLACE.bits()
         );
         assert_eq!(OptionSearchFlags::empty().bits(), 0);
@@ -7534,6 +7584,79 @@ mod tests {
         assert_eq!(
             definition.parse_value("ok").unwrap(),
             OptionValue::String("ok".to_string())
+        );
+    }
+
+    #[test]
+    fn nullable_string_getter_models_allow_null_flag() {
+        let mut options = OptionSet::new();
+        options
+            .define(
+                OptionDefinition::new(
+                    "nullable",
+                    OptionKind::String { allow_empty: true },
+                    OptionValue::NullString,
+                    "nullable string",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        options
+            .define(
+                OptionDefinition::new(
+                    "metadata",
+                    OptionKind::String { allow_empty: true },
+                    OptionValue::String("default".to_owned()),
+                    "metadata",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        assert_eq!(options.get_avoption_string("nullable").unwrap(), "");
+        assert_eq!(
+            options.get_avoption_string_nullable("nullable").unwrap(),
+            Some(String::new())
+        );
+        assert_eq!(
+            options
+                .get_avoption_string_nullable_with_flags("nullable", OptionSearchFlags::ALLOW_NULL,)
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            options
+                .get_avoption_string_with_flags("nullable", OptionSearchFlags::ALLOW_NULL)
+                .unwrap(),
+            ""
+        );
+        assert_eq!(
+            options
+                .get_avoption_string_nullable_with_flags("metadata", OptionSearchFlags::ALLOW_NULL,)
+                .unwrap(),
+            Some("default".to_owned())
+        );
+        assert_eq!(
+            options
+                .get_avoption_string_nullable_with_flags(
+                    "nullable",
+                    OptionSearchFlags::from_bits_truncate(
+                        OptionSearchFlags::ALLOW_NULL.bits() | OptionSearchFlags::FAKE_OBJ.bits(),
+                    ),
+                )
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::OPTION_NOT_FOUND)
+        );
+
+        options
+            .set_avoption_from_str("nullable", "now-owned")
+            .unwrap();
+        assert_eq!(
+            options
+                .get_avoption_string_nullable_with_flags("nullable", OptionSearchFlags::ALLOW_NULL,)
+                .unwrap(),
+            Some("now-owned".to_owned())
         );
     }
 

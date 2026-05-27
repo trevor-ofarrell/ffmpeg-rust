@@ -147,6 +147,8 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         [
             OptionSearchFlags::CHILDREN.bits().to_string(),
             OptionSearchFlags::FAKE_OBJ.bits().to_string(),
+            OptionSearchFlags::ALLOW_NULL.bits().to_string(),
+            OptionSearchFlags::ARRAY_REPLACE.bits().to_string(),
         ],
     );
     insert_row(
@@ -237,6 +239,33 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         [
             ret_value(options.get_avoption_string("THREADS")),
             ret_value(options.get_avoption_string("fast")),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "get:allow-null",
+        [
+            ret_value(options.get_avoption_string("nullable_metadata")),
+            ret_value(
+                options.get_avoption_string_with_flags(
+                    "nullable_metadata",
+                    OptionSearchFlags::empty(),
+                ),
+            ),
+            ret_nullable_value(options.get_avoption_string_nullable_with_flags(
+                "nullable_metadata",
+                OptionSearchFlags::ALLOW_NULL,
+            )),
+            ret_nullable_value(options.get_avoption_string_nullable_with_flags(
+                "metadata",
+                OptionSearchFlags::ALLOW_NULL,
+            )),
+            ret_nullable_value(options.get_avoption_string_nullable_with_flags(
+                "nullable_metadata",
+                OptionSearchFlags::from_bits_truncate(
+                    OptionSearchFlags::ALLOW_NULL.bits() | OptionSearchFlags::FAKE_OBJ.bits(),
+                ),
+            )),
         ],
     );
     insert_row(
@@ -2170,6 +2199,18 @@ fn sample_options() -> OptionSet {
         .unwrap();
     options
         .define(
+            OptionDefinition::new_with_flags(
+                "nullable_metadata",
+                OptionKind::String { allow_empty: true },
+                OptionValue::NullString,
+                "nullable metadata",
+                OptionFlags::ENCODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+        .define(
             OptionDefinition::new_with_flags_and_unit(
                 "preset_level",
                 OptionKind::Int { min: 0, max: 10 },
@@ -2902,6 +2943,7 @@ fn array_value_field(value: &OptionValue) -> String {
         OptionValue::Array(values) => format!("nested:{}", values.len()),
         OptionValue::Float(value) => format!("{value:.6}"),
         OptionValue::String(value) => value.clone(),
+        OptionValue::NullString => "<null>".to_owned(),
     }
 }
 
@@ -3097,6 +3139,19 @@ fn ret_array_rationals(result: avutil::AvResult<Vec<Rational>>) -> String {
 fn ret_value(result: avutil::AvResult<String>) -> String {
     match result {
         Ok(value) => format!("0:{value}"),
+        Err(err) => format!(
+            "{}:<null>",
+            err.code()
+                .map(|code| code.raw().to_string())
+                .unwrap_or_else(|| "no-code".to_owned())
+        ),
+    }
+}
+
+fn ret_nullable_value(result: avutil::AvResult<Option<String>>) -> String {
+    match result {
+        Ok(Some(value)) => format!("0:{value}"),
+        Ok(None) => "0:<null>".to_owned(),
         Err(err) => format!(
             "{}:<null>",
             err.code()
@@ -3352,6 +3407,7 @@ typedef struct TestOptions {
     double quality;
     AVRational aspect_ratio;
     char *metadata;
+    char *nullable_metadata;
     int64_t preset_level;
     int64_t exported;
 } TestOptions;
@@ -3458,6 +3514,8 @@ static const AVOption test_options[] = {
       AV_OPT_TYPE_RATIONAL, { .dbl = 1.0 }, 1.0, 16.0 / 9.0, AV_OPT_FLAG_ENCODING_PARAM },
     { "metadata", "metadata", offsetof(TestOptions, metadata),
       AV_OPT_TYPE_STRING, { .str = "default" }, 0, 0, AV_OPT_FLAG_ENCODING_PARAM },
+    { "nullable_metadata", "nullable metadata", offsetof(TestOptions, nullable_metadata),
+      AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, AV_OPT_FLAG_ENCODING_PARAM },
     { "preset_level", "preset level", offsetof(TestOptions, preset_level),
       AV_OPT_TYPE_INT64, { .i64 = 0 }, 0, 10, AV_OPT_FLAG_ENCODING_PARAM, "PRESET" },
     { "fast", "fast preset", 0,
@@ -3774,9 +3832,11 @@ static void print_types(void) {
 }
 
 static void print_search_flags(void) {
-    printf("search-flags|%d|%d\n",
+    printf("search-flags|%d|%d|%d|%d\n",
            AV_OPT_SEARCH_CHILDREN,
-           AV_OPT_SEARCH_FAKE_OBJ);
+           AV_OPT_SEARCH_FAKE_OBJ,
+           AV_OPT_ALLOW_NULL,
+           AV_OPT_ARRAY_REPLACE);
 }
 
 static void print_serialize_flags(void) {
@@ -4007,6 +4067,16 @@ static void print_get_errors(const TestOptions *ctx) {
     printf("get:errors");
     print_get_value(ctx, "THREADS");
     print_get_value(ctx, "fast");
+    printf("\n");
+}
+
+static void print_get_allow_null_row(const TestOptions *ctx) {
+    printf("get:allow-null");
+    print_get_value(ctx, "nullable_metadata");
+    print_get_value_flags(ctx, "nullable_metadata", 0);
+    print_get_value_flags(ctx, "nullable_metadata", AV_OPT_ALLOW_NULL);
+    print_get_value_flags(ctx, "metadata", AV_OPT_ALLOW_NULL);
+    print_get_value_flags(ctx, "nullable_metadata", AV_OPT_ALLOW_NULL | AV_OPT_SEARCH_FAKE_OBJ);
     printf("\n");
 }
 
@@ -5434,6 +5504,7 @@ int main(void) {
     print_state("state:defaults", &ctx);
     print_get_row("get:defaults", &ctx);
     print_get_errors(&ctx);
+    print_get_allow_null_row(&ctx);
     print_query_ranges_row(&ctx);
     print_find_children_row(&ctx);
     print_get_children_row(&ctx);
