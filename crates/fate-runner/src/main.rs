@@ -283,6 +283,11 @@ const PATH_RULES: &[PathRule] = &[
         id_prefixes: &[],
     },
     PathRule {
+        path: "crates/avutil/tests/options_oracle.rs",
+        exact_ids: &["avutil-options"],
+        id_prefixes: &[],
+    },
+    PathRule {
         path: "crates/avutil/src/pixel.rs",
         exact_ids: &["avutil-pixel-format"],
         id_prefixes: &[],
@@ -2091,6 +2096,17 @@ mod tests {
         assert_eq!(
             changed_components(&component_ids, &paths),
             vec!["avutil-dict".to_string()]
+        );
+    }
+
+    #[test]
+    fn changed_selection_maps_options_oracle_test_to_component() {
+        let component_ids = component_ids_from_ledger(&ledger(&["avutil-options"]));
+        let paths = vec!["crates/avutil/tests/options_oracle.rs".to_string()];
+
+        assert_eq!(
+            changed_components(&component_ids, &paths),
+            vec!["avutil-options".to_string()]
         );
     }
 

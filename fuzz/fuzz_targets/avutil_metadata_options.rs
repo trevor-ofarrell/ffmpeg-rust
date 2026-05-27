@@ -963,7 +963,7 @@ fn exercise_fixtures() {
         .define(
             OptionDefinition::new(
                 "pix_fmt",
-                OptionKind::PixelFormat { min: -1, max: 24 },
+                OptionKind::PixelFormat { min: -1, max: 266 },
                 OptionValue::PixelFormat(Some(PixelFormat::Yuv420p)),
                 "pixel format",
             )
@@ -997,6 +997,22 @@ fn exercise_fixtures() {
         .set_avoption_pixel_format("pix_fmt", Some(PixelFormat::Bgr24))
         .unwrap();
     assert_eq!(pixel_format_options.get_avoption_int("pix_fmt").unwrap(), 3);
+    pixel_format_options
+        .set_avoption_from_str("pix_fmt", "gbrap32le")
+        .unwrap();
+    assert_eq!(
+        pixel_format_options.get_avoption_int("pix_fmt").unwrap(),
+        257
+    );
+    pixel_format_options
+        .set_avoption_from_str("pix_fmt", "259")
+        .unwrap();
+    assert_eq!(
+        pixel_format_options
+            .get_avoption_pixel_format("pix_fmt")
+            .unwrap(),
+        Some(PixelFormat::Yuv444p10MsbLe)
+    );
     let before_pixel_format_errors = pixel_format_options.clone();
     assert_eq!(
         pixel_format_options
@@ -1008,10 +1024,10 @@ fn exercise_fixtures() {
     assert_eq!(pixel_format_options, before_pixel_format_errors);
     assert_eq!(
         pixel_format_options
-            .set_avoption_from_str("pix_fmt", "25")
+            .set_avoption_from_str("pix_fmt", "267")
             .unwrap_err()
             .code(),
-        Some(AvErrorCode::from_posix_errno(34))
+        Some(AvErrorCode::from_posix_errno(22))
     );
     assert_eq!(pixel_format_options, before_pixel_format_errors);
 
@@ -2271,7 +2287,7 @@ fn generated_definition(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionDefin
         },
         10 => OptionKind::Duration { min: 8, max: 1 },
         11 => OptionKind::ImageSize,
-        12 => OptionKind::PixelFormat { min: -1, max: 24 },
+        12 => OptionKind::PixelFormat { min: -1, max: 266 },
         13 => OptionKind::PixelFormat { min: 24, max: -1 },
         14 => OptionKind::SampleFormat { min: -1, max: 11 },
         15 => OptionKind::SampleFormat { min: 11, max: -1 },
@@ -2552,7 +2568,7 @@ fn sample_options() -> OptionSet {
         .define(
             OptionDefinition::new(
                 "pix_fmt",
-                OptionKind::PixelFormat { min: -1, max: 24 },
+                OptionKind::PixelFormat { min: -1, max: 266 },
                 OptionValue::PixelFormat(Some(PixelFormat::Yuv420p)),
                 "pixel format",
             )

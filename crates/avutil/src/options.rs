@@ -3190,6 +3190,11 @@ fn parse_pixel_format(raw: &str, min: i32, max: i32) -> AvResult<Option<PixelFor
             "unable to parse pixel format option value `{raw}`"
         )));
     }
+    let Some(name) = avoption_pixel_format_name(index) else {
+        return Err(AvError::invalid_argument(format!(
+            "unable to parse pixel format option value `{raw}`"
+        )));
+    };
     if index < min || index > max {
         return Err(avoption_range_error(
             "pixel format",
@@ -3199,7 +3204,9 @@ fn parse_pixel_format(raw: &str, min: i32, max: i32) -> AvResult<Option<PixelFor
         ));
     }
 
-    pixel_format_from_avoption_index(index)
+    PixelFormat::from_name(name)
+        .map(Some)
+        .ok_or_else(|| AvError::unsupported(format!("FFmpeg pixel format `{name}` is not modeled")))
 }
 
 const AV_SAMPLE_FMT_NB: i32 = 12;
@@ -3585,76 +3592,315 @@ fn validate_pixel_format_index(value: Option<PixelFormat>, min: i32, max: i32) -
 }
 
 fn pixel_format_from_avoption_index(index: i32) -> AvResult<Option<PixelFormat>> {
-    let format = match index {
-        -1 => return Ok(None),
-        0 => PixelFormat::Yuv420p,
-        1 => PixelFormat::Yuyv422,
-        2 => PixelFormat::Rgb24,
-        3 => PixelFormat::Bgr24,
-        4 => PixelFormat::Yuv422p,
-        5 => PixelFormat::Yuv444p,
-        6 => PixelFormat::Yuv410p,
-        7 => PixelFormat::Yuv411p,
-        8 => PixelFormat::Gray8,
-        9 => PixelFormat::MonoWhite,
-        10 => PixelFormat::MonoBlack,
-        11 => PixelFormat::Pal8,
-        12 => PixelFormat::YuvJ420p,
-        13 => PixelFormat::YuvJ422p,
-        14 => PixelFormat::YuvJ444p,
-        15 => PixelFormat::Uyvy422,
-        16 => PixelFormat::Uyyvyy411,
-        17 => PixelFormat::Bgr8,
-        18 => PixelFormat::Bgr4,
-        19 => PixelFormat::Bgr4Byte,
-        20 => PixelFormat::Rgb8,
-        21 => PixelFormat::Rgb4,
-        22 => PixelFormat::Rgb4Byte,
-        23 => PixelFormat::Nv12,
-        24 => PixelFormat::Nv21,
-        _ => {
-            return Err(AvError::invalid_argument(format!(
-                "unsupported bounded FFmpeg pixel format index {index}"
-            )))
-        }
+    if index == -1 {
+        return Ok(None);
+    }
+    let Some(name) = avoption_pixel_format_name(index) else {
+        return Err(AvError::invalid_argument(format!(
+            "unknown FFmpeg pixel format index {index}"
+        )));
     };
-    Ok(Some(format))
+    PixelFormat::from_name(name)
+        .map(Some)
+        .ok_or_else(|| AvError::unsupported(format!("FFmpeg pixel format `{name}` is not modeled")))
 }
 
 fn pixel_format_avoption_index(value: Option<PixelFormat>) -> AvResult<i32> {
     match value {
         None => Ok(-1),
-        Some(PixelFormat::Yuv420p) => Ok(0),
-        Some(PixelFormat::Yuyv422) => Ok(1),
-        Some(PixelFormat::Rgb24) => Ok(2),
-        Some(PixelFormat::Bgr24) => Ok(3),
-        Some(PixelFormat::Yuv422p) => Ok(4),
-        Some(PixelFormat::Yuv444p) => Ok(5),
-        Some(PixelFormat::Yuv410p) => Ok(6),
-        Some(PixelFormat::Yuv411p) => Ok(7),
-        Some(PixelFormat::Gray8) => Ok(8),
-        Some(PixelFormat::MonoWhite) => Ok(9),
-        Some(PixelFormat::MonoBlack) => Ok(10),
-        Some(PixelFormat::Pal8) => Ok(11),
-        Some(PixelFormat::YuvJ420p) => Ok(12),
-        Some(PixelFormat::YuvJ422p) => Ok(13),
-        Some(PixelFormat::YuvJ444p) => Ok(14),
-        Some(PixelFormat::Uyvy422) => Ok(15),
-        Some(PixelFormat::Uyyvyy411) => Ok(16),
-        Some(PixelFormat::Bgr8) => Ok(17),
-        Some(PixelFormat::Bgr4) => Ok(18),
-        Some(PixelFormat::Bgr4Byte) => Ok(19),
-        Some(PixelFormat::Rgb8) => Ok(20),
-        Some(PixelFormat::Rgb4) => Ok(21),
-        Some(PixelFormat::Rgb4Byte) => Ok(22),
-        Some(PixelFormat::Nv12) => Ok(23),
-        Some(PixelFormat::Nv21) => Ok(24),
-        Some(format) => Err(AvError::unsupported(format!(
-            "pixel format `{}` is outside the bounded AVOption index model",
-            format.name()
-        ))),
+        Some(format) => avoption_pixel_format_index(format).ok_or_else(|| {
+            AvError::unsupported(format!(
+                "pixel format `{}` is outside the AVOption index model",
+                format.name()
+            ))
+        }),
     }
 }
+
+fn avoption_pixel_format_name(index: i32) -> Option<&'static str> {
+    AVOPTION_PIXEL_FORMAT_NAMES
+        .iter()
+        .find(|(value, _)| *value == index)
+        .map(|(_, name)| *name)
+}
+
+fn avoption_pixel_format_index(format: PixelFormat) -> Option<i32> {
+    let name = format.name();
+    AVOPTION_PIXEL_FORMAT_NAMES
+        .iter()
+        .find(|(_, candidate)| *candidate == name)
+        .map(|(value, _)| *value)
+}
+
+const AVOPTION_PIXEL_FORMAT_NAMES: &[(i32, &str)] = &[
+    (0, "yuv420p"),
+    (1, "yuyv422"),
+    (2, "rgb24"),
+    (3, "bgr24"),
+    (4, "yuv422p"),
+    (5, "yuv444p"),
+    (6, "yuv410p"),
+    (7, "yuv411p"),
+    (8, "gray"),
+    (9, "monow"),
+    (10, "monob"),
+    (11, "pal8"),
+    (12, "yuvj420p"),
+    (13, "yuvj422p"),
+    (14, "yuvj444p"),
+    (15, "uyvy422"),
+    (16, "uyyvyy411"),
+    (17, "bgr8"),
+    (18, "bgr4"),
+    (19, "bgr4_byte"),
+    (20, "rgb8"),
+    (21, "rgb4"),
+    (22, "rgb4_byte"),
+    (23, "nv12"),
+    (24, "nv21"),
+    (25, "argb"),
+    (26, "rgba"),
+    (27, "abgr"),
+    (28, "bgra"),
+    (29, "gray16be"),
+    (30, "gray16le"),
+    (31, "yuv440p"),
+    (32, "yuvj440p"),
+    (33, "yuva420p"),
+    (34, "rgb48be"),
+    (35, "rgb48le"),
+    (36, "rgb565be"),
+    (37, "rgb565le"),
+    (38, "rgb555be"),
+    (39, "rgb555le"),
+    (40, "bgr565be"),
+    (41, "bgr565le"),
+    (42, "bgr555be"),
+    (43, "bgr555le"),
+    (44, "vaapi"),
+    (45, "yuv420p16le"),
+    (46, "yuv420p16be"),
+    (47, "yuv422p16le"),
+    (48, "yuv422p16be"),
+    (49, "yuv444p16le"),
+    (50, "yuv444p16be"),
+    (51, "dxva2_vld"),
+    (52, "rgb444le"),
+    (53, "rgb444be"),
+    (54, "bgr444le"),
+    (55, "bgr444be"),
+    (56, "ya8"),
+    (57, "bgr48be"),
+    (58, "bgr48le"),
+    (59, "yuv420p9be"),
+    (60, "yuv420p9le"),
+    (61, "yuv420p10be"),
+    (62, "yuv420p10le"),
+    (63, "yuv422p10be"),
+    (64, "yuv422p10le"),
+    (65, "yuv444p9be"),
+    (66, "yuv444p9le"),
+    (67, "yuv444p10be"),
+    (68, "yuv444p10le"),
+    (69, "yuv422p9be"),
+    (70, "yuv422p9le"),
+    (71, "gbrp"),
+    (72, "gbrp9be"),
+    (73, "gbrp9le"),
+    (74, "gbrp10be"),
+    (75, "gbrp10le"),
+    (76, "gbrp16be"),
+    (77, "gbrp16le"),
+    (78, "yuva422p"),
+    (79, "yuva444p"),
+    (80, "yuva420p9be"),
+    (81, "yuva420p9le"),
+    (82, "yuva422p9be"),
+    (83, "yuva422p9le"),
+    (84, "yuva444p9be"),
+    (85, "yuva444p9le"),
+    (86, "yuva420p10be"),
+    (87, "yuva420p10le"),
+    (88, "yuva422p10be"),
+    (89, "yuva422p10le"),
+    (90, "yuva444p10be"),
+    (91, "yuva444p10le"),
+    (92, "yuva420p16be"),
+    (93, "yuva420p16le"),
+    (94, "yuva422p16be"),
+    (95, "yuva422p16le"),
+    (96, "yuva444p16be"),
+    (97, "yuva444p16le"),
+    (98, "vdpau"),
+    (99, "xyz12le"),
+    (100, "xyz12be"),
+    (101, "nv16"),
+    (102, "nv20le"),
+    (103, "nv20be"),
+    (104, "rgba64be"),
+    (105, "rgba64le"),
+    (106, "bgra64be"),
+    (107, "bgra64le"),
+    (108, "yvyu422"),
+    (109, "ya16be"),
+    (110, "ya16le"),
+    (111, "gbrap"),
+    (112, "gbrap16be"),
+    (113, "gbrap16le"),
+    (114, "qsv"),
+    (115, "mmal"),
+    (116, "d3d11va_vld"),
+    (117, "cuda"),
+    (118, "0rgb"),
+    (119, "rgb0"),
+    (120, "0bgr"),
+    (121, "bgr0"),
+    (122, "yuv420p12be"),
+    (123, "yuv420p12le"),
+    (124, "yuv420p14be"),
+    (125, "yuv420p14le"),
+    (126, "yuv422p12be"),
+    (127, "yuv422p12le"),
+    (128, "yuv422p14be"),
+    (129, "yuv422p14le"),
+    (130, "yuv444p12be"),
+    (131, "yuv444p12le"),
+    (132, "yuv444p14be"),
+    (133, "yuv444p14le"),
+    (134, "gbrp12be"),
+    (135, "gbrp12le"),
+    (136, "gbrp14be"),
+    (137, "gbrp14le"),
+    (138, "yuvj411p"),
+    (139, "bayer_bggr8"),
+    (140, "bayer_rggb8"),
+    (141, "bayer_gbrg8"),
+    (142, "bayer_grbg8"),
+    (143, "bayer_bggr16le"),
+    (144, "bayer_bggr16be"),
+    (145, "bayer_rggb16le"),
+    (146, "bayer_rggb16be"),
+    (147, "bayer_gbrg16le"),
+    (148, "bayer_gbrg16be"),
+    (149, "bayer_grbg16le"),
+    (150, "bayer_grbg16be"),
+    (151, "yuv440p10le"),
+    (152, "yuv440p10be"),
+    (153, "yuv440p12le"),
+    (154, "yuv440p12be"),
+    (155, "ayuv64le"),
+    (156, "ayuv64be"),
+    (157, "videotoolbox_vld"),
+    (158, "p010le"),
+    (159, "p010be"),
+    (160, "gbrap12be"),
+    (161, "gbrap12le"),
+    (162, "gbrap10be"),
+    (163, "gbrap10le"),
+    (164, "mediacodec"),
+    (165, "gray12be"),
+    (166, "gray12le"),
+    (167, "gray10be"),
+    (168, "gray10le"),
+    (169, "p016le"),
+    (170, "p016be"),
+    (171, "d3d11"),
+    (172, "gray9be"),
+    (173, "gray9le"),
+    (174, "gbrpf32be"),
+    (175, "gbrpf32le"),
+    (176, "gbrapf32be"),
+    (177, "gbrapf32le"),
+    (178, "drm_prime"),
+    (179, "opencl"),
+    (180, "gray14be"),
+    (181, "gray14le"),
+    (182, "grayf32be"),
+    (183, "grayf32le"),
+    (184, "yuva422p12be"),
+    (185, "yuva422p12le"),
+    (186, "yuva444p12be"),
+    (187, "yuva444p12le"),
+    (188, "nv24"),
+    (189, "nv42"),
+    (190, "vulkan"),
+    (191, "y210be"),
+    (192, "y210le"),
+    (193, "x2rgb10le"),
+    (194, "x2rgb10be"),
+    (195, "x2bgr10le"),
+    (196, "x2bgr10be"),
+    (197, "p210be"),
+    (198, "p210le"),
+    (199, "p410be"),
+    (200, "p410le"),
+    (201, "p216be"),
+    (202, "p216le"),
+    (203, "p416be"),
+    (204, "p416le"),
+    (205, "vuya"),
+    (206, "rgbaf16be"),
+    (207, "rgbaf16le"),
+    (208, "vuyx"),
+    (209, "p012le"),
+    (210, "p012be"),
+    (211, "y212be"),
+    (212, "y212le"),
+    (213, "xv30be"),
+    (214, "xv30le"),
+    (215, "xv36be"),
+    (216, "xv36le"),
+    (217, "rgbf32be"),
+    (218, "rgbf32le"),
+    (219, "rgbaf32be"),
+    (220, "rgbaf32le"),
+    (221, "p212be"),
+    (222, "p212le"),
+    (223, "p412be"),
+    (224, "p412le"),
+    (225, "gbrap14be"),
+    (226, "gbrap14le"),
+    (227, "d3d12"),
+    (228, "ayuv"),
+    (229, "uyva"),
+    (230, "vyu444"),
+    (231, "v30xbe"),
+    (232, "v30xle"),
+    (233, "rgbf16be"),
+    (234, "rgbf16le"),
+    (235, "rgba128be"),
+    (236, "rgba128le"),
+    (237, "rgb96be"),
+    (238, "rgb96le"),
+    (239, "y216be"),
+    (240, "y216le"),
+    (241, "xv48be"),
+    (242, "xv48le"),
+    (243, "gbrpf16be"),
+    (244, "gbrpf16le"),
+    (245, "gbrapf16be"),
+    (246, "gbrapf16le"),
+    (247, "grayf16be"),
+    (248, "grayf16le"),
+    (249, "amf"),
+    (250, "gray32be"),
+    (251, "gray32le"),
+    (252, "yaf32be"),
+    (253, "yaf32le"),
+    (254, "yaf16be"),
+    (255, "yaf16le"),
+    (256, "gbrap32be"),
+    (257, "gbrap32le"),
+    (258, "yuv444p10msbbe"),
+    (259, "yuv444p10msble"),
+    (260, "yuv444p12msbbe"),
+    (261, "yuv444p12msble"),
+    (262, "gbrp10msbbe"),
+    (263, "gbrp10msble"),
+    (264, "gbrp12msbbe"),
+    (265, "gbrp12msble"),
+    (266, "ohcodec"),
+];
 
 fn validate_sample_format_index(value: Option<SampleFormat>, min: i32, max: i32) -> AvResult<()> {
     let index = sample_format_avoption_index(value);
@@ -6000,7 +6246,7 @@ mod tests {
             .define(
                 OptionDefinition::new(
                     "pix_fmt",
-                    OptionKind::PixelFormat { min: -1, max: 24 },
+                    OptionKind::PixelFormat { min: -1, max: 266 },
                     OptionValue::PixelFormat(Some(PixelFormat::Yuv420p)),
                     "pixel format",
                 )
@@ -6023,7 +6269,7 @@ mod tests {
         let av_ranges = options.query_avoption_ranges("pix_fmt").unwrap();
         assert_eq!(av_ranges.nb_ranges(), 1);
         assert_eq!(av_ranges.ranges()[0].value_min(), -1.0);
-        assert_eq!(av_ranges.ranges()[0].value_max(), 24.0);
+        assert_eq!(av_ranges.ranges()[0].value_max(), 266.0);
         assert_eq!(av_ranges.ranges()[0].component_min(), 0.0);
         assert_eq!(av_ranges.ranges()[0].component_max(), 0.0);
         assert_eq!(
@@ -6062,6 +6308,25 @@ mod tests {
         );
         assert_eq!(options.get_avoption_string("pix_fmt").unwrap(), "bgr24");
 
+        options
+            .set_avoption_from_str("pix_fmt", "gbrap32le")
+            .unwrap();
+        assert_eq!(
+            options.get("pix_fmt"),
+            Some(&OptionValue::PixelFormat(Some(PixelFormat::Gbrap32Le)))
+        );
+        assert_eq!(options.get_avoption_int("pix_fmt").unwrap(), 257);
+
+        options.set_avoption_from_str("pix_fmt", "259").unwrap();
+        assert_eq!(
+            options.get("pix_fmt"),
+            Some(&OptionValue::PixelFormat(Some(PixelFormat::Yuv444p10MsbLe)))
+        );
+        assert_eq!(
+            options.get_avoption_string("pix_fmt").unwrap(),
+            "yuv444p10msble"
+        );
+
         let before_errors = options.clone();
         assert_eq!(
             options
@@ -6073,10 +6338,10 @@ mod tests {
         assert_eq!(options, before_errors);
         assert_eq!(
             options
-                .set_avoption_from_str("pix_fmt", "25")
+                .set_avoption_from_str("pix_fmt", "267")
                 .unwrap_err()
                 .code(),
-            Some(AvErrorCode::from_posix_errno(34))
+            Some(AvErrorCode::from_posix_errno(22))
         );
         assert_eq!(options, before_errors);
 
@@ -6099,9 +6364,15 @@ mod tests {
             options.get_avoption_q("pix_fmt").unwrap(),
             Rational::new(3, 1).unwrap()
         );
+        options.set_avoption_int("pix_fmt", 257).unwrap();
+        assert_eq!(
+            options.get_avoption_pixel_format("pix_fmt").unwrap(),
+            Some(PixelFormat::Gbrap32Le)
+        );
+        assert_eq!(options.get_avoption_string("pix_fmt").unwrap(), "gbrap32le");
         let before_typed_errors = options.clone();
         assert_eq!(
-            options.set_avoption_int("pix_fmt", 25).unwrap_err().code(),
+            options.set_avoption_int("pix_fmt", 267).unwrap_err().code(),
             Some(AvErrorCode::from_posix_errno(34))
         );
         assert_eq!(options, before_typed_errors);
