@@ -183,6 +183,8 @@ The rawvideo-facing paletted subset now includes FFmpeg's `pal8` name. The share
 
 `Packet::ref_from`, `Packet::clone`, and `Packet::copy_props_from` intentionally collapse duplicate packet-owned side-data kinds by later-entry replacement, matching `av_packet_ref()`, `av_packet_clone()`, and `av_packet_copy_props()` oracle rows. `Packet::move_ref_from` preserves the raw duplicate side-data array and resets the source, matching `av_packet_move_ref()`.
 
+`Packet::validate_payload_len` centralizes the safe Rust equivalent of FFmpeg's `av_new_packet()` / `av_packet_from_data()` size guard. `Packet::from_data`, `Packet::replace_data_from_vec`, `Packet::new_zeroed`, and `Packet::alloc_new_packet_payload` reject payload lengths above `INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE - 1` with `EINVAL` before allocation or mutation.
+
 `PacketOpaque` models `AVPacket.opaque` as nullable, non-dereferenceable raw address metadata. Null input maps to `None`; nonzero addresses copy through `ref_from` and `copy_props_from`, transfer through `move_ref_from`, can be taken or cleared explicitly, and reset on `unref` without any Rust-side ownership or pointer dereference.
 
 `Packet::init_legacy` models the deterministic field-reset shape of pinned FFmpeg 8.1.1 `av_init_packet()` for legacy callers: existing payload data/size are preserved, while PTS/DTS, position, duration, stream index, flags, side data, opaque metadata, `opaque_ref`, and `time_base` reset to the observed C API values. Because this is safe Rust, clearing side data and `opaque_ref` releases owned storage instead of reproducing C misuse or leak side effects from calling `av_init_packet()` on an owned packet.

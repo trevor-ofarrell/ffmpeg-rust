@@ -8,6 +8,13 @@ default_profile = "ffmpeg-8.1.1-default-native"
 # AV_INPUT_BUFFER_PADDING_SIZE)`. Rust `Packet::grow_data` now enforces the
 # same boundary without attempting a huge allocation, and the unit plus
 # `avutil_core_models` fuzz-model invariants cover no-mutation behavior.
+# Latest avutil-packet evidence: `packet:payload-from-data-invalid-*` rows now
+# prove pinned FFmpeg 8.1.1 `av_packet_from_data()` returns EINVAL before
+# mutation when `size >= INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE`. Rust
+# `Packet::from_data`, `Packet::replace_data_from_vec`, and
+# `Packet::new_zeroed` now share the same safe payload-length guard through
+# `Packet::validate_payload_len`, with unit and `avutil_core_models`
+# fuzz-model boundary checks.
 # Latest ffprobe MOV evidence: a generated two-frame RGB24 MOV oracle row now
 # compares selected default-output fields from Rust ffprobe-rs against pinned
 # FFmpeg 8.1.1 ffprobe for format counts/name/duration/size/probe score,
@@ -418,6 +425,13 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest AVPacket payload-from-data boundary update: pinned libavcodec rows now
+# validate `av_packet_from_data()` at the `INT_MAX -
+# AV_INPUT_BUFFER_PADDING_SIZE` invalid-size boundary. The row proves EINVAL
+# and pre-existing packet metadata preservation. Rust `Packet::from_data`,
+# `Packet::replace_data_from_vec`, and `Packet::new_zeroed` share
+# `Packet::validate_payload_len`, and the packet unit plus `avutil_core_models`
+# fuzz-model checks cover the valid/invalid boundary.
 # Latest raw PCM to WAV media-integration update: the WAV file-output oracle
 # row is now mapped to avutil-packet, validating the Rust raw pcm_s16le
 # demuxer -> Packet -> WAV muxer path against pinned FFmpeg streamcopy bytes,

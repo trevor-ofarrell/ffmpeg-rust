@@ -172,6 +172,8 @@ The packet bridge rows also include `packet:frame-to-packet-map-inventory` and `
 
 The harness also includes pre-populated `av_new_packet()` rows. A successful call resets packet metadata, side data, opaque pointer metadata, `opaque_ref`, stream index, flags, and time base before installing caller-initialized writable padded payload storage; the `INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE` invalid-size boundary returns `EINVAL` without mutating the existing packet.
 
+The harness also includes `packet:payload-from-data-invalid-*` rows. These prove `av_packet_from_data()` returns `AVERROR(EINVAL)` before mutation when `size >= INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE`; the Rust packet constructors and replacement helper use `Packet::validate_payload_len` to reject the same boundary before allocation.
+
 The harness also includes a direct `av_init_packet()` row. `Packet::init_legacy()` matches the deterministic reset shape by preserving payload data/size while resetting unknown timestamps and position, zero duration, stream index 0, empty flags, cleared side data, cleared opaque metadata, cleared `opaque_ref`, and `time_base` `0/1`. The safe Rust model releases owned metadata when clearing it; it does not model C leak behavior caused by calling `av_init_packet()` on an already-owned packet.
 
 The harness also includes `packet:unref-empty` and `packet:unref-repeat` rows. These prove `av_packet_unref()` resets an already-empty allocated packet to the same default state and remains idempotent after releasing a populated packet.

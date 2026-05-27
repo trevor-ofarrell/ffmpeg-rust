@@ -6576,6 +6576,11 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .iter()
         .all(|byte| *byte == 0));
     assert!(zero_from_data_packet.is_data_writable());
+    assert!(Packet::validate_payload_len(AV_PACKET_MAX_PAYLOAD_SIZE).is_ok());
+    let invalid_payload_len_err =
+        Packet::validate_payload_len(AV_PACKET_MAX_PAYLOAD_SIZE + 1).unwrap_err();
+    assert_eq!(invalid_payload_len_err.kind(), AvErrorKind::InvalidArgument);
+    assert_eq!(invalid_payload_len_err.code(), Some(AvErrorCode::EINVAL));
 
     let replacement_len = usize::from(cursor.next().unwrap_or_default()) % (MAX_PAYLOAD + 1);
     let replacement_payload = payload_from(cursor, replacement_len);

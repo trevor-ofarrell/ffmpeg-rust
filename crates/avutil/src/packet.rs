@@ -5122,13 +5122,19 @@ impl Packet {
         Self::with_buffer(BufferRef::from_vec(data), stream_index)
     }
 
+    pub fn validate_payload_len(size: usize) -> AvResult<()> {
+        validate_packet_payload_size(size)
+    }
+
     pub fn from_data(data: Vec<u8>) -> AvResult<Self> {
+        validate_packet_payload_size(data.len())?;
         let mut buffer = BufferRef::from_vec(data);
         buffer.resize_with_padding(buffer.len(), AV_INPUT_BUFFER_PADDING_SIZE)?;
         Ok(Self::with_buffer(buffer, 0))
     }
 
     pub fn replace_data_from_vec(&mut self, data: Vec<u8>) -> AvResult<()> {
+        validate_packet_payload_size(data.len())?;
         let mut buffer = BufferRef::from_vec(data);
         buffer.resize_with_padding(buffer.len(), AV_INPUT_BUFFER_PADDING_SIZE)?;
         self.data = buffer;
@@ -5776,6 +5782,11 @@ fn pos_option(value: i64) -> Option<i64> {
 }
 
 fn packet_alloc_buffer(size: usize) -> AvResult<BufferRef> {
+    validate_packet_payload_size(size)?;
+    BufferRef::zeroed_with_padding(size, AV_INPUT_BUFFER_PADDING_SIZE)
+}
+
+fn validate_packet_payload_size(size: usize) -> AvResult<()> {
     if size > AV_PACKET_MAX_PAYLOAD_SIZE {
         return Err(AvError::with_code(
             AvErrorKind::InvalidArgument,
@@ -5784,7 +5795,7 @@ fn packet_alloc_buffer(size: usize) -> AvResult<BufferRef> {
         ));
     }
 
-    BufferRef::zeroed_with_padding(size, AV_INPUT_BUFFER_PADDING_SIZE)
+    Ok(())
 }
 
 fn validate_packet_grow_size(current_size: usize, grow_by: usize) -> AvResult<usize> {
@@ -11379,6 +11390,11 @@ mod tests {
             preserved.opaque_ref().unwrap().as_slice(),
             &[0xde, 0xad, 0xbe]
         );
+
+        assert!(Packet::validate_payload_len(AV_PACKET_MAX_PAYLOAD_SIZE).is_ok());
+        let err = Packet::validate_payload_len(AV_PACKET_MAX_PAYLOAD_SIZE + 1).unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
     }
 
     #[test]

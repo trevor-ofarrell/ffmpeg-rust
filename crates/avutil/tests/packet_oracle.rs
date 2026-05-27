@@ -1332,6 +1332,18 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_fields(&from_data_preserve),
     );
 
+    let from_data_invalid_ret =
+        Packet::validate_payload_len(AV_PACKET_MAX_PAYLOAD_SIZE + 1).unwrap_err();
+    let from_data_invalid = packet_with_common_props_no_payload();
+    rows.insert(
+        "packet:payload-from-data-invalid-ret".to_string(),
+        vec![from_data_invalid_ret.code().unwrap().raw().to_string()],
+    );
+    rows.insert(
+        "packet:payload-from-data-invalid-preserve".to_string(),
+        packet_fields(&from_data_invalid),
+    );
+
     let raw_ref_src = Packet::new(vec![0xaa, 0xbb], 0);
     let mut raw_ref_dst = Packet::default();
     raw_ref_dst.ref_from(&raw_ref_src);
@@ -5026,6 +5038,13 @@ static void exercise_payload_api(void) {
     }
     print_packet("packet:payload-from-data-preserve", pkt);
     print_payload("packet:payload-from-data-preserve-payload", pkt);
+    av_packet_free(&pkt);
+
+    pkt = packet_with_common_props_no_payload();
+    ret = av_packet_from_data(pkt, NULL,
+                              INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE);
+    printf("packet:payload-from-data-invalid-ret|%d\n", ret);
+    print_packet("packet:payload-from-data-invalid-preserve", pkt);
     av_packet_free(&pkt);
 
     pkt = new_packet();
