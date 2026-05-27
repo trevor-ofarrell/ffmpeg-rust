@@ -16,6 +16,7 @@ pub const AV_NOPTS_VALUE: i64 = i64::MIN;
 pub const AV_PACKET_POS_UNKNOWN: i64 = -1;
 pub const AV_INPUT_BUFFER_PADDING_SIZE: usize = 64;
 pub const AV_PACKET_MAX_PAYLOAD_SIZE: usize = i32::MAX as usize - AV_INPUT_BUFFER_PADDING_SIZE - 1;
+const AV_PACKET_MAX_GROW_PAYLOAD_SIZE: usize = i32::MAX as usize - AV_INPUT_BUFFER_PADDING_SIZE;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PacketAbiField {
@@ -5207,9 +5208,7 @@ impl Packet {
     }
 
     pub fn grow_data(&mut self, grow_by: usize) -> AvResult<()> {
-        let len = self.data.len().checked_add(grow_by).ok_or_else(|| {
-            AvError::invalid_argument("packet grow size overflows visible payload length")
-        })?;
+        let len = validate_packet_grow_size(self.data.len(), grow_by)?;
         self.data
             .resize_with_padding(len, AV_INPUT_BUFFER_PADDING_SIZE)
     }
@@ -5786,6 +5785,29 @@ fn packet_alloc_buffer(size: usize) -> AvResult<BufferRef> {
     }
 
     BufferRef::zeroed_with_padding(size, AV_INPUT_BUFFER_PADDING_SIZE)
+}
+
+fn validate_packet_grow_size(current_size: usize, grow_by: usize) -> AvResult<usize> {
+    let current_with_padding = current_size
+        .checked_add(AV_INPUT_BUFFER_PADDING_SIZE)
+        .ok_or_else(packet_grow_size_error)?;
+    if current_size > AV_PACKET_MAX_GROW_PAYLOAD_SIZE {
+        return Err(packet_grow_size_error());
+    }
+    if grow_by > i32::MAX as usize - current_with_padding {
+        return Err(packet_grow_size_error());
+    }
+    current_size
+        .checked_add(grow_by)
+        .ok_or_else(packet_grow_size_error)
+}
+
+fn packet_grow_size_error() -> AvError {
+    AvError::with_code(
+        AvErrorKind::External,
+        AvErrorCode::ENOMEM,
+        "packet grow size exceeds FFmpeg allocation limit",
+    )
 }
 
 fn find_nul(data: &[u8], offset: usize) -> Option<usize> {
@@ -11457,6 +11479,19 @@ mod tests {
             .padding_slice()
             .iter()
             .all(|byte| *byte == 0));
+
+        let mut invalid = Packet::from_data(vec![0x44, 0x55]).unwrap();
+        invalid.set_pts(Some(99));
+        invalid.set_flag(PacketFlags::TRUSTED, true);
+        let invalid_payload = invalid.data_buffer().clone();
+        let invalid_grow_by = AV_PACKET_MAX_GROW_PAYLOAD_SIZE - invalid.len() + 1;
+        let err = invalid.grow_data(invalid_grow_by).unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::External);
+        assert_eq!(err.code(), Some(AvErrorCode::ENOMEM));
+        assert_eq!(invalid.data(), &[0x44, 0x55]);
+        assert!(invalid.data_buffer().shares_storage(&invalid_payload));
+        assert_eq!(invalid.pts(), Some(99));
+        assert!(invalid.flags().contains(PacketFlags::TRUSTED));
     }
 
     #[test]

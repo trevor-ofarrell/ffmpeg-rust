@@ -2,6 +2,12 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest avutil-packet evidence: `packet:payload-grow-invalid-*` rows now
+# prove pinned FFmpeg 8.1.1 `av_grow_packet()` returns ENOMEM before mutation
+# when `grow_by` exceeds `INT_MAX - (pkt->size +
+# AV_INPUT_BUFFER_PADDING_SIZE)`. Rust `Packet::grow_data` now enforces the
+# same boundary without attempting a huge allocation, and the unit plus
+# `avutil_core_models` fuzz-model invariants cover no-mutation behavior.
 # Latest ffprobe MOV evidence: a generated two-frame RGB24 MOV oracle row now
 # compares selected default-output fields from Rust ffprobe-rs against pinned
 # FFmpeg 8.1.1 ffprobe for format counts/name/duration/size/probe score,
@@ -611,6 +617,13 @@ fuzz_targets = ["avutil_core_models"]
 # Latest update: pinned libavutil display matrix oracle coverage validates av_display_matrix_flip() for PacketDisplayMatrix through packet:display-flip rows. Rust unit and avutil_core_models fuzz-smoke fixtures cover horizontal, vertical, and combined flips for identity, pure 90-degree rotation, and raw affine matrices.
 # Latest update: pinned libavutil display matrix oracle coverage validates av_display_rotation_set()/av_display_rotation_get() for PacketDisplayMatrix through packet:display-rotation-set-get and packet:display-rotation-singular rows. Rust unit and avutil_core_models fuzz-smoke fixtures cover the same finite-angle matrices, rounded counterclockwise rotation extraction, singular None, and non-finite angle rejection.
 # Latest update: upstream FFmpeg's `fate-avpacket` target, defined in tests/fate/libavcodec.mak and backed by libavcodec/tests/avpacket.c, passes locally through the pinned source/build cache via packet_oracle::upstream_fate_avpacket_passes and tests/fate/upstream-mappings.txt:avutil-packet|fate-avpacket. The row advances to fate_pass, not complete, because remaining ABI/media-integration vectors and broader media integration remain pending.
+# Latest update: pinned libavcodec AVPacket payload oracle coverage validates
+# `av_grow_packet()` allocation-limit failure through
+# packet:payload-grow-invalid-ret, packet:payload-grow-invalid-preserve, and
+# packet:payload-grow-invalid-payload. FFmpeg returns ENOMEM and preserves
+# payload bytes, metadata, side data, opaque pointer metadata, opaque_ref, and
+# time base before any allocation; Rust `Packet::grow_data` now returns the
+# same error and does not mutate state.
 # Latest update: pinned libavcodec AVPacket FIFO oracle coverage validates AV_CONTAINER_FIFO_FLAG_REF reads into a pre-populated destination through packet:fifo-write-ref-replace-*, packet:fifo-read-ref-replace-*, and packet:fifo-after-read-ref-replace-can-read rows. The rows prove the queued packet state replaces old destination payload, side data, opaque pointer metadata, opaque_ref, timestamps, flags, stream index, and time base while the FIFO drains back to zero readable packets. Unit and avutil_core_models fuzz-smoke coverage now include old destination payload/opaque_ref release, source storage sharing, side-data replacement, and can-read count updates.
 # Latest update: pinned libavcodec AVPacket dictionary unpack coverage validates return-code parity for empty input and malformed string-metadata payloads: missing final NUL, key without value, empty key, and a trailing empty key all match FFmpeg's AVERROR_INVALIDDATA return. Unit tests and avutil_core_models fuzz-smoke fixtures now assert the same typed error code for the Rust model.
 # Prior update: pinned libavcodec AVPacket oracle coverage validates av_packet_move_ref() replacement behavior through packet:move-replace-dst, packet:move-replace-dst-side, packet:move-replace-dst-payload, and packet:move-replace-src rows. The rows prove a pre-populated destination packet is unreferenced before complete source-state transfer, while the source packet resets to defaults. Unit coverage now includes old destination payload and opaque_ref release, old side-data removal, source payload storage transfer, source metadata transfer, and source reset.

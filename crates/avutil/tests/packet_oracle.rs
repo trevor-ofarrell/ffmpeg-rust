@@ -1361,6 +1361,26 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_prefix_fields(&grow, 2),
     );
 
+    let mut grow_invalid = packet_with_common_props_no_payload();
+    grow_invalid
+        .replace_data_from_vec(vec![0x44, 0x55])
+        .unwrap();
+    let invalid_grow_by =
+        i32::MAX as usize - (grow_invalid.len() + AV_INPUT_BUFFER_PADDING_SIZE) + 1;
+    let grow_invalid_ret = grow_invalid.grow_data(invalid_grow_by).unwrap_err();
+    rows.insert(
+        "packet:payload-grow-invalid-ret".to_string(),
+        vec![grow_invalid_ret.code().unwrap().raw().to_string()],
+    );
+    rows.insert(
+        "packet:payload-grow-invalid-preserve".to_string(),
+        packet_fields(&grow_invalid),
+    );
+    rows.insert(
+        "packet:payload-grow-invalid-payload".to_string(),
+        payload_fields(&grow_invalid),
+    );
+
     grow.shrink_data(2).unwrap();
     rows.insert("packet:payload-shrink".to_string(), payload_fields(&grow));
 
@@ -5036,6 +5056,29 @@ static void exercise_payload_api(void) {
     ret = av_grow_packet(pkt, 3);
     printf("packet:payload-grow-ret|%d\n", ret);
     print_payload_prefix("packet:payload-grow", pkt, 2);
+    av_packet_free(&pkt);
+
+    pkt = packet_with_common_props_no_payload();
+    uint8_t *grow_invalid_owned = av_mallocz(2 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!grow_invalid_owned, "av_mallocz grow invalid payload failed");
+    grow_invalid_owned[0] = 0x44;
+    grow_invalid_owned[1] = 0x55;
+    ret = av_packet_from_data(pkt, grow_invalid_owned, 2);
+    if (ret < 0) {
+        av_free(grow_invalid_owned);
+        fail_if(1, "av_packet_from_data grow invalid payload failed");
+    }
+    int invalid_grow_by = INT_MAX - (pkt->size + AV_INPUT_BUFFER_PADDING_SIZE) + 1;
+    ret = av_grow_packet(pkt, invalid_grow_by);
+    printf("packet:payload-grow-invalid-ret|%d\n", ret);
+    print_packet("packet:payload-grow-invalid-preserve", pkt);
+    print_payload("packet:payload-grow-invalid-payload", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    fail_if(av_new_packet(pkt, 2) < 0, "av_new_packet payload shrink failed");
+    pkt->data[0] = 0xaa;
+    pkt->data[1] = 0xbb;
     av_shrink_packet(pkt, 2);
     print_payload("packet:payload-shrink", pkt);
     av_packet_free(&pkt);

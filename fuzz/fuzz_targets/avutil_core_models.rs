@@ -6743,6 +6743,22 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .padding_slice()
         .iter()
         .all(|byte| *byte == 0));
+
+    let mut invalid_grow_packet = Packet::from_data(vec![0x44, 0x55]).unwrap();
+    invalid_grow_packet.set_pts(Some(99));
+    invalid_grow_packet.set_flag(PacketFlags::TRUSTED, true);
+    let invalid_grow_payload = invalid_grow_packet.data_buffer().clone();
+    let invalid_grow_by = AV_PACKET_MAX_PAYLOAD_SIZE + 2 - invalid_grow_packet.len();
+    let invalid_grow_err = invalid_grow_packet.grow_data(invalid_grow_by).unwrap_err();
+    assert_eq!(invalid_grow_err.kind(), AvErrorKind::External);
+    assert_eq!(invalid_grow_err.code(), Some(AvErrorCode::ENOMEM));
+    assert_eq!(invalid_grow_packet.data(), &[0x44, 0x55]);
+    assert!(invalid_grow_packet
+        .data_buffer()
+        .shares_storage(&invalid_grow_payload));
+    assert_eq!(invalid_grow_packet.pts(), Some(99));
+    assert!(invalid_grow_packet.flags().contains(PacketFlags::TRUSTED));
+
     let shrink_to = usize::from(cursor.next().unwrap_or_default()) % (padded_packet.len() + 1);
     padded_packet.shrink_data(shrink_to).unwrap();
     let mut expected_shrunk = payload.clone();

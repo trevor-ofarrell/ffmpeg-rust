@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-packet` `av_grow_packet()` allocation-limit slice: the local pinned FFmpeg 8.1.1 oracle verifies `packet:payload-grow-invalid-*` rows showing `av_grow_packet()` returns `AVERROR(ENOMEM)` before mutation when `grow_by` exceeds `INT_MAX - (pkt->size + AV_INPUT_BUFFER_PADDING_SIZE)`. `Packet::grow_data` now applies the same boundary before attempting allocation and preserves payload, packet metadata, side data, opaque pointer metadata, `opaque_ref`, and time base on failure. Unit tests, the libavcodec packet oracle, local FATE mapping, upstream `fate-avpacket`, and fuzz target build checks passed. `avutil-packet` remains `fate_pass`, not complete, because broader AVPacket/media integration closure and sustained fuzz evidence remain pending.
+
 Latest `avutil-packet` `av_new_packet()` reset slice: the local pinned FFmpeg 8.1.1 oracle verifies pre-populated `av_new_packet()` rows for successful reset-and-allocation and invalid-size preservation. `Packet::alloc_new_packet_payload` now installs writable padded payload storage while resetting timestamps, duration, position, stream index, flags, side data, opaque pointer metadata, `opaque_ref`, and time base to the observed `get_packet_defaults()` shape. `Packet::new_zeroed` now shares the same FFmpeg allocation limit guard, and `AV_PACKET_MAX_PAYLOAD_SIZE` exposes the selected-profile boundary. Unit tests, the libavcodec packet oracle, local FATE mapping, upstream `fate-avpacket`, clippy, runtime guard, and fuzz target build/clippy checks passed. `avutil-packet` remains `fate_pass`, not complete, because broader AVPacket/media integration closure and sustained fuzz evidence remain pending.
 
 Latest `avutil-pixel-format` hardware inventory slice: the local pinned FFmpeg 8.1.1 oracle is installed and verifies that all 16 `PixelFormat::HARDWARE` identity rows appear in `ffmpeg -pix_fmts` with FFmpeg's `..H..` flag and zero component/bpp/`BIT_DEPTHS` metadata. `PixelFormat::HARDWARE` now provides a single inventory list for `vaapi`, `dxva2_vld`, `vdpau`, `qsv`, `mmal`, `d3d11va_vld`, `cuda`, `videotoolbox_vld`, `mediacodec`, `d3d11`, `drm_prime`, `opencl`, `vulkan`, `d3d12`, `amf`, and `ohcodec`; the fuzz target now asserts those identity invariants while Rust-owned frame geometry remains explicitly unsupported. `avutil-pixel-format` remains `differential_pass`, not complete, because the oracle is still a bounded subset inventory check and full `AVPixFmtDescriptor` parity, full FFmpeg pixel inventory parity, upstream FATE media coverage, conversion behavior, full hardware frame/device integration, and longer fuzz campaigns remain pending.
@@ -1205,6 +1207,24 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-packet` `av_grow_packet()` allocation-limit slice:
+  - `cargo test -p avutil --lib packet_grow_and_shrink_data_preserve_payload_and_padding -- --nocapture`
+  - `cargo test -p avutil --test packet_oracle libavcodec_packet_core_lifecycle_matches_packet_model -- --ignored --nocapture`
+  - `cargo check --manifest-path fuzz\\Cargo.toml --bin avutil_core_models`
+  - `cargo test -p avutil --lib packet`
+  - `cargo test -p fate-runner current_ledger`
+  - `cmd /c cargo run -p fate-runner -- run --component avutil-packet`
+  - `cmd /c cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-packet --target oracle-libavcodec-packet-core --oracle-ffmpeg .\\third_party\\ffmpeg-oracle\\build\\bin\\ffmpeg.cmd`
+  - `cmd /c cargo run -p fate-runner -- run --mappings tests\\fate\\upstream-mappings.txt --component avutil-packet --target fate-avpacket`
+  - `cmd /c cargo fmt --all`
+  - WSL `RUST_MIN_STACK=134217728 rustfmt fuzz/fuzz_targets/avutil_core_models.rs`
+  - `cmd /c cargo fmt --all -- --check`
+  - WSL `RUST_MIN_STACK=134217728 rustfmt --check fuzz/fuzz_targets/avutil_core_models.rs`
+  - `cmd /c cargo run -p xtask -- guard-runtime`
+  - `cmd /c cargo run -p xtask -- oracle-doctor`
+  - `cmd /c cargo clippy -p avutil -p fate-runner --all-targets --all-features -- -D warnings`
+  - `cmd /c cargo clippy --manifest-path fuzz\\Cargo.toml --bin avutil_core_models -- -D warnings`
 
 - Current `avutil-packet` `av_new_packet()` reset slice:
   - `cargo test -p avutil --lib packet_alloc_new_packet_payload_resets_metadata_and_checks_size -- --nocapture`
@@ -6967,6 +6987,10 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-packet` `av_grow_packet()` allocation-limit slice:
+  - `cargo run -p fate-runner -- run --component avutil-packet` failed before running the mapped command with `windows sandbox: spawn setup refresh`; rerunning the same mapping through `cmd /c cargo run -p fate-runner -- run --component avutil-packet` passed.
+  - WSL `cargo fuzz run avutil_core_models -- -runs=1` with `CARGO_TARGET_DIR=target-wsl-packet-grow-limit-fuzz-o1` timed out while compiling sanitizer-instrumented code. The spawned cargo-fuzz/cargo/rustc processes were stopped, and a process check found no lingering cargo/rustc/fuzz processes. Fuzz target check and clippy passed.
+
 - Current `avutil-packet` `av_new_packet()` reset slice:
   - `cargo test -p avutil --lib packet_unpadded_payload_helpers_add_padding_and_preserve_bytes packet_alloc_new_packet_payload_resets_metadata_and_checks_size -- --nocapture` failed before running because Cargo accepts only one test-name filter. The new focused test and later `cargo test -p avutil --lib packet` passed.
   - Windows-side `rustfmt fuzz\\fuzz_targets\\avutil_core_models.rs` stack-overflowed; the same file formatted and check-formatted successfully through WSL with `RUST_MIN_STACK=134217728`.
@@ -7616,6 +7640,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-packet` is the current focus. The latest coherent slice adds pinned `av_grow_packet()` allocation-limit evidence: FFmpeg returns ENOMEM without mutation when the requested growth exceeds the signed 32-bit packet allocation boundary. `Packet::grow_data`, unit coverage, packet oracle rows, and `avutil_core_models` build fixtures cover the same no-mutation split. The component remains `fate_pass`, not complete, because broader media integration, remaining closure evidence, and sustained fuzz execution remain pending.
+
 `avutil-packet` is the current focus. The latest coherent slice adds pinned `av_new_packet()` reset and invalid-size boundary evidence: successful pre-populated calls reset metadata and install padded payload storage, while the `INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE` boundary returns `EINVAL` without mutation. `Packet::alloc_new_packet_payload`, unit coverage, packet oracle rows, and `avutil_core_models` build/clippy fixtures cover the same reset/no-mutation split. The component remains `fate_pass`, not complete, because broader media integration, remaining closure evidence, and sustained fuzz execution remain pending.
 
 `avutil-pixel-format` is the current focus for this slice. The latest coherent change closes the hardware identity inventory gap in the `ffmpeg -pix_fmts` oracle harness: `PixelFormat::HARDWARE` centralizes the 16 pinned FFmpeg 8.1.1 hardware names, the ignored oracle row checks `..H..` plus zero component/bpp/depth metadata, and deterministic fuzz fixtures assert those identities stay unsupported for Rust-owned frame geometry. The component remains `differential_pass`, not complete, because full descriptor inventory parity, conversion behavior, hardware frame/device integration, upstream FATE media coverage, and sustained fuzzing still need strict evidence.
@@ -8060,13 +8086,13 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Next 3 Concrete Actions
 
-1. Commit the current `avutil-packet` `av_new_packet()` reset slice.
-2. Continue the highest-priority incomplete infrastructure row, likely `avutil-packet` unless a cleaner strict-completion closure for `avutil-options`, `avutil-buffer`, `avutil-frame`, or `avutil-logging` is more provable.
+1. Commit the current `avutil-packet` `av_grow_packet()` boundary slice.
+2. Continue the highest-priority incomplete infrastructure row, likely `avutil-packet`, unless a cleaner strict-completion closure for `avutil-options`, `avutil-buffer`, `avutil-frame`, or `avutil-logging` is more provable.
 3. Reuse the local pinned oracle for strict progress and retry WSL `avutil_core_models` fuzz smoke when the sanitizer target is already warm or use a narrower stable fuzz target cache.
 
 ## Known Blockers
 
-- `avutil-packet` now has pinned libavcodec AVPacket helper evidence, upstream `fate-avpacket`, sample-backed WAV evidence, and multiple bounded media-path differential rows, including the new `av_new_packet()` reset/no-mutation boundary. It remains below strict completion because broader AVPacket closure, more media integration, and a sustained/warmed fuzz execution for the latest `avutil_core_models` fixture are still pending.
+- `avutil-packet` now has pinned libavcodec AVPacket helper evidence, upstream `fate-avpacket`, sample-backed WAV evidence, and multiple bounded media-path differential rows, including the new `av_new_packet()` reset/no-mutation boundary and `av_grow_packet()` ENOMEM no-mutation boundary. It remains below strict completion because broader AVPacket closure, more media integration, and a sustained/warmed fuzz execution for the latest `avutil_core_models` fixture are still pending. The latest one-run WSL fuzz attempt timed out during sanitizer build, but no fuzz assertion failure was observed and the fuzz target build/clippy gates passed.
 - `avutil-pixel-format` now includes hardware pixel-format identity inventory rows in the pinned `ffmpeg -pix_fmts` oracle, but it remains below strict completion because full `AVPixFmtDescriptor` parity, full FFmpeg pixel inventory coverage, upstream FATE media coverage, conversion behavior, full hardware frame/device integration, and long-running fuzz campaigns remain incomplete.
 - `avutil-options` now includes hardware pixel-format identity rows for all pinned FFmpeg 8.1.1 enum names, but it remains below strict completion because full AVOption API parity, broader binary/dictionary pointer-ownership closure, broader array raw-pointer behavior, full libavutil expression parser breadth and SI edge cases, broader duration/color and `av_opt_set_from_string` edge cases, recursive child traversal breadth, CLI option ordering, and broader fuzz coverage are still incomplete.
 - `avutil-options` now has pinned libavutil differential evidence plus upstream `fate-opt` evidence through the pinned source/build cache, including bounded typed get/set rows, bounded numeric expression/SI rows, bounded duration rows, bounded image-size rows, bounded pixel-format rows through the pinned `AV_PIX_FMT_NB - 1` enum-name table for modeled formats, bounded sample-format rows, bounded channel-layout rows, bounded binary rows, bounded dictionary rows, bounded array rows including string/double/rational typed integer-array conversion and zero-count set/remove/get boundary behavior, bounded `AV_OPT_ALLOW_NULL` nullable string/binary/dictionary rows, bounded video-rate rows, bounded color rows, and bounded `av_opt_set_from_string` escaped/quoted token rows, but it remains below strict completion because full AVOption API parity, broader binary/dictionary pointer-ownership closure, broader array raw-pointer behavior, full libavutil expression parser breadth and SI edge cases, hardware and other unmodeled pixel-format enum entries, broader duration/color and `av_opt_set_from_string` edge cases, recursive child traversal breadth, CLI option ordering, and broader fuzz coverage are still incomplete.
@@ -8213,6 +8239,8 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added bounded `av_grow_packet()` allocation-limit parity for `avutil-packet`. `crates/avutil/src/packet.rs` now rejects growth beyond FFmpeg's `INT_MAX - (pkt->size + AV_INPUT_BUFFER_PADDING_SIZE)` boundary with `ENOMEM` before attempting allocation. `crates/avutil/tests/packet_oracle.rs` compares the new `packet:payload-grow-invalid-*` rows against pinned FFmpeg 8.1.1 libavcodec, and `fuzz/fuzz_targets/avutil_core_models.rs` asserts the same no-mutation invariant. Docs, ledger, and state record the evidence. `avutil-packet` remains `fate_pass`; no component was marked complete, so strict completion count is unchanged at 11/96.
 
 Latest slice: added bounded `av_new_packet()` reset parity for `avutil-packet`. `crates/avutil/src/packet.rs` now exposes `Packet::alloc_new_packet_payload` plus `AV_PACKET_MAX_PAYLOAD_SIZE`, and `Packet::new_zeroed` shares the same FFmpeg allocation boundary. `crates/avutil/tests/packet_oracle.rs` compares successful pre-populated `av_new_packet()` reset rows and the invalid-size `EINVAL` no-mutation boundary against pinned FFmpeg 8.1.1 libavcodec. `fuzz/fuzz_targets/avutil_core_models.rs`, docs, ledger, and state record the reset/no-mutation evidence. `avutil-packet` remains `fate_pass`; no component was marked complete, so strict completion count is unchanged at 11/96.
 
