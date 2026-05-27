@@ -15559,6 +15559,25 @@ fn video_plane_shapes(
                 },
             ])
         }
+        PixelFormat::Vaapi
+        | PixelFormat::Dxva2Vld
+        | PixelFormat::Vdpau
+        | PixelFormat::Qsv
+        | PixelFormat::Mmal
+        | PixelFormat::D3d11VaVld
+        | PixelFormat::Cuda
+        | PixelFormat::VideoToolboxVld
+        | PixelFormat::MediaCodec
+        | PixelFormat::D3d11
+        | PixelFormat::DrmPrime
+        | PixelFormat::OpenCl
+        | PixelFormat::Vulkan
+        | PixelFormat::D3d12
+        | PixelFormat::Amf
+        | PixelFormat::OhCodec => Err(AvError::unsupported(format!(
+            "hardware pixel format `{}` does not expose Rust-owned video plane shapes",
+            pixel_format.name()
+        ))),
     }
 }
 

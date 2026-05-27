@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-options` hardware pixel-format identity slice: the local FFmpeg oracle is installed and verifies bounded `AV_OPT_TYPE_PIXEL_FMT` hardware identity rows against pinned FFmpeg 8.1.1. `PixelFormat` now models the 16 FFmpeg hardware enum identities (`vaapi`, `dxva2_vld`, `vdpau`, `qsv`, `mmal`, `d3d11va_vld`, `cuda`, `videotoolbox_vld`, `mediacodec`, `d3d11`, `drm_prime`, `opencl`, `vulkan`, `d3d12`, `amf`, and `ohcodec`) for option storage and name/index round trips. Hardware formats expose FFmpeg-shaped zero-component descriptor metadata and reject Rust-owned frame geometry/plane-shape requests with typed `Unsupported` errors, so no fake byte layout is counted as progress. `avutil-options` remains `fate_pass`, not complete, because full AVOption API parity, broader binary/dictionary pointer-ownership closure, broader array raw-pointer behavior, recursive child traversal breadth, broader parser edges, CLI option ordering, and final completion closure remain pending.
+
 Latest `avutil-options` pixel-format enum-table slice: the local FFmpeg oracle is installed and verifies bounded `AV_OPT_TYPE_PIXEL_FMT` rows against the pinned FFmpeg 8.1.1 enum-name table through `AV_PIX_FMT_NB - 1`. `crates/avutil/src/options.rs` now maps AVOption pixel-format numeric strings and generic numeric getters/setters through the full pinned enum-name table instead of the previous 0..24 subset; high modeled software rows such as `gbrap32le` and numeric `259`/`yuv444p10msble` now round-trip through unit, oracle, and deterministic fuzz fixtures. The string parser was corrected after the oracle showed `av_opt_set(..., "267")` returns `EINVAL` for the `AV_PIX_FMT_NB` string form, while typed numeric `av_opt_set_int(..., 267)` remains a range error. `avutil-options` remains `fate_pass`, not complete, because hardware and other unmodeled pixel-format enum entries still return explicit unsupported errors, and full AVOption API parity, broader binary/dictionary pointer-ownership closure, broader array raw-pointer behavior, recursive child traversal breadth, broader parser edges, CLI option ordering, and final completion closure remain pending.
 
 Latest `fate-runner` changed-selection maintenance: `crates/fate-runner/src/main.rs` now maps `crates/avutil/tests/options_oracle.rs` back to `avutil-options`, with unit coverage in `changed_selection_maps_options_oracle_test_to_component`. This fixes `cargo run -p fate-runner -- run --changed --dry-run` for the current AVOption oracle-harness edits; the dry-run and actual changed run now select `fate-runner`, `avutil-dict`, and `avutil-options` and pass their local mappings.
@@ -1199,6 +1201,29 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-options` hardware pixel-format identity slice:
+  - `cargo fmt --all`
+  - `rustfmt fuzz\\fuzz_targets\\avutil_metadata_options.rs`
+  - `cargo test -p avutil --lib options -- --nocapture`
+  - `cargo test -p avutil --lib pixel -- --nocapture`
+  - `cargo test -p avutil --lib frame -- --nocapture`
+  - `cargo test -p avutil --test options_oracle libavutil_option_helpers_match_current_model -- --ignored --nocapture`
+  - `cargo test -p avutil --test pixel_format_oracle ffmpeg_pixel_format_inventory_contains_current_pixel_format_subset -- --ignored --nocapture`
+  - `cargo check --manifest-path fuzz\\Cargo.toml --bin avutil_metadata_options`
+  - `cargo run -p fate-runner -- run --component avutil-options`
+  - `cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-options --target oracle-libavutil-options --oracle-ffmpeg .\\third_party\\ffmpeg-oracle\\build\\bin\\ffmpeg.cmd`
+  - `cargo run -p fate-runner -- run --mappings tests\\fate\\upstream-mappings.txt --component avutil-options --target fate-opt`
+  - `cargo run -p xtask -- guard-runtime`
+  - `cargo run -p xtask -- oracle-doctor`
+  - `cargo clippy -p avutil -p fate-runner --all-targets --all-features -- -D warnings`
+  - `cargo clippy --manifest-path fuzz\\Cargo.toml --bin avutil_metadata_options -- -D warnings`
+  - `cargo fmt --all -- --check`
+  - `rustfmt --check fuzz\\fuzz_targets\\avutil_metadata_options.rs`
+  - `cargo run -p fate-runner -- run --changed --dry-run`
+  - `cargo run -p fate-runner -- run --changed`
+  - WSL `cargo fuzz run avutil_metadata_options -- -runs=1`
+  - `git diff --check` with CRLF warnings only
 
 - Current `avutil-options` pixel-format enum-table slice:
   - `cargo test -p avutil pixel_format_options_parse_format_and_query_like_bounded_ffmpeg_shape -- --nocapture`
@@ -6899,6 +6924,9 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-options` hardware pixel-format identity slice:
+  - `cargo test -p avutil --lib options -- --nocapture` initially failed to compile because the new unit test called `pixel_format_avoption_index` with a bare `PixelFormat` and compared its `AvResult<i32>` with `Option<i32>`. The test now passes `Some(format)` and unwraps the result before comparing the pinned enum index; the rerun passed.
+
 - Current `avutil-options` pixel-format enum-table slice:
   - `cargo test -p avutil --test options_oracle libavutil_option_helpers_match_current_model -- --ignored --nocapture` initially failed because the first Rust expectation treated string input `"267"` as an out-of-range numeric pixel-format value. The pinned FFmpeg 8.1.1 oracle returns `EINVAL` for the `AV_PIX_FMT_NB` string form while preserving `ERANGE` for typed numeric `av_opt_set_int(..., 267)`. `parse_pixel_format` and the deterministic fixtures were corrected, and the rerun passed.
   - `cargo run -p fate-runner -- run --changed --dry-run` initially failed because `crates/avutil/tests/options_oracle.rs` had no changed-selection rule. The path now maps to `avutil-options`, and the dry-run plus actual changed run pass.
@@ -7534,6 +7562,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-options` remains the current focus. The latest coherent slice closes the previous hardware-pixel-format identity gap for AVOption storage: all 16 FFmpeg 8.1.1 hardware enum names now resolve to `PixelFormat` identities, `vaapi`/`d3d12`/`ohcodec` pass unit and pinned oracle rows, and hardware frame byte geometry remains explicitly unsupported instead of being faked. The component remains `fate_pass`, not complete, because broader binary/dictionary pointer-ownership closure, broader array raw-pointer behavior, full AVOption API parity, recursive child traversal breadth, broader parser edges, CLI option ordering, and final completion closure still need strict evidence.
+
 `avutil-options` remains the current focus. The latest coherent slice expands bounded `AV_OPT_TYPE_PIXEL_FMT` parity from the old 0..24 enum subset to the pinned FFmpeg 8.1.1 enum-name table through `AV_PIX_FMT_NB - 1`, while still refusing to count hardware and other unmodeled pixel formats as implemented. High modeled software rows such as `gbrap32le` and numeric `259`/`yuv444p10msble` now pass unit, pinned libavutil oracle, upstream `fate-opt` continuity, and deterministic fuzz-smoke coverage. The component remains `fate_pass`, not complete, because hardware/unmodeled pixel-format entries, broader binary/dictionary pointer-ownership closure, broader array raw-pointer behavior, full AVOption API parity, recursive child traversal breadth, broader parser edges, CLI option ordering, and final completion closure still need strict evidence.
 
 `avutil-options` remains the current focus. The latest coherent slice adds bounded `AV_OPT_ALLOW_NULL` binary/dictionary retrieval parity: `OptionValue::NullBinary` and `OptionValue::NullDictionary`, ordinary empty-string fallback for NULL storage, typed empty-byte/dictionary getters for NULL storage, nullable getters returning `None` under `AV_OPT_ALLOW_NULL`, pinned libavutil rows for NULL/non-NULL binary and dictionary get behavior, and deterministic fuzz coverage. The component remains `fate_pass`, not complete, because broader binary/dictionary pointer-ownership closure, broader array raw-pointer behavior, full AVOption API parity, full pixel-format enum coverage, recursive child traversal breadth, broader parser edges, CLI option ordering, and final completion closure still need strict evidence.
@@ -7972,12 +8002,13 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Next 3 Concrete Actions
 
-1. Commit the current `AV_OPT_TYPE_PIXEL_FMT` enum-table slice plus the related `fate-runner --changed` options-oracle selection fix, then add the next oracle-backed AVOption API slice, likely hardware/unmodeled pixel-format closure, broader binary/dictionary pointer-ownership closure, broader array raw-pointer behavior, broader duration/color parser edge cases, broader `av_opt_set_from_string` edge cases, fuller expression parser coverage, or a broader child-object helper that can be pinned cleanly against libavutil.
+1. Commit the current `AV_OPT_TYPE_PIXEL_FMT` hardware identity slice, then add the next oracle-backed AVOption API slice, likely broader binary/dictionary pointer-ownership closure, broader array raw-pointer behavior, broader duration/color parser edge cases, broader `av_opt_set_from_string` edge cases, fuller expression parser coverage, or a broader child-object helper that can be pinned cleanly against libavutil.
 2. Keep `avutil-options` at `fate_pass`, not complete, until the remaining API, CLI-ordering, fuzz, and documented limitation gaps are closed.
 3. Keep the local pinned oracle mandatory for strict progress: run `xtask oracle-doctor`, the relevant differential/upstream FATE mapping, focused unit tests, clippy, runtime guard, and fuzz build/smoke checks for any parser or demuxer touched.
 
 ## Known Blockers
 
+- `avutil-options` now includes hardware pixel-format identity rows for all pinned FFmpeg 8.1.1 enum names, but it remains below strict completion because full AVOption API parity, broader binary/dictionary pointer-ownership closure, broader array raw-pointer behavior, full libavutil expression parser breadth and SI edge cases, broader duration/color and `av_opt_set_from_string` edge cases, recursive child traversal breadth, CLI option ordering, and broader fuzz coverage are still incomplete.
 - `avutil-options` now has pinned libavutil differential evidence plus upstream `fate-opt` evidence through the pinned source/build cache, including bounded typed get/set rows, bounded numeric expression/SI rows, bounded duration rows, bounded image-size rows, bounded pixel-format rows through the pinned `AV_PIX_FMT_NB - 1` enum-name table for modeled formats, bounded sample-format rows, bounded channel-layout rows, bounded binary rows, bounded dictionary rows, bounded array rows including string/double/rational typed integer-array conversion and zero-count set/remove/get boundary behavior, bounded `AV_OPT_ALLOW_NULL` nullable string/binary/dictionary rows, bounded video-rate rows, bounded color rows, and bounded `av_opt_set_from_string` escaped/quoted token rows, but it remains below strict completion because full AVOption API parity, broader binary/dictionary pointer-ownership closure, broader array raw-pointer behavior, full libavutil expression parser breadth and SI edge cases, hardware and other unmodeled pixel-format enum entries, broader duration/color and `av_opt_set_from_string` edge cases, recursive child traversal breadth, CLI option ordering, and broader fuzz coverage are still incomplete.
 - `avutil-channel-layout` still lacks full strict completion evidence: upstream `fate-channel_layout` passes through the pinned WSL build cache, parser/retype/compare/channel-string lookup oracle vectors pass, raw-byte custom-name parity is covered by pinned parser rows, and a fresh WSL `avutil_core_models` one-run smoke passed for the updated deterministic fixtures, but long-tail parser/retype/compare/ambisonic vectors and a sustained fuzz campaign remain pending.
 - `avutil-buffer` now has pinned `AV_BUFFER_FLAG_READONLY`, public `AVBufferRef` ABI layout, broad bounded `AVBufferRef`/`AVBufferPool` behavioral oracle evidence, upstream FATE inapplicability documentation, and WSL fuzz smoke coverage, but it remains below strict completion because broader lifetime/ABI closure, hardware/device ownership integration, and final completion documentation remain incomplete.
@@ -8122,6 +8153,8 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added bounded AVOption hardware pixel-format identity parity. `crates/avutil/src/pixel.rs` now models the 16 pinned FFmpeg 8.1.1 hardware pixel-format enum names as identity variants with zero-component descriptor metadata for option storage. `crates/avutil/src/options.rs` resolves every pinned AVOption pixel-format enum-table name, including `vaapi`, `d3d12`, and `ohcodec`, and `crates/avutil/src/frame.rs` keeps Rust-owned hardware frame geometry explicitly unsupported. `crates/avutil/tests/options_oracle.rs` compares hardware string, numeric, and typed rows against pinned FFmpeg 8.1.1 libavutil. `fuzz/fuzz_targets/avutil_metadata_options.rs`, docs, ledger, and state record the evidence. `avutil-options` remains `fate_pass`; no component was marked complete, so strict completion count is unchanged.
 
 Latest slice: added bounded AVOption allow-null binary/dictionary parity. `crates/avutil/src/options.rs` now exposes `OptionValue::NullBinary` and `OptionValue::NullDictionary`, ordinary empty-string fallback for NULL binary/dictionary storage, typed empty byte/dictionary getters for NULL storage, and nullable getters that return `None` under `AV_OPT_ALLOW_NULL`. `crates/avutil/tests/options_oracle.rs` compares nullable binary and dictionary `av_opt_get` rows against pinned FFmpeg 8.1.1 libavutil. `fuzz/fuzz_targets/avutil_metadata_options.rs`, docs, ledger, and state record the evidence. `avutil-options` remains `fate_pass`; no component marked complete, strict completion count unchanged.
 

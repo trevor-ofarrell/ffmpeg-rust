@@ -6240,6 +6240,23 @@ mod tests {
     }
 
     #[test]
+    fn avoption_pixel_format_enum_table_names_are_modeled_for_identity() {
+        let mut hardware_count = 0;
+        for &(index, name) in AVOPTION_PIXEL_FORMAT_NAMES {
+            let format = PixelFormat::from_name(name)
+                .unwrap_or_else(|| panic!("missing PixelFormat identity for `{name}`"));
+            assert_eq!(pixel_format_avoption_index(Some(format)).unwrap(), index);
+            if format.is_hardware() {
+                hardware_count += 1;
+                assert_eq!(format.component_count(), 0);
+                assert_eq!(format.component_bit_depths(), vec![0]);
+            }
+        }
+        assert_eq!(AVOPTION_PIXEL_FORMAT_NAMES.len(), 267);
+        assert_eq!(hardware_count, 16);
+    }
+
+    #[test]
     fn pixel_format_options_parse_format_and_query_like_bounded_ffmpeg_shape() {
         let mut options = OptionSet::new();
         options
@@ -6326,6 +6343,20 @@ mod tests {
             options.get_avoption_string("pix_fmt").unwrap(),
             "yuv444p10msble"
         );
+        options.set_avoption_from_str("pix_fmt", "vaapi").unwrap();
+        assert_eq!(
+            options.get("pix_fmt"),
+            Some(&OptionValue::PixelFormat(Some(PixelFormat::Vaapi)))
+        );
+        assert_eq!(options.get_avoption_int("pix_fmt").unwrap(), 44);
+        assert_eq!(options.get_avoption_string("pix_fmt").unwrap(), "vaapi");
+
+        options.set_avoption_from_str("pix_fmt", "227").unwrap();
+        assert_eq!(
+            options.get_avoption_pixel_format("pix_fmt").unwrap(),
+            Some(PixelFormat::D3d12)
+        );
+        assert_eq!(options.get_avoption_string("pix_fmt").unwrap(), "d3d12");
 
         let before_errors = options.clone();
         assert_eq!(
@@ -6370,6 +6401,20 @@ mod tests {
             Some(PixelFormat::Gbrap32Le)
         );
         assert_eq!(options.get_avoption_string("pix_fmt").unwrap(), "gbrap32le");
+        options
+            .set_avoption_pixel_format("pix_fmt", Some(PixelFormat::Vaapi))
+            .unwrap();
+        assert_eq!(
+            options.get_avoption_pixel_format("pix_fmt").unwrap(),
+            Some(PixelFormat::Vaapi)
+        );
+        assert_eq!(options.get_avoption_int("pix_fmt").unwrap(), 44);
+        options.set_avoption_int("pix_fmt", 266).unwrap();
+        assert_eq!(
+            options.get_avoption_pixel_format("pix_fmt").unwrap(),
+            Some(PixelFormat::OhCodec)
+        );
+        assert_eq!(options.get_avoption_string("pix_fmt").unwrap(), "ohcodec");
         let before_typed_errors = options.clone();
         assert_eq!(
             options.set_avoption_int("pix_fmt", 267).unwrap_err().code(),

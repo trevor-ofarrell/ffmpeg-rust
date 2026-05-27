@@ -1122,6 +1122,12 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     let after_high_name = pixel_format_value(&pixel_set, "pix_fmt");
     let ret_high_numeric = ret(pixel_set.set_avoption_from_str("pix_fmt", "259"));
     let after_high_numeric = pixel_format_value(&pixel_set, "pix_fmt");
+    let ret_hardware_name = ret(pixel_set.set_avoption_from_str("pix_fmt", "vaapi"));
+    let after_hardware_name = pixel_format_value(&pixel_set, "pix_fmt");
+    let ret_hardware_numeric = ret(pixel_set.set_avoption_from_str("pix_fmt", "227"));
+    let after_hardware_numeric = pixel_format_value(&pixel_set, "pix_fmt");
+    let ret_hardware_last = ret(pixel_set.set_avoption_from_str("pix_fmt", "ohcodec"));
+    let after_hardware_last = pixel_format_value(&pixel_set, "pix_fmt");
     insert_row(
         &mut rows,
         "ret:set-pixel-format-strings",
@@ -1132,6 +1138,9 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
             ret_numeric,
             ret_high_name,
             ret_high_numeric,
+            ret_hardware_name,
+            ret_hardware_numeric,
+            ret_hardware_last,
         ],
     );
     insert_row(
@@ -1144,6 +1153,9 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
             pixel_format_field(after_numeric),
             pixel_format_field(after_high_name),
             pixel_format_field(after_high_numeric),
+            pixel_format_field(after_hardware_name),
+            pixel_format_field(after_hardware_numeric),
+            pixel_format_field(after_hardware_last),
         ],
     );
     insert_row(
@@ -1177,6 +1189,8 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
             ret(typed_pixel_options.set_avoption_int("pix_fmt", 3)),
             ret(typed_pixel_options.set_avoption_int("pix_fmt", 267)),
             ret(typed_pixel_options.set_avoption_int("scalar", 6)),
+            ret(typed_pixel_options.set_avoption_pixel_format("pix_fmt", Some(PixelFormat::Vaapi))),
+            ret(typed_pixel_options.set_avoption_int("pix_fmt", 266)),
         ],
     );
     insert_row(
@@ -2925,8 +2939,24 @@ fn pixel_format_index(value: Option<PixelFormat>) -> i32 {
         Some(PixelFormat::Rgb4Byte) => 22,
         Some(PixelFormat::Nv12) => 23,
         Some(PixelFormat::Nv21) => 24,
+        Some(PixelFormat::Vaapi) => 44,
+        Some(PixelFormat::Dxva2Vld) => 51,
+        Some(PixelFormat::Vdpau) => 98,
+        Some(PixelFormat::Qsv) => 114,
+        Some(PixelFormat::Mmal) => 115,
+        Some(PixelFormat::D3d11VaVld) => 116,
+        Some(PixelFormat::Cuda) => 117,
+        Some(PixelFormat::VideoToolboxVld) => 157,
+        Some(PixelFormat::MediaCodec) => 164,
+        Some(PixelFormat::D3d11) => 171,
+        Some(PixelFormat::DrmPrime) => 178,
+        Some(PixelFormat::OpenCl) => 179,
+        Some(PixelFormat::Vulkan) => 190,
+        Some(PixelFormat::D3d12) => 227,
+        Some(PixelFormat::Amf) => 249,
         Some(PixelFormat::Gbrap32Le) => 257,
         Some(PixelFormat::Yuv444p10MsbLe) => 259,
+        Some(PixelFormat::OhCodec) => 266,
         Some(format) => panic!("unsupported bounded pixel format `{}`", format.name()),
     }
 }
@@ -4542,6 +4572,9 @@ static void print_pixel_format_rows(void) {
     int ret_numeric;
     int ret_high_name;
     int ret_high_numeric;
+    int ret_hardware_name;
+    int ret_hardware_numeric;
+    int ret_hardware_last;
     int ret_bad;
     int ret_out_of_range;
     int ret_negative_numeric;
@@ -4551,12 +4584,17 @@ static void print_pixel_format_rows(void) {
     int ret_int;
     int ret_int_range;
     int ret_scalar;
+    int ret_hardware_typed;
+    int ret_hardware_int;
     enum AVPixelFormat after_rgb24;
     enum AVPixelFormat after_gray;
     enum AVPixelFormat after_none;
     enum AVPixelFormat after_numeric;
     enum AVPixelFormat after_high_name;
     enum AVPixelFormat after_high_numeric;
+    enum AVPixelFormat after_hardware_name;
+    enum AVPixelFormat after_hardware_numeric;
+    enum AVPixelFormat after_hardware_last;
 
     init_pixel_format_context(&ctx);
     print_pixel_format_state("state:pixel-format-defaults", &ctx);
@@ -4578,10 +4616,18 @@ static void print_pixel_format_rows(void) {
     after_high_name = ctx.pix_fmt;
     ret_high_numeric = av_opt_set(&ctx, "pix_fmt", "259", 0);
     after_high_numeric = ctx.pix_fmt;
-    printf("ret:set-pixel-format-strings|%d|%d|%d|%d|%d|%d\n",
-           ret_rgb24, ret_gray, ret_none, ret_numeric, ret_high_name, ret_high_numeric);
-    printf("state:set-pixel-format-strings|%d|%d|%d|%d|%d|%d\n",
-           after_rgb24, after_gray, after_none, after_numeric, after_high_name, after_high_numeric);
+    ret_hardware_name = av_opt_set(&ctx, "pix_fmt", "vaapi", 0);
+    after_hardware_name = ctx.pix_fmt;
+    ret_hardware_numeric = av_opt_set(&ctx, "pix_fmt", "227", 0);
+    after_hardware_numeric = ctx.pix_fmt;
+    ret_hardware_last = av_opt_set(&ctx, "pix_fmt", "ohcodec", 0);
+    after_hardware_last = ctx.pix_fmt;
+    printf("ret:set-pixel-format-strings|%d|%d|%d|%d|%d|%d|%d|%d|%d\n",
+           ret_rgb24, ret_gray, ret_none, ret_numeric, ret_high_name, ret_high_numeric,
+           ret_hardware_name, ret_hardware_numeric, ret_hardware_last);
+    printf("state:set-pixel-format-strings|%d|%d|%d|%d|%d|%d|%d|%d|%d\n",
+           after_rgb24, after_gray, after_none, after_numeric, after_high_name,
+           after_high_numeric, after_hardware_name, after_hardware_numeric, after_hardware_last);
     printf("get:set-pixel-format-strings");
     print_get_value(&ctx, "pix_fmt");
     printf("\n");
@@ -4600,8 +4646,11 @@ static void print_pixel_format_rows(void) {
     ret_int = av_opt_set_int(&ctx, "pix_fmt", AV_PIX_FMT_BGR24, 0);
     ret_int_range = av_opt_set_int(&ctx, "pix_fmt", AV_PIX_FMT_NB, 0);
     ret_scalar = av_opt_set_int(&ctx, "scalar", 6, 0);
-    printf("ret:set-pixel-format-typed|%d|%d|%d|%d|%d|%d\n",
-           ret_typed, ret_typed_none, ret_wrong_type, ret_int, ret_int_range, ret_scalar);
+    ret_hardware_typed = av_opt_set_pixel_fmt(&ctx, "pix_fmt", AV_PIX_FMT_VAAPI, 0);
+    ret_hardware_int = av_opt_set_int(&ctx, "pix_fmt", AV_PIX_FMT_OHCODEC, 0);
+    printf("ret:set-pixel-format-typed|%d|%d|%d|%d|%d|%d|%d|%d\n",
+           ret_typed, ret_typed_none, ret_wrong_type, ret_int, ret_int_range, ret_scalar,
+           ret_hardware_typed, ret_hardware_int);
     print_pixel_format_state("state:set-pixel-format-typed", &ctx);
     printf("get:set-pixel-format-typed");
     print_get_pixel_format_value(&ctx, "pix_fmt", 0);

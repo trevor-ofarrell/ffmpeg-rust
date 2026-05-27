@@ -256,6 +256,22 @@ pub enum PixelFormat {
     Yuv422p16Be,
     Yuv444p16Le,
     Yuv444p16Be,
+    Vaapi,
+    Dxva2Vld,
+    Vdpau,
+    Qsv,
+    Mmal,
+    D3d11VaVld,
+    Cuda,
+    VideoToolboxVld,
+    MediaCodec,
+    D3d11,
+    DrmPrime,
+    OpenCl,
+    Vulkan,
+    D3d12,
+    Amf,
+    OhCodec,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -264,6 +280,7 @@ pub enum PixelFormatClass {
     Rgb,
     Xyz,
     Yuv,
+    Hardware,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -806,6 +823,44 @@ impl PixelFormat {
             "yuv422p16be" => Some(Self::Yuv422p16Be),
             "yuv444p16le" => Some(Self::Yuv444p16Le),
             "yuv444p16be" => Some(Self::Yuv444p16Be),
+            "vaapi" => Some(Self::Vaapi),
+            "dxva2_vld" => Some(Self::Dxva2Vld),
+            "vdpau" => Some(Self::Vdpau),
+            "qsv" => Some(Self::Qsv),
+            "mmal" => Some(Self::Mmal),
+            "d3d11va_vld" => Some(Self::D3d11VaVld),
+            "cuda" => Some(Self::Cuda),
+            "videotoolbox_vld" => Some(Self::VideoToolboxVld),
+            "mediacodec" => Some(Self::MediaCodec),
+            "d3d11" => Some(Self::D3d11),
+            "drm_prime" => Some(Self::DrmPrime),
+            "opencl" => Some(Self::OpenCl),
+            "vulkan" => Some(Self::Vulkan),
+            "d3d12" => Some(Self::D3d12),
+            "amf" => Some(Self::Amf),
+            "ohcodec" => Some(Self::OhCodec),
+            _ => None,
+        }
+    }
+
+    fn hardware_name(self) -> Option<&'static str> {
+        match self {
+            Self::Vaapi => Some("vaapi"),
+            Self::Dxva2Vld => Some("dxva2_vld"),
+            Self::Vdpau => Some("vdpau"),
+            Self::Qsv => Some("qsv"),
+            Self::Mmal => Some("mmal"),
+            Self::D3d11VaVld => Some("d3d11va_vld"),
+            Self::Cuda => Some("cuda"),
+            Self::VideoToolboxVld => Some("videotoolbox_vld"),
+            Self::MediaCodec => Some("mediacodec"),
+            Self::D3d11 => Some("d3d11"),
+            Self::DrmPrime => Some("drm_prime"),
+            Self::OpenCl => Some("opencl"),
+            Self::Vulkan => Some("vulkan"),
+            Self::D3d12 => Some("d3d12"),
+            Self::Amf => Some("amf"),
+            Self::OhCodec => Some("ohcodec"),
             _ => None,
         }
     }
@@ -823,6 +878,34 @@ impl PixelFormat {
             log2_chroma_w,
             log2_chroma_h,
         ) = match self {
+            Self::Vaapi
+            | Self::Dxva2Vld
+            | Self::Vdpau
+            | Self::Qsv
+            | Self::Mmal
+            | Self::D3d11VaVld
+            | Self::Cuda
+            | Self::VideoToolboxVld
+            | Self::MediaCodec
+            | Self::D3d11
+            | Self::DrmPrime
+            | Self::OpenCl
+            | Self::Vulkan
+            | Self::D3d12
+            | Self::Amf
+            | Self::OhCodec => (
+                self.hardware_name()
+                    .expect("hardware pixel format has a pinned FFmpeg name"),
+                PixelFormatClass::Hardware,
+                0,
+                0,
+                0,
+                false,
+                false,
+                None,
+                0,
+                0,
+            ),
             Self::Gray8 => (
                 "gray",
                 PixelFormatClass::Gray,
@@ -3842,7 +3925,9 @@ impl PixelFormat {
             name,
             class,
             component_count,
-            bits_per_component: if matches!(self, Self::MonoWhite | Self::MonoBlack) {
+            bits_per_component: if self.is_hardware() {
+                0
+            } else if matches!(self, Self::MonoWhite | Self::MonoBlack) {
                 1
             } else if matches!(
                 self,
@@ -4141,6 +4226,28 @@ impl PixelFormat {
         self.class() == PixelFormatClass::Yuv
     }
 
+    pub fn is_hardware(self) -> bool {
+        matches!(
+            self,
+            Self::Vaapi
+                | Self::Dxva2Vld
+                | Self::Vdpau
+                | Self::Qsv
+                | Self::Mmal
+                | Self::D3d11VaVld
+                | Self::Cuda
+                | Self::VideoToolboxVld
+                | Self::MediaCodec
+                | Self::D3d11
+                | Self::DrmPrime
+                | Self::OpenCl
+                | Self::Vulkan
+                | Self::D3d12
+                | Self::Amf
+                | Self::OhCodec
+        )
+    }
+
     pub fn component_count(self) -> usize {
         self.descriptor().component_count
     }
@@ -4150,6 +4257,10 @@ impl PixelFormat {
     }
 
     pub fn component_bit_depths(self) -> Vec<u8> {
+        if self.is_hardware() {
+            return vec![0];
+        }
+
         match self {
             Self::Rgb8 | Self::Bgr8 => vec![3, 3, 2],
             Self::Rgb4 | Self::Bgr4 | Self::Rgb4Byte | Self::Bgr4Byte => vec![1, 2, 1],
@@ -4236,6 +4347,13 @@ impl PixelFormat {
     }
 
     pub fn plane_sizes(self, width: usize, height: usize) -> AvResult<Vec<usize>> {
+        if self.is_hardware() {
+            return Err(AvError::unsupported(format!(
+                "hardware pixel format `{}` does not expose Rust-owned frame geometry",
+                self.name()
+            )));
+        }
+
         validate_dimensions(width, height, "pixel format")?;
         let pixels = checked_area(width, height, "pixel format frame area")?;
 
@@ -4786,6 +4904,25 @@ impl PixelFormat {
                 let alpha = checked_mul(pixels, bytes_per_sample, "planar YUVA alpha plane size")?;
                 Ok(vec![luma, chroma, chroma, alpha])
             }
+            Self::Vaapi
+            | Self::Dxva2Vld
+            | Self::Vdpau
+            | Self::Qsv
+            | Self::Mmal
+            | Self::D3d11VaVld
+            | Self::Cuda
+            | Self::VideoToolboxVld
+            | Self::MediaCodec
+            | Self::D3d11
+            | Self::DrmPrime
+            | Self::OpenCl
+            | Self::Vulkan
+            | Self::D3d12
+            | Self::Amf
+            | Self::OhCodec => Err(AvError::unsupported(format!(
+                "hardware pixel format `{}` does not expose Rust-owned frame geometry",
+                self.name()
+            ))),
         }
     }
 
@@ -5456,6 +5593,40 @@ mod tests {
         ] {
             assert_eq!(format.name(), name);
             assert_eq!(PixelFormat::from_name(name), Some(format));
+        }
+        for (name, format) in [
+            ("vaapi", PixelFormat::Vaapi),
+            ("dxva2_vld", PixelFormat::Dxva2Vld),
+            ("vdpau", PixelFormat::Vdpau),
+            ("qsv", PixelFormat::Qsv),
+            ("mmal", PixelFormat::Mmal),
+            ("d3d11va_vld", PixelFormat::D3d11VaVld),
+            ("cuda", PixelFormat::Cuda),
+            ("videotoolbox_vld", PixelFormat::VideoToolboxVld),
+            ("mediacodec", PixelFormat::MediaCodec),
+            ("d3d11", PixelFormat::D3d11),
+            ("drm_prime", PixelFormat::DrmPrime),
+            ("opencl", PixelFormat::OpenCl),
+            ("vulkan", PixelFormat::Vulkan),
+            ("d3d12", PixelFormat::D3d12),
+            ("amf", PixelFormat::Amf),
+            ("ohcodec", PixelFormat::OhCodec),
+        ] {
+            let descriptor = format.descriptor();
+            assert_eq!(format.name(), name);
+            assert_eq!(PixelFormat::from_name(name), Some(format));
+            assert_eq!(descriptor.class, PixelFormatClass::Hardware);
+            assert!(format.is_hardware());
+            assert_eq!(format.component_count(), 0);
+            assert_eq!(format.bits_per_component(), 0);
+            assert_eq!(format.bits_per_pixel_integer(), Some(0));
+            assert_eq!(format.component_bit_depths(), vec![0]);
+            assert_eq!(format.plane_count(), 0);
+            assert_eq!(format.packed_bytes_per_pixel(), None);
+            assert_eq!(
+                format.plane_sizes(1, 1).unwrap_err().kind(),
+                AvErrorKind::Unsupported
+            );
         }
         assert_eq!(PixelFormat::ALL.len(), 251);
         assert_eq!(PixelFormat::Ya8.plane_count(), 1);

@@ -1013,6 +1013,31 @@ fn exercise_fixtures() {
             .unwrap(),
         Some(PixelFormat::Yuv444p10MsbLe)
     );
+    pixel_format_options
+        .set_avoption_from_str("pix_fmt", "vaapi")
+        .unwrap();
+    assert_eq!(
+        pixel_format_options
+            .get_avoption_pixel_format("pix_fmt")
+            .unwrap(),
+        Some(PixelFormat::Vaapi)
+    );
+    pixel_format_options
+        .set_avoption_from_str("pix_fmt", "227")
+        .unwrap();
+    assert_eq!(
+        pixel_format_options
+            .get_avoption_pixel_format("pix_fmt")
+            .unwrap(),
+        Some(PixelFormat::D3d12)
+    );
+    pixel_format_options
+        .set_avoption_int("pix_fmt", 266)
+        .unwrap();
+    assert_eq!(
+        pixel_format_options.get_avoption_string("pix_fmt").unwrap(),
+        "ohcodec"
+    );
     let before_pixel_format_errors = pixel_format_options.clone();
     assert_eq!(
         pixel_format_options
