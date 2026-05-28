@@ -240,6 +240,26 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         packet_fields(&rescaled_zero_duration),
     );
 
+    let mut rescaled_negative_ts = Packet::new(vec![0xde, 0xad], 6);
+    rescaled_negative_ts.set_pts(Some(-180_000));
+    rescaled_negative_ts.set_dts(Some(-90_000));
+    rescaled_negative_ts.set_duration(45_000).unwrap();
+    rescaled_negative_ts.set_pos(Some(321)).unwrap();
+    rescaled_negative_ts.set_flag(PacketFlags::CORRUPT, true);
+    rescaled_negative_ts
+        .set_time_base(Rational::new(1, 90_000).unwrap())
+        .unwrap();
+    rescaled_negative_ts
+        .rescale_ts(
+            Rational::new(1, 90_000).unwrap(),
+            Rational::new(1, 1_000).unwrap(),
+        )
+        .unwrap();
+    rows.insert(
+        "packet:rescale-negative-ts".to_string(),
+        packet_fields(&rescaled_negative_ts),
+    );
+
     let src = packet_with_common_props();
     let mut copied = Packet::new(vec![0x99, 0x88], 1);
     copied.copy_props_from(&src);
@@ -5704,6 +5724,21 @@ int main(void) {
     pkt->time_base = (AVRational){ 1, 90000 };
     av_packet_rescale_ts(pkt, (AVRational){ 1, 90000 }, (AVRational){ 1, 1000 });
     print_packet("packet:rescale-zero-duration", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    fail_if(av_new_packet(pkt, 2) < 0, "av_new_packet negative timestamp rescale failed");
+    pkt->data[0] = 0xde;
+    pkt->data[1] = 0xad;
+    pkt->pts = -180000;
+    pkt->dts = -90000;
+    pkt->duration = 45000;
+    pkt->pos = 321;
+    pkt->stream_index = 6;
+    pkt->flags = AV_PKT_FLAG_CORRUPT;
+    pkt->time_base = (AVRational){ 1, 90000 };
+    av_packet_rescale_ts(pkt, (AVRational){ 1, 90000 }, (AVRational){ 1, 1000 });
+    print_packet("packet:rescale-negative-ts", pkt);
     av_packet_free(&pkt);
 
     AVPacket *src = packet_with_common_props();

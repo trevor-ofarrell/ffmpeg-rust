@@ -12857,6 +12857,24 @@ mod tests {
         assert_eq!(zero_duration.time_base(), src);
         assert!(zero_duration.flags().contains(PacketFlags::TRUSTED));
         assert_eq!(zero_duration.data(), &[0xee]);
+
+        let mut negative_ts = Packet::from_data(vec![0xde, 0xad]).unwrap();
+        negative_ts.set_pts(Some(-180_000));
+        negative_ts.set_dts(Some(-90_000));
+        negative_ts.set_duration(45_000).unwrap();
+        negative_ts.set_pos(Some(321)).unwrap();
+        negative_ts.set_time_base(src).unwrap();
+        negative_ts.set_flag(PacketFlags::CORRUPT, true);
+
+        negative_ts.rescale_ts(src, dst).unwrap();
+
+        assert_eq!(negative_ts.pts(), Some(-2_000));
+        assert_eq!(negative_ts.dts(), Some(-1_000));
+        assert_eq!(negative_ts.duration(), 500);
+        assert_eq!(negative_ts.pos(), Some(321));
+        assert_eq!(negative_ts.time_base(), src);
+        assert!(negative_ts.flags().contains(PacketFlags::CORRUPT));
+        assert_eq!(negative_ts.data(), &[0xde, 0xad]);
     }
 
     #[test]
