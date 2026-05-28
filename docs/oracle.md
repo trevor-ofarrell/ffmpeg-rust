@@ -155,6 +155,8 @@ cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --com
 
 The newest custom-callback rows specifically include duplicate NULL-context and AVClass-context messages under `AV_LOG_SKIP_REPEATED`, proving both invocations are delivered to the custom callback.
 
+The newest default-callback threshold rows prove `AV_LOG_INFO` is suppressed at an `AV_LOG_WARNING` threshold, `AV_LOG_WARNING` is emitted at that threshold, and `AV_LOG_QUIET` records are emitted at an `AV_LOG_QUIET` threshold while suppressing optional time/level prefixes and preserving AVClass context prefixes.
+
 ```sh
 cargo test -p avutil --test logging_oracle -- --ignored
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-logging --target oracle-libavutil-logging --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg

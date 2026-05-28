@@ -2003,6 +2003,27 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     assert!(logger.records().is_empty());
     assert!(logger.formatted_records().is_empty());
 
+    let mut quiet_threshold_logger = Logger::new_with_flags(
+        LogLevel::Quiet,
+        LogFlags::PRINT_TIME | LogFlags::PRINT_LEVEL,
+    );
+    assert!(quiet_threshold_logger.log(
+        LogRecord::new(LogLevel::Quiet, "ffmpeg", "quiet-threshold\n")
+            .with_timestamp(LogTimestamp::from_unix_micros(1_704_112_705_123_456),),
+    ));
+    assert!(!quiet_threshold_logger.log(LogRecord::new(
+        LogLevel::Fatal,
+        "ffmpeg",
+        "fatal-hidden\n",
+    )));
+    assert_eq!(quiet_threshold_logger.records().len(), 1);
+    assert_eq!(
+        quiet_threshold_logger.records()[0].format_default_callback_line_null_context_with_flags(
+            LogFlags::PRINT_TIME | LogFlags::PRINT_LEVEL,
+        ),
+        "quiet-threshold\n"
+    );
+
     let mut once_logger = Logger::new(LogLevel::Warning);
     let mut once_state = LogOnceState::new();
     assert_eq!(once_state.raw(), 0);
@@ -2134,6 +2155,15 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
             ),
         "12:38:25.123 [rustctx @ <ptr>] [warning] ctxmsg\n"
     );
+    assert_eq!(
+        LogRecord::new(LogLevel::Quiet, "ignored", "quiet\n")
+            .with_timestamp(timestamp)
+            .format_default_callback_line_context_with_flags(
+                &callback_context,
+                LogFlags::PRINT_TIME | LogFlags::PRINT_LEVEL
+            ),
+        "[rustctx @ <ptr>] quiet\n"
+    );
     let mut callback_repeat_flags = LogFlags::SKIP_REPEATED;
     callback_repeat_flags.insert(LogFlags::PRINT_LEVEL);
     let mut callback_repeat_logger = Logger::new_with_flags(LogLevel::Trace, callback_repeat_flags);
@@ -2240,6 +2270,15 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     assert_eq!(line2.bytes(), b"[warning] plain");
     assert_eq!(line2.full_len(), 15);
     assert!(!line2.truncated());
+    assert!(!line2_prefix);
+
+    line2_prefix = true;
+    let quiet_line2 = LogRecord::new(LogLevel::Quiet, "decoder", "quiet")
+        .format_av_log_line2_null_context(LogFlags::PRINT_LEVEL, &mut line2_prefix, 128)
+        .unwrap();
+    assert_eq!(quiet_line2.bytes(), b"quiet");
+    assert_eq!(quiet_line2.full_len(), 5);
+    assert!(!quiet_line2.truncated());
     assert!(!line2_prefix);
 
     line2_prefix = true;

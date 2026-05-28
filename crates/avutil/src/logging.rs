@@ -84,6 +84,10 @@ impl LogLevel {
             None
         }
     }
+
+    const fn permits_prefix_fields(self) -> bool {
+        !matches!(self, Self::Quiet)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -824,7 +828,7 @@ impl LogRecord {
         let mut line = String::new();
         if print_prefix {
             if let Some(timestamp) = self.timestamp {
-                if flags.contains(LogFlags::PRINT_DATETIME) {
+                if self.level.permits_prefix_fields() && flags.contains(LogFlags::PRINT_DATETIME) {
                     if let Some(formatted) = timestamp
                         .format_default_callback_datetime_with_offset_seconds(
                             options.default_callback_time_offset_seconds(),
@@ -833,7 +837,8 @@ impl LogRecord {
                         line.push_str(&formatted);
                         line.push(' ');
                     }
-                } else if flags.contains(LogFlags::PRINT_TIME) {
+                } else if self.level.permits_prefix_fields() && flags.contains(LogFlags::PRINT_TIME)
+                {
                     if let Some(formatted) = timestamp
                         .format_default_callback_time_with_offset_seconds(
                             options.default_callback_time_offset_seconds(),
@@ -852,7 +857,7 @@ impl LogRecord {
                     line.push_str(&context_prefix);
                 }
             }
-            if flags.contains(LogFlags::PRINT_LEVEL) {
+            if self.level.permits_prefix_fields() && flags.contains(LogFlags::PRINT_LEVEL) {
                 let level_prefix = format!("[{}] ", self.level.name());
                 if let Some(color_code) = severity_color {
                     line.push_str(&colorize(color_code, &level_prefix));
@@ -926,7 +931,7 @@ impl LogRecord {
                 full_line.push_str(context.address());
                 full_line.push_str("] ");
             }
-            if flags.contains(LogFlags::PRINT_LEVEL) {
+            if self.level.permits_prefix_fields() && flags.contains(LogFlags::PRINT_LEVEL) {
                 full_line.push('[');
                 full_line.push_str(self.level.name());
                 full_line.push_str("] ");
@@ -948,7 +953,9 @@ impl LogRecord {
             return self.message.clone();
         }
 
-        let time_prefix = if flags.contains(LogFlags::PRINT_DATETIME) {
+        let time_prefix = if !self.level.permits_prefix_fields() {
+            String::new()
+        } else if flags.contains(LogFlags::PRINT_DATETIME) {
             self.timestamp
                 .map(|timestamp| format!("[{}] ", timestamp.format_datetime_utc()))
                 .unwrap_or_default()
@@ -959,7 +966,8 @@ impl LogRecord {
         } else {
             String::new()
         };
-        let prefix = if flags.contains(LogFlags::PRINT_LEVEL) {
+        let prefix = if self.level.permits_prefix_fields() && flags.contains(LogFlags::PRINT_LEVEL)
+        {
             format!("[{}] ", self.level.name())
         } else {
             String::new()
@@ -1113,7 +1121,7 @@ impl Logger {
     }
 
     pub fn enabled(&self, level: LogLevel) -> bool {
-        self.level != LogLevel::Quiet && level != LogLevel::Quiet && level <= self.level
+        level <= self.level
     }
 
     pub fn set_callback<F>(&mut self, callback: F)
@@ -1379,13 +1387,14 @@ mod tests {
     }
 
     #[test]
-    fn quiet_suppresses_all_records() {
+    fn quiet_threshold_suppresses_ordinary_records_but_accepts_quiet_level() {
         let mut logger = Logger::new(LogLevel::Quiet);
 
-        assert!(!logger.log(LogRecord::new(LogLevel::Quiet, "ffmpeg", "ignored")));
+        assert!(logger.log(LogRecord::new(LogLevel::Quiet, "ffmpeg", "kept")));
         assert!(!logger.log(LogRecord::new(LogLevel::Fatal, "ffmpeg", "ignored")));
 
-        assert!(logger.records().is_empty());
+        assert_eq!(logger.records().len(), 1);
+        assert_eq!(logger.records()[0].message(), "kept");
     }
 
     #[test]
@@ -1631,6 +1640,20 @@ mod tests {
                 .format_default_callback_line_null_context_with_options(utc_minus_eight),
             "2023-12-31 17:02:03.456 [warning] local\n"
         );
+        let quiet = LogRecord::new(LogLevel::Quiet, "ignored", "quiet\n").with_timestamp(timestamp);
+        assert_eq!(
+            quiet.format_default_callback_line_null_context_with_flags(
+                LogFlags::PRINT_TIME | LogFlags::PRINT_LEVEL
+            ),
+            "quiet\n"
+        );
+        assert_eq!(
+            quiet.format_default_callback_line_context_with_flags(
+                &context,
+                LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL
+            ),
+            "[rustctx @ <ptr>] quiet\n"
+        );
 
         let force_color =
             LogFormatOptions::new(LogFlags::empty()).with_color_mode(LogColorMode::Always);
@@ -1807,6 +1830,15 @@ mod tests {
         assert_eq!(leveled.full_len(), 15);
         assert_eq!(leveled.bytes(), b"[warning] plain");
         assert!(!leveled.truncated());
+        assert!(!prefix);
+
+        prefix = true;
+        let quiet = LogRecord::new(LogLevel::Quiet, "decoder", "quiet")
+            .format_av_log_line2_null_context(LogFlags::PRINT_LEVEL, &mut prefix, 128)
+            .unwrap();
+        assert_eq!(quiet.full_len(), 5);
+        assert_eq!(quiet.bytes(), b"quiet");
+        assert!(!quiet.truncated());
         assert!(!prefix);
 
         prefix = false;

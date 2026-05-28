@@ -445,6 +445,55 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
         "default-callback-fixed-datetime-utcminus8-level-line",
         escape_row_text(fixed_local_datetime.as_bytes()),
     );
+    let mut threshold_logger = Logger::new_with_flags(LogLevel::Warning, LogFlags::PRINT_LEVEL);
+    assert!(!threshold_logger.log(LogRecord::new(LogLevel::Info, "ignored", "hidden\n")));
+    rows.insert(
+        "default-callback-filter-info-at-warning-line",
+        String::new(),
+    );
+    assert!(threshold_logger.log(LogRecord::new(LogLevel::Warning, "ignored", "shown\n")));
+    rows.insert(
+        "default-callback-filter-warning-at-warning-line",
+        escape_row_text(
+            threshold_logger
+                .records()
+                .last()
+                .unwrap()
+                .format_default_callback_line_null_context_with_flags(LogFlags::PRINT_LEVEL)
+                .as_bytes(),
+        ),
+    );
+    let mut quiet_logger = Logger::new_with_flags(
+        LogLevel::Quiet,
+        LogFlags::PRINT_TIME | LogFlags::PRINT_LEVEL,
+    );
+    assert!(quiet_logger
+        .log(LogRecord::new(LogLevel::Quiet, "ignored", "quiet\n").with_timestamp(timestamp)));
+    rows.insert(
+        "default-callback-quiet-at-quiet-line",
+        escape_row_text(
+            quiet_logger
+                .records()
+                .last()
+                .unwrap()
+                .format_default_callback_line_null_context_with_flags(
+                    LogFlags::PRINT_TIME | LogFlags::PRINT_LEVEL,
+                )
+                .as_bytes(),
+        ),
+    );
+    let quiet_context = quiet_logger
+        .records()
+        .last()
+        .unwrap()
+        .format_default_callback_line_context_with_flags(
+            &context,
+            LogFlags::PRINT_TIME | LogFlags::PRINT_LEVEL,
+        );
+    rows.insert(
+        "default-callback-quiet-context-at-quiet-line",
+        escape_row_text(quiet_context.as_bytes()),
+    );
     let default_repeat_skip = rust_default_callback_repeat_lines(LogFlags::SKIP_REPEATED);
     rows.insert(
         "default-callback-repeat-skip-line",
@@ -1878,6 +1927,49 @@ static void print_default_callback_fixed_time_row(const char *name,
     ROW_STR(name, captured);
 }
 
+static void print_default_callback_threshold_row(const char *name,
+                                                 void *ptr,
+                                                 int threshold,
+                                                 int level,
+                                                 int flags,
+                                                 const char *message) {
+    char captured[1024];
+    FILE *capture = tmpfile();
+    if (!capture) {
+        ROW_STR(name, "<tmpfile-error>");
+        return;
+    }
+
+    setenv("AV_LOG_FORCE_NOCOLOR", "1", 1);
+    unsetenv("AV_LOG_FORCE_COLOR");
+
+    fflush(stderr);
+    int saved_stderr = dup(fileno(stderr));
+    if (saved_stderr < 0 || dup2(fileno(capture), fileno(stderr)) < 0) {
+        if (saved_stderr >= 0)
+            close(saved_stderr);
+        fclose(capture);
+        ROW_STR(name, "<stderr-redirect-error>");
+        return;
+    }
+
+    av_log_set_callback(av_log_default_callback);
+    av_log_set_level(threshold);
+    av_log_set_flags(flags);
+    av_log(ptr, level, "%s\n", message);
+    fflush(stderr);
+
+    dup2(saved_stderr, fileno(stderr));
+    close(saved_stderr);
+
+    rewind(capture);
+    size_t len = fread(captured, 1, sizeof(captured) - 1, capture);
+    captured[len] = '\0';
+    fclose(capture);
+
+    ROW_STR_NORMALIZED_DEFAULT_CALLBACK(name, captured);
+}
+
 static void print_default_callback_repeat_row(const char *name, int flags) {
     char captured[2048];
     FILE *capture = tmpfile();
@@ -1988,6 +2080,19 @@ static void print_default_callback_rows(void) {
         "default-callback-fixed-datetime-utcminus8-level-line", "Etc/GMT+8",
         1704070923456789LL, AV_LOG_PRINT_DATETIME | AV_LOG_PRINT_LEVEL,
         "local");
+    print_default_callback_threshold_row(
+        "default-callback-filter-info-at-warning-line", NULL, AV_LOG_WARNING,
+        AV_LOG_INFO, AV_LOG_PRINT_LEVEL, "hidden");
+    print_default_callback_threshold_row(
+        "default-callback-filter-warning-at-warning-line", NULL,
+        AV_LOG_WARNING, AV_LOG_WARNING, AV_LOG_PRINT_LEVEL, "shown");
+    print_default_callback_threshold_row(
+        "default-callback-quiet-at-quiet-line", NULL, AV_LOG_QUIET,
+        AV_LOG_QUIET, AV_LOG_PRINT_TIME | AV_LOG_PRINT_LEVEL, "quiet");
+    print_default_callback_threshold_row(
+        "default-callback-quiet-context-at-quiet-line", &ctx,
+        AV_LOG_QUIET, AV_LOG_QUIET, AV_LOG_PRINT_TIME | AV_LOG_PRINT_LEVEL,
+        "quiet");
     print_default_callback_repeat_row("default-callback-repeat-skip-line",
                                       AV_LOG_SKIP_REPEATED);
     print_default_callback_repeat_row("default-callback-repeat-skip-level-line",
