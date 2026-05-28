@@ -1991,8 +1991,16 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     );
     raw_level_logger.set_raw_level(23);
     assert_eq!(raw_level_logger.raw_level(), 23);
+    assert!(raw_level_logger.enabled_raw(23));
+    assert!(!raw_level_logger.enabled_raw(LogLevel::Warning.as_ffmpeg_value()));
     assert!(raw_level_logger.enabled(LogLevel::Error));
     assert!(!raw_level_logger.enabled(LogLevel::Warning));
+    let raw_record = LogRecord::new(LogLevel::Warning, "decoder", "raw record").with_raw_level(23);
+    assert_eq!(raw_record.level(), LogLevel::Warning);
+    assert_eq!(raw_record.raw_level(), 23);
+    assert_eq!(raw_record.known_level(), None);
+    assert!(raw_level_logger.log(raw_record));
+    assert_eq!(raw_level_logger.records().len(), 1);
     raw_level_logger.set_level(LogLevel::Warning);
     assert_eq!(
         raw_level_logger.raw_level(),
@@ -2644,13 +2652,26 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     callback_logger.log_custom_callback(LogRecord::new(LogLevel::Info, "", "hidden"), |record| {
         raw_callback_seen.push((
             record.level(),
+            record.raw_level(),
             record.target().to_owned(),
             record.message().to_owned(),
         ))
     });
+    callback_logger.log_custom_callback(
+        LogRecord::new(LogLevel::Warning, "", "rawlevel").with_raw_level(23),
+        |record| {
+            raw_callback_seen.push((
+                record.level(),
+                record.raw_level(),
+                record.target().to_owned(),
+                record.message().to_owned(),
+            ))
+        },
+    );
     callback_logger.log_custom_callback(LogRecord::new(LogLevel::Error, "", "raw:5\n"), |record| {
         raw_callback_seen.push((
             record.level(),
+            record.raw_level(),
             record.target().to_owned(),
             record.message().to_owned(),
         ))
@@ -2661,6 +2682,7 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
             |record| {
                 raw_callback_seen.push((
                     record.level(),
+                    record.raw_level(),
                     record.target().to_owned(),
                     record.message().to_owned(),
                 ))
@@ -2672,6 +2694,7 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
         |record| {
             raw_callback_seen.push((
                 record.level(),
+                record.raw_level(),
                 record.target().to_owned(),
                 record.message().to_owned(),
             ))
@@ -2683,6 +2706,7 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
             |record| {
                 raw_callback_seen.push((
                     record.level(),
+                    record.raw_level(),
                     record.target().to_owned(),
                     record.message().to_owned(),
                 ))
@@ -2692,18 +2716,46 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     assert_eq!(
         raw_callback_seen.as_slice(),
         &[
-            (LogLevel::Info, String::new(), "hidden".to_owned()),
-            (LogLevel::Error, String::new(), "raw:5\n".to_owned()),
-            (LogLevel::Warning, String::new(), "repeat".to_owned()),
-            (LogLevel::Warning, String::new(), "repeat".to_owned()),
-            (LogLevel::Warning, "rustctx".to_owned(), "ctx:3".to_owned()),
+            (
+                LogLevel::Info,
+                LogLevel::Info.as_ffmpeg_value(),
+                String::new(),
+                "hidden".to_owned()
+            ),
+            (LogLevel::Warning, 23, String::new(), "rawlevel".to_owned()),
+            (
+                LogLevel::Error,
+                LogLevel::Error.as_ffmpeg_value(),
+                String::new(),
+                "raw:5\n".to_owned()
+            ),
             (
                 LogLevel::Warning,
+                LogLevel::Warning.as_ffmpeg_value(),
+                String::new(),
+                "repeat".to_owned()
+            ),
+            (
+                LogLevel::Warning,
+                LogLevel::Warning.as_ffmpeg_value(),
+                String::new(),
+                "repeat".to_owned()
+            ),
+            (
+                LogLevel::Warning,
+                LogLevel::Warning.as_ffmpeg_value(),
+                "rustctx".to_owned(),
+                "ctx:3".to_owned()
+            ),
+            (
+                LogLevel::Warning,
+                LogLevel::Warning.as_ffmpeg_value(),
                 "rustctx".to_owned(),
                 "ctxrepeat".to_owned()
             ),
             (
                 LogLevel::Warning,
+                LogLevel::Warning.as_ffmpeg_value(),
                 "rustctx".to_owned(),
                 "ctxrepeat".to_owned()
             ),

@@ -210,6 +210,8 @@ fn expected_rows() -> BTreeMap<&'static str, i32> {
         "custom-callback-above-level-level",
         LogLevel::Info.as_ffmpeg_value(),
     );
+    rows.insert("custom-callback-raw-level-count", 1);
+    rows.insert("custom-callback-raw-level-level", 23);
     rows.insert("custom-callback-null-count", 1);
     rows.insert(
         "custom-callback-null-level",
@@ -718,6 +720,15 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
     rows.insert(
         "custom-callback-above-level-item",
         escape_row_text(custom_above_level_item.as_bytes()),
+    );
+    let (custom_raw_level_message, custom_raw_level_item) = rust_custom_callback_raw_level_text();
+    rows.insert(
+        "custom-callback-raw-level-message",
+        escape_row_text(custom_raw_level_message.as_bytes()),
+    );
+    rows.insert(
+        "custom-callback-raw-level-item",
+        escape_row_text(custom_raw_level_item.as_bytes()),
     );
     let (custom_null_message, custom_null_item) = rust_custom_callback_null_text();
     rows.insert(
@@ -1407,6 +1418,21 @@ fn rust_custom_callback_above_level_text() -> (String, String) {
     logger.log_custom_callback(LogRecord::new(LogLevel::Info, "", "hidden"), |record| {
         seen.push((record.message().to_owned(), "<none>".to_owned()))
     });
+    assert_eq!(seen.len(), 1);
+    seen.remove(0)
+}
+
+fn rust_custom_callback_raw_level_text() -> (String, String) {
+    let mut logger = Logger::new_with_flags(LogLevel::Warning, LogFlags::PRINT_LEVEL);
+    let mut seen = Vec::new();
+    logger.log_custom_callback(
+        LogRecord::new(LogLevel::Warning, "", "rawlevel").with_raw_level(23),
+        |record| {
+            assert_eq!(record.raw_level(), 23);
+            assert_eq!(record.known_level(), None);
+            seen.push((record.message().to_owned(), "<none>".to_owned()));
+        },
+    );
     assert_eq!(seen.len(), 1);
     seen.remove(0)
 }
@@ -2608,6 +2634,13 @@ static void print_custom_callback_rows(void) {
     ROW("custom-callback-above-level-level", captured_level);
     ROW_STR("custom-callback-above-level-message", captured_message);
     ROW_STR("custom-callback-above-level-item", captured_item);
+
+    reset_capture();
+    av_log(NULL, 23, "%s", "rawlevel");
+    ROW("custom-callback-raw-level-count", captured_count);
+    ROW("custom-callback-raw-level-level", captured_level);
+    ROW_STR("custom-callback-raw-level-message", captured_message);
+    ROW_STR("custom-callback-raw-level-item", captured_item);
 
     reset_capture();
     av_log(NULL, AV_LOG_ERROR, "%s:%d\n", "raw", 5);

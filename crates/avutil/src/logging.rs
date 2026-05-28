@@ -629,6 +629,7 @@ fn civil_from_unix_days(days: i64) -> (i64, i64, i64) {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LogRecord {
     level: LogLevel,
+    raw_level: i32,
     target: String,
     message: String,
     timestamp: Option<LogTimestamp>,
@@ -645,6 +646,7 @@ impl LogRecord {
     pub fn new(level: LogLevel, target: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             level,
+            raw_level: level.as_ffmpeg_value(),
             target: target.into(),
             message: message.into(),
             timestamp: None,
@@ -663,12 +665,22 @@ impl LogRecord {
 
     pub fn with_level(mut self, level: LogLevel) -> Self {
         self.level = level;
+        self.raw_level = level.as_ffmpeg_value();
+        self
+    }
+
+    pub fn with_raw_level(mut self, raw_level: i32) -> Self {
+        self.raw_level = raw_level;
+        if let Some(level) = LogLevel::from_ffmpeg_value(raw_level) {
+            self.level = level;
+        }
         self
     }
 
     fn repetition_summary(count: usize) -> Self {
         Self {
             level: LogLevel::Info,
+            raw_level: LogLevel::Info.as_ffmpeg_value(),
             target: String::new(),
             message: format!("Last message repeated {count} times"),
             timestamp: None,
@@ -678,6 +690,14 @@ impl LogRecord {
 
     pub fn level(&self) -> LogLevel {
         self.level
+    }
+
+    pub fn raw_level(&self) -> i32 {
+        self.raw_level
+    }
+
+    pub fn known_level(&self) -> Option<LogLevel> {
+        LogLevel::from_ffmpeg_value(self.raw_level)
     }
 
     pub fn target(&self) -> &str {
@@ -1014,6 +1034,7 @@ impl LogRecord {
         self.kind == LogRecordKind::Message
             && other.kind == LogRecordKind::Message
             && self.level == other.level
+            && self.raw_level == other.raw_level
             && self.target == other.target
             && self.message == other.message
             && (!flags.intersects(LogFlags::PRINT_TIME | LogFlags::PRINT_DATETIME)
@@ -1143,6 +1164,10 @@ impl Logger {
         level.as_ffmpeg_value() <= self.level
     }
 
+    pub fn enabled_raw(&self, raw_level: i32) -> bool {
+        raw_level <= self.level
+    }
+
     pub fn set_callback<F>(&mut self, callback: F)
     where
         F: Fn(&LogRecord) + Send + Sync + 'static,
@@ -1159,7 +1184,7 @@ impl Logger {
     }
 
     pub fn log(&mut self, record: LogRecord) -> bool {
-        if self.enabled(record.level()) {
+        if self.enabled_raw(record.raw_level()) {
             let emitted = self.emit_record(record);
             self.dispatch_emitted(emitted.first_index);
             true
@@ -1172,7 +1197,7 @@ impl Logger {
     where
         F: FnOnce(&LogRecord),
     {
-        if self.enabled(record.level()) {
+        if self.enabled_raw(record.raw_level()) {
             let emitted = self.emit_record(record);
             self.dispatch_emitted(emitted.first_index);
             if let Some(record_index) = emitted.submitted_index {
@@ -1434,6 +1459,8 @@ mod tests {
 
         assert_eq!(logger.raw_level(), 23);
         assert_eq!(logger.known_level(), None);
+        assert!(logger.enabled_raw(23));
+        assert!(!logger.enabled_raw(24));
         assert!(logger.enabled(LogLevel::Error));
         assert!(!logger.enabled(LogLevel::Warning));
         assert!(logger.log(LogRecord::new(LogLevel::Error, "ffmpeg", "raw shown\n")));
@@ -1444,6 +1471,14 @@ mod tests {
                 .format_default_callback_line_null_context_with_flags(LogFlags::PRINT_LEVEL),
             "[error] raw shown\n"
         );
+
+        assert!(logger.log(
+            LogRecord::new(LogLevel::Warning, "ffmpeg", "raw record shown\n").with_raw_level(23)
+        ));
+        assert_eq!(logger.records().len(), 2);
+        assert_eq!(logger.records()[1].level(), LogLevel::Warning);
+        assert_eq!(logger.records()[1].raw_level(), 23);
+        assert_eq!(logger.records()[1].known_level(), None);
 
         logger.set_raw_level(-1);
         assert_eq!(logger.raw_level(), -1);
@@ -2632,13 +2667,26 @@ mod tests {
         logger.log_custom_callback(LogRecord::new(LogLevel::Info, "", "hidden"), |record| {
             seen.push((
                 record.level(),
+                record.raw_level(),
                 record.target().to_owned(),
                 record.message().to_owned(),
             ));
         });
+        logger.log_custom_callback(
+            LogRecord::new(LogLevel::Warning, "", "rawlevel").with_raw_level(23),
+            |record| {
+                seen.push((
+                    record.level(),
+                    record.raw_level(),
+                    record.target().to_owned(),
+                    record.message().to_owned(),
+                ));
+            },
+        );
         logger.log_custom_callback(LogRecord::new(LogLevel::Error, "", "raw:5\n"), |record| {
             seen.push((
                 record.level(),
+                record.raw_level(),
                 record.target().to_owned(),
                 record.message().to_owned(),
             ));
@@ -2647,6 +2695,7 @@ mod tests {
             logger.log_custom_callback(LogRecord::new(LogLevel::Warning, "", "repeat"), |record| {
                 seen.push((
                     record.level(),
+                    record.raw_level(),
                     record.target().to_owned(),
                     record.message().to_owned(),
                 ));
@@ -2657,6 +2706,7 @@ mod tests {
             |record| {
                 seen.push((
                     record.level(),
+                    record.raw_level(),
                     record.target().to_owned(),
                     record.message().to_owned(),
                 ));
@@ -2668,6 +2718,7 @@ mod tests {
                 |record| {
                     seen.push((
                         record.level(),
+                        record.raw_level(),
                         record.target().to_owned(),
                         record.message().to_owned(),
                     ));
@@ -2678,24 +2729,52 @@ mod tests {
         assert_eq!(
             seen,
             [
-                (LogLevel::Info, String::new(), "hidden".to_owned()),
-                (LogLevel::Error, String::new(), "raw:5\n".to_owned()),
-                (LogLevel::Warning, String::new(), "repeat".to_owned()),
-                (LogLevel::Warning, String::new(), "repeat".to_owned()),
-                (LogLevel::Warning, "rustctx".to_owned(), "ctx:3".to_owned()),
+                (
+                    LogLevel::Info,
+                    LogLevel::Info.as_ffmpeg_value(),
+                    String::new(),
+                    "hidden".to_owned()
+                ),
+                (LogLevel::Warning, 23, String::new(), "rawlevel".to_owned()),
+                (
+                    LogLevel::Error,
+                    LogLevel::Error.as_ffmpeg_value(),
+                    String::new(),
+                    "raw:5\n".to_owned()
+                ),
                 (
                     LogLevel::Warning,
+                    LogLevel::Warning.as_ffmpeg_value(),
+                    String::new(),
+                    "repeat".to_owned()
+                ),
+                (
+                    LogLevel::Warning,
+                    LogLevel::Warning.as_ffmpeg_value(),
+                    String::new(),
+                    "repeat".to_owned()
+                ),
+                (
+                    LogLevel::Warning,
+                    LogLevel::Warning.as_ffmpeg_value(),
+                    "rustctx".to_owned(),
+                    "ctx:3".to_owned()
+                ),
+                (
+                    LogLevel::Warning,
+                    LogLevel::Warning.as_ffmpeg_value(),
                     "rustctx".to_owned(),
                     "ctxrepeat".to_owned()
                 ),
                 (
                     LogLevel::Warning,
+                    LogLevel::Warning.as_ffmpeg_value(),
                     "rustctx".to_owned(),
                     "ctxrepeat".to_owned()
                 ),
             ]
         );
-        assert_eq!(logger.records().len(), 7);
+        assert_eq!(logger.records().len(), 8);
     }
 
     #[test]
