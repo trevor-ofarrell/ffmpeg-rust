@@ -2073,6 +2073,25 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
         timestamped.format_line_with_flags(LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL),
         "[2024-01-01 12:38:25.123456] [error] demuxer: bad header"
     );
+    assert_eq!(timestamp.format_default_callback_time_utc(), "12:38:25.123");
+    assert_eq!(
+        timestamp.format_default_callback_datetime_utc(),
+        "2024-01-01 12:38:25.123"
+    );
+    let callback_line =
+        LogRecord::new(LogLevel::Warning, "ignored", "plain\n").with_timestamp(timestamp);
+    assert_eq!(
+        callback_line.format_default_callback_line_null_context_with_flags(
+            LogFlags::PRINT_TIME | LogFlags::PRINT_LEVEL
+        ),
+        "12:38:25.123 [warning] plain\n"
+    );
+    assert_eq!(
+        callback_line.format_default_callback_line_null_context_with_flags(
+            LogFlags::PRINT_TIME | LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL
+        ),
+        "2024-01-01 12:38:25.123 [warning] plain\n"
+    );
     let color_options =
         LogFormatOptions::new(LogFlags::PRINT_LEVEL).with_color_mode(LogColorMode::Always);
     let plain_options =

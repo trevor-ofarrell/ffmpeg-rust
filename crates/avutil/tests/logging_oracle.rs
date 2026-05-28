@@ -7,6 +7,7 @@ use std::{
 
 use avutil::{
     AvLogContextPrefix, AvLogFormatLine, AvLogFormatLine2, LogFlags, LogLevel, LogRecord,
+    LogTimestamp,
 };
 
 #[test]
@@ -236,6 +237,42 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
     rows.insert(
         "format-line2-context-time-level-line",
         escape_row_text(context_time_level.bytes()),
+    );
+
+    let timestamp = LogTimestamp::from_unix_micros(1_704_112_705_123_456);
+    let default_time = rust_default_callback_line(LogFlags::PRINT_TIME, Some(timestamp));
+    rows.insert(
+        "default-callback-time-line",
+        escape_row_text(normalize_default_callback_timestamp(&default_time).as_bytes()),
+    );
+    let default_time_level = rust_default_callback_line(
+        LogFlags::PRINT_TIME | LogFlags::PRINT_LEVEL,
+        Some(timestamp),
+    );
+    rows.insert(
+        "default-callback-time-level-line",
+        escape_row_text(normalize_default_callback_timestamp(&default_time_level).as_bytes()),
+    );
+    let default_datetime = rust_default_callback_line(LogFlags::PRINT_DATETIME, Some(timestamp));
+    rows.insert(
+        "default-callback-datetime-line",
+        escape_row_text(normalize_default_callback_timestamp(&default_datetime).as_bytes()),
+    );
+    let default_datetime_level = rust_default_callback_line(
+        LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL,
+        Some(timestamp),
+    );
+    rows.insert(
+        "default-callback-datetime-level-line",
+        escape_row_text(normalize_default_callback_timestamp(&default_datetime_level).as_bytes()),
+    );
+    let default_both_level = rust_default_callback_line(
+        LogFlags::PRINT_TIME | LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL,
+        Some(timestamp),
+    );
+    rows.insert(
+        "default-callback-time-datetime-level-line",
+        escape_row_text(normalize_default_callback_timestamp(&default_both_level).as_bytes()),
     );
 
     let (plain, _) = rust_format_line(LogLevel::Warning, "plain", LogFlags::empty(), true, 128);
@@ -604,6 +641,71 @@ fn rust_format_line2_context(
     (line, prefix)
 }
 
+fn rust_default_callback_line(flags: LogFlags, timestamp: Option<LogTimestamp>) -> String {
+    let mut record = LogRecord::new(LogLevel::Warning, "ignored", "plain\n");
+    if let Some(timestamp) = timestamp {
+        record = record.with_timestamp(timestamp);
+    }
+    record.format_default_callback_line_null_context_with_flags(flags)
+}
+
+fn normalize_default_callback_timestamp(line: &str) -> String {
+    if is_default_datetime_prefix(line) {
+        format!("<datetime> {}", &line[24..])
+    } else if is_default_time_prefix(line) {
+        format!("<time> {}", &line[13..])
+    } else {
+        line.to_owned()
+    }
+}
+
+fn is_default_time_prefix(line: &str) -> bool {
+    let bytes = line.as_bytes();
+    bytes.len() >= 13
+        && bytes[0].is_ascii_digit()
+        && bytes[1].is_ascii_digit()
+        && bytes[2] == b':'
+        && bytes[3].is_ascii_digit()
+        && bytes[4].is_ascii_digit()
+        && bytes[5] == b':'
+        && bytes[6].is_ascii_digit()
+        && bytes[7].is_ascii_digit()
+        && bytes[8] == b'.'
+        && bytes[9].is_ascii_digit()
+        && bytes[10].is_ascii_digit()
+        && bytes[11].is_ascii_digit()
+        && bytes[12] == b' '
+}
+
+fn is_default_datetime_prefix(line: &str) -> bool {
+    let bytes = line.as_bytes();
+    bytes.len() >= 24
+        && bytes[0].is_ascii_digit()
+        && bytes[1].is_ascii_digit()
+        && bytes[2].is_ascii_digit()
+        && bytes[3].is_ascii_digit()
+        && bytes[4] == b'-'
+        && bytes[5].is_ascii_digit()
+        && bytes[6].is_ascii_digit()
+        && bytes[7] == b'-'
+        && bytes[8].is_ascii_digit()
+        && bytes[9].is_ascii_digit()
+        && bytes[10] == b' '
+        && bytes[11].is_ascii_digit()
+        && bytes[12].is_ascii_digit()
+        && bytes[13] == b':'
+        && bytes[14].is_ascii_digit()
+        && bytes[15].is_ascii_digit()
+        && bytes[16] == b':'
+        && bytes[17].is_ascii_digit()
+        && bytes[18].is_ascii_digit()
+        && bytes[19] == b'.'
+        && bytes[20].is_ascii_digit()
+        && bytes[21].is_ascii_digit()
+        && bytes[22].is_ascii_digit()
+        && bytes[23] == b' '
+}
+
 fn bool_to_i32(value: bool) -> i32 {
     if value {
         1
@@ -696,8 +798,11 @@ fn compile_and_run_oracle(
 
 fn oracle_c_source() -> &'static str {
     r#"#include <stdarg.h>
+#include <ctype.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <libavutil/log.h>
 #include <libavutil/version.h>
 
@@ -742,6 +847,64 @@ static void ROW_STR_NORMALIZED_CONTEXT(const char *name, const char *value) {
     snprintf(normalized, sizeof(normalized), "%.*s @ <ptr>%s",
              (int)head_len, value, ptr_end);
     ROW_STR(name, normalized);
+}
+
+static int has_default_time_prefix(const char *value) {
+    return value && strlen(value) >= 13 &&
+           isdigit((unsigned char)value[0]) &&
+           isdigit((unsigned char)value[1]) &&
+           value[2] == ':' &&
+           isdigit((unsigned char)value[3]) &&
+           isdigit((unsigned char)value[4]) &&
+           value[5] == ':' &&
+           isdigit((unsigned char)value[6]) &&
+           isdigit((unsigned char)value[7]) &&
+           value[8] == '.' &&
+           isdigit((unsigned char)value[9]) &&
+           isdigit((unsigned char)value[10]) &&
+           isdigit((unsigned char)value[11]) &&
+           value[12] == ' ';
+}
+
+static int has_default_datetime_prefix(const char *value) {
+    return value && strlen(value) >= 24 &&
+           isdigit((unsigned char)value[0]) &&
+           isdigit((unsigned char)value[1]) &&
+           isdigit((unsigned char)value[2]) &&
+           isdigit((unsigned char)value[3]) &&
+           value[4] == '-' &&
+           isdigit((unsigned char)value[5]) &&
+           isdigit((unsigned char)value[6]) &&
+           value[7] == '-' &&
+           isdigit((unsigned char)value[8]) &&
+           isdigit((unsigned char)value[9]) &&
+           value[10] == ' ' &&
+           isdigit((unsigned char)value[11]) &&
+           isdigit((unsigned char)value[12]) &&
+           value[13] == ':' &&
+           isdigit((unsigned char)value[14]) &&
+           isdigit((unsigned char)value[15]) &&
+           value[16] == ':' &&
+           isdigit((unsigned char)value[17]) &&
+           isdigit((unsigned char)value[18]) &&
+           value[19] == '.' &&
+           isdigit((unsigned char)value[20]) &&
+           isdigit((unsigned char)value[21]) &&
+           isdigit((unsigned char)value[22]) &&
+           value[23] == ' ';
+}
+
+static void ROW_STR_NORMALIZED_DEFAULT_TIMESTAMP(const char *name, const char *value) {
+    char normalized[1024];
+    if (has_default_datetime_prefix(value)) {
+        snprintf(normalized, sizeof(normalized), "<datetime> %s", value + 24);
+        ROW_STR(name, normalized);
+    } else if (has_default_time_prefix(value)) {
+        snprintf(normalized, sizeof(normalized), "<time> %s", value + 13);
+        ROW_STR(name, normalized);
+    } else {
+        ROW_STR(name, value);
+    }
 }
 
 typedef struct TestLogContext {
@@ -1027,6 +1190,54 @@ static void print_format_line_rows(void) {
     ROW_STR("format-line-time-level-line", line);
 }
 
+static void print_default_callback_row(const char *name, int flags) {
+    char captured[1024];
+    FILE *capture = tmpfile();
+    if (!capture) {
+        ROW_STR(name, "<tmpfile-error>");
+        return;
+    }
+
+    fflush(stderr);
+    int saved_stderr = dup(fileno(stderr));
+    if (saved_stderr < 0 || dup2(fileno(capture), fileno(stderr)) < 0) {
+        if (saved_stderr >= 0)
+            close(saved_stderr);
+        fclose(capture);
+        ROW_STR(name, "<stderr-redirect-error>");
+        return;
+    }
+
+    av_log_set_callback(av_log_default_callback);
+    av_log_set_level(AV_LOG_TRACE);
+    av_log_set_flags(flags);
+    av_log(NULL, AV_LOG_WARNING, "%s\n", "plain");
+    fflush(stderr);
+
+    dup2(saved_stderr, fileno(stderr));
+    close(saved_stderr);
+
+    rewind(capture);
+    size_t len = fread(captured, 1, sizeof(captured) - 1, capture);
+    captured[len] = '\0';
+    fclose(capture);
+
+    ROW_STR_NORMALIZED_DEFAULT_TIMESTAMP(name, captured);
+}
+
+static void print_default_callback_rows(void) {
+    setenv("AV_LOG_FORCE_NOCOLOR", "1", 1);
+    print_default_callback_row("default-callback-time-line", AV_LOG_PRINT_TIME);
+    print_default_callback_row("default-callback-time-level-line",
+                               AV_LOG_PRINT_TIME | AV_LOG_PRINT_LEVEL);
+    print_default_callback_row("default-callback-datetime-line", AV_LOG_PRINT_DATETIME);
+    print_default_callback_row("default-callback-datetime-level-line",
+                               AV_LOG_PRINT_DATETIME | AV_LOG_PRINT_LEVEL);
+    print_default_callback_row("default-callback-time-datetime-level-line",
+                               AV_LOG_PRINT_TIME | AV_LOG_PRINT_DATETIME |
+                               AV_LOG_PRINT_LEVEL);
+}
+
 int main(void) {
     ROW("AV_LOG_QUIET", AV_LOG_QUIET);
     ROW("AV_LOG_PANIC", AV_LOG_PANIC);
@@ -1064,6 +1275,7 @@ int main(void) {
                           AV_LOG_PRINT_TIME | AV_LOG_PRINT_DATETIME);
     print_format_line2_rows();
     print_format_line_rows();
+    print_default_callback_rows();
     av_log_set_callback(capture_log_callback);
     int once_state = 0;
     av_log_once(NULL, AV_LOG_WARNING, AV_LOG_DEBUG, &once_state, "%s", "once");

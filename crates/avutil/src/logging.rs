@@ -415,6 +415,18 @@ impl LogTimestamp {
         format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}:{second:02}.{micros:06}")
     }
 
+    pub fn format_default_callback_time_utc(self) -> String {
+        let (_, _, _, hour, minute, second, micros) = self.parts_utc();
+        let millis = micros / 1_000;
+        format!("{hour:02}:{minute:02}:{second:02}.{millis:03}")
+    }
+
+    pub fn format_default_callback_datetime_utc(self) -> String {
+        let (year, month, day, hour, minute, second, micros) = self.parts_utc();
+        let millis = micros / 1_000;
+        format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}:{second:02}.{millis:03}")
+    }
+
     fn parts_utc(self) -> (i64, i64, i64, i64, i64, i64, i64) {
         const MICROS_PER_SECOND: i64 = 1_000_000;
         const SECONDS_PER_DAY: i64 = 86_400;
@@ -559,6 +571,30 @@ impl LogRecord {
                 return format!("{color_code}{line}\x1b[0m");
             }
         }
+        line
+    }
+
+    pub fn format_default_callback_line_null_context_with_flags(&self, flags: LogFlags) -> String {
+        if self.is_repetition_summary() {
+            return self.message.clone();
+        }
+
+        let mut line = String::new();
+        if let Some(timestamp) = self.timestamp {
+            if flags.contains(LogFlags::PRINT_DATETIME) {
+                line.push_str(&timestamp.format_default_callback_datetime_utc());
+                line.push(' ');
+            } else if flags.contains(LogFlags::PRINT_TIME) {
+                line.push_str(&timestamp.format_default_callback_time_utc());
+                line.push(' ');
+            }
+        }
+        if flags.contains(LogFlags::PRINT_LEVEL) {
+            line.push('[');
+            line.push_str(self.level.name());
+            line.push_str("] ");
+        }
+        line.push_str(&self.message);
         line
     }
 
@@ -1112,11 +1148,20 @@ mod tests {
             timestamp.format_datetime_utc(),
             "2024-01-01 12:38:25.123456"
         );
+        assert_eq!(timestamp.format_default_callback_time_utc(), "12:38:25.123");
+        assert_eq!(
+            timestamp.format_default_callback_datetime_utc(),
+            "2024-01-01 12:38:25.123"
+        );
 
         let before_epoch = LogTimestamp::from_unix_micros(-1);
         assert_eq!(
             before_epoch.format_datetime_utc(),
             "1969-12-31 23:59:59.999999"
+        );
+        assert_eq!(
+            before_epoch.format_default_callback_datetime_utc(),
+            "1969-12-31 23:59:59.999"
         );
     }
 
@@ -1198,6 +1243,43 @@ mod tests {
             LogRecord::new(LogLevel::Info, "ffmpeg", "ready")
                 .format_line_with_flags(LogFlags::PRINT_TIME | LogFlags::PRINT_LEVEL),
             "[info] ffmpeg: ready"
+        );
+    }
+
+    #[test]
+    fn default_callback_formatting_uses_ffmpeg_timestamp_shape() {
+        let timestamp = LogTimestamp::from_unix_micros(1_704_112_705_123_456);
+        let record =
+            LogRecord::new(LogLevel::Warning, "ignored", "plain\n").with_timestamp(timestamp);
+
+        assert_eq!(
+            record.format_default_callback_line_null_context_with_flags(LogFlags::PRINT_TIME),
+            "12:38:25.123 plain\n"
+        );
+        assert_eq!(
+            record.format_default_callback_line_null_context_with_flags(
+                LogFlags::PRINT_TIME | LogFlags::PRINT_LEVEL
+            ),
+            "12:38:25.123 [warning] plain\n"
+        );
+        assert_eq!(
+            record.format_default_callback_line_null_context_with_flags(
+                LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL
+            ),
+            "2024-01-01 12:38:25.123 [warning] plain\n"
+        );
+        assert_eq!(
+            record.format_default_callback_line_null_context_with_flags(
+                LogFlags::PRINT_TIME | LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL
+            ),
+            "2024-01-01 12:38:25.123 [warning] plain\n"
+        );
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "plain\n")
+                .format_default_callback_line_null_context_with_flags(
+                    LogFlags::PRINT_TIME | LogFlags::PRINT_LEVEL
+                ),
+            "[warning] plain\n"
         );
     }
 
