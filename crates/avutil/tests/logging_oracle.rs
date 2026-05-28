@@ -481,6 +481,17 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
         "default-callback-no-force-redirected-context-level-line",
         escape_row_text(default_no_force_redirected_context.as_bytes()),
     );
+    let default_no_force_tty = rust_default_callback_no_force_tty_line(None, LogFlags::PRINT_LEVEL);
+    rows.insert(
+        "default-callback-no-force-tty-warning-level-line",
+        escape_row_text(default_no_force_tty.as_bytes()),
+    );
+    let default_no_force_tty_context =
+        rust_default_callback_no_force_tty_line(Some(&context), LogFlags::PRINT_LEVEL);
+    rows.insert(
+        "default-callback-no-force-tty-context-level-line",
+        escape_row_text(default_no_force_tty_context.as_bytes()),
+    );
     let default_nocolor_wins = rust_default_callback_nocolor_wins_line();
     rows.insert(
         "default-callback-nocolor-wins-warning-line",
@@ -948,6 +959,24 @@ fn rust_default_callback_no_force_redirected_line(
     }
 }
 
+fn rust_default_callback_no_force_tty_line(
+    context: Option<&AvLogContextPrefix>,
+    flags: LogFlags,
+) -> String {
+    let mut color_state = DefaultCallbackColorState::new();
+    let options = LogFormatOptions::new(flags)
+        .with_default_callback_color_state_and_resolver(&mut color_state, || {
+            LogColorMode::from_ffmpeg_env_vars_and_stderr(|_| false, true)
+        });
+    assert_eq!(options.color_mode(), LogColorMode::Always);
+    assert_eq!(color_state.cached_mode(), Some(LogColorMode::Always));
+    let record = LogRecord::new(LogLevel::Warning, "ignored", "plain\n");
+    match context {
+        Some(context) => record.format_default_callback_line_context_with_options(context, options),
+        None => record.format_default_callback_line_null_context_with_options(options),
+    }
+}
+
 fn rust_default_callback_nocolor_wins_line() -> String {
     let mut color_state = DefaultCallbackColorState::new();
     let options = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
@@ -1071,10 +1100,11 @@ fn compile_and_run_oracle(
 ) -> String {
     let output = if cfg!(windows) {
         let script = format!(
-            "gcc -I {} {} {} -lm -pthread -ldl -o {} && {} && {} --plain && {} --color && {} --nocolor",
+            "gcc -I {} {} {} -lm -pthread -ldl -lutil -o {} && {} && {} --plain && {} --tty && {} --color && {} --nocolor",
             shell_quote(&to_wsl_path(include_dir)),
             shell_quote(&to_wsl_path(source)),
             shell_quote(&to_wsl_path(libavutil)),
+            shell_quote(&to_wsl_path(executable)),
             shell_quote(&to_wsl_path(executable)),
             shell_quote(&to_wsl_path(executable)),
             shell_quote(&to_wsl_path(executable)),
@@ -1089,10 +1119,11 @@ fn compile_and_run_oracle(
         Command::new("sh")
             .arg("-c")
             .arg(format!(
-                "gcc -I {} {} {} -lm -pthread -ldl -o {} && {} && {} --plain && {} --color && {} --nocolor",
+                "gcc -I {} {} {} -lm -pthread -ldl -lutil -o {} && {} && {} --plain && {} --tty && {} --color && {} --nocolor",
                 shell_quote(&include_dir.display().to_string()),
                 shell_quote(&source.display().to_string()),
                 shell_quote(&libavutil.display().to_string()),
+                shell_quote(&executable.display().to_string()),
                 shell_quote(&executable.display().to_string()),
                 shell_quote(&executable.display().to_string()),
                 shell_quote(&executable.display().to_string()),
@@ -1117,9 +1148,11 @@ fn compile_and_run_oracle(
 fn oracle_c_source() -> &'static str {
     r#"#include <stdarg.h>
 #include <ctype.h>
+#include <pty.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <termios.h>
 #include <unistd.h>
 #include <libavutil/log.h>
 #include <libavutil/version.h>
@@ -1747,6 +1780,70 @@ static void print_default_callback_no_force_redirected_rows(void) {
         &ctx, AV_LOG_WARNING, AV_LOG_PRINT_LEVEL, "plain");
 }
 
+static void print_default_callback_tty_level_row(const char *name, void *ptr, int level,
+                                                 int flags, const char *message) {
+    char captured[1024];
+    int master_fd = -1;
+    int slave_fd = -1;
+    if (openpty(&master_fd, &slave_fd, NULL, NULL, NULL) < 0) {
+        ROW_STR(name, "<pty-open-error>");
+        return;
+    }
+
+    struct termios tio;
+    if (tcgetattr(slave_fd, &tio) == 0) {
+        tio.c_oflag &= ~(OPOST | ONLCR);
+        tcsetattr(slave_fd, TCSANOW, &tio);
+    }
+
+    fflush(stderr);
+    int saved_stderr = dup(fileno(stderr));
+    if (saved_stderr < 0 || dup2(slave_fd, fileno(stderr)) < 0) {
+        if (saved_stderr >= 0)
+            close(saved_stderr);
+        close(slave_fd);
+        close(master_fd);
+        ROW_STR(name, "<stderr-pty-error>");
+        return;
+    }
+    close(slave_fd);
+
+    av_log_set_callback(av_log_default_callback);
+    av_log_set_level(AV_LOG_TRACE);
+    av_log_set_flags(flags);
+    av_log(ptr, level, "%s\n", message);
+    fflush(stderr);
+
+    dup2(saved_stderr, fileno(stderr));
+    close(saved_stderr);
+
+    size_t len = 0;
+    while (len < sizeof(captured) - 1) {
+        ssize_t read_len = read(master_fd, captured + len,
+                                sizeof(captured) - 1 - len);
+        if (read_len <= 0)
+            break;
+        len += (size_t)read_len;
+    }
+    captured[len] = '\0';
+    close(master_fd);
+
+    ROW_STR_NORMALIZED_DEFAULT_CALLBACK(name, captured);
+}
+
+static void print_default_callback_no_force_tty_rows(void) {
+    TestLogContext ctx = { &test_log_class };
+    unsetenv("AV_LOG_FORCE_NOCOLOR");
+    unsetenv("AV_LOG_FORCE_COLOR");
+    setenv("TERM", "xterm-256color", 1);
+    print_default_callback_tty_level_row(
+        "default-callback-no-force-tty-warning-level-line",
+        NULL, AV_LOG_WARNING, AV_LOG_PRINT_LEVEL, "plain");
+    print_default_callback_tty_level_row(
+        "default-callback-no-force-tty-context-level-line",
+        &ctx, AV_LOG_WARNING, AV_LOG_PRINT_LEVEL, "plain");
+}
+
 static void print_default_callback_nocolor_rows(void) {
     setenv("AV_LOG_FORCE_NOCOLOR", "1", 1);
     setenv("AV_LOG_FORCE_COLOR", "1", 1);
@@ -1760,6 +1857,10 @@ static void print_default_callback_nocolor_rows(void) {
 int main(int argc, char **argv) {
     if (argc > 1 && strcmp(argv[1], "--plain") == 0) {
         print_default_callback_no_force_redirected_rows();
+        return 0;
+    }
+    if (argc > 1 && strcmp(argv[1], "--tty") == 0) {
+        print_default_callback_no_force_tty_rows();
         return 0;
     }
     if (argc > 1 && strcmp(argv[1], "--color") == 0) {

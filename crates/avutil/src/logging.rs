@@ -1999,6 +1999,30 @@ mod tests {
     }
 
     #[test]
+    fn default_callback_color_state_uses_terminal_stderr_without_force_env() {
+        let mut state = DefaultCallbackColorState::new();
+        let options = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
+            .with_default_callback_color_state_and_resolver(&mut state, || {
+                LogColorMode::from_ffmpeg_env_vars_and_stderr(|_| false, true)
+            });
+
+        assert_eq!(options.color_mode(), LogColorMode::Always);
+        assert_eq!(state.cached_mode(), Some(LogColorMode::Always));
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "plain\n")
+                .format_default_callback_line_null_context_with_options(options),
+            "\x1b[48;5;0m\x1b[38;5;226m[warning] \x1b[0m\x1b[48;5;0m\x1b[38;5;226mplain\n\x1b[0m"
+        );
+
+        let context = AvLogContextPrefix::new("rustctx", "<ptr>");
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "plain\n")
+                .format_default_callback_line_context_with_options(&context, options),
+            "\x1b[48;5;0m\x1b[38;5;250m[rustctx @ <ptr>] \x1b[0m\x1b[48;5;0m\x1b[38;5;226m[warning] \x1b[0m\x1b[48;5;0m\x1b[38;5;226mplain\n\x1b[0m"
+        );
+    }
+
+    #[test]
     fn logger_formats_records_with_configured_flags() {
         let mut logger = Logger::new_with_flags(LogLevel::Info, LogFlags::empty());
 
