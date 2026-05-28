@@ -2,6 +2,10 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest avutil-packet evidence: `packet:rescale-near-inf-rounding` now
+# proves pinned FFmpeg 8.1.1 `av_packet_rescale_ts()` uses nearest-away
+# rounding for fractional PTS/DTS/duration rescale while preserving payload,
+# position, flags, stream index, and `time_base`.
 # Latest avutil-packet evidence: `packet:rescale-negative-ts` now proves
 # pinned FFmpeg 8.1.1 `av_packet_rescale_ts()` rescales negative PTS/DTS and
 # positive duration fields while preserving payload, position, flags, stream
@@ -266,6 +270,7 @@ unit_tests = [
   "packet::tests::packet_rejects_negative_duration_position_and_invalid_side_data_kind",
   "packet::tests::packet_rescales_valid_timestamps_and_duration",
   "packet::tests::packet_rescale_ignores_unknown_timestamps",
+  "packet::tests::packet_rescale_uses_nearest_away_rounding",
   "packet::tests::packet_rescale_errors_do_not_mutate_timing_fields",
   "packet::tests::packet_side_data_kind_inventory_matches_ffmpeg_8_1_1_header",
   "packet::tests::packet_side_data_kind_maps_aliases_and_preserves_unknown_names",

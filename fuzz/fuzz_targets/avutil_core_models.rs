@@ -7127,6 +7127,27 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .contains(PacketFlags::CORRUPT));
     assert_eq!(negative_ts_rescale_packet.data(), &[0xde, 0xad]);
 
+    let mut near_inf_rescale_packet = Packet::from_data(vec![0x51, 0x52, 0x53]).unwrap();
+    let near_inf_src = Rational::new(1, 48_000).unwrap();
+    near_inf_rescale_packet.set_pts(Some(24));
+    near_inf_rescale_packet.set_dts(Some(23));
+    near_inf_rescale_packet.set_duration(24).unwrap();
+    near_inf_rescale_packet.set_pos(Some(654)).unwrap();
+    near_inf_rescale_packet.set_time_base(near_inf_src).unwrap();
+    near_inf_rescale_packet.set_flag(PacketFlags::DISPOSABLE, true);
+    near_inf_rescale_packet
+        .rescale_ts(near_inf_src, rescale_dst)
+        .unwrap();
+    assert_eq!(near_inf_rescale_packet.pts(), Some(1));
+    assert_eq!(near_inf_rescale_packet.dts(), Some(0));
+    assert_eq!(near_inf_rescale_packet.duration(), 1);
+    assert_eq!(near_inf_rescale_packet.pos(), Some(654));
+    assert_eq!(near_inf_rescale_packet.time_base(), near_inf_src);
+    assert!(near_inf_rescale_packet
+        .flags()
+        .contains(PacketFlags::DISPOSABLE));
+    assert_eq!(near_inf_rescale_packet.data(), &[0x51, 0x52, 0x53]);
+
     let opaque_len = usize::from(cursor.next().unwrap_or_default() % 16);
     let opaque_payload = payload_from(cursor, opaque_len);
     packet.set_opaque_ref(Some(BufferRef::copy_from_slice(&opaque_payload)));

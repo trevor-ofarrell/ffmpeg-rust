@@ -12878,6 +12878,29 @@ mod tests {
     }
 
     #[test]
+    fn packet_rescale_uses_nearest_away_rounding() {
+        let src = Rational::new(1, 48_000).unwrap();
+        let dst = Rational::new(1, 1_000).unwrap();
+        let mut packet = Packet::from_data(vec![0x51, 0x52, 0x53]).unwrap();
+        packet.set_pts(Some(24));
+        packet.set_dts(Some(23));
+        packet.set_duration(24).unwrap();
+        packet.set_pos(Some(654)).unwrap();
+        packet.set_time_base(src).unwrap();
+        packet.set_flag(PacketFlags::DISPOSABLE, true);
+
+        packet.rescale_ts(src, dst).unwrap();
+
+        assert_eq!(packet.pts(), Some(1));
+        assert_eq!(packet.dts(), Some(0));
+        assert_eq!(packet.duration(), 1);
+        assert_eq!(packet.pos(), Some(654));
+        assert_eq!(packet.time_base(), src);
+        assert!(packet.flags().contains(PacketFlags::DISPOSABLE));
+        assert_eq!(packet.data(), &[0x51, 0x52, 0x53]);
+    }
+
+    #[test]
     fn packet_rescale_errors_do_not_mutate_timing_fields() {
         let mut packet = Packet::new(Vec::new(), 0);
         packet.set_pts(Some(10));
