@@ -2387,6 +2387,26 @@ mod tests {
     }
 
     #[test]
+    fn repeated_comparison_respects_target_identity_for_same_message() {
+        let mut flags = LogFlags::PRINT_LEVEL;
+        flags.insert(LogFlags::SKIP_REPEATED);
+        let mut logger = Logger::new_with_flags(LogLevel::Warning, flags);
+
+        assert!(logger.log(LogRecord::new(LogLevel::Warning, "ctx@one", "repeat")));
+        assert!(logger.log(LogRecord::new(LogLevel::Warning, "ctx@two", "repeat")));
+        assert!(logger.log(LogRecord::new(LogLevel::Warning, "ctx@one", "repeat")));
+
+        assert_eq!(
+            logger.formatted_records(),
+            [
+                "[warning] ctx@one: repeat".to_owned(),
+                "[warning] ctx@two: repeat".to_owned(),
+                "[warning] ctx@one: repeat".to_owned()
+            ]
+        );
+    }
+
+    #[test]
     fn repeated_summary_is_dropped_by_clear_and_flushed_by_take_or_flag_change() {
         let mut flags = LogFlags::PRINT_LEVEL;
         flags.insert(LogFlags::SKIP_REPEATED);

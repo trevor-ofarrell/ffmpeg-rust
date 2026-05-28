@@ -560,6 +560,12 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
         "default-callback-repeat-context-level-line",
         escape_row_text(default_repeat_context_level.as_bytes()),
     );
+    let default_repeat_context_switch_level =
+        rust_default_callback_repeat_context_switch_lines(&context);
+    rows.insert(
+        "default-callback-repeat-context-switch-level-line",
+        escape_row_text(default_repeat_context_switch_level.as_bytes()),
+    );
     let default_repeat_no_skip = rust_default_callback_repeat_lines(LogFlags::empty());
     rows.insert(
         "default-callback-repeat-noskip-line",
@@ -1132,6 +1138,26 @@ fn rust_default_callback_color_repeat_lines(
         context,
         LogFormatOptions::new(flags).with_color_mode(LogColorMode::Always),
     )
+}
+
+fn rust_default_callback_repeat_context_switch_lines(context: &AvLogContextPrefix) -> String {
+    let flags = LogFlags::SKIP_REPEATED | LogFlags::PRINT_LEVEL;
+    let mut logger = Logger::new_with_flags(LogLevel::Trace, flags);
+    assert!(logger.log(LogRecord::new(LogLevel::Warning, "ctx@one", "repeat\n")));
+    assert!(logger.log(LogRecord::new(LogLevel::Warning, "ctx@two", "repeat\n")));
+    assert!(logger.log(LogRecord::new(LogLevel::Warning, "ctx@one", "repeat\n")));
+    assert!(logger.log(LogRecord::new(LogLevel::Error, "ctx@one", "next\n")));
+
+    logger
+        .records()
+        .iter()
+        .map(|record| {
+            record.format_default_callback_line_context_with_options(
+                context,
+                LogFormatOptions::new(flags),
+            )
+        })
+        .collect()
 }
 
 fn rust_default_callback_repeat_lines_with_options(
@@ -2114,6 +2140,48 @@ static void print_default_callback_repeat_row(const char *name, void *ptr, int f
     ROW_STR_NORMALIZED_DEFAULT_CALLBACK(name, captured);
 }
 
+static void print_default_callback_repeat_context_switch_row(const char *name,
+                                                             int flags) {
+    char captured[2048];
+    FILE *capture = tmpfile();
+    if (!capture) {
+        ROW_STR(name, "<tmpfile-error>");
+        return;
+    }
+
+    fflush(stderr);
+    int saved_stderr = dup(fileno(stderr));
+    if (saved_stderr < 0 || dup2(fileno(capture), fileno(stderr)) < 0) {
+        if (saved_stderr >= 0)
+            close(saved_stderr);
+        fclose(capture);
+        ROW_STR(name, "<stderr-redirect-error>");
+        return;
+    }
+
+    TestLogContext ctx_a = { &test_log_class };
+    TestLogContext ctx_b = { &test_log_class };
+
+    av_log_set_callback(av_log_default_callback);
+    av_log_set_level(AV_LOG_TRACE);
+    av_log_set_flags(flags);
+    av_log(&ctx_a, AV_LOG_WARNING, "%s\n", "repeat");
+    av_log(&ctx_b, AV_LOG_WARNING, "%s\n", "repeat");
+    av_log(&ctx_a, AV_LOG_WARNING, "%s\n", "repeat");
+    av_log(&ctx_a, AV_LOG_ERROR, "%s\n", "next");
+    fflush(stderr);
+
+    dup2(saved_stderr, fileno(stderr));
+    close(saved_stderr);
+
+    rewind(capture);
+    size_t len = fread(captured, 1, sizeof(captured) - 1, capture);
+    captured[len] = '\0';
+    fclose(capture);
+
+    ROW_STR_NORMALIZED_DEFAULT_CALLBACK(name, captured);
+}
+
 static void print_default_callback_prefix_continuation_row(const char *name,
                                                            void *ptr,
                                                            int flags) {
@@ -2215,6 +2283,9 @@ static void print_default_callback_rows(void) {
                                       AV_LOG_SKIP_REPEATED | AV_LOG_PRINT_LEVEL);
     print_default_callback_repeat_row("default-callback-repeat-context-level-line", &ctx,
                                       AV_LOG_SKIP_REPEATED | AV_LOG_PRINT_LEVEL);
+    print_default_callback_repeat_context_switch_row(
+        "default-callback-repeat-context-switch-level-line",
+        AV_LOG_SKIP_REPEATED | AV_LOG_PRINT_LEVEL);
     print_default_callback_repeat_row("default-callback-repeat-noskip-line", NULL, 0);
     print_default_callback_prefix_continuation_row(
         "default-callback-prefix-continuation-plain-line", NULL, 0);
