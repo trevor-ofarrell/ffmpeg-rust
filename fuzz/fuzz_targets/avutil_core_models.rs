@@ -2624,6 +2624,23 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
         LogColorMode::from_ffmpeg_env_vars(|name| name == AV_LOG_FORCE_COLOR_ENV),
         LogColorMode::Always
     );
+    for value in ["", "0"] {
+        let force_entries = [(AV_LOG_FORCE_COLOR_ENV, value)];
+        assert_eq!(
+            LogColorMode::from_ffmpeg_env_vars(|name| {
+                force_entries.iter().any(|(key, _value)| *key == name)
+            }),
+            LogColorMode::Always
+        );
+        let no_color_entries = [(AV_LOG_FORCE_NOCOLOR_ENV, value), (AV_LOG_FORCE_COLOR_ENV, "1")];
+        assert_eq!(
+            LogColorMode::from_ffmpeg_env_vars_and_stderr(
+                |name| no_color_entries.iter().any(|(key, _value)| *key == name),
+                true,
+            ),
+            LogColorMode::Never
+        );
+    }
     assert_eq!(
         LogColorMode::from_ffmpeg_env_vars(|name| {
             name == AV_LOG_FORCE_NOCOLOR_ENV || name == AV_LOG_FORCE_COLOR_ENV

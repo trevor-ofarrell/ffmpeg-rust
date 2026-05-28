@@ -766,6 +766,28 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
         "default-callback-nocolor-wins-warning-line",
         escape_row_text(default_nocolor_wins.as_bytes()),
     );
+    let default_force_color_empty =
+        rust_default_callback_color_line(LogLevel::Warning, None, LogFlags::PRINT_LEVEL);
+    rows.insert(
+        "default-callback-force-color-empty-warning-level-line",
+        escape_row_text(default_force_color_empty.as_bytes()),
+    );
+    let default_force_color_zero =
+        rust_default_callback_color_line(LogLevel::Warning, None, LogFlags::PRINT_LEVEL);
+    rows.insert(
+        "default-callback-force-color-zero-warning-level-line",
+        escape_row_text(default_force_color_zero.as_bytes()),
+    );
+    let default_force_nocolor_empty = rust_default_callback_nocolor_wins_line();
+    rows.insert(
+        "default-callback-force-nocolor-empty-wins-warning-line",
+        escape_row_text(default_force_nocolor_empty.as_bytes()),
+    );
+    let default_force_nocolor_zero = rust_default_callback_nocolor_wins_line();
+    rows.insert(
+        "default-callback-force-nocolor-zero-wins-warning-line",
+        escape_row_text(default_force_nocolor_zero.as_bytes()),
+    );
     let (custom_above_level_message, custom_above_level_item) =
         rust_custom_callback_above_level_text();
     rows.insert(
@@ -1729,10 +1751,14 @@ fn compile_and_run_oracle(
 ) -> String {
     let output = if cfg!(windows) {
         let script = format!(
-            "gcc -I {} {} {} -lm -pthread -ldl -lutil -o {} && {} && {} --plain && {} --tty && {} --color && {} --nocolor",
+            "gcc -I {} {} {} -lm -pthread -ldl -lutil -o {} && {} && {} --plain && {} --tty && {} --color && {} --nocolor && {} --force-color-empty && {} --force-color-zero && {} --force-nocolor-empty && {} --force-nocolor-zero",
             shell_quote(&to_wsl_path(include_dir)),
             shell_quote(&to_wsl_path(source)),
             shell_quote(&to_wsl_path(libavutil)),
+            shell_quote(&to_wsl_path(executable)),
+            shell_quote(&to_wsl_path(executable)),
+            shell_quote(&to_wsl_path(executable)),
+            shell_quote(&to_wsl_path(executable)),
             shell_quote(&to_wsl_path(executable)),
             shell_quote(&to_wsl_path(executable)),
             shell_quote(&to_wsl_path(executable)),
@@ -1748,10 +1774,14 @@ fn compile_and_run_oracle(
         Command::new("sh")
             .arg("-c")
             .arg(format!(
-                "gcc -I {} {} {} -lm -pthread -ldl -lutil -o {} && {} && {} --plain && {} --tty && {} --color && {} --nocolor",
+                "gcc -I {} {} {} -lm -pthread -ldl -lutil -o {} && {} && {} --plain && {} --tty && {} --color && {} --nocolor && {} --force-color-empty && {} --force-color-zero && {} --force-nocolor-empty && {} --force-nocolor-zero",
                 shell_quote(&include_dir.display().to_string()),
                 shell_quote(&source.display().to_string()),
                 shell_quote(&libavutil.display().to_string()),
+                shell_quote(&executable.display().to_string()),
+                shell_quote(&executable.display().to_string()),
+                shell_quote(&executable.display().to_string()),
+                shell_quote(&executable.display().to_string()),
                 shell_quote(&executable.display().to_string()),
                 shell_quote(&executable.display().to_string()),
                 shell_quote(&executable.display().to_string()),
@@ -2804,6 +2834,44 @@ static void print_default_callback_nocolor_rows(void) {
     unsetenv("AV_LOG_FORCE_NOCOLOR");
 }
 
+static void print_default_callback_force_color_empty_row(void) {
+    unsetenv("AV_LOG_FORCE_NOCOLOR");
+    setenv("AV_LOG_FORCE_COLOR", "", 1);
+    print_default_callback_level_row(
+        "default-callback-force-color-empty-warning-level-line",
+        NULL, AV_LOG_WARNING, AV_LOG_PRINT_LEVEL, "plain");
+    unsetenv("AV_LOG_FORCE_COLOR");
+}
+
+static void print_default_callback_force_color_zero_row(void) {
+    unsetenv("AV_LOG_FORCE_NOCOLOR");
+    setenv("AV_LOG_FORCE_COLOR", "0", 1);
+    print_default_callback_level_row(
+        "default-callback-force-color-zero-warning-level-line",
+        NULL, AV_LOG_WARNING, AV_LOG_PRINT_LEVEL, "plain");
+    unsetenv("AV_LOG_FORCE_COLOR");
+}
+
+static void print_default_callback_force_nocolor_empty_row(void) {
+    setenv("AV_LOG_FORCE_NOCOLOR", "", 1);
+    setenv("AV_LOG_FORCE_COLOR", "1", 1);
+    print_default_callback_level_row(
+        "default-callback-force-nocolor-empty-wins-warning-line",
+        NULL, AV_LOG_WARNING, AV_LOG_PRINT_LEVEL, "plain");
+    unsetenv("AV_LOG_FORCE_COLOR");
+    unsetenv("AV_LOG_FORCE_NOCOLOR");
+}
+
+static void print_default_callback_force_nocolor_zero_row(void) {
+    setenv("AV_LOG_FORCE_NOCOLOR", "0", 1);
+    setenv("AV_LOG_FORCE_COLOR", "1", 1);
+    print_default_callback_level_row(
+        "default-callback-force-nocolor-zero-wins-warning-line",
+        NULL, AV_LOG_WARNING, AV_LOG_PRINT_LEVEL, "plain");
+    unsetenv("AV_LOG_FORCE_COLOR");
+    unsetenv("AV_LOG_FORCE_NOCOLOR");
+}
+
 static void print_custom_callback_rows(void) {
     TestLogContext ctx = { &test_log_class };
     av_log_set_callback(capture_log_callback);
@@ -2872,6 +2940,22 @@ int main(int argc, char **argv) {
     }
     if (argc > 1 && strcmp(argv[1], "--nocolor") == 0) {
         print_default_callback_nocolor_rows();
+        return 0;
+    }
+    if (argc > 1 && strcmp(argv[1], "--force-color-empty") == 0) {
+        print_default_callback_force_color_empty_row();
+        return 0;
+    }
+    if (argc > 1 && strcmp(argv[1], "--force-color-zero") == 0) {
+        print_default_callback_force_color_zero_row();
+        return 0;
+    }
+    if (argc > 1 && strcmp(argv[1], "--force-nocolor-empty") == 0) {
+        print_default_callback_force_nocolor_empty_row();
+        return 0;
+    }
+    if (argc > 1 && strcmp(argv[1], "--force-nocolor-zero") == 0) {
+        print_default_callback_force_nocolor_zero_row();
         return 0;
     }
 

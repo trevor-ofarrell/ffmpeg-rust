@@ -2343,6 +2343,32 @@ mod tests {
     }
 
     #[test]
+    fn color_mode_treats_force_env_values_as_presence_only() {
+        let is_present =
+            |entries: &[(&str, &str)], name: &str| entries.iter().any(|(key, _value)| *key == name);
+
+        for value in ["", "0"] {
+            let entries = [(AV_LOG_FORCE_COLOR_ENV, value)];
+            assert_eq!(
+                LogColorMode::from_ffmpeg_env_vars(|name| is_present(&entries, name)),
+                LogColorMode::Always
+            );
+
+            let entries = [
+                (AV_LOG_FORCE_NOCOLOR_ENV, value),
+                (AV_LOG_FORCE_COLOR_ENV, "1"),
+            ];
+            assert_eq!(
+                LogColorMode::from_ffmpeg_env_vars_and_stderr(
+                    |name| is_present(&entries, name),
+                    true,
+                ),
+                LogColorMode::Never
+            );
+        }
+    }
+
+    #[test]
     fn color_mode_enables_color_for_terminal_stderr() {
         assert_eq!(
             LogColorMode::from_ffmpeg_env_vars_and_stderr(|_| false, true),
