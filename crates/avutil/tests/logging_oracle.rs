@@ -190,6 +190,21 @@ fn expected_rows() -> BTreeMap<&'static str, i32> {
 
     add_format_line2_int_rows(&mut rows);
     add_format_line_int_rows(&mut rows);
+    rows.insert("custom-callback-above-level-count", 1);
+    rows.insert(
+        "custom-callback-above-level-level",
+        LogLevel::Info.as_ffmpeg_value(),
+    );
+    rows.insert("custom-callback-null-count", 1);
+    rows.insert(
+        "custom-callback-null-level",
+        LogLevel::Error.as_ffmpeg_value(),
+    );
+    rows.insert("custom-callback-context-count", 1);
+    rows.insert(
+        "custom-callback-context-level",
+        LogLevel::Warning.as_ffmpeg_value(),
+    );
     rows
 }
 
@@ -511,6 +526,34 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
     rows.insert(
         "default-callback-nocolor-wins-warning-line",
         escape_row_text(default_nocolor_wins.as_bytes()),
+    );
+    let (custom_above_level_message, custom_above_level_item) =
+        rust_custom_callback_above_level_text();
+    rows.insert(
+        "custom-callback-above-level-message",
+        escape_row_text(custom_above_level_message.as_bytes()),
+    );
+    rows.insert(
+        "custom-callback-above-level-item",
+        escape_row_text(custom_above_level_item.as_bytes()),
+    );
+    let (custom_null_message, custom_null_item) = rust_custom_callback_null_text();
+    rows.insert(
+        "custom-callback-null-message",
+        escape_row_text(custom_null_message.as_bytes()),
+    );
+    rows.insert(
+        "custom-callback-null-item",
+        escape_row_text(custom_null_item.as_bytes()),
+    );
+    let (custom_context_message, custom_context_item) = rust_custom_callback_context_text(&context);
+    rows.insert(
+        "custom-callback-context-message",
+        escape_row_text(custom_context_message.as_bytes()),
+    );
+    rows.insert(
+        "custom-callback-context-item",
+        escape_row_text(custom_context_item.as_bytes()),
     );
 
     let (plain, _) = rust_format_line(LogLevel::Warning, "plain", LogFlags::empty(), true, 128);
@@ -1028,6 +1071,37 @@ fn rust_default_callback_nocolor_wins_line() -> String {
         .format_default_callback_line_null_context_with_options(options)
 }
 
+fn rust_custom_callback_above_level_text() -> (String, String) {
+    let mut logger = Logger::new_with_flags(LogLevel::Warning, LogFlags::PRINT_LEVEL);
+    let mut seen = Vec::new();
+    logger.log_custom_callback(LogRecord::new(LogLevel::Info, "", "hidden"), |record| {
+        seen.push((record.message().to_owned(), "<none>".to_owned()))
+    });
+    assert_eq!(seen.len(), 1);
+    seen.remove(0)
+}
+
+fn rust_custom_callback_null_text() -> (String, String) {
+    let mut logger = Logger::new_with_flags(LogLevel::Warning, LogFlags::PRINT_LEVEL);
+    let mut seen = Vec::new();
+    logger.log_custom_callback(LogRecord::new(LogLevel::Error, "", "raw:5\n"), |record| {
+        seen.push((record.message().to_owned(), "<none>".to_owned()))
+    });
+    assert_eq!(seen.len(), 1);
+    seen.remove(0)
+}
+
+fn rust_custom_callback_context_text(context: &AvLogContextPrefix) -> (String, String) {
+    let mut logger = Logger::new_with_flags(LogLevel::Warning, LogFlags::PRINT_LEVEL);
+    let mut seen = Vec::new();
+    logger.log_custom_callback(
+        LogRecord::new(LogLevel::Warning, context.item_name(), "ctx:3"),
+        |record| seen.push((record.message().to_owned(), record.target().to_owned())),
+    );
+    assert_eq!(seen.len(), 1);
+    seen.remove(0)
+}
+
 fn normalize_default_callback_timestamp(line: &str) -> String {
     if is_default_datetime_prefix(line) {
         format!("<datetime> {}", &line[24..])
@@ -1367,13 +1441,25 @@ static void call_format_line(void *ptr, char *line, int line_size, int *print_pr
 
 static int captured_count = 0;
 static int captured_level = -999;
+static char captured_message[512];
+static char captured_item[128];
+
+static void reset_capture(void) {
+    captured_count = 0;
+    captured_level = -999;
+    captured_message[0] = '\0';
+    snprintf(captured_item, sizeof(captured_item), "%s", "<none>");
+}
 
 static void capture_log_callback(void *ptr, int level, const char *fmt, va_list vl) {
-    (void)ptr;
-    (void)fmt;
-    (void)vl;
+    const AVClass *av_class = ptr ? *(const AVClass **)ptr : NULL;
     captured_count++;
     captured_level = level;
+    vsnprintf(captured_message, sizeof(captured_message), fmt, vl);
+    if (av_class && av_class->item_name)
+        snprintf(captured_item, sizeof(captured_item), "%s", av_class->item_name(ptr));
+    else
+        snprintf(captured_item, sizeof(captured_item), "%s", "<none>");
 }
 
 static void print_level_after_set(const char *name, int level) {
@@ -1898,6 +1984,36 @@ static void print_default_callback_nocolor_rows(void) {
     unsetenv("AV_LOG_FORCE_NOCOLOR");
 }
 
+static void print_custom_callback_rows(void) {
+    TestLogContext ctx = { &test_log_class };
+    av_log_set_callback(capture_log_callback);
+    av_log_set_level(AV_LOG_WARNING);
+    av_log_set_flags(AV_LOG_PRINT_LEVEL | AV_LOG_SKIP_REPEATED);
+
+    reset_capture();
+    av_log(NULL, AV_LOG_INFO, "%s", "hidden");
+    ROW("custom-callback-above-level-count", captured_count);
+    ROW("custom-callback-above-level-level", captured_level);
+    ROW_STR("custom-callback-above-level-message", captured_message);
+    ROW_STR("custom-callback-above-level-item", captured_item);
+
+    reset_capture();
+    av_log(NULL, AV_LOG_ERROR, "%s:%d\n", "raw", 5);
+    ROW("custom-callback-null-count", captured_count);
+    ROW("custom-callback-null-level", captured_level);
+    ROW_STR("custom-callback-null-message", captured_message);
+    ROW_STR("custom-callback-null-item", captured_item);
+
+    reset_capture();
+    av_log(&ctx, AV_LOG_WARNING, "%s:%d", "ctx", 3);
+    ROW("custom-callback-context-count", captured_count);
+    ROW("custom-callback-context-level", captured_level);
+    ROW_STR("custom-callback-context-message", captured_message);
+    ROW_STR("custom-callback-context-item", captured_item);
+
+    av_log_set_callback(av_log_default_callback);
+}
+
 int main(int argc, char **argv) {
     if (argc > 1 && strcmp(argv[1], "--plain") == 0) {
         print_default_callback_no_force_redirected_rows();
@@ -1954,7 +2070,9 @@ int main(int argc, char **argv) {
     print_format_line_rows();
     print_default_callback_rows();
     print_default_callback_color_cache_after_nocolor_rows();
+    print_custom_callback_rows();
     av_log_set_callback(capture_log_callback);
+    reset_capture();
     int once_state = 0;
     av_log_once(NULL, AV_LOG_WARNING, AV_LOG_DEBUG, &once_state, "%s", "once");
     ROW("log-once-first-state", once_state);

@@ -1097,6 +1097,15 @@ impl Logger {
         }
     }
 
+    pub fn log_custom_callback<F>(&mut self, record: LogRecord, callback: F)
+    where
+        F: FnOnce(&LogRecord),
+    {
+        self.records.push(record);
+        let record_index = self.records.len() - 1;
+        callback(&self.records[record_index]);
+    }
+
     pub fn log_once(
         &mut self,
         state: &mut LogOnceState,
@@ -2278,6 +2287,90 @@ mod tests {
 
         assert_eq!(seen, ["[error] ffmpeg: kept"]);
         assert_eq!(logger.records().len(), 1);
+    }
+
+    #[test]
+    fn callback_receives_raw_record_fields_after_level_filtering() {
+        let mut logger = Logger::new_with_flags(LogLevel::Warning, LogFlags::PRINT_LEVEL);
+        let mut seen = Vec::new();
+
+        assert!(!logger.log_with_callback(
+            LogRecord::new(LogLevel::Info, "decoder", "hidden"),
+            |record| seen.push((
+                record.level(),
+                record.target().to_owned(),
+                record.message().to_owned(),
+            ))
+        ));
+        assert!(seen.is_empty());
+
+        assert!(logger.log_with_callback(
+            LogRecord::new(LogLevel::Error, "", "raw:5\n"),
+            |record| seen.push((
+                record.level(),
+                record.target().to_owned(),
+                record.message().to_owned(),
+            ))
+        ));
+        assert!(logger.log_with_callback(
+            LogRecord::new(LogLevel::Warning, "rustctx", "ctx:3"),
+            |record| seen.push((
+                record.level(),
+                record.target().to_owned(),
+                record.message().to_owned(),
+            ))
+        ));
+
+        assert_eq!(
+            seen,
+            [
+                (LogLevel::Error, String::new(), "raw:5\n".to_owned()),
+                (LogLevel::Warning, "rustctx".to_owned(), "ctx:3".to_owned(),),
+            ]
+        );
+    }
+
+    #[test]
+    fn custom_callback_dispatch_ignores_level_filter_and_repeat_flags() {
+        let mut flags = LogFlags::PRINT_LEVEL;
+        flags.insert(LogFlags::SKIP_REPEATED);
+        let mut logger = Logger::new_with_flags(LogLevel::Warning, flags);
+        let mut seen = Vec::new();
+
+        logger.log_custom_callback(LogRecord::new(LogLevel::Info, "", "hidden"), |record| {
+            seen.push((
+                record.level(),
+                record.target().to_owned(),
+                record.message().to_owned(),
+            ));
+        });
+        logger.log_custom_callback(LogRecord::new(LogLevel::Error, "", "raw:5\n"), |record| {
+            seen.push((
+                record.level(),
+                record.target().to_owned(),
+                record.message().to_owned(),
+            ));
+        });
+        logger.log_custom_callback(
+            LogRecord::new(LogLevel::Warning, "rustctx", "ctx:3"),
+            |record| {
+                seen.push((
+                    record.level(),
+                    record.target().to_owned(),
+                    record.message().to_owned(),
+                ));
+            },
+        );
+
+        assert_eq!(
+            seen,
+            [
+                (LogLevel::Info, String::new(), "hidden".to_owned()),
+                (LogLevel::Error, String::new(), "raw:5\n".to_owned()),
+                (LogLevel::Warning, "rustctx".to_owned(), "ctx:3".to_owned()),
+            ]
+        );
+        assert_eq!(logger.records().len(), 3);
     }
 
     #[test]

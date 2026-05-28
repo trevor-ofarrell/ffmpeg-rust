@@ -2397,6 +2397,40 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     let mut callback_flags = LogFlags::PRINT_LEVEL;
     callback_flags.insert(LogFlags::SKIP_REPEATED);
     let mut callback_logger = Logger::new_with_flags(LogLevel::Info, callback_flags);
+    let mut raw_callback_seen = Vec::new();
+    callback_logger.log_custom_callback(LogRecord::new(LogLevel::Info, "", "hidden"), |record| {
+        raw_callback_seen.push((
+            record.level(),
+            record.target().to_owned(),
+            record.message().to_owned(),
+        ))
+    });
+    callback_logger.log_custom_callback(LogRecord::new(LogLevel::Error, "", "raw:5\n"), |record| {
+        raw_callback_seen.push((
+            record.level(),
+            record.target().to_owned(),
+            record.message().to_owned(),
+        ))
+    });
+    callback_logger.log_custom_callback(
+        LogRecord::new(LogLevel::Warning, "rustctx", "ctx:3"),
+        |record| {
+            raw_callback_seen.push((
+                record.level(),
+                record.target().to_owned(),
+                record.message().to_owned(),
+            ))
+        },
+    );
+    assert_eq!(
+        raw_callback_seen.as_slice(),
+        &[
+            (LogLevel::Info, String::new(), "hidden".to_owned()),
+            (LogLevel::Error, String::new(), "raw:5\n".to_owned()),
+            (LogLevel::Warning, "rustctx".to_owned(), "ctx:3".to_owned()),
+        ]
+    );
+    callback_logger.clear();
     let callback_seen = Arc::new(Mutex::new(Vec::new()));
     let seen_by_callback = Arc::clone(&callback_seen);
     callback_logger.set_callback(move |record| {
