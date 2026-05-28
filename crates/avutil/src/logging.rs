@@ -197,7 +197,9 @@ pub const AV_LOG_FORCE_COLOR_ENV: &str = "AV_LOG_FORCE_COLOR";
 pub const AV_LOG_FORCE_NOCOLOR_ENV: &str = "AV_LOG_FORCE_NOCOLOR";
 const DEFAULT_CALLBACK_CONTEXT_COLOR: &str = "\x1b[48;5;0m\x1b[38;5;250m";
 const DEFAULT_CALLBACK_WARNING_COLOR: &str = "\x1b[48;5;0m\x1b[38;5;226m";
+const DEFAULT_CALLBACK_FATAL_COLOR: &str = "\x1b[48;5;0m\x1b[38;5;208m";
 const DEFAULT_CALLBACK_ERROR_COLOR: &str = "\x1b[48;5;0m\x1b[38;5;196m";
+const DEFAULT_CALLBACK_PANIC_COLOR: &str = "\x1b[48;5;52m\x1b[38;5;196m";
 
 fn colorize(color_code: &str, text: &str) -> String {
     format!("{color_code}{text}\x1b[0m")
@@ -1018,9 +1020,9 @@ impl LogRecord {
 
     fn default_callback_ansi_color_code(&self) -> Option<&'static str> {
         match self.level {
-            LogLevel::Panic | LogLevel::Fatal | LogLevel::Error => {
-                Some(DEFAULT_CALLBACK_ERROR_COLOR)
-            }
+            LogLevel::Panic => Some(DEFAULT_CALLBACK_PANIC_COLOR),
+            LogLevel::Fatal => Some(DEFAULT_CALLBACK_FATAL_COLOR),
+            LogLevel::Error => Some(DEFAULT_CALLBACK_ERROR_COLOR),
             LogLevel::Warning => Some(DEFAULT_CALLBACK_WARNING_COLOR),
             LogLevel::Quiet
             | LogLevel::Info
@@ -1792,6 +1794,16 @@ mod tests {
             LogRecord::new(LogLevel::Warning, "ignored", "plain\n")
                 .format_default_callback_line_null_context_with_options(force_color_level),
             "\x1b[48;5;0m\x1b[38;5;226m[warning] \x1b[0m\x1b[48;5;0m\x1b[38;5;226mplain\n\x1b[0m"
+        );
+        assert_eq!(
+            LogRecord::new(LogLevel::Fatal, "ignored", "plain\n")
+                .format_default_callback_line_null_context_with_options(force_color_level),
+            "\x1b[48;5;0m\x1b[38;5;208m[fatal] \x1b[0m\x1b[48;5;0m\x1b[38;5;208mplain\n\x1b[0m"
+        );
+        assert_eq!(
+            LogRecord::new(LogLevel::Panic, "ignored", "plain\n")
+                .format_default_callback_line_null_context_with_options(force_color_level),
+            "\x1b[48;5;52m\x1b[38;5;196m[panic] \x1b[0m\x1b[48;5;52m\x1b[38;5;196mplain\n\x1b[0m"
         );
         assert_eq!(
             LogRecord::new(LogLevel::Warning, "ignored", "plain\n")

@@ -2362,6 +2362,16 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
             ),
         "\x1b[48;5;0m\x1b[38;5;250m[rustctx @ <ptr>] \x1b[0m\x1b[48;5;0m\x1b[38;5;226m[warning] \x1b[0m\x1b[48;5;0m\x1b[38;5;226mplain\n\x1b[0m"
     );
+    assert_eq!(
+        LogRecord::new(LogLevel::Fatal, "ignored", "plain\n")
+            .format_default_callback_line_null_context_with_options(default_callback_color),
+        "\x1b[48;5;0m\x1b[38;5;208m[fatal] \x1b[0m\x1b[48;5;0m\x1b[38;5;208mplain\n\x1b[0m"
+    );
+    assert_eq!(
+        LogRecord::new(LogLevel::Panic, "ignored", "plain\n")
+            .format_default_callback_line_null_context_with_options(default_callback_color),
+        "\x1b[48;5;52m\x1b[38;5;196m[panic] \x1b[0m\x1b[48;5;52m\x1b[38;5;196mplain\n\x1b[0m"
+    );
     let mut default_callback_color_prefix_state = DefaultCallbackPrefixState::new();
     assert_eq!(
         LogRecord::new(LogLevel::Warning, "ignored", "part")

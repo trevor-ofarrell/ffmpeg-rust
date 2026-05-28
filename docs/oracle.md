@@ -173,7 +173,9 @@ The newest CLI loglevel rows prove pinned `ffmpeg` and `ffprobe` accept raw nume
 
 Local `fftools` diagnostic stderr unit coverage now applies the pinned default-callback repeat-summary indentation shape to process-level repeated diagnostics: compressed rows emit `    Last message repeated N times` while non-repeating paths preserve duplicate records. The newest pinned `ffmpeg` CLI row uses a two-file invalid MJPEG image2 sequence to prove real default CLI stderr emits the indented repeat summary, and that `-loglevel repeat+error` prints duplicate diagnostics without a summary.
 
-The newest default-callback repeat/color rows add normalized AVClass-context repeated diagnostics, context-switch diagnostics, and forced-color repeated diagnostics, proving distinct AVClass instances with identical warning text are not coalesced and warning/error segments colorize while the repeat summary stays the plain four-space line.
+The newest default-callback forced-color severity rows add fatal and panic `PRINT_LEVEL` cases. Pinned FFmpeg 8.1.1 uses warning `38;5;226` on black, error `38;5;196` on black, fatal `38;5;208` on black, panic `38;5;196` on `48;5;52`, and leaves info uncolored.
+
+The default-callback repeat/color rows also add normalized AVClass-context repeated diagnostics, context-switch diagnostics, and forced-color repeated diagnostics, proving distinct AVClass instances with identical warning text are not coalesced and warning/error segments colorize while the repeat summary stays the plain four-space line.
 
 ```sh
 cargo test -p avutil --test logging_oracle -- --ignored

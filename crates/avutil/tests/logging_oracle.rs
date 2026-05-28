@@ -672,6 +672,18 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
         "default-callback-color-error-line",
         escape_row_text(default_color_error.as_bytes()),
     );
+    let default_color_fatal_level =
+        rust_default_callback_color_line(LogLevel::Fatal, None, LogFlags::PRINT_LEVEL);
+    rows.insert(
+        "default-callback-color-fatal-level-line",
+        escape_row_text(default_color_fatal_level.as_bytes()),
+    );
+    let default_color_panic_level =
+        rust_default_callback_color_line(LogLevel::Panic, None, LogFlags::PRINT_LEVEL);
+    rows.insert(
+        "default-callback-color-panic-level-line",
+        escape_row_text(default_color_panic_level.as_bytes()),
+    );
     let default_color_info =
         rust_default_callback_color_line(LogLevel::Info, None, LogFlags::empty());
     rows.insert(
@@ -2522,6 +2534,10 @@ static void print_default_callback_color_rows(void) {
         AV_LOG_PRINT_LEVEL);
     print_default_callback_level_row("default-callback-color-error-line", NULL,
                                      AV_LOG_ERROR, 0, "plain");
+    print_default_callback_level_row("default-callback-color-fatal-level-line", NULL,
+                                     AV_LOG_FATAL, AV_LOG_PRINT_LEVEL, "plain");
+    print_default_callback_level_row("default-callback-color-panic-level-line", NULL,
+                                     AV_LOG_PANIC, AV_LOG_PRINT_LEVEL, "plain");
     print_default_callback_level_row("default-callback-color-info-line", NULL,
                                      AV_LOG_INFO, 0, "plain");
     unsetenv("AV_LOG_FORCE_COLOR");

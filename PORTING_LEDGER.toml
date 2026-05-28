@@ -1874,11 +1874,12 @@ fuzz_targets = ["avutil_core_models"]
 # repeat row by asserting same-message records with distinct target identities
 # stay emitted and produce no repetition summary.
 # Latest update: pinned libavutil AV_LOG_FORCE_COLOR default-callback rows now
-# prove the bounded forced-color shape for NULL warning/error/info rows and a
-# non-NULL warning+level row: context prefixes use 38;5;250 on black, warning
-# level/message segments use 38;5;226 on black, error message segments use
-# 38;5;196 on black, info stays uncolored, and color-mode cache behavior is
-# isolated by running the color rows in a fresh oracle process.
+# prove the bounded forced-color shape for NULL warning/error/info rows, fatal
+# and panic PRINT_LEVEL rows, and a non-NULL warning+level row: context prefixes
+# use 38;5;250 on black, warning level/message segments use 38;5;226 on black,
+# error segments use 38;5;196 on black, fatal segments use 38;5;208 on black,
+# panic segments use 38;5;196 on 48;5;52, info stays uncolored, and color-mode
+# cache behavior is isolated by running the color rows in a fresh oracle process.
 # Latest update: pinned libavutil default-callback color policy rows now prove
 # bounded color-cache and no-color precedence behavior: after a first no-color
 # callback decision, later AV_LOG_FORCE_COLOR changes in the same process stay
