@@ -2411,6 +2411,26 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
         "\x1b[48;5;0m\x1b[38;5;226mtail\n\x1b[0m"
     );
     assert!(default_callback_color_prefix_state.print_prefix());
+    assert_eq!(
+        LogRecord::new(LogLevel::Warning, "ignored", "progress\r")
+            .format_default_callback_line_context_with_options_and_state(
+                &callback_context,
+                default_callback_color,
+                &mut default_callback_color_prefix_state
+            ),
+        "\x1b[48;5;0m\x1b[38;5;250m[rustctx @ <ptr>] \x1b[0m\x1b[48;5;0m\x1b[38;5;226m[warning] \x1b[0m\x1b[48;5;0m\x1b[38;5;226mprogress\r\x1b[0m"
+    );
+    assert!(default_callback_color_prefix_state.print_prefix());
+    assert_eq!(
+        LogRecord::new(LogLevel::Warning, "ignored", "done\n")
+            .format_default_callback_line_context_with_options_and_state(
+                &callback_context,
+                default_callback_color,
+                &mut default_callback_color_prefix_state
+            ),
+        "\x1b[48;5;0m\x1b[38;5;250m[rustctx @ <ptr>] \x1b[0m\x1b[48;5;0m\x1b[38;5;226m[warning] \x1b[0m\x1b[48;5;0m\x1b[38;5;226mdone\n\x1b[0m"
+    );
+    assert!(default_callback_color_prefix_state.print_prefix());
     let color_options =
         LogFormatOptions::new(LogFlags::PRINT_LEVEL).with_color_mode(LogColorMode::Always);
     let plain_options =

@@ -1943,6 +1943,22 @@ mod tests {
             "\x1b[48;5;0m\x1b[38;5;226mtail\n\x1b[0m"
         );
         assert!(state.print_prefix());
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "progress\r")
+                .format_default_callback_line_null_context_with_options_and_state(
+                    options, &mut state,
+                ),
+            "\x1b[48;5;0m\x1b[38;5;226m[warning] \x1b[0m\x1b[48;5;0m\x1b[38;5;226mprogress\r\x1b[0m"
+        );
+        assert!(state.print_prefix());
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "done\n")
+                .format_default_callback_line_null_context_with_options_and_state(
+                    options, &mut state,
+                ),
+            "\x1b[48;5;0m\x1b[38;5;226m[warning] \x1b[0m\x1b[48;5;0m\x1b[38;5;226mdone\n\x1b[0m"
+        );
+        assert!(state.print_prefix());
 
         let context = AvLogContextPrefix::new("rustctx", "<ptr>");
         let mut context_state = DefaultCallbackPrefixState::new();
@@ -1964,6 +1980,26 @@ mod tests {
                     &mut context_state,
                 ),
             "\x1b[48;5;0m\x1b[38;5;226mtail\n\x1b[0m"
+        );
+        assert!(context_state.print_prefix());
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "progress\r")
+                .format_default_callback_line_context_with_options_and_state(
+                    &context,
+                    options,
+                    &mut context_state,
+                ),
+            "\x1b[48;5;0m\x1b[38;5;250m[rustctx @ <ptr>] \x1b[0m\x1b[48;5;0m\x1b[38;5;226m[warning] \x1b[0m\x1b[48;5;0m\x1b[38;5;226mprogress\r\x1b[0m"
+        );
+        assert!(context_state.print_prefix());
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "done\n")
+                .format_default_callback_line_context_with_options_and_state(
+                    &context,
+                    options,
+                    &mut context_state,
+                ),
+            "\x1b[48;5;0m\x1b[38;5;250m[rustctx @ <ptr>] \x1b[0m\x1b[48;5;0m\x1b[38;5;226m[warning] \x1b[0m\x1b[48;5;0m\x1b[38;5;226mdone\n\x1b[0m"
         );
         assert!(context_state.print_prefix());
     }

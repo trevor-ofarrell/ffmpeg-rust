@@ -694,6 +694,21 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
         "default-callback-color-prefix-continuation-context-level-line",
         escape_row_text(default_color_prefix_continuation_context_level.as_bytes()),
     );
+    let default_color_prefix_carriage_return_level =
+        rust_default_callback_color_prefix_carriage_return_lines(LogFlags::PRINT_LEVEL, None);
+    rows.insert(
+        "default-callback-color-prefix-carriage-return-level-line",
+        escape_row_text(default_color_prefix_carriage_return_level.as_bytes()),
+    );
+    let default_color_prefix_carriage_return_context_level =
+        rust_default_callback_color_prefix_carriage_return_lines(
+            LogFlags::PRINT_LEVEL,
+            Some(&context),
+        );
+    rows.insert(
+        "default-callback-color-prefix-carriage-return-context-level-line",
+        escape_row_text(default_color_prefix_carriage_return_context_level.as_bytes()),
+    );
     let default_color_error =
         rust_default_callback_color_line(LogLevel::Error, None, LogFlags::empty());
     rows.insert(
@@ -1428,6 +1443,29 @@ fn rust_default_callback_color_prefix_continuation_lines(
     let mut state = DefaultCallbackPrefixState::new();
     let options = LogFormatOptions::new(flags).with_color_mode(LogColorMode::Always);
     ["part", "tail\n", "next\n"]
+        .into_iter()
+        .map(|message| {
+            let record = LogRecord::new(LogLevel::Warning, "ignored", message);
+            match context {
+                Some(context) => record
+                    .format_default_callback_line_context_with_options_and_state(
+                        context, options, &mut state,
+                    ),
+                None => record.format_default_callback_line_null_context_with_options_and_state(
+                    options, &mut state,
+                ),
+            }
+        })
+        .collect()
+}
+
+fn rust_default_callback_color_prefix_carriage_return_lines(
+    flags: LogFlags,
+    context: Option<&AvLogContextPrefix>,
+) -> String {
+    let mut state = DefaultCallbackPrefixState::new();
+    let options = LogFormatOptions::new(flags).with_color_mode(LogColorMode::Always);
+    ["progress\r", "done\n"]
         .into_iter()
         .map(|message| {
             let record = LogRecord::new(LogLevel::Warning, "ignored", message);
@@ -2653,6 +2691,12 @@ static void print_default_callback_color_rows(void) {
         AV_LOG_PRINT_LEVEL);
     print_default_callback_prefix_continuation_row(
         "default-callback-color-prefix-continuation-context-level-line", &ctx,
+        AV_LOG_PRINT_LEVEL);
+    print_default_callback_prefix_carriage_return_row(
+        "default-callback-color-prefix-carriage-return-level-line", NULL,
+        AV_LOG_PRINT_LEVEL);
+    print_default_callback_prefix_carriage_return_row(
+        "default-callback-color-prefix-carriage-return-context-level-line", &ctx,
         AV_LOG_PRINT_LEVEL);
     print_default_callback_level_row("default-callback-color-error-line", NULL,
                                      AV_LOG_ERROR, 0, "plain");
