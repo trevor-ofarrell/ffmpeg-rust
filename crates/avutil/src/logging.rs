@@ -1629,6 +1629,53 @@ mod tests {
     }
 
     #[test]
+    fn default_callback_colored_prefix_state_suppresses_prefix_until_newline() {
+        let options =
+            LogFormatOptions::new(LogFlags::PRINT_LEVEL).with_color_mode(LogColorMode::Always);
+        let mut state = DefaultCallbackPrefixState::new();
+
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "part")
+                .format_default_callback_line_null_context_with_options_and_state(
+                    options, &mut state,
+                ),
+            "\x1b[48;5;0m\x1b[38;5;226m[warning] \x1b[0m\x1b[48;5;0m\x1b[38;5;226mpart\x1b[0m"
+        );
+        assert!(!state.print_prefix());
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "tail\n")
+                .format_default_callback_line_null_context_with_options_and_state(
+                    options, &mut state,
+                ),
+            "\x1b[48;5;0m\x1b[38;5;226mtail\n\x1b[0m"
+        );
+        assert!(state.print_prefix());
+
+        let context = AvLogContextPrefix::new("rustctx", "<ptr>");
+        let mut context_state = DefaultCallbackPrefixState::new();
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "part")
+                .format_default_callback_line_context_with_options_and_state(
+                    &context,
+                    options,
+                    &mut context_state,
+                ),
+            "\x1b[48;5;0m\x1b[38;5;250m[rustctx @ <ptr>] \x1b[0m\x1b[48;5;0m\x1b[38;5;226m[warning] \x1b[0m\x1b[48;5;0m\x1b[38;5;226mpart\x1b[0m"
+        );
+        assert!(!context_state.print_prefix());
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "tail\n")
+                .format_default_callback_line_context_with_options_and_state(
+                    &context,
+                    options,
+                    &mut context_state,
+                ),
+            "\x1b[48;5;0m\x1b[38;5;226mtail\n\x1b[0m"
+        );
+        assert!(context_state.print_prefix());
+    }
+
+    #[test]
     fn record_formatting_respects_print_level_flag() {
         let record = LogRecord::new(LogLevel::Error, "demuxer", "bad header");
 
