@@ -175,6 +175,18 @@ fn expected_rows() -> BTreeMap<&'static str, i32> {
             LogFlags::PRINT_DATETIME.bits() as i32,
         ),
         ("set-flags-all-known", all_flags.bits() as i32),
+        (
+            "set-flags-unknown-bit",
+            LogFlags::from_bits_retain(0x10).bits() as i32,
+        ),
+        (
+            "set-flags-mixed-unknown",
+            LogFlags::from_bits_retain(0x1234).bits() as i32,
+        ),
+        (
+            "set-flags-negative-all-raw",
+            LogFlags::from_bits_retain(u32::MAX).bits() as i32,
+        ),
         ("log-once-first-state", 1),
         ("log-once-first-count", 1),
         ("log-once-first-level", LogLevel::Warning.as_ffmpeg_value()),
@@ -2325,6 +2337,9 @@ int main(int argc, char **argv) {
     print_flags_after_set("set-flags-all-known",
                           AV_LOG_SKIP_REPEATED | AV_LOG_PRINT_LEVEL |
                           AV_LOG_PRINT_TIME | AV_LOG_PRINT_DATETIME);
+    print_flags_after_set("set-flags-unknown-bit", 0x10);
+    print_flags_after_set("set-flags-mixed-unknown", 0x1234);
+    print_flags_after_set("set-flags-negative-all-raw", -1);
     print_format_line2_rows();
     print_format_line_rows();
     print_default_callback_rows();

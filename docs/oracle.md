@@ -157,6 +157,8 @@ The newest custom-callback rows specifically include duplicate NULL-context and 
 
 The newest default-callback threshold rows prove `AV_LOG_INFO` is suppressed at an `AV_LOG_WARNING` threshold, `AV_LOG_WARNING` is emitted at that threshold, and `AV_LOG_QUIET` records are emitted at an `AV_LOG_QUIET` threshold while suppressing optional time/level prefixes and preserving AVClass context prefixes.
 
+The newest raw-flag rows prove `av_log_set_flags()` stores raw flag integers without truncating unknown bits: isolated unknown bits, mixed known/unknown bits, and raw `-1` round-trip through `av_log_get_flags()`.
+
 ```sh
 cargo test -p avutil --test logging_oracle -- --ignored
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-logging --target oracle-libavutil-logging --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg

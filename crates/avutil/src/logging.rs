@@ -122,6 +122,10 @@ impl LogFlags {
         }
     }
 
+    pub const fn from_bits_retain(bits: u32) -> Self {
+        Self { bits }
+    }
+
     pub const fn bits(self) -> u32 {
         self.bits
     }
@@ -140,7 +144,6 @@ impl LogFlags {
 
     pub fn insert(&mut self, other: Self) {
         self.bits |= other.bits;
-        self.bits &= Self::KNOWN_BITS;
     }
 
     pub fn remove(&mut self, other: Self) {
@@ -1021,7 +1024,7 @@ impl core::ops::BitOr for LogFlags {
     type Output = Self;
 
     fn bitor(self, rhs: Self) -> Self::Output {
-        Self::from_bits_truncate(self.bits | rhs.bits)
+        Self::from_bits_retain(self.bits | rhs.bits)
     }
 }
 
@@ -1106,7 +1109,6 @@ impl Logger {
     }
 
     pub fn set_flags(&mut self, flags: LogFlags) {
-        let flags = LogFlags::from_bits_truncate(flags.bits());
         if self.flags.contains(LogFlags::SKIP_REPEATED) && !flags.contains(LogFlags::SKIP_REPEATED)
         {
             self.flush_repeated();
@@ -1424,7 +1426,7 @@ mod tests {
     }
 
     #[test]
-    fn log_flags_track_known_ffmpeg_bits() {
+    fn log_flags_track_known_ffmpeg_bits_and_preserve_raw_state() {
         assert_eq!(LogFlags::SKIP_REPEATED.bits(), 1);
         assert_eq!(LogFlags::PRINT_LEVEL.bits(), 2);
         assert_eq!(LogFlags::PRINT_TIME.bits(), 4);
@@ -1440,6 +1442,11 @@ mod tests {
         assert!(truncated.contains(LogFlags::PRINT_DATETIME));
         assert!(LogFlags::PRINT_TIME.intersects(LogFlags::PRINT_TIME | LogFlags::PRINT_DATETIME));
         assert!(!LogFlags::PRINT_LEVEL.intersects(LogFlags::PRINT_TIME | LogFlags::PRINT_DATETIME));
+
+        let retained = LogFlags::from_bits_retain(0x1234);
+        assert_eq!(retained.bits(), 0x1234);
+        assert!(retained.contains(LogFlags::PRINT_TIME));
+        assert!(!retained.contains(LogFlags::PRINT_LEVEL));
     }
 
     #[test]
@@ -2208,10 +2215,14 @@ mod tests {
         assert_eq!(logger.flags(), LogFlags::PRINT_LEVEL);
         assert_eq!(logger.formatted_records(), ["[info] ffmpeg: ready"]);
 
-        logger.set_flags(LogFlags::from_bits_truncate(0xffff));
-        assert_eq!(logger.flags(), LogFlags::all());
+        logger.set_flags(LogFlags::from_bits_retain(0xffff));
+        assert_eq!(logger.flags().bits(), 0xffff);
 
         logger.set_flag(LogFlags::PRINT_LEVEL, false);
+        assert_eq!(
+            logger.flags().bits() & !LogFlags::PRINT_LEVEL.bits(),
+            0xfffd
+        );
         assert!(!logger.flags().contains(LogFlags::PRINT_LEVEL));
         assert_eq!(logger.formatted_records(), ["ffmpeg: ready"]);
     }

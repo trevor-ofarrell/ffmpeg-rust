@@ -1958,6 +1958,26 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     if cursor.next().unwrap_or_default().is_multiple_of(2) {
         flags.insert(LogFlags::SKIP_REPEATED);
     }
+    let raw_flag_bits = u32::from(cursor.next().unwrap_or_default()) << 4;
+    let retained_flags = LogFlags::from_bits_retain(raw_flag_bits | LogFlags::PRINT_LEVEL.bits());
+    assert_eq!(
+        retained_flags.bits(),
+        raw_flag_bits | LogFlags::PRINT_LEVEL.bits()
+    );
+    assert_eq!(
+        LogFlags::from_bits_truncate(retained_flags.bits()).bits(),
+        retained_flags.bits() & LogFlags::all().bits()
+    );
+    let mut retained_logger = Logger::new_with_flags(LogLevel::Info, LogFlags::empty());
+    retained_logger.set_flags(retained_flags);
+    assert_eq!(retained_logger.flags().bits(), retained_flags.bits());
+    retained_logger.set_flag(LogFlags::PRINT_LEVEL, false);
+    assert_eq!(
+        retained_logger.flags().bits(),
+        retained_flags.bits() & !LogFlags::PRINT_LEVEL.bits()
+    );
+    assert_eq!(LogFlags::from_bits_retain(u32::MAX).bits() as i32, -1);
+
     let mut logger = Logger::new_with_flags(LogLevel::Info, flags);
     let repeated = LogRecord::new(LogLevel::Warning, "decoder", "damaged packet");
     let repeat_count = usize::from(cursor.next().unwrap_or_default() % 5);
