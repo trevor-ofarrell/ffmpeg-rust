@@ -317,6 +317,29 @@ impl AvLogFormatLine2 {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AvLogContextPrefix {
+    item_name: String,
+    address: String,
+}
+
+impl AvLogContextPrefix {
+    pub fn new(item_name: impl Into<String>, address: impl Into<String>) -> Self {
+        Self {
+            item_name: item_name.into(),
+            address: address.into(),
+        }
+    }
+
+    pub fn item_name(&self) -> &str {
+        &self.item_name
+    }
+
+    pub fn address(&self) -> &str {
+        &self.address
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LogTimestamp {
     unix_micros: i64,
@@ -506,17 +529,48 @@ impl LogRecord {
         print_prefix: &mut bool,
         line_size: usize,
     ) -> AvResult<AvLogFormatLine2> {
+        self.format_av_log_line2_with_context(None, flags, print_prefix, line_size)
+    }
+
+    pub fn format_av_log_line2_context(
+        &self,
+        context: &AvLogContextPrefix,
+        flags: LogFlags,
+        print_prefix: &mut bool,
+        line_size: usize,
+    ) -> AvResult<AvLogFormatLine2> {
+        self.format_av_log_line2_with_context(Some(context), flags, print_prefix, line_size)
+    }
+
+    fn format_av_log_line2_with_context(
+        &self,
+        context: Option<&AvLogContextPrefix>,
+        flags: LogFlags,
+        print_prefix: &mut bool,
+        line_size: usize,
+    ) -> AvResult<AvLogFormatLine2> {
         if flags.intersects(LogFlags::PRINT_TIME | LogFlags::PRINT_DATETIME) {
             return Err(AvError::unsupported(
                 "av_log_format_line2 time prefixes require default-callback clock parity",
             ));
         }
 
-        let full_line = if *print_prefix && flags.contains(LogFlags::PRINT_LEVEL) {
-            format!("[{}] {}", self.level.name(), self.message)
-        } else {
-            self.message.clone()
-        };
+        let mut full_line = String::new();
+        if *print_prefix {
+            if let Some(context) = context {
+                full_line.push('[');
+                full_line.push_str(context.item_name());
+                full_line.push_str(" @ ");
+                full_line.push_str(context.address());
+                full_line.push_str("] ");
+            }
+            if flags.contains(LogFlags::PRINT_LEVEL) {
+                full_line.push('[');
+                full_line.push_str(self.level.name());
+                full_line.push_str("] ");
+            }
+        }
+        full_line.push_str(&self.message);
         let full_bytes = full_line.into_bytes();
         let full_len = full_bytes.len();
         let copied_len = line_size.saturating_sub(1).min(full_len);
@@ -1170,6 +1224,63 @@ mod tests {
         prefix = true;
         let time_err = LogRecord::new(LogLevel::Warning, "decoder", "plain")
             .format_av_log_line2_null_context(LogFlags::PRINT_TIME, &mut prefix, 128)
+            .unwrap_err();
+        assert_eq!(time_err.code(), Some(crate::error::AvErrorCode::ENOSYS));
+        assert!(prefix);
+    }
+
+    #[test]
+    fn av_log_format_line2_context_matches_bounded_prefix_shape() {
+        let context = AvLogContextPrefix::new("rustctx", "<ptr>");
+        assert_eq!(context.item_name(), "rustctx");
+        assert_eq!(context.address(), "<ptr>");
+
+        let mut prefix = true;
+        let plain = LogRecord::new(LogLevel::Warning, "decoder", "ctxmsg")
+            .format_av_log_line2_context(&context, LogFlags::empty(), &mut prefix, 128)
+            .unwrap();
+        assert_eq!(plain.full_len(), 24);
+        assert_eq!(plain.bytes(), b"[rustctx @ <ptr>] ctxmsg");
+        assert!(!plain.truncated());
+        assert!(!prefix);
+
+        prefix = true;
+        let leveled = LogRecord::new(LogLevel::Warning, "decoder", "ctxmsg")
+            .format_av_log_line2_context(&context, LogFlags::PRINT_LEVEL, &mut prefix, 128)
+            .unwrap();
+        assert_eq!(leveled.full_len(), 34);
+        assert_eq!(leveled.bytes(), b"[rustctx @ <ptr>] [warning] ctxmsg");
+        assert!(!leveled.truncated());
+        assert!(!prefix);
+
+        prefix = false;
+        let no_prefix = LogRecord::new(LogLevel::Warning, "decoder", "nopfx")
+            .format_av_log_line2_context(&context, LogFlags::PRINT_LEVEL, &mut prefix, 128)
+            .unwrap();
+        assert_eq!(no_prefix.full_len(), 5);
+        assert_eq!(no_prefix.bytes(), b"nopfx");
+        assert!(!prefix);
+
+        prefix = true;
+        let newline = LogRecord::new(LogLevel::Info, "ffmpeg", "withnl\n")
+            .format_av_log_line2_context(&context, LogFlags::PRINT_LEVEL, &mut prefix, 128)
+            .unwrap();
+        assert_eq!(newline.full_len(), 32);
+        assert_eq!(newline.bytes(), b"[rustctx @ <ptr>] [info] withnl\n");
+        assert!(prefix);
+
+        prefix = true;
+        let small = LogRecord::new(LogLevel::Warning, "decoder", "ctxmsg")
+            .format_av_log_line2_context(&context, LogFlags::PRINT_LEVEL, &mut prefix, 12)
+            .unwrap();
+        assert_eq!(small.full_len(), 34);
+        assert_eq!(small.bytes(), b"[rustctx @ ");
+        assert!(small.truncated());
+        assert!(!prefix);
+
+        prefix = true;
+        let time_err = LogRecord::new(LogLevel::Warning, "decoder", "ctxmsg")
+            .format_av_log_line2_context(&context, LogFlags::PRINT_DATETIME, &mut prefix, 128)
             .unwrap_err();
         assert_eq!(time_err.code(), Some(crate::error::AvErrorCode::ENOSYS));
         assert!(prefix);

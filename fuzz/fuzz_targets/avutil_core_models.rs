@@ -11,19 +11,20 @@ use avutil::{
     ripemd128, ripemd160, ripemd256, ripemd320, set_global_log_callback, set_global_log_flag,
     set_global_log_flags, set_global_log_level, sha1, sha224, sha256, sha384, sha512, sha512_224,
     sha512_256, take_global_log_records, Adler32, AmbisonicChannelLayout, AudioFrame, AvError,
-    AvErrorCode, AvErrorKind, BufferPool, BufferPoolAllocation, BufferPoolCallbacks, BufferRef,
-    Channel, ChannelCustom, ChannelId, ChannelLayout, ChannelLayoutSpec, Crc32,
-    CustomChannelLayout, Dictionary, Frame, FrameA53ClosedCaptions, FrameActiveFormatDescription,
-    FrameAlphaMode, FrameAmbientViewingEnvironment, FrameAudioServiceType, FrameChromaLocation,
-    FrameColorPrimaries, FrameColorRange, FrameColorSpace, FrameColorTransferCharacteristic,
-    FrameContentLightMetadata, FrameCrop, FrameCropFlags, FrameData, FrameDecodeErrorFlags,
-    FrameDetectionBbox, FrameDetectionBboxes, FrameDisplayMatrix, FrameDolbyVisionColorMetadata,
-    FrameDolbyVisionDataMapping, FrameDolbyVisionDmData, FrameDolbyVisionMetadata,
-    FrameDolbyVisionRpuBuffer, FrameDolbyVisionRpuDataHeader, FrameDownmixInfo, FrameDownmixType,
-    FrameDynamicHdrPlus, FrameDynamicHdrVivid, FrameExif, FrameExifColorSpace,
-    FrameExifCompositeImage, FrameExifContrast, FrameExifCustomRendered, FrameExifEndian,
-    FrameExifEntry, FrameExifExposureMode, FrameExifExposureProgram, FrameExifFileSource,
-    FrameExifFlash, FrameExifGainControl, FrameExifGpsAltitudeRef, FrameExifGpsDifferential,
+    AvErrorCode, AvErrorKind, AvLogContextPrefix, BufferPool, BufferPoolAllocation,
+    BufferPoolCallbacks, BufferRef, Channel, ChannelCustom, ChannelId, ChannelLayout,
+    ChannelLayoutSpec, Crc32, CustomChannelLayout, Dictionary, Frame, FrameA53ClosedCaptions,
+    FrameActiveFormatDescription, FrameAlphaMode, FrameAmbientViewingEnvironment,
+    FrameAudioServiceType, FrameChromaLocation, FrameColorPrimaries, FrameColorRange,
+    FrameColorSpace, FrameColorTransferCharacteristic, FrameContentLightMetadata, FrameCrop,
+    FrameCropFlags, FrameData, FrameDecodeErrorFlags, FrameDetectionBbox, FrameDetectionBboxes,
+    FrameDisplayMatrix, FrameDolbyVisionColorMetadata, FrameDolbyVisionDataMapping,
+    FrameDolbyVisionDmData, FrameDolbyVisionMetadata, FrameDolbyVisionRpuBuffer,
+    FrameDolbyVisionRpuDataHeader, FrameDownmixInfo, FrameDownmixType, FrameDynamicHdrPlus,
+    FrameDynamicHdrVivid, FrameExif, FrameExifColorSpace, FrameExifCompositeImage,
+    FrameExifContrast, FrameExifCustomRendered, FrameExifEndian, FrameExifEntry,
+    FrameExifExposureMode, FrameExifExposureProgram, FrameExifFileSource, FrameExifFlash,
+    FrameExifGainControl, FrameExifGpsAltitudeRef, FrameExifGpsDifferential,
     FrameExifGpsDirectionRef, FrameExifGpsDistanceRef, FrameExifGpsLatitudeRef,
     FrameExifGpsLongitudeRef, FrameExifGpsMeasureMode, FrameExifGpsSpeedRef, FrameExifGpsStatus,
     FrameExifIfdPointerKind, FrameExifLightSource, FrameExifMeteringMode, FrameExifNewSubfileType,
@@ -2115,6 +2116,33 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
         .format_av_log_line2_null_context(LogFlags::PRINT_TIME, &mut line2_prefix, 128)
         .unwrap_err();
     assert_eq!(line2_time_err.code(), Some(AvErrorCode::ENOSYS));
+    let context_prefix = AvLogContextPrefix::new("rustctx", "<ptr>");
+    line2_prefix = true;
+    let context_line2 = LogRecord::new(LogLevel::Warning, "decoder", "ctxmsg")
+        .format_av_log_line2_context(
+            &context_prefix,
+            LogFlags::PRINT_LEVEL,
+            &mut line2_prefix,
+            128,
+        )
+        .unwrap();
+    assert_eq!(context_line2.bytes(), b"[rustctx @ <ptr>] [warning] ctxmsg");
+    assert_eq!(context_line2.full_len(), 34);
+    assert!(!context_line2.truncated());
+    assert!(!line2_prefix);
+    line2_prefix = true;
+    let context_line2_newline = LogRecord::new(LogLevel::Info, "ffmpeg", "withnl\n")
+        .format_av_log_line2_context(
+            &context_prefix,
+            LogFlags::PRINT_LEVEL,
+            &mut line2_prefix,
+            12,
+        )
+        .unwrap();
+    assert_eq!(context_line2_newline.bytes(), b"[rustctx @ ");
+    assert_eq!(context_line2_newline.full_len(), 32);
+    assert!(context_line2_newline.truncated());
+    assert!(!line2_prefix);
     assert_eq!(
         LogColorMode::from_ffmpeg_env_vars(|name| name == AV_LOG_FORCE_COLOR_ENV),
         LogColorMode::Always

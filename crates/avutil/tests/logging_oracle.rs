@@ -5,7 +5,7 @@ use std::{
     process::Command,
 };
 
-use avutil::{AvLogFormatLine2, LogFlags, LogLevel, LogRecord};
+use avutil::{AvLogContextPrefix, AvLogFormatLine2, LogFlags, LogLevel, LogRecord};
 
 #[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 libavutil oracle under third_party/ffmpeg-oracle/wsl"]
@@ -158,6 +158,44 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
     let (size1, _) = rust_format_line2(LogLevel::Warning, "plain", LogFlags::PRINT_LEVEL, true, 1);
     rows.insert("format-line2-size1-line", escape_row_text(size1.bytes()));
 
+    let (context_plain, _) =
+        rust_format_line2_context(LogLevel::Warning, "ctxmsg", LogFlags::empty(), true, 128);
+    rows.insert(
+        "format-line2-context-plain-line",
+        escape_row_text(context_plain.bytes()),
+    );
+
+    let (context_level, _) = rust_format_line2_context(
+        LogLevel::Warning,
+        "ctxmsg",
+        LogFlags::PRINT_LEVEL,
+        true,
+        128,
+    );
+    rows.insert(
+        "format-line2-context-level-line",
+        escape_row_text(context_level.bytes()),
+    );
+
+    let (context_no_prefix, _) = rust_format_line2_context(
+        LogLevel::Warning,
+        "nopfx",
+        LogFlags::PRINT_LEVEL,
+        false,
+        128,
+    );
+    rows.insert(
+        "format-line2-context-noprefix-line",
+        escape_row_text(context_no_prefix.bytes()),
+    );
+
+    let (context_newline, _) =
+        rust_format_line2_context(LogLevel::Info, "withnl\n", LogFlags::PRINT_LEVEL, true, 128);
+    rows.insert(
+        "format-line2-context-newline-line",
+        escape_row_text(context_newline.bytes()),
+    );
+
     rows
 }
 
@@ -217,6 +255,44 @@ fn add_format_line2_int_rows(rows: &mut BTreeMap<&'static str, i32>) {
     rows.insert("format-line2-size1-ret", usize_to_i32(size1.full_len()));
     rows.insert("format-line2-size1-prefix", bool_to_i32(size1_prefix));
     rows.insert("format-line2-size1-len", usize_to_i32(size1.bytes().len()));
+
+    let (_, context_plain_prefix) =
+        rust_format_line2_context(LogLevel::Warning, "ctxmsg", LogFlags::empty(), true, 128);
+    rows.insert(
+        "format-line2-context-plain-prefix",
+        bool_to_i32(context_plain_prefix),
+    );
+
+    let (_, context_level_prefix) = rust_format_line2_context(
+        LogLevel::Warning,
+        "ctxmsg",
+        LogFlags::PRINT_LEVEL,
+        true,
+        128,
+    );
+    rows.insert(
+        "format-line2-context-level-prefix",
+        bool_to_i32(context_level_prefix),
+    );
+
+    let (_, context_no_prefix_state) = rust_format_line2_context(
+        LogLevel::Warning,
+        "nopfx",
+        LogFlags::PRINT_LEVEL,
+        false,
+        128,
+    );
+    rows.insert(
+        "format-line2-context-noprefix-prefix",
+        bool_to_i32(context_no_prefix_state),
+    );
+
+    let (_, context_newline_prefix) =
+        rust_format_line2_context(LogLevel::Info, "withnl\n", LogFlags::PRINT_LEVEL, true, 128);
+    rows.insert(
+        "format-line2-context-newline-prefix",
+        bool_to_i32(context_newline_prefix),
+    );
 }
 
 fn rust_format_line2(
@@ -230,6 +306,21 @@ fn rust_format_line2(
     let line = LogRecord::new(level, "ignored", message)
         .format_av_log_line2_null_context(flags, &mut prefix, line_size)
         .expect("bounded av_log_format_line2 model should support this flag shape");
+    (line, prefix)
+}
+
+fn rust_format_line2_context(
+    level: LogLevel,
+    message: &str,
+    flags: LogFlags,
+    initial_prefix: bool,
+    line_size: usize,
+) -> (AvLogFormatLine2, bool) {
+    let context = AvLogContextPrefix::new("rustctx", "<ptr>");
+    let mut prefix = initial_prefix;
+    let line = LogRecord::new(level, "ignored", message)
+        .format_av_log_line2_context(&context, flags, &mut prefix, line_size)
+        .expect("bounded av_log_format_line2 context model should support this flag shape");
     (line, prefix)
 }
 
@@ -328,6 +419,7 @@ fn oracle_c_source() -> &'static str {
 #include <stdio.h>
 #include <string.h>
 #include <libavutil/log.h>
+#include <libavutil/version.h>
 
 #define ROW(name, value) printf("%s|%d\n", name, (int)(value))
 
@@ -356,11 +448,37 @@ static void ROW_STR(const char *name, const char *value) {
     putchar('\n');
 }
 
-static int call_format_line2(char *line, int line_size, int *print_prefix,
+static void ROW_STR_NORMALIZED_CONTEXT(const char *name, const char *value) {
+    char normalized[512];
+    const char *marker = value ? strstr(value, " @ 0x") : NULL;
+    if (!marker) {
+        ROW_STR(name, value);
+        return;
+    }
+    const char *ptr_end = marker + 3;
+    while (*ptr_end && *ptr_end != ']')
+        ptr_end++;
+    size_t head_len = (size_t)(marker - value);
+    snprintf(normalized, sizeof(normalized), "%.*s @ <ptr>%s",
+             (int)head_len, value, ptr_end);
+    ROW_STR(name, normalized);
+}
+
+typedef struct TestLogContext {
+    const AVClass *av_class;
+} TestLogContext;
+
+static const AVClass test_log_class = {
+    .class_name = "rustctx",
+    .item_name = av_default_item_name,
+    .version = LIBAVUTIL_VERSION_INT,
+};
+
+static int call_format_line2(void *ptr, char *line, int line_size, int *print_prefix,
                              int level, const char *fmt, ...) {
     va_list vl;
     va_start(vl, fmt);
-    int ret = av_log_format_line2(NULL, level, fmt, vl, line, line_size,
+    int ret = av_log_format_line2(ptr, level, fmt, vl, line, line_size,
                                   print_prefix);
     va_end(vl);
     return ret;
@@ -395,7 +513,7 @@ static void print_format_line2_rows(void) {
     av_log_set_flags(0);
     memset(line, 'X', sizeof(line));
     print_prefix = 1;
-    ret = call_format_line2(line, sizeof(line), &print_prefix,
+    ret = call_format_line2(NULL, line, sizeof(line), &print_prefix,
                             AV_LOG_WARNING, "%s", "plain");
     ROW("format-line2-plain-ret", ret);
     ROW("format-line2-plain-prefix", print_prefix);
@@ -405,7 +523,7 @@ static void print_format_line2_rows(void) {
     av_log_set_flags(AV_LOG_PRINT_LEVEL);
     memset(line, 'X', sizeof(line));
     print_prefix = 1;
-    ret = call_format_line2(line, sizeof(line), &print_prefix,
+    ret = call_format_line2(NULL, line, sizeof(line), &print_prefix,
                             AV_LOG_WARNING, "%s", "plain");
     ROW("format-line2-level-ret", ret);
     ROW("format-line2-level-prefix", print_prefix);
@@ -414,7 +532,7 @@ static void print_format_line2_rows(void) {
 
     memset(line, 'X', sizeof(line));
     print_prefix = 0;
-    ret = call_format_line2(line, sizeof(line), &print_prefix,
+    ret = call_format_line2(NULL, line, sizeof(line), &print_prefix,
                             AV_LOG_ERROR, "%s", "after");
     ROW("format-line2-noprefix-ret", ret);
     ROW("format-line2-noprefix-prefix", print_prefix);
@@ -423,7 +541,7 @@ static void print_format_line2_rows(void) {
 
     memset(line, 'X', sizeof(line));
     print_prefix = 1;
-    ret = call_format_line2(line, sizeof(line), &print_prefix,
+    ret = call_format_line2(NULL, line, sizeof(line), &print_prefix,
                             AV_LOG_INFO, "%s\n", "withnl");
     ROW("format-line2-newline-ret", ret);
     ROW("format-line2-newline-prefix", print_prefix);
@@ -433,7 +551,7 @@ static void print_format_line2_rows(void) {
     char small[8];
     memset(small, 'X', sizeof(small));
     print_prefix = 1;
-    ret = call_format_line2(small, sizeof(small), &print_prefix,
+    ret = call_format_line2(NULL, small, sizeof(small), &print_prefix,
                             AV_LOG_WARNING, "%s", "plain");
     ROW("format-line2-small-ret", ret);
     ROW("format-line2-small-prefix", print_prefix);
@@ -441,19 +559,55 @@ static void print_format_line2_rows(void) {
     ROW_STR("format-line2-small-line", small);
 
     print_prefix = 1;
-    ret = call_format_line2(NULL, 0, &print_prefix,
+    ret = call_format_line2(NULL, NULL, 0, &print_prefix,
                             AV_LOG_WARNING, "%s", "plain");
     ROW("format-line2-nullzero-ret", ret);
     ROW("format-line2-nullzero-prefix", print_prefix);
 
     memset(line, 'X', sizeof(line));
     print_prefix = 1;
-    ret = call_format_line2(line, 1, &print_prefix,
+    ret = call_format_line2(NULL, line, 1, &print_prefix,
                             AV_LOG_WARNING, "%s", "plain");
     ROW("format-line2-size1-ret", ret);
     ROW("format-line2-size1-prefix", print_prefix);
     ROW("format-line2-size1-len", strlen(line));
     ROW_STR("format-line2-size1-line", line);
+
+    TestLogContext ctx = { &test_log_class };
+
+    av_log_set_flags(0);
+    memset(line, 'X', sizeof(line));
+    print_prefix = 1;
+    ret = call_format_line2(&ctx, line, sizeof(line), &print_prefix,
+                            AV_LOG_WARNING, "%s", "ctxmsg");
+    (void)ret;
+    ROW("format-line2-context-plain-prefix", print_prefix);
+    ROW_STR_NORMALIZED_CONTEXT("format-line2-context-plain-line", line);
+
+    av_log_set_flags(AV_LOG_PRINT_LEVEL);
+    memset(line, 'X', sizeof(line));
+    print_prefix = 1;
+    ret = call_format_line2(&ctx, line, sizeof(line), &print_prefix,
+                            AV_LOG_WARNING, "%s", "ctxmsg");
+    (void)ret;
+    ROW("format-line2-context-level-prefix", print_prefix);
+    ROW_STR_NORMALIZED_CONTEXT("format-line2-context-level-line", line);
+
+    memset(line, 'X', sizeof(line));
+    print_prefix = 0;
+    ret = call_format_line2(&ctx, line, sizeof(line), &print_prefix,
+                            AV_LOG_WARNING, "%s", "nopfx");
+    (void)ret;
+    ROW("format-line2-context-noprefix-prefix", print_prefix);
+    ROW_STR_NORMALIZED_CONTEXT("format-line2-context-noprefix-line", line);
+
+    memset(line, 'X', sizeof(line));
+    print_prefix = 1;
+    ret = call_format_line2(&ctx, line, sizeof(line), &print_prefix,
+                            AV_LOG_INFO, "%s\n", "withnl");
+    (void)ret;
+    ROW("format-line2-context-newline-prefix", print_prefix);
+    ROW_STR_NORMALIZED_CONTEXT("format-line2-context-newline-line", line);
 }
 
 int main(void) {
