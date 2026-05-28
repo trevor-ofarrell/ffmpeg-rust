@@ -12823,6 +12823,23 @@ mod tests {
         assert_eq!(mixed.time_base(), src);
         assert!(mixed.flags().contains(PacketFlags::KEY));
         assert_eq!(mixed.data(), &[0xaa, 0xbb]);
+
+        let mut mixed_dts = Packet::from_data(vec![0xcc, 0xdd]).unwrap();
+        mixed_dts.set_pts(Some(180_000));
+        mixed_dts.set_duration(90_000).unwrap();
+        mixed_dts.set_pos(Some(456)).unwrap();
+        mixed_dts.set_time_base(src).unwrap();
+        mixed_dts.set_flag(PacketFlags::DISCARD, true);
+
+        mixed_dts.rescale_ts(src, dst).unwrap();
+
+        assert_eq!(mixed_dts.pts(), Some(2_000));
+        assert_eq!(mixed_dts.dts(), None);
+        assert_eq!(mixed_dts.duration(), 1_000);
+        assert_eq!(mixed_dts.pos(), Some(456));
+        assert_eq!(mixed_dts.time_base(), src);
+        assert!(mixed_dts.flags().contains(PacketFlags::DISCARD));
+        assert_eq!(mixed_dts.data(), &[0xcc, 0xdd]);
     }
 
     #[test]

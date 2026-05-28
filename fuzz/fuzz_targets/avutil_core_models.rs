@@ -7065,6 +7065,25 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert!(mixed_rescale_packet.flags().contains(PacketFlags::KEY));
     assert_eq!(mixed_rescale_packet.data(), &[0xaa, 0xbb]);
 
+    let mut mixed_dts_rescale_packet = Packet::from_data(vec![0xcc, 0xdd]).unwrap();
+    mixed_dts_rescale_packet.set_pts(Some(180_000));
+    mixed_dts_rescale_packet.set_duration(90_000).unwrap();
+    mixed_dts_rescale_packet.set_pos(Some(456)).unwrap();
+    mixed_dts_rescale_packet.set_time_base(rescale_src).unwrap();
+    mixed_dts_rescale_packet.set_flag(PacketFlags::DISCARD, true);
+    mixed_dts_rescale_packet
+        .rescale_ts(rescale_src, rescale_dst)
+        .unwrap();
+    assert_eq!(mixed_dts_rescale_packet.pts(), Some(2_000));
+    assert_eq!(mixed_dts_rescale_packet.dts(), None);
+    assert_eq!(mixed_dts_rescale_packet.duration(), 1_000);
+    assert_eq!(mixed_dts_rescale_packet.pos(), Some(456));
+    assert_eq!(mixed_dts_rescale_packet.time_base(), rescale_src);
+    assert!(mixed_dts_rescale_packet
+        .flags()
+        .contains(PacketFlags::DISCARD));
+    assert_eq!(mixed_dts_rescale_packet.data(), &[0xcc, 0xdd]);
+
     let opaque_len = usize::from(cursor.next().unwrap_or_default() % 16);
     let opaque_payload = payload_from(cursor, opaque_len);
     packet.set_opaque_ref(Some(BufferRef::copy_from_slice(&opaque_payload)));
