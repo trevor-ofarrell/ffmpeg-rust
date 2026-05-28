@@ -1527,6 +1527,10 @@ mod tests {
             Some("14:38:25.123".to_string())
         );
         assert_eq!(
+            timestamp.format_default_callback_datetime_with_offset_seconds(5 * 3_600 + 30 * 60),
+            Some("2024-01-01 18:08:25.123".to_string())
+        );
+        assert_eq!(
             LogTimestamp::from_unix_micros(1_704_070_923_456_789)
                 .format_default_callback_datetime_with_offset_seconds(-8 * 3_600),
             Some("2023-12-31 17:02:03.456".to_string())
@@ -1694,6 +1698,14 @@ mod tests {
         assert_eq!(
             record.format_default_callback_line_null_context_with_options(utc_plus_two),
             "14:38:25.123 plain\n"
+        );
+
+        let utc_plus_five_thirty =
+            LogFormatOptions::new(LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL)
+                .with_default_callback_time_offset_seconds(5 * 3_600 + 30 * 60);
+        assert_eq!(
+            record.format_default_callback_line_null_context_with_options(utc_plus_five_thirty),
+            "2024-01-01 18:08:25.123 [warning] plain\n"
         );
 
         let utc_minus_eight =

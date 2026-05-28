@@ -1870,7 +1870,8 @@ fuzz_targets = ["avutil_core_models"]
 # Latest update: pinned libavutil default-callback rows now override
 # `av_gettime()` in the oracle helper and set deterministic `TZ` values,
 # proving byte-identical fixed local-time timestamp output for a UTC+2
-# PRINT_TIME row and a UTC-8 date-crossing PRINT_DATETIME|PRINT_LEVEL row.
+# PRINT_TIME row, a UTC+5:30 PRINT_DATETIME|PRINT_LEVEL row, and a UTC-8
+# date-crossing PRINT_DATETIME|PRINT_LEVEL row.
 # Latest update: pinned libavutil default-callback threshold rows now prove
 # AV_LOG_INFO is suppressed at an AV_LOG_WARNING threshold, AV_LOG_WARNING is
 # emitted at that same threshold, and AV_LOG_QUIET records are accepted at an
@@ -1897,7 +1898,7 @@ fuzz_targets = ["avutil_core_models"]
 # default-callback color-cache/forced/no-force redirected-stderr/no-force TTY rows,
 # bounded plain/colored partial-line prefix continuation rows, and bounded
 # custom-callback raw dispatch rows;
-# unresolved surface is broader local-time/timezone policy, broader default
+# unresolved surface is broader real-timezone/DST policy, broader default
 # callback stderr behavior beyond the bounded threshold/quiet rows, broader
 # terminal/default-callback color policy, full exported callback ABI/va_list
 # surface, and sustained fuzz evidence.

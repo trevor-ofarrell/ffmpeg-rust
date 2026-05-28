@@ -450,6 +450,16 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
         "default-callback-fixed-time-utcplus2-line",
         escape_row_text(fixed_local_time.as_bytes()),
     );
+    let fixed_local_datetime_plus530 = LogRecord::new(LogLevel::Warning, "ignored", "local\n")
+        .with_timestamp(timestamp)
+        .format_default_callback_line_null_context_with_options(
+            LogFormatOptions::new(LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL)
+                .with_default_callback_time_offset_seconds(5 * 3_600 + 30 * 60),
+        );
+    rows.insert(
+        "default-callback-fixed-datetime-utcplus530-level-line",
+        escape_row_text(fixed_local_datetime_plus530.as_bytes()),
+    );
     let fixed_local_datetime = LogRecord::new(LogLevel::Warning, "ignored", "local\n")
         .with_timestamp(LogTimestamp::from_unix_micros(1_704_070_923_456_789))
         .format_default_callback_line_null_context_with_options(
@@ -2113,6 +2123,10 @@ static void print_default_callback_rows(void) {
     print_default_callback_fixed_time_row(
         "default-callback-fixed-time-utcplus2-line", "Etc/GMT-2",
         1704112705123456LL, AV_LOG_PRINT_TIME, "local");
+    print_default_callback_fixed_time_row(
+        "default-callback-fixed-datetime-utcplus530-level-line", "UTC-5:30",
+        1704112705123456LL, AV_LOG_PRINT_DATETIME | AV_LOG_PRINT_LEVEL,
+        "local");
     print_default_callback_fixed_time_row(
         "default-callback-fixed-datetime-utcminus8-level-line", "Etc/GMT+8",
         1704070923456789LL, AV_LOG_PRINT_DATETIME | AV_LOG_PRINT_LEVEL,
