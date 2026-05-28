@@ -10,5 +10,6 @@
 avutil-channel-layout|fate-channel_layout|.|cargo|test|-p|avutil|--test|channel_layout_oracle|upstream_fate_channel_layout_passes|--|--ignored
 avutil-packet|fate-avpacket|.|cargo|test|-p|avutil|--test|packet_oracle|upstream_fate_avpacket_passes|--|--ignored
 avutil-options|fate-opt|.|cargo|test|-p|avutil|--test|options_oracle|upstream_fate_opt_passes|--|--ignored
+avutil-logging|upstream-libavutil-log-test|.|cargo|test|-p|avutil|--test|logging_oracle|upstream_libavutil_log_test_program_passes_and_has_no_fate_target|--|--ignored
 avformat-wav-demuxer|fate-wav-pcm-s16le-md5|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|env:FATE_WAV_SAMPLE={samples}/audio-reference/luckynight_2ch_44kHz_s16.wav|test|-p|fftools|--test|wav_oracle|wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample|--|--ignored
 avutil-packet|fate-wav-pcm-s16le-md5|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|env:FATE_WAV_SAMPLE={samples}/audio-reference/luckynight_2ch_44kHz_s16.wav|test|-p|fftools|--test|wav_oracle|wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample|--|--ignored

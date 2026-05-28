@@ -64,6 +64,65 @@ fn libavutil_logging_constants_and_state_match_current_model() {
     }
 }
 
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 source/build cache; set FFMPEG_FATE_BUILD_DIR or run scripts/bootstrap_ffmpeg_oracle_wsl.sh"]
+fn upstream_libavutil_log_test_program_passes_and_has_no_fate_target() {
+    let output = if cfg!(windows) {
+        let build_dir = match env::var("FFMPEG_FATE_BUILD_DIR") {
+            Ok(build_dir) => {
+                let build_dir = if build_dir.starts_with('/') || build_dir.starts_with('~') {
+                    build_dir
+                } else {
+                    to_wsl_path(Path::new(&build_dir))
+                };
+                shell_quote(&build_dir)
+            }
+            Err(_) => {
+                "\"${FFMPEGRUST_ORACLE_WORK:-$HOME/.cache/ffmpegrust/ffmpeg-oracle-n8.1.1}/build\""
+                    .to_string()
+            }
+        };
+        Command::new("wsl")
+            .args([
+                "-d",
+                "Ubuntu",
+                "--exec",
+                "bash",
+                "-lc",
+                &upstream_log_test_script(&build_dir),
+            ])
+            .output()
+            .expect("run upstream FFmpeg libavutil/tests/log through WSL")
+    } else {
+        let build_dir = env::var_os("FFMPEG_FATE_BUILD_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                PathBuf::from(env::var("HOME").expect("HOME must be set"))
+                    .join(".cache/ffmpegrust/ffmpeg-oracle-n8.1.1/build")
+            });
+        Command::new("sh")
+            .arg("-c")
+            .arg(upstream_log_test_script(&shell_quote(
+                &build_dir.display().to_string(),
+            )))
+            .output()
+            .unwrap_or_else(|err| {
+                panic!(
+                    "run upstream FFmpeg libavutil/tests/log in `{}`: {err}",
+                    build_dir.display()
+                )
+            })
+    };
+
+    assert!(
+        output.status.success(),
+        "upstream FFmpeg libavutil/tests/log disposition failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 fn expected_rows() -> BTreeMap<&'static str, i32> {
     let all_flags = LogFlags::SKIP_REPEATED
         | LogFlags::PRINT_LEVEL
@@ -131,6 +190,41 @@ fn expected_rows() -> BTreeMap<&'static str, i32> {
     add_format_line2_int_rows(&mut rows);
     add_format_line_int_rows(&mut rows);
     rows
+}
+
+fn upstream_log_test_script(build_dir: &str) -> String {
+    format!(
+        r#"set -e
+build_dir={build_dir}
+test -d "$build_dir" || {{ echo "missing FFmpeg FATE build dir: $build_dir" >&2; exit 66; }}
+fate_file="$build_dir/src/tests/fate/libavutil.mak"
+test -f "$fate_file" || {{ echo "missing FFmpeg libavutil FATE makefile: $fate_file" >&2; exit 66; }}
+if grep -nE 'fate-.*log|libavutil/tests/log|tests/log' "$fate_file"; then
+    echo "unexpected upstream FATE mapping for libavutil log test" >&2
+    exit 67
+fi
+make -C "$build_dir" libavutil/tests/log
+out_file="$(mktemp)"
+err_file="$(mktemp)"
+"$build_dir/libavutil/tests/log" >"$out_file" 2>"$err_file"
+status=$?
+if [ "$status" -ne 0 ]; then
+    echo "libavutil/tests/log failed with status $status" >&2
+    cat "$out_file"
+    cat "$err_file" >&2
+    exit "$status"
+fi
+if [ -s "$out_file" ]; then
+    echo "libavutil/tests/log unexpectedly wrote stdout" >&2
+    cat "$out_file"
+    exit 68
+fi
+grep -q 'use_color: 0' "$err_file"
+grep -q 'use_color: 1' "$err_file"
+grep -q 'use_color: 256' "$err_file"
+rm -f "$out_file" "$err_file"
+"#
+    )
 }
 
 fn expected_text_rows() -> BTreeMap<&'static str, String> {
