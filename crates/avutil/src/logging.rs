@@ -946,7 +946,7 @@ impl LogRecord {
         let full_len = full_bytes.len();
         let copied_len = line_size.saturating_sub(1).min(full_len);
         let line = full_bytes[..copied_len].to_vec();
-        *print_prefix = line.last().copied() == Some(b'\n');
+        *print_prefix = matches!(line.last().copied(), Some(b'\n' | b'\r'));
         let truncated = full_len >= line_size;
 
         Ok(AvLogFormatLine2::new(line, full_len, truncated))
@@ -1972,6 +1972,15 @@ mod tests {
         assert!(prefix);
 
         prefix = true;
+        let carriage_return = LogRecord::new(LogLevel::Info, "ffmpeg", "withcr\r")
+            .format_av_log_line2_null_context(LogFlags::PRINT_LEVEL, &mut prefix, 128)
+            .unwrap();
+        assert_eq!(carriage_return.full_len(), 14);
+        assert_eq!(carriage_return.bytes(), b"[info] withcr\r");
+        assert_eq!(carriage_return.line_lossy(), "[info] withcr\r");
+        assert!(prefix);
+
+        prefix = true;
         let small = LogRecord::new(LogLevel::Warning, "decoder", "plain")
             .format_av_log_line2_null_context(LogFlags::PRINT_LEVEL, &mut prefix, 8)
             .unwrap();
@@ -2039,6 +2048,17 @@ mod tests {
         assert!(prefix);
 
         prefix = true;
+        let carriage_return = LogRecord::new(LogLevel::Info, "ffmpeg", "withcr\r")
+            .format_av_log_line2_context(&context, LogFlags::PRINT_LEVEL, &mut prefix, 128)
+            .unwrap();
+        assert_eq!(carriage_return.full_len(), 32);
+        assert_eq!(
+            carriage_return.bytes(),
+            b"[rustctx @ <ptr>] [info] withcr\r"
+        );
+        assert!(prefix);
+
+        prefix = true;
         let small = LogRecord::new(LogLevel::Warning, "decoder", "ctxmsg")
             .format_av_log_line2_context(&context, LogFlags::PRINT_LEVEL, &mut prefix, 12)
             .unwrap();
@@ -2085,6 +2105,13 @@ mod tests {
         assert!(prefix);
 
         prefix = true;
+        let carriage_return = LogRecord::new(LogLevel::Info, "ffmpeg", "withcr\r")
+            .format_av_log_line_null_context(LogFlags::PRINT_LEVEL, &mut prefix, 128)
+            .unwrap();
+        assert_eq!(carriage_return.bytes(), b"[info] withcr\r");
+        assert!(prefix);
+
+        prefix = true;
         let small = LogRecord::new(LogLevel::Warning, "decoder", "plain")
             .format_av_log_line_null_context(LogFlags::PRINT_LEVEL, &mut prefix, 8)
             .unwrap();
@@ -2107,6 +2134,16 @@ mod tests {
         assert_eq!(context_line.bytes(), b"[rustctx @ <ptr>] [warning] ctxmsg");
         assert!(!context_line.truncated());
         assert!(!prefix);
+
+        prefix = true;
+        let context_carriage_return = LogRecord::new(LogLevel::Info, "decoder", "withcr\r")
+            .format_av_log_line_context(&context, LogFlags::PRINT_LEVEL, &mut prefix, 128)
+            .unwrap();
+        assert_eq!(
+            context_carriage_return.bytes(),
+            b"[rustctx @ <ptr>] [info] withcr\r"
+        );
+        assert!(prefix);
 
         prefix = false;
         let context_no_prefix = LogRecord::new(LogLevel::Warning, "decoder", "nopfx")

@@ -291,6 +291,13 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
         escape_row_text(newline.bytes()),
     );
 
+    let (carriage_return, _) =
+        rust_format_line2(LogLevel::Info, "withcr\r", LogFlags::PRINT_LEVEL, true, 128);
+    rows.insert(
+        "format-line2-carriage-return-line",
+        escape_row_text(carriage_return.bytes()),
+    );
+
     let (small, _) = rust_format_line2(LogLevel::Warning, "plain", LogFlags::PRINT_LEVEL, true, 8);
     rows.insert("format-line2-small-line", escape_row_text(small.bytes()));
 
@@ -333,6 +340,13 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
     rows.insert(
         "format-line2-context-newline-line",
         escape_row_text(context_newline.bytes()),
+    );
+
+    let (context_carriage_return, _) =
+        rust_format_line2_context(LogLevel::Info, "withcr\r", LogFlags::PRINT_LEVEL, true, 128);
+    rows.insert(
+        "format-line2-context-carriage-return-line",
+        escape_row_text(context_carriage_return.bytes()),
     );
 
     let (time, _) = rust_format_line2(LogLevel::Warning, "plain", LogFlags::PRINT_TIME, true, 128);
@@ -760,6 +774,13 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
         rust_format_line(LogLevel::Info, "withnl\n", LogFlags::PRINT_LEVEL, true, 128);
     rows.insert("format-line-newline-line", escape_row_text(newline.bytes()));
 
+    let (carriage_return, _) =
+        rust_format_line(LogLevel::Info, "withcr\r", LogFlags::PRINT_LEVEL, true, 128);
+    rows.insert(
+        "format-line-carriage-return-line",
+        escape_row_text(carriage_return.bytes()),
+    );
+
     let (small, _) = rust_format_line(LogLevel::Warning, "plain", LogFlags::PRINT_LEVEL, true, 8);
     rows.insert("format-line-small-line", escape_row_text(small.bytes()));
 
@@ -795,6 +816,13 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
     rows.insert(
         "format-line-context-newline-line",
         escape_row_text(context_newline.bytes()),
+    );
+
+    let (context_carriage_return, _) =
+        rust_format_line_context(LogLevel::Info, "withcr\r", LogFlags::PRINT_LEVEL, true, 128);
+    rows.insert(
+        "format-line-context-carriage-return-line",
+        escape_row_text(context_carriage_return.bytes()),
     );
 
     let (time_level, _) = rust_format_line(
@@ -844,6 +872,21 @@ fn add_format_line2_int_rows(rows: &mut BTreeMap<&'static str, i32>) {
     rows.insert(
         "format-line2-newline-len",
         usize_to_i32(newline.bytes().len()),
+    );
+
+    let (carriage_return, carriage_return_prefix) =
+        rust_format_line2(LogLevel::Info, "withcr\r", LogFlags::PRINT_LEVEL, true, 128);
+    rows.insert(
+        "format-line2-carriage-return-ret",
+        usize_to_i32(carriage_return.full_len()),
+    );
+    rows.insert(
+        "format-line2-carriage-return-prefix",
+        bool_to_i32(carriage_return_prefix),
+    );
+    rows.insert(
+        "format-line2-carriage-return-len",
+        usize_to_i32(carriage_return.bytes().len()),
     );
 
     let (small, small_prefix) =
@@ -905,6 +948,13 @@ fn add_format_line2_int_rows(rows: &mut BTreeMap<&'static str, i32>) {
     rows.insert(
         "format-line2-context-newline-prefix",
         bool_to_i32(context_newline_prefix),
+    );
+
+    let (_, context_carriage_return_prefix) =
+        rust_format_line2_context(LogLevel::Info, "withcr\r", LogFlags::PRINT_LEVEL, true, 128);
+    rows.insert(
+        "format-line2-context-carriage-return-prefix",
+        bool_to_i32(context_carriage_return_prefix),
     );
 
     let (time, time_prefix) =
@@ -993,6 +1043,17 @@ fn add_format_line_int_rows(rows: &mut BTreeMap<&'static str, i32>) {
         usize_to_i32(newline.bytes().len()),
     );
 
+    let (carriage_return, carriage_return_prefix) =
+        rust_format_line(LogLevel::Info, "withcr\r", LogFlags::PRINT_LEVEL, true, 128);
+    rows.insert(
+        "format-line-carriage-return-prefix",
+        bool_to_i32(carriage_return_prefix),
+    );
+    rows.insert(
+        "format-line-carriage-return-len",
+        usize_to_i32(carriage_return.bytes().len()),
+    );
+
     let (small, small_prefix) =
         rust_format_line(LogLevel::Warning, "plain", LogFlags::PRINT_LEVEL, true, 8);
     rows.insert("format-line-small-prefix", bool_to_i32(small_prefix));
@@ -1032,6 +1093,13 @@ fn add_format_line_int_rows(rows: &mut BTreeMap<&'static str, i32>) {
     rows.insert(
         "format-line-context-newline-prefix",
         bool_to_i32(context_newline_prefix),
+    );
+
+    let (_, context_carriage_return_prefix) =
+        rust_format_line_context(LogLevel::Info, "withcr\r", LogFlags::PRINT_LEVEL, true, 128);
+    rows.insert(
+        "format-line-context-carriage-return-prefix",
+        bool_to_i32(context_carriage_return_prefix),
     );
 
     let (time_level, time_level_prefix) = rust_format_line(
@@ -1814,6 +1882,15 @@ static void print_format_line2_rows(void) {
     ROW("format-line2-newline-len", strlen(line));
     ROW_STR("format-line2-newline-line", line);
 
+    memset(line, 'X', sizeof(line));
+    print_prefix = 1;
+    ret = call_format_line2(NULL, line, sizeof(line), &print_prefix,
+                            AV_LOG_INFO, "%s", "withcr\r");
+    ROW("format-line2-carriage-return-ret", ret);
+    ROW("format-line2-carriage-return-prefix", print_prefix);
+    ROW("format-line2-carriage-return-len", strlen(line));
+    ROW_STR("format-line2-carriage-return-line", line);
+
     char small[8];
     memset(small, 'X', sizeof(small));
     print_prefix = 1;
@@ -1906,6 +1983,14 @@ static void print_format_line2_rows(void) {
     ROW("format-line2-context-newline-prefix", print_prefix);
     ROW_STR_NORMALIZED_CONTEXT("format-line2-context-newline-line", line);
 
+    memset(line, 'X', sizeof(line));
+    print_prefix = 1;
+    ret = call_format_line2(&ctx, line, sizeof(line), &print_prefix,
+                            AV_LOG_INFO, "%s", "withcr\r");
+    (void)ret;
+    ROW("format-line2-context-carriage-return-prefix", print_prefix);
+    ROW_STR_NORMALIZED_CONTEXT("format-line2-context-carriage-return-line", line);
+
     av_log_set_flags(AV_LOG_PRINT_TIME | AV_LOG_PRINT_LEVEL);
     memset(line, 'X', sizeof(line));
     print_prefix = 1;
@@ -1954,6 +2039,14 @@ static void print_format_line_rows(void) {
     ROW("format-line-newline-len", strlen(line));
     ROW_STR("format-line-newline-line", line);
 
+    memset(line, 'X', sizeof(line));
+    print_prefix = 1;
+    call_format_line(NULL, line, sizeof(line), &print_prefix,
+                     AV_LOG_INFO, "%s", "withcr\r");
+    ROW("format-line-carriage-return-prefix", print_prefix);
+    ROW("format-line-carriage-return-len", strlen(line));
+    ROW_STR("format-line-carriage-return-line", line);
+
     char small[8];
     memset(small, 'X', sizeof(small));
     print_prefix = 1;
@@ -1994,6 +2087,13 @@ static void print_format_line_rows(void) {
                      AV_LOG_INFO, "%s\n", "withnl");
     ROW("format-line-context-newline-prefix", print_prefix);
     ROW_STR_NORMALIZED_CONTEXT("format-line-context-newline-line", line);
+
+    memset(line, 'X', sizeof(line));
+    print_prefix = 1;
+    call_format_line(&ctx, line, sizeof(line), &print_prefix,
+                     AV_LOG_INFO, "%s", "withcr\r");
+    ROW("format-line-context-carriage-return-prefix", print_prefix);
+    ROW_STR_NORMALIZED_CONTEXT("format-line-context-carriage-return-line", line);
 
     av_log_set_flags(AV_LOG_PRINT_TIME | AV_LOG_PRINT_LEVEL);
     memset(line, 'X', sizeof(line));

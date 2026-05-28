@@ -2423,6 +2423,15 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     assert!(line2_newline.truncated());
     assert!(!line2_prefix);
 
+    line2_prefix = true;
+    let line2_carriage_return = LogRecord::new(LogLevel::Info, "ffmpeg", "withcr\r")
+        .format_av_log_line2_null_context(LogFlags::PRINT_LEVEL, &mut line2_prefix, 128)
+        .unwrap();
+    assert_eq!(line2_carriage_return.bytes(), b"[info] withcr\r");
+    assert_eq!(line2_carriage_return.full_len(), 14);
+    assert!(!line2_carriage_return.truncated());
+    assert!(line2_prefix);
+
     let line2_time_ignored = LogRecord::new(LogLevel::Warning, "decoder", "plain")
         .format_av_log_line2_null_context(LogFlags::PRINT_TIME, &mut line2_prefix, 128)
         .unwrap();
@@ -2457,6 +2466,23 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     assert!(context_line2_newline.truncated());
     assert!(!line2_prefix);
 
+    line2_prefix = true;
+    let context_line2_carriage_return = LogRecord::new(LogLevel::Info, "ffmpeg", "withcr\r")
+        .format_av_log_line2_context(
+            &context_prefix,
+            LogFlags::PRINT_LEVEL,
+            &mut line2_prefix,
+            128,
+        )
+        .unwrap();
+    assert_eq!(
+        context_line2_carriage_return.bytes(),
+        b"[rustctx @ <ptr>] [info] withcr\r"
+    );
+    assert_eq!(context_line2_carriage_return.full_len(), 32);
+    assert!(!context_line2_carriage_return.truncated());
+    assert!(line2_prefix);
+
     let mut line_prefix = true;
     let line = LogRecord::new(LogLevel::Warning, "decoder", "plain")
         .format_av_log_line_null_context(LogFlags::PRINT_LEVEL, &mut line_prefix, 128)
@@ -2472,6 +2498,13 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     assert!(small_line.truncated());
     assert!(!line_prefix);
     line_prefix = true;
+    let carriage_return_line = LogRecord::new(LogLevel::Info, "decoder", "withcr\r")
+        .format_av_log_line_null_context(LogFlags::PRINT_LEVEL, &mut line_prefix, 128)
+        .unwrap();
+    assert_eq!(carriage_return_line.bytes(), b"[info] withcr\r");
+    assert!(!carriage_return_line.truncated());
+    assert!(line_prefix);
+    line_prefix = true;
     let context_line = LogRecord::new(LogLevel::Warning, "decoder", "ctxmsg")
         .format_av_log_line_context(
             &context_prefix,
@@ -2483,6 +2516,21 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     assert_eq!(context_line.bytes(), b"[rustctx @ <ptr>] [warning] ctxmsg");
     assert!(!context_line.truncated());
     assert!(!line_prefix);
+    line_prefix = true;
+    let context_carriage_return_line = LogRecord::new(LogLevel::Info, "decoder", "withcr\r")
+        .format_av_log_line_context(
+            &context_prefix,
+            LogFlags::PRINT_LEVEL,
+            &mut line_prefix,
+            128,
+        )
+        .unwrap();
+    assert_eq!(
+        context_carriage_return_line.bytes(),
+        b"[rustctx @ <ptr>] [info] withcr\r"
+    );
+    assert!(!context_carriage_return_line.truncated());
+    assert!(line_prefix);
     assert_eq!(
         LogColorMode::from_ffmpeg_env_vars(|name| name == AV_LOG_FORCE_COLOR_ENV),
         LogColorMode::Always
