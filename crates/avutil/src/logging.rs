@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::io::IsTerminal;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -190,6 +191,7 @@ impl LogOnceState {
 pub enum LogColorMode {
     #[default]
     Never,
+    Basic,
     Always,
 }
 
@@ -200,6 +202,7 @@ const DEFAULT_CALLBACK_WARNING_COLOR: &str = "\x1b[48;5;0m\x1b[38;5;226m";
 const DEFAULT_CALLBACK_FATAL_COLOR: &str = "\x1b[48;5;0m\x1b[38;5;208m";
 const DEFAULT_CALLBACK_ERROR_COLOR: &str = "\x1b[48;5;0m\x1b[38;5;196m";
 const DEFAULT_CALLBACK_PANIC_COLOR: &str = "\x1b[48;5;52m\x1b[38;5;196m";
+const DEFAULT_CALLBACK_BASIC_WARNING_COLOR: &str = "\x1b[0;33m";
 
 fn colorize(color_code: &str, text: &str) -> String {
     format!("{color_code}{text}\x1b[0m")
@@ -207,9 +210,11 @@ fn colorize(color_code: &str, text: &str) -> String {
 
 impl LogColorMode {
     pub fn from_ffmpeg_env() -> Self {
-        Self::from_ffmpeg_env_vars_and_stderr(
+        let term = std::env::var_os("TERM");
+        Self::from_ffmpeg_env_vars_stderr_and_term(
             |name| std::env::var_os(name).is_some(),
             std::io::stderr().is_terminal(),
+            term.as_deref(),
         )
     }
 
@@ -225,6 +230,28 @@ impl LogColorMode {
             Self::Never
         } else if is_set(AV_LOG_FORCE_COLOR_ENV) || stderr_is_terminal {
             Self::Always
+        } else {
+            Self::Never
+        }
+    }
+
+    pub fn from_ffmpeg_env_vars_stderr_and_term(
+        mut is_set: impl FnMut(&str) -> bool,
+        stderr_is_terminal: bool,
+        term: Option<&OsStr>,
+    ) -> Self {
+        if is_set(AV_LOG_FORCE_NOCOLOR_ENV) {
+            Self::Never
+        } else if is_set(AV_LOG_FORCE_COLOR_ENV) {
+            Self::Always
+        } else if !stderr_is_terminal {
+            Self::Never
+        } else if let Some(term) = term {
+            if term.to_string_lossy().contains("256color") {
+                Self::Always
+            } else {
+                Self::Basic
+            }
         } else {
             Self::Never
         }
@@ -361,6 +388,19 @@ impl LogFormatOptions {
         self.with_color_mode(LogColorMode::from_ffmpeg_env_vars_and_stderr(
             is_set,
             stderr_is_terminal,
+        ))
+    }
+
+    pub fn with_ffmpeg_env_color_vars_stderr_and_term(
+        self,
+        is_set: impl FnMut(&str) -> bool,
+        stderr_is_terminal: bool,
+        term: Option<&OsStr>,
+    ) -> Self {
+        self.with_color_mode(LogColorMode::from_ffmpeg_env_vars_stderr_and_term(
+            is_set,
+            stderr_is_terminal,
+            term,
         ))
     }
 
@@ -735,7 +775,10 @@ impl LogRecord {
 
     pub fn format_line_with_options(&self, options: LogFormatOptions) -> String {
         let line = self.format_plain_line_with_flags(options.flags());
-        if matches!(options.color_mode(), LogColorMode::Always) {
+        if matches!(
+            options.color_mode(),
+            LogColorMode::Basic | LogColorMode::Always
+        ) {
             if let Some(color_code) = self.ansi_color_code() {
                 return format!("{color_code}{line}\x1b[0m");
             }
@@ -846,14 +889,13 @@ impl LogRecord {
         }
 
         let flags = options.flags();
-        let use_color = matches!(options.color_mode(), LogColorMode::Always);
-        let severity_color = if use_color {
-            match self.level {
+        let severity_color = match options.color_mode() {
+            LogColorMode::Never => None,
+            LogColorMode::Basic => self.default_callback_basic_ansi_color_code(),
+            LogColorMode::Always => match self.level {
                 LogLevel::Quiet => Some(DEFAULT_CALLBACK_PANIC_COLOR),
                 _ => self.default_callback_ansi_color_code(),
-            }
-        } else {
-            None
+            },
         };
         let mut line = String::new();
         if print_prefix {
@@ -881,7 +923,7 @@ impl LogRecord {
             }
             if let Some(context) = context {
                 let context_prefix = format!("[{} @ {}] ", context.item_name(), context.address());
-                if use_color {
+                if matches!(options.color_mode(), LogColorMode::Always) {
                     line.push_str(&colorize(DEFAULT_CALLBACK_CONTEXT_COLOR, &context_prefix));
                 } else {
                     line.push_str(&context_prefix);
@@ -1030,6 +1072,20 @@ impl LogRecord {
             LogLevel::Error => Some(DEFAULT_CALLBACK_ERROR_COLOR),
             LogLevel::Warning => Some(DEFAULT_CALLBACK_WARNING_COLOR),
             LogLevel::Quiet
+            | LogLevel::Info
+            | LogLevel::Verbose
+            | LogLevel::Debug
+            | LogLevel::Trace => None,
+        }
+    }
+
+    fn default_callback_basic_ansi_color_code(&self) -> Option<&'static str> {
+        match self.level {
+            LogLevel::Warning => Some(DEFAULT_CALLBACK_BASIC_WARNING_COLOR),
+            LogLevel::Quiet
+            | LogLevel::Panic
+            | LogLevel::Fatal
+            | LogLevel::Error
             | LogLevel::Info
             | LogLevel::Verbose
             | LogLevel::Debug
@@ -2382,6 +2438,63 @@ mod tests {
         let options = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
             .with_ffmpeg_env_color_vars_and_stderr(|_| false, true);
         assert_eq!(options.color_mode(), LogColorMode::Always);
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "decoder", "damaged packet")
+                .format_line_with_options(options),
+            "\x1b[33m[warning] decoder: damaged packet\x1b[0m"
+        );
+    }
+
+    #[test]
+    fn color_mode_uses_term_for_terminal_palette_without_force_env() {
+        assert_eq!(
+            LogColorMode::from_ffmpeg_env_vars_stderr_and_term(
+                |_| false,
+                true,
+                Some(OsStr::new("xterm-256color")),
+            ),
+            LogColorMode::Always
+        );
+        assert_eq!(
+            LogColorMode::from_ffmpeg_env_vars_stderr_and_term(|_| false, true, None),
+            LogColorMode::Never
+        );
+        assert_eq!(
+            LogColorMode::from_ffmpeg_env_vars_stderr_and_term(
+                |_| false,
+                true,
+                Some(OsStr::new("dumb")),
+            ),
+            LogColorMode::Basic
+        );
+        assert_eq!(
+            LogColorMode::from_ffmpeg_env_vars_stderr_and_term(
+                |_| false,
+                true,
+                Some(OsStr::new("")),
+            ),
+            LogColorMode::Basic
+        );
+        assert_eq!(
+            LogColorMode::from_ffmpeg_env_vars_stderr_and_term(
+                |name| name == AV_LOG_FORCE_COLOR_ENV,
+                true,
+                Some(OsStr::new("dumb")),
+            ),
+            LogColorMode::Always
+        );
+        assert_eq!(
+            LogColorMode::from_ffmpeg_env_vars_stderr_and_term(
+                |name| name == AV_LOG_FORCE_NOCOLOR_ENV,
+                true,
+                Some(OsStr::new("xterm-256color")),
+            ),
+            LogColorMode::Never
+        );
+
+        let options = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
+            .with_ffmpeg_env_color_vars_stderr_and_term(|_| false, true, Some(OsStr::new("dumb")));
+        assert_eq!(options.color_mode(), LogColorMode::Basic);
         assert_eq!(
             LogRecord::new(LogLevel::Warning, "decoder", "damaged packet")
                 .format_line_with_options(options),

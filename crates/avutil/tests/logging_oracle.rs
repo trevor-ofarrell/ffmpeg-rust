@@ -1,6 +1,8 @@
 use std::{
     collections::BTreeMap,
-    env, fs,
+    env,
+    ffi::OsStr,
+    fs,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -760,6 +762,23 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
     rows.insert(
         "default-callback-no-force-tty-context-level-line",
         escape_row_text(default_no_force_tty_context.as_bytes()),
+    );
+    let default_no_force_tty_term_unset = rust_default_callback_no_force_tty_term_line(None);
+    rows.insert(
+        "default-callback-no-force-tty-term-unset-warning-level-line",
+        escape_row_text(default_no_force_tty_term_unset.as_bytes()),
+    );
+    let default_no_force_tty_term_dumb =
+        rust_default_callback_no_force_tty_term_line(Some(OsStr::new("dumb")));
+    rows.insert(
+        "default-callback-no-force-tty-term-dumb-warning-level-line",
+        escape_row_text(default_no_force_tty_term_dumb.as_bytes()),
+    );
+    let default_no_force_tty_term_empty =
+        rust_default_callback_no_force_tty_term_line(Some(OsStr::new("")));
+    rows.insert(
+        "default-callback-no-force-tty-term-empty-warning-level-line",
+        escape_row_text(default_no_force_tty_term_empty.as_bytes()),
     );
     let default_nocolor_wins = rust_default_callback_nocolor_wins_line();
     rows.insert(
@@ -1553,6 +1572,23 @@ fn rust_default_callback_no_force_tty_line(
     }
 }
 
+fn rust_default_callback_no_force_tty_term_line(term: Option<&OsStr>) -> String {
+    let mut color_state = DefaultCallbackColorState::new();
+    let options = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
+        .with_default_callback_color_state_and_resolver(&mut color_state, || {
+            LogColorMode::from_ffmpeg_env_vars_stderr_and_term(|_| false, true, term)
+        });
+    let expected_mode = match term {
+        None => LogColorMode::Never,
+        Some(term) if term.to_string_lossy().contains("256color") => LogColorMode::Always,
+        Some(_) => LogColorMode::Basic,
+    };
+    assert_eq!(options.color_mode(), expected_mode);
+    assert_eq!(color_state.cached_mode(), Some(expected_mode));
+    LogRecord::new(LogLevel::Warning, "ignored", "plain\n")
+        .format_default_callback_line_null_context_with_options(options)
+}
+
 fn rust_default_callback_nocolor_wins_line() -> String {
     let mut color_state = DefaultCallbackColorState::new();
     let options = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
@@ -1751,10 +1787,13 @@ fn compile_and_run_oracle(
 ) -> String {
     let output = if cfg!(windows) {
         let script = format!(
-            "gcc -I {} {} {} -lm -pthread -ldl -lutil -o {} && {} && {} --plain && {} --tty && {} --color && {} --nocolor && {} --force-color-empty && {} --force-color-zero && {} --force-nocolor-empty && {} --force-nocolor-zero",
+            "gcc -I {} {} {} -lm -pthread -ldl -lutil -o {} && {} && {} --plain && {} --tty && {} --tty-term-unset && {} --tty-term-dumb && {} --tty-term-empty && {} --color && {} --nocolor && {} --force-color-empty && {} --force-color-zero && {} --force-nocolor-empty && {} --force-nocolor-zero",
             shell_quote(&to_wsl_path(include_dir)),
             shell_quote(&to_wsl_path(source)),
             shell_quote(&to_wsl_path(libavutil)),
+            shell_quote(&to_wsl_path(executable)),
+            shell_quote(&to_wsl_path(executable)),
+            shell_quote(&to_wsl_path(executable)),
             shell_quote(&to_wsl_path(executable)),
             shell_quote(&to_wsl_path(executable)),
             shell_quote(&to_wsl_path(executable)),
@@ -1774,10 +1813,13 @@ fn compile_and_run_oracle(
         Command::new("sh")
             .arg("-c")
             .arg(format!(
-                "gcc -I {} {} {} -lm -pthread -ldl -lutil -o {} && {} && {} --plain && {} --tty && {} --color && {} --nocolor && {} --force-color-empty && {} --force-color-zero && {} --force-nocolor-empty && {} --force-nocolor-zero",
+                "gcc -I {} {} {} -lm -pthread -ldl -lutil -o {} && {} && {} --plain && {} --tty && {} --tty-term-unset && {} --tty-term-dumb && {} --tty-term-empty && {} --color && {} --nocolor && {} --force-color-empty && {} --force-color-zero && {} --force-nocolor-empty && {} --force-nocolor-zero",
                 shell_quote(&include_dir.display().to_string()),
                 shell_quote(&source.display().to_string()),
                 shell_quote(&libavutil.display().to_string()),
+                shell_quote(&executable.display().to_string()),
+                shell_quote(&executable.display().to_string()),
+                shell_quote(&executable.display().to_string()),
                 shell_quote(&executable.display().to_string()),
                 shell_quote(&executable.display().to_string()),
                 shell_quote(&executable.display().to_string()),
@@ -2824,6 +2866,33 @@ static void print_default_callback_no_force_tty_rows(void) {
         &ctx, AV_LOG_WARNING, AV_LOG_PRINT_LEVEL, "plain");
 }
 
+static void print_default_callback_no_force_tty_term_unset_row(void) {
+    unsetenv("AV_LOG_FORCE_NOCOLOR");
+    unsetenv("AV_LOG_FORCE_COLOR");
+    unsetenv("TERM");
+    print_default_callback_tty_level_row(
+        "default-callback-no-force-tty-term-unset-warning-level-line",
+        NULL, AV_LOG_WARNING, AV_LOG_PRINT_LEVEL, "plain");
+}
+
+static void print_default_callback_no_force_tty_term_dumb_row(void) {
+    unsetenv("AV_LOG_FORCE_NOCOLOR");
+    unsetenv("AV_LOG_FORCE_COLOR");
+    setenv("TERM", "dumb", 1);
+    print_default_callback_tty_level_row(
+        "default-callback-no-force-tty-term-dumb-warning-level-line",
+        NULL, AV_LOG_WARNING, AV_LOG_PRINT_LEVEL, "plain");
+}
+
+static void print_default_callback_no_force_tty_term_empty_row(void) {
+    unsetenv("AV_LOG_FORCE_NOCOLOR");
+    unsetenv("AV_LOG_FORCE_COLOR");
+    setenv("TERM", "", 1);
+    print_default_callback_tty_level_row(
+        "default-callback-no-force-tty-term-empty-warning-level-line",
+        NULL, AV_LOG_WARNING, AV_LOG_PRINT_LEVEL, "plain");
+}
+
 static void print_default_callback_nocolor_rows(void) {
     setenv("AV_LOG_FORCE_NOCOLOR", "1", 1);
     setenv("AV_LOG_FORCE_COLOR", "1", 1);
@@ -2932,6 +3001,18 @@ int main(int argc, char **argv) {
     }
     if (argc > 1 && strcmp(argv[1], "--tty") == 0) {
         print_default_callback_no_force_tty_rows();
+        return 0;
+    }
+    if (argc > 1 && strcmp(argv[1], "--tty-term-unset") == 0) {
+        print_default_callback_no_force_tty_term_unset_row();
+        return 0;
+    }
+    if (argc > 1 && strcmp(argv[1], "--tty-term-dumb") == 0) {
+        print_default_callback_no_force_tty_term_dumb_row();
+        return 0;
+    }
+    if (argc > 1 && strcmp(argv[1], "--tty-term-empty") == 0) {
+        print_default_callback_no_force_tty_term_empty_row();
         return 0;
     }
     if (argc > 1 && strcmp(argv[1], "--color") == 0) {

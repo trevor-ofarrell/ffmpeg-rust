@@ -2652,6 +2652,34 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
         LogColorMode::Always
     );
     assert_eq!(
+        LogColorMode::from_ffmpeg_env_vars_stderr_and_term(
+            |_| false,
+            true,
+            Some(std::ffi::OsStr::new("xterm-256color")),
+        ),
+        LogColorMode::Always
+    );
+    assert_eq!(
+        LogColorMode::from_ffmpeg_env_vars_stderr_and_term(|_| false, true, None),
+        LogColorMode::Never
+    );
+    assert_eq!(
+        LogColorMode::from_ffmpeg_env_vars_stderr_and_term(
+            |_| false,
+            true,
+            Some(std::ffi::OsStr::new("dumb")),
+        ),
+        LogColorMode::Basic
+    );
+    assert_eq!(
+        LogColorMode::from_ffmpeg_env_vars_stderr_and_term(
+            |_| false,
+            true,
+            Some(std::ffi::OsStr::new("")),
+        ),
+        LogColorMode::Basic
+    );
+    assert_eq!(
         LogColorMode::from_ffmpeg_env_vars_and_stderr(
             |name| name == AV_LOG_FORCE_NOCOLOR_ENV,
             true,
