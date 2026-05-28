@@ -6,8 +6,9 @@ use std::{
 };
 
 use avutil::{
-    AvLogContextPrefix, AvLogFormatLine, AvLogFormatLine2, DefaultCallbackColorState, LogColorMode,
-    LogFlags, LogFormatOptions, LogLevel, LogRecord, LogTimestamp, Logger,
+    AvLogContextPrefix, AvLogFormatLine, AvLogFormatLine2, DefaultCallbackColorState,
+    DefaultCallbackPrefixState, LogColorMode, LogFlags, LogFormatOptions, LogLevel, LogRecord,
+    LogTimestamp, Logger,
 };
 
 #[test]
@@ -414,6 +415,24 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
     rows.insert(
         "default-callback-repeat-noskip-line",
         escape_row_text(default_repeat_no_skip.as_bytes()),
+    );
+    let default_prefix_continuation_plain =
+        rust_default_callback_prefix_continuation_lines(LogFlags::empty(), None);
+    rows.insert(
+        "default-callback-prefix-continuation-plain-line",
+        escape_row_text(default_prefix_continuation_plain.as_bytes()),
+    );
+    let default_prefix_continuation_level =
+        rust_default_callback_prefix_continuation_lines(LogFlags::PRINT_LEVEL, None);
+    rows.insert(
+        "default-callback-prefix-continuation-level-line",
+        escape_row_text(default_prefix_continuation_level.as_bytes()),
+    );
+    let default_prefix_continuation_context_level =
+        rust_default_callback_prefix_continuation_lines(LogFlags::PRINT_LEVEL, Some(&context));
+    rows.insert(
+        "default-callback-prefix-continuation-context-level-line",
+        escape_row_text(default_prefix_continuation_context_level.as_bytes()),
     );
     let default_color_warning =
         rust_default_callback_color_line(LogLevel::Warning, None, LogFlags::empty());
@@ -853,6 +872,26 @@ fn rust_default_callback_repeat_lines(flags: LogFlags) -> String {
         .collect()
 }
 
+fn rust_default_callback_prefix_continuation_lines(
+    flags: LogFlags,
+    context: Option<&AvLogContextPrefix>,
+) -> String {
+    let mut state = DefaultCallbackPrefixState::new();
+    ["part", "tail\n", "next\n"]
+        .into_iter()
+        .map(|message| {
+            let record = LogRecord::new(LogLevel::Warning, "ignored", message);
+            match context {
+                Some(context) => record
+                    .format_default_callback_line_context_with_state(context, flags, &mut state),
+                None => {
+                    record.format_default_callback_line_null_context_with_state(flags, &mut state)
+                }
+            }
+        })
+        .collect()
+}
+
 fn rust_default_callback_color_line(
     level: LogLevel,
     context: Option<&AvLogContextPrefix>,
@@ -1142,17 +1181,43 @@ static int has_default_datetime_prefix(const char *value) {
 }
 
 static void normalize_context_pointer(const char *value, char *normalized, size_t normalized_size) {
-    const char *marker = value ? strstr(value, " @ 0x") : NULL;
-    if (!marker) {
-        snprintf(normalized, normalized_size, "%s", value ? value : "");
+    const char *input = value ? value : "";
+    const char *cursor = input;
+    size_t out_len = 0;
+    if (normalized_size == 0)
         return;
+
+    while (*cursor && out_len + 1 < normalized_size) {
+        const char *marker = strstr(cursor, " @ 0x");
+        if (!marker) {
+            size_t tail_len = strlen(cursor);
+            size_t copy_len = tail_len;
+            if (copy_len > normalized_size - out_len - 1)
+                copy_len = normalized_size - out_len - 1;
+            memcpy(normalized + out_len, cursor, copy_len);
+            out_len += copy_len;
+            break;
+        }
+
+        size_t head_len = (size_t)(marker - cursor);
+        if (head_len > normalized_size - out_len - 1)
+            head_len = normalized_size - out_len - 1;
+        memcpy(normalized + out_len, cursor, head_len);
+        out_len += head_len;
+
+        const char replacement[] = " @ <ptr>";
+        size_t replacement_len = sizeof(replacement) - 1;
+        if (replacement_len > normalized_size - out_len - 1)
+            replacement_len = normalized_size - out_len - 1;
+        memcpy(normalized + out_len, replacement, replacement_len);
+        out_len += replacement_len;
+
+        cursor = marker + 3;
+        while (*cursor && *cursor != ']')
+            cursor++;
     }
-    const char *ptr_end = marker + 3;
-    while (*ptr_end && *ptr_end != ']')
-        ptr_end++;
-    size_t head_len = (size_t)(marker - value);
-    snprintf(normalized, normalized_size, "%.*s @ <ptr>%s",
-             (int)head_len, value, ptr_end);
+
+    normalized[out_len] = '\0';
 }
 
 static void ROW_STR_NORMALIZED_DEFAULT_CALLBACK(const char *name, const char *value) {
@@ -1531,6 +1596,45 @@ static void print_default_callback_repeat_row(const char *name, int flags) {
     ROW_STR_NORMALIZED_DEFAULT_CALLBACK(name, captured);
 }
 
+static void print_default_callback_prefix_continuation_row(const char *name,
+                                                           void *ptr,
+                                                           int flags) {
+    char captured[2048];
+    FILE *capture = tmpfile();
+    if (!capture) {
+        ROW_STR(name, "<tmpfile-error>");
+        return;
+    }
+
+    fflush(stderr);
+    int saved_stderr = dup(fileno(stderr));
+    if (saved_stderr < 0 || dup2(fileno(capture), fileno(stderr)) < 0) {
+        if (saved_stderr >= 0)
+            close(saved_stderr);
+        fclose(capture);
+        ROW_STR(name, "<stderr-redirect-error>");
+        return;
+    }
+
+    av_log_set_callback(av_log_default_callback);
+    av_log_set_level(AV_LOG_TRACE);
+    av_log_set_flags(flags);
+    av_log(ptr, AV_LOG_WARNING, "%s", "part");
+    av_log(ptr, AV_LOG_WARNING, "%s\n", "tail");
+    av_log(ptr, AV_LOG_WARNING, "%s\n", "next");
+    fflush(stderr);
+
+    dup2(saved_stderr, fileno(stderr));
+    close(saved_stderr);
+
+    rewind(capture);
+    size_t len = fread(captured, 1, sizeof(captured) - 1, capture);
+    captured[len] = '\0';
+    fclose(capture);
+
+    ROW_STR_NORMALIZED_DEFAULT_CALLBACK(name, captured);
+}
+
 static void print_default_callback_rows(void) {
     setenv("AV_LOG_FORCE_NOCOLOR", "1", 1);
     TestLogContext ctx = { &test_log_class };
@@ -1562,6 +1666,14 @@ static void print_default_callback_rows(void) {
     print_default_callback_repeat_row("default-callback-repeat-skip-level-line",
                                       AV_LOG_SKIP_REPEATED | AV_LOG_PRINT_LEVEL);
     print_default_callback_repeat_row("default-callback-repeat-noskip-line", 0);
+    print_default_callback_prefix_continuation_row(
+        "default-callback-prefix-continuation-plain-line", NULL, 0);
+    print_default_callback_prefix_continuation_row(
+        "default-callback-prefix-continuation-level-line", NULL,
+        AV_LOG_PRINT_LEVEL);
+    print_default_callback_prefix_continuation_row(
+        "default-callback-prefix-continuation-context-level-line", &ctx,
+        AV_LOG_PRINT_LEVEL);
 }
 
 static void print_default_callback_color_rows(void) {

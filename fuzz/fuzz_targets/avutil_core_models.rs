@@ -13,18 +13,19 @@ use avutil::{
     sha512_256, take_global_log_records, Adler32, AmbisonicChannelLayout, AudioFrame, AvError,
     AvErrorCode, AvErrorKind, AvLogContextPrefix, BufferPool, BufferPoolAllocation,
     BufferPoolCallbacks, BufferRef, Channel, ChannelCustom, ChannelId, ChannelLayout,
-    ChannelLayoutSpec, Crc32, CustomChannelLayout, DefaultCallbackColorState, Dictionary, Frame,
-    FrameA53ClosedCaptions, FrameActiveFormatDescription, FrameAlphaMode,
-    FrameAmbientViewingEnvironment, FrameAudioServiceType, FrameChromaLocation,
-    FrameColorPrimaries, FrameColorRange, FrameColorSpace, FrameColorTransferCharacteristic,
-    FrameContentLightMetadata, FrameCrop, FrameCropFlags, FrameData, FrameDecodeErrorFlags,
-    FrameDetectionBbox, FrameDetectionBboxes, FrameDisplayMatrix, FrameDolbyVisionColorMetadata,
-    FrameDolbyVisionDataMapping, FrameDolbyVisionDmData, FrameDolbyVisionMetadata,
-    FrameDolbyVisionRpuBuffer, FrameDolbyVisionRpuDataHeader, FrameDownmixInfo, FrameDownmixType,
-    FrameDynamicHdrPlus, FrameDynamicHdrVivid, FrameExif, FrameExifColorSpace,
-    FrameExifCompositeImage, FrameExifContrast, FrameExifCustomRendered, FrameExifEndian,
-    FrameExifEntry, FrameExifExposureMode, FrameExifExposureProgram, FrameExifFileSource,
-    FrameExifFlash, FrameExifGainControl, FrameExifGpsAltitudeRef, FrameExifGpsDifferential,
+    ChannelLayoutSpec, Crc32, CustomChannelLayout, DefaultCallbackColorState,
+    DefaultCallbackPrefixState, Dictionary, Frame, FrameA53ClosedCaptions,
+    FrameActiveFormatDescription, FrameAlphaMode, FrameAmbientViewingEnvironment,
+    FrameAudioServiceType, FrameChromaLocation, FrameColorPrimaries, FrameColorRange,
+    FrameColorSpace, FrameColorTransferCharacteristic, FrameContentLightMetadata, FrameCrop,
+    FrameCropFlags, FrameData, FrameDecodeErrorFlags, FrameDetectionBbox, FrameDetectionBboxes,
+    FrameDisplayMatrix, FrameDolbyVisionColorMetadata, FrameDolbyVisionDataMapping,
+    FrameDolbyVisionDmData, FrameDolbyVisionMetadata, FrameDolbyVisionRpuBuffer,
+    FrameDolbyVisionRpuDataHeader, FrameDownmixInfo, FrameDownmixType, FrameDynamicHdrPlus,
+    FrameDynamicHdrVivid, FrameExif, FrameExifColorSpace, FrameExifCompositeImage,
+    FrameExifContrast, FrameExifCustomRendered, FrameExifEndian, FrameExifEntry,
+    FrameExifExposureMode, FrameExifExposureProgram, FrameExifFileSource, FrameExifFlash,
+    FrameExifGainControl, FrameExifGpsAltitudeRef, FrameExifGpsDifferential,
     FrameExifGpsDirectionRef, FrameExifGpsDistanceRef, FrameExifGpsLatitudeRef,
     FrameExifGpsLongitudeRef, FrameExifGpsMeasureMode, FrameExifGpsSpeedRef, FrameExifGpsStatus,
     FrameExifIfdPointerKind, FrameExifLightSource, FrameExifMeteringMode, FrameExifNewSubfileType,
@@ -2128,6 +2129,34 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     assert_eq!(
         default_callback_repeat_lines,
         "[warning] repeat\n    Last message repeated 2 times\n[error] next\n"
+    );
+    let mut default_callback_prefix_state = DefaultCallbackPrefixState::new();
+    assert_eq!(
+        LogRecord::new(LogLevel::Warning, "ignored", "part")
+            .format_default_callback_line_null_context_with_state(
+                LogFlags::PRINT_LEVEL,
+                &mut default_callback_prefix_state
+            ),
+        "[warning] part"
+    );
+    assert!(!default_callback_prefix_state.print_prefix());
+    assert_eq!(
+        LogRecord::new(LogLevel::Warning, "ignored", "tail\n")
+            .format_default_callback_line_null_context_with_state(
+                LogFlags::PRINT_LEVEL,
+                &mut default_callback_prefix_state
+            ),
+        "tail\n"
+    );
+    assert!(default_callback_prefix_state.print_prefix());
+    assert_eq!(
+        LogRecord::new(LogLevel::Warning, "ignored", "next\n")
+            .format_default_callback_line_context_with_state(
+                &callback_context,
+                LogFlags::PRINT_LEVEL,
+                &mut default_callback_prefix_state
+            ),
+        "[rustctx @ <ptr>] [warning] next\n"
     );
     let default_callback_color =
         LogFormatOptions::new(LogFlags::PRINT_LEVEL).with_color_mode(LogColorMode::Always);

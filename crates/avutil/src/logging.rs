@@ -263,6 +263,39 @@ impl DefaultCallbackColorState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DefaultCallbackPrefixState {
+    print_prefix: bool,
+}
+
+impl Default for DefaultCallbackPrefixState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DefaultCallbackPrefixState {
+    pub const fn new() -> Self {
+        Self { print_prefix: true }
+    }
+
+    pub const fn from_print_prefix(print_prefix: bool) -> Self {
+        Self { print_prefix }
+    }
+
+    pub const fn print_prefix(self) -> bool {
+        self.print_prefix
+    }
+
+    pub fn set_print_prefix(&mut self, print_prefix: bool) {
+        self.print_prefix = print_prefix;
+    }
+
+    pub fn reset(&mut self) {
+        self.print_prefix = true;
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LogFormatOptions {
     flags: LogFlags,
     color_mode: LogColorMode,
@@ -660,13 +693,79 @@ impl LogRecord {
         self.format_default_callback_line_with_context(Some(context), options)
     }
 
+    pub fn format_default_callback_line_null_context_with_state(
+        &self,
+        flags: LogFlags,
+        state: &mut DefaultCallbackPrefixState,
+    ) -> String {
+        self.format_default_callback_line_null_context_with_options_and_state(
+            LogFormatOptions::new(flags),
+            state,
+        )
+    }
+
+    pub fn format_default_callback_line_context_with_state(
+        &self,
+        context: &AvLogContextPrefix,
+        flags: LogFlags,
+        state: &mut DefaultCallbackPrefixState,
+    ) -> String {
+        self.format_default_callback_line_context_with_options_and_state(
+            context,
+            LogFormatOptions::new(flags),
+            state,
+        )
+    }
+
+    pub fn format_default_callback_line_null_context_with_options_and_state(
+        &self,
+        options: LogFormatOptions,
+        state: &mut DefaultCallbackPrefixState,
+    ) -> String {
+        self.format_default_callback_line_with_context_and_state(None, options, state)
+    }
+
+    pub fn format_default_callback_line_context_with_options_and_state(
+        &self,
+        context: &AvLogContextPrefix,
+        options: LogFormatOptions,
+        state: &mut DefaultCallbackPrefixState,
+    ) -> String {
+        self.format_default_callback_line_with_context_and_state(Some(context), options, state)
+    }
+
     fn format_default_callback_line_with_context(
         &self,
         context: Option<&AvLogContextPrefix>,
         options: LogFormatOptions,
     ) -> String {
+        self.format_default_callback_line_with_context_and_prefix(context, options, true)
+            .0
+    }
+
+    fn format_default_callback_line_with_context_and_state(
+        &self,
+        context: Option<&AvLogContextPrefix>,
+        options: LogFormatOptions,
+        state: &mut DefaultCallbackPrefixState,
+    ) -> String {
+        let (line, next_print_prefix) = self.format_default_callback_line_with_context_and_prefix(
+            context,
+            options,
+            state.print_prefix(),
+        );
+        state.set_print_prefix(next_print_prefix);
+        line
+    }
+
+    fn format_default_callback_line_with_context_and_prefix(
+        &self,
+        context: Option<&AvLogContextPrefix>,
+        options: LogFormatOptions,
+        print_prefix: bool,
+    ) -> (String, bool) {
         if self.is_repetition_summary() {
-            return format!("    {}\n", self.message);
+            return (format!("    {}\n", self.message), true);
         }
 
         let flags = options.flags();
@@ -675,29 +774,31 @@ impl LogRecord {
             .then(|| self.default_callback_ansi_color_code())
             .flatten();
         let mut line = String::new();
-        if let Some(timestamp) = self.timestamp {
-            if flags.contains(LogFlags::PRINT_DATETIME) {
-                line.push_str(&timestamp.format_default_callback_datetime_utc());
-                line.push(' ');
-            } else if flags.contains(LogFlags::PRINT_TIME) {
-                line.push_str(&timestamp.format_default_callback_time_utc());
-                line.push(' ');
+        if print_prefix {
+            if let Some(timestamp) = self.timestamp {
+                if flags.contains(LogFlags::PRINT_DATETIME) {
+                    line.push_str(&timestamp.format_default_callback_datetime_utc());
+                    line.push(' ');
+                } else if flags.contains(LogFlags::PRINT_TIME) {
+                    line.push_str(&timestamp.format_default_callback_time_utc());
+                    line.push(' ');
+                }
             }
-        }
-        if let Some(context) = context {
-            let context_prefix = format!("[{} @ {}] ", context.item_name(), context.address());
-            if use_color {
-                line.push_str(&colorize(DEFAULT_CALLBACK_CONTEXT_COLOR, &context_prefix));
-            } else {
-                line.push_str(&context_prefix);
+            if let Some(context) = context {
+                let context_prefix = format!("[{} @ {}] ", context.item_name(), context.address());
+                if use_color {
+                    line.push_str(&colorize(DEFAULT_CALLBACK_CONTEXT_COLOR, &context_prefix));
+                } else {
+                    line.push_str(&context_prefix);
+                }
             }
-        }
-        if flags.contains(LogFlags::PRINT_LEVEL) {
-            let level_prefix = format!("[{}] ", self.level.name());
-            if let Some(color_code) = severity_color {
-                line.push_str(&colorize(color_code, &level_prefix));
-            } else {
-                line.push_str(&level_prefix);
+            if flags.contains(LogFlags::PRINT_LEVEL) {
+                let level_prefix = format!("[{}] ", self.level.name());
+                if let Some(color_code) = severity_color {
+                    line.push_str(&colorize(color_code, &level_prefix));
+                } else {
+                    line.push_str(&level_prefix);
+                }
             }
         }
         if let Some(color_code) = severity_color {
@@ -705,7 +806,8 @@ impl LogRecord {
         } else {
             line.push_str(&self.message);
         }
-        line
+        let next_print_prefix = self.message.as_bytes().last().copied() == Some(b'\n');
+        (line, next_print_prefix)
     }
 
     pub fn format_av_log_line_null_context(
@@ -1465,6 +1567,65 @@ mod tests {
                 .format_default_callback_line_context_with_options(&context, force_color_level),
             "\x1b[48;5;0m\x1b[38;5;250m[rustctx @ <ptr>] \x1b[0m\x1b[48;5;0m\x1b[38;5;226m[warning] \x1b[0m\x1b[48;5;0m\x1b[38;5;226mplain\n\x1b[0m"
         );
+    }
+
+    #[test]
+    fn default_callback_prefix_state_suppresses_prefix_until_newline() {
+        let mut state = DefaultCallbackPrefixState::new();
+        let flags = LogFlags::PRINT_LEVEL;
+
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "part")
+                .format_default_callback_line_null_context_with_state(flags, &mut state),
+            "[warning] part"
+        );
+        assert!(!state.print_prefix());
+
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "tail\n")
+                .format_default_callback_line_null_context_with_state(flags, &mut state),
+            "tail\n"
+        );
+        assert!(state.print_prefix());
+
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "next\n")
+                .format_default_callback_line_null_context_with_state(flags, &mut state),
+            "[warning] next\n"
+        );
+        assert!(state.print_prefix());
+
+        let context = AvLogContextPrefix::new("rustctx", "<ptr>");
+        let mut context_state = DefaultCallbackPrefixState::new();
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "part")
+                .format_default_callback_line_context_with_state(
+                    &context,
+                    flags,
+                    &mut context_state
+                ),
+            "[rustctx @ <ptr>] [warning] part"
+        );
+        assert!(!context_state.print_prefix());
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "tail\n")
+                .format_default_callback_line_context_with_state(
+                    &context,
+                    flags,
+                    &mut context_state
+                ),
+            "tail\n"
+        );
+        assert!(context_state.print_prefix());
+
+        let mut resumed = DefaultCallbackPrefixState::from_print_prefix(false);
+        assert_eq!(
+            LogRecord::new(LogLevel::Error, "ignored", "done\n")
+                .format_default_callback_line_null_context_with_state(flags, &mut resumed),
+            "done\n"
+        );
+        resumed.reset();
+        assert!(resumed.print_prefix());
     }
 
     #[test]
