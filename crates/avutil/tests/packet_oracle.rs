@@ -280,6 +280,30 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         packet_fields(&rescaled_near_inf_rounding),
     );
 
+    let mut rescaled_negative_near_inf_rounding = Packet::new(vec![0x61, 0x62, 0x63], 8);
+    rescaled_negative_near_inf_rounding.set_pts(Some(-24));
+    rescaled_negative_near_inf_rounding.set_dts(Some(-23));
+    rescaled_negative_near_inf_rounding
+        .set_duration(24)
+        .unwrap();
+    rescaled_negative_near_inf_rounding
+        .set_pos(Some(655))
+        .unwrap();
+    rescaled_negative_near_inf_rounding.set_flag(PacketFlags::DISCARD, true);
+    rescaled_negative_near_inf_rounding
+        .set_time_base(Rational::new(1, 48_000).unwrap())
+        .unwrap();
+    rescaled_negative_near_inf_rounding
+        .rescale_ts(
+            Rational::new(1, 48_000).unwrap(),
+            Rational::new(1, 1_000).unwrap(),
+        )
+        .unwrap();
+    rows.insert(
+        "packet:rescale-negative-near-inf-rounding".to_string(),
+        packet_fields(&rescaled_negative_near_inf_rounding),
+    );
+
     let src = packet_with_common_props();
     let mut copied = Packet::new(vec![0x99, 0x88], 1);
     copied.copy_props_from(&src);
@@ -5775,6 +5799,22 @@ int main(void) {
     pkt->time_base = (AVRational){ 1, 48000 };
     av_packet_rescale_ts(pkt, (AVRational){ 1, 48000 }, (AVRational){ 1, 1000 });
     print_packet("packet:rescale-near-inf-rounding", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    fail_if(av_new_packet(pkt, 3) < 0, "av_new_packet negative near-inf rounding rescale failed");
+    pkt->data[0] = 0x61;
+    pkt->data[1] = 0x62;
+    pkt->data[2] = 0x63;
+    pkt->pts = -24;
+    pkt->dts = -23;
+    pkt->duration = 24;
+    pkt->pos = 655;
+    pkt->stream_index = 8;
+    pkt->flags = AV_PKT_FLAG_DISCARD;
+    pkt->time_base = (AVRational){ 1, 48000 };
+    av_packet_rescale_ts(pkt, (AVRational){ 1, 48000 }, (AVRational){ 1, 1000 });
+    print_packet("packet:rescale-negative-near-inf-rounding", pkt);
     av_packet_free(&pkt);
 
     AVPacket *src = packet_with_common_props();

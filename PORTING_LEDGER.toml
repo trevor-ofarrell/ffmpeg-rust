@@ -2,6 +2,10 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest avutil-packet evidence: `packet:rescale-negative-near-inf-rounding`
+# now proves pinned FFmpeg 8.1.1 `av_packet_rescale_ts()` rounds a negative
+# half-tick PTS away from zero and a negative below-half DTS toward zero while
+# preserving payload, position, flags, stream index, and `time_base`.
 # Latest avutil-packet evidence: `packet:rescale-near-inf-rounding` now
 # proves pinned FFmpeg 8.1.1 `av_packet_rescale_ts()` uses nearest-away
 # rounding for fractional PTS/DTS/duration rescale while preserving payload,

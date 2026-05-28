@@ -7148,6 +7148,28 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .contains(PacketFlags::DISPOSABLE));
     assert_eq!(near_inf_rescale_packet.data(), &[0x51, 0x52, 0x53]);
 
+    let mut negative_near_inf_rescale_packet = Packet::from_data(vec![0x61, 0x62, 0x63]).unwrap();
+    negative_near_inf_rescale_packet.set_pts(Some(-24));
+    negative_near_inf_rescale_packet.set_dts(Some(-23));
+    negative_near_inf_rescale_packet.set_duration(24).unwrap();
+    negative_near_inf_rescale_packet.set_pos(Some(655)).unwrap();
+    negative_near_inf_rescale_packet
+        .set_time_base(near_inf_src)
+        .unwrap();
+    negative_near_inf_rescale_packet.set_flag(PacketFlags::DISCARD, true);
+    negative_near_inf_rescale_packet
+        .rescale_ts(near_inf_src, rescale_dst)
+        .unwrap();
+    assert_eq!(negative_near_inf_rescale_packet.pts(), Some(-1));
+    assert_eq!(negative_near_inf_rescale_packet.dts(), Some(0));
+    assert_eq!(negative_near_inf_rescale_packet.duration(), 1);
+    assert_eq!(negative_near_inf_rescale_packet.pos(), Some(655));
+    assert_eq!(negative_near_inf_rescale_packet.time_base(), near_inf_src);
+    assert!(negative_near_inf_rescale_packet
+        .flags()
+        .contains(PacketFlags::DISCARD));
+    assert_eq!(negative_near_inf_rescale_packet.data(), &[0x61, 0x62, 0x63]);
+
     let opaque_len = usize::from(cursor.next().unwrap_or_default() % 16);
     let opaque_payload = payload_from(cursor, opaque_len);
     packet.set_opaque_ref(Some(BufferRef::copy_from_slice(&opaque_payload)));

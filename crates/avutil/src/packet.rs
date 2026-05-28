@@ -12898,6 +12898,24 @@ mod tests {
         assert_eq!(packet.time_base(), src);
         assert!(packet.flags().contains(PacketFlags::DISPOSABLE));
         assert_eq!(packet.data(), &[0x51, 0x52, 0x53]);
+
+        let mut negative = Packet::from_data(vec![0x61, 0x62, 0x63]).unwrap();
+        negative.set_pts(Some(-24));
+        negative.set_dts(Some(-23));
+        negative.set_duration(24).unwrap();
+        negative.set_pos(Some(655)).unwrap();
+        negative.set_time_base(src).unwrap();
+        negative.set_flag(PacketFlags::DISCARD, true);
+
+        negative.rescale_ts(src, dst).unwrap();
+
+        assert_eq!(negative.pts(), Some(-1));
+        assert_eq!(negative.dts(), Some(0));
+        assert_eq!(negative.duration(), 1);
+        assert_eq!(negative.pos(), Some(655));
+        assert_eq!(negative.time_base(), src);
+        assert!(negative.flags().contains(PacketFlags::DISCARD));
+        assert_eq!(negative.data(), &[0x61, 0x62, 0x63]);
     }
 
     #[test]
