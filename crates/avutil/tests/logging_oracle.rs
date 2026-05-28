@@ -200,9 +200,19 @@ fn expected_rows() -> BTreeMap<&'static str, i32> {
         "custom-callback-null-level",
         LogLevel::Error.as_ffmpeg_value(),
     );
+    rows.insert("custom-callback-repeat-count", 2);
+    rows.insert(
+        "custom-callback-repeat-level",
+        LogLevel::Warning.as_ffmpeg_value(),
+    );
     rows.insert("custom-callback-context-count", 1);
     rows.insert(
         "custom-callback-context-level",
+        LogLevel::Warning.as_ffmpeg_value(),
+    );
+    rows.insert("custom-callback-context-repeat-count", 2);
+    rows.insert(
+        "custom-callback-context-repeat-level",
         LogLevel::Warning.as_ffmpeg_value(),
     );
     rows
@@ -546,6 +556,15 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
         "custom-callback-null-item",
         escape_row_text(custom_null_item.as_bytes()),
     );
+    let (custom_repeat_message, custom_repeat_item) = rust_custom_callback_repeat_text();
+    rows.insert(
+        "custom-callback-repeat-message",
+        escape_row_text(custom_repeat_message.as_bytes()),
+    );
+    rows.insert(
+        "custom-callback-repeat-item",
+        escape_row_text(custom_repeat_item.as_bytes()),
+    );
     let (custom_context_message, custom_context_item) = rust_custom_callback_context_text(&context);
     rows.insert(
         "custom-callback-context-message",
@@ -554,6 +573,16 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
     rows.insert(
         "custom-callback-context-item",
         escape_row_text(custom_context_item.as_bytes()),
+    );
+    let (custom_context_repeat_message, custom_context_repeat_item) =
+        rust_custom_callback_context_repeat_text(&context);
+    rows.insert(
+        "custom-callback-context-repeat-message",
+        escape_row_text(custom_context_repeat_message.as_bytes()),
+    );
+    rows.insert(
+        "custom-callback-context-repeat-item",
+        escape_row_text(custom_context_repeat_item.as_bytes()),
     );
 
     let (plain, _) = rust_format_line(LogLevel::Warning, "plain", LogFlags::empty(), true, 128);
@@ -1091,6 +1120,20 @@ fn rust_custom_callback_null_text() -> (String, String) {
     seen.remove(0)
 }
 
+fn rust_custom_callback_repeat_text() -> (String, String) {
+    let mut flags = LogFlags::PRINT_LEVEL;
+    flags.insert(LogFlags::SKIP_REPEATED);
+    let mut logger = Logger::new_with_flags(LogLevel::Warning, flags);
+    let mut seen = Vec::new();
+    for _ in 0..2 {
+        logger.log_custom_callback(LogRecord::new(LogLevel::Warning, "", "repeat"), |record| {
+            seen.push((record.message().to_owned(), "<none>".to_owned()))
+        });
+    }
+    assert_eq!(seen.len(), 2);
+    seen.pop().expect("repeat callback row")
+}
+
 fn rust_custom_callback_context_text(context: &AvLogContextPrefix) -> (String, String) {
     let mut logger = Logger::new_with_flags(LogLevel::Warning, LogFlags::PRINT_LEVEL);
     let mut seen = Vec::new();
@@ -1100,6 +1143,21 @@ fn rust_custom_callback_context_text(context: &AvLogContextPrefix) -> (String, S
     );
     assert_eq!(seen.len(), 1);
     seen.remove(0)
+}
+
+fn rust_custom_callback_context_repeat_text(context: &AvLogContextPrefix) -> (String, String) {
+    let mut flags = LogFlags::PRINT_LEVEL;
+    flags.insert(LogFlags::SKIP_REPEATED);
+    let mut logger = Logger::new_with_flags(LogLevel::Warning, flags);
+    let mut seen = Vec::new();
+    for _ in 0..2 {
+        logger.log_custom_callback(
+            LogRecord::new(LogLevel::Warning, context.item_name(), "ctxrepeat"),
+            |record| seen.push((record.message().to_owned(), record.target().to_owned())),
+        );
+    }
+    assert_eq!(seen.len(), 2);
+    seen.pop().expect("context repeat callback row")
 }
 
 fn normalize_default_callback_timestamp(line: &str) -> String {
@@ -2005,11 +2063,27 @@ static void print_custom_callback_rows(void) {
     ROW_STR("custom-callback-null-item", captured_item);
 
     reset_capture();
+    av_log(NULL, AV_LOG_WARNING, "%s", "repeat");
+    av_log(NULL, AV_LOG_WARNING, "%s", "repeat");
+    ROW("custom-callback-repeat-count", captured_count);
+    ROW("custom-callback-repeat-level", captured_level);
+    ROW_STR("custom-callback-repeat-message", captured_message);
+    ROW_STR("custom-callback-repeat-item", captured_item);
+
+    reset_capture();
     av_log(&ctx, AV_LOG_WARNING, "%s:%d", "ctx", 3);
     ROW("custom-callback-context-count", captured_count);
     ROW("custom-callback-context-level", captured_level);
     ROW_STR("custom-callback-context-message", captured_message);
     ROW_STR("custom-callback-context-item", captured_item);
+
+    reset_capture();
+    av_log(&ctx, AV_LOG_WARNING, "%s", "ctxrepeat");
+    av_log(&ctx, AV_LOG_WARNING, "%s", "ctxrepeat");
+    ROW("custom-callback-context-repeat-count", captured_count);
+    ROW("custom-callback-context-repeat-level", captured_level);
+    ROW_STR("custom-callback-context-repeat-message", captured_message);
+    ROW_STR("custom-callback-context-repeat-item", captured_item);
 
     av_log_set_callback(av_log_default_callback);
 }

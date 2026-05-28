@@ -63,13 +63,7 @@ fuzz_target!(|data: &[u8]| {
         RawVideoPixelFormat::Gray32Le,
         Rational::ONE,
     );
-    exercise_rawvideo(
-        b"abcd",
-        2,
-        1,
-        RawVideoPixelFormat::GrayF16Le,
-        Rational::ONE,
-    );
+    exercise_rawvideo(b"abcd", 2, 1, RawVideoPixelFormat::GrayF16Le, Rational::ONE);
     exercise_rawvideo(
         b"abcdefgh",
         2,
@@ -91,29 +85,11 @@ fuzz_target!(|data: &[u8]| {
         RawVideoPixelFormat::Yaf32Be,
         Rational::ONE,
     );
-    exercise_rawvideo(
-        b"abcdef",
-        2,
-        1,
-        RawVideoPixelFormat::Gbrp,
-        Rational::ONE,
-    );
+    exercise_rawvideo(b"abcdef", 2, 1, RawVideoPixelFormat::Gbrp, Rational::ONE);
     let gbrp9 = (0..12).collect::<Vec<_>>();
-    exercise_rawvideo(
-        &gbrp9,
-        2,
-        1,
-        RawVideoPixelFormat::Gbrp9Le,
-        Rational::ONE,
-    );
+    exercise_rawvideo(&gbrp9, 2, 1, RawVideoPixelFormat::Gbrp9Le, Rational::ONE);
     let gbrp10 = (0..12).collect::<Vec<_>>();
-    exercise_rawvideo(
-        &gbrp10,
-        2,
-        1,
-        RawVideoPixelFormat::Gbrp10Le,
-        Rational::ONE,
-    );
+    exercise_rawvideo(&gbrp10, 2, 1, RawVideoPixelFormat::Gbrp10Le, Rational::ONE);
     let gbrp10_msb = (0..12).collect::<Vec<_>>();
     exercise_rawvideo(
         &gbrp10_msb,
@@ -123,13 +99,7 @@ fuzz_target!(|data: &[u8]| {
         Rational::ONE,
     );
     let gbrp12 = (0..12).collect::<Vec<_>>();
-    exercise_rawvideo(
-        &gbrp12,
-        2,
-        1,
-        RawVideoPixelFormat::Gbrp12Le,
-        Rational::ONE,
-    );
+    exercise_rawvideo(&gbrp12, 2, 1, RawVideoPixelFormat::Gbrp12Le, Rational::ONE);
     let gbrp12_msb = (0..12).collect::<Vec<_>>();
     exercise_rawvideo(
         &gbrp12_msb,
@@ -139,21 +109,9 @@ fuzz_target!(|data: &[u8]| {
         Rational::ONE,
     );
     let gbrp14 = (0..12).collect::<Vec<_>>();
-    exercise_rawvideo(
-        &gbrp14,
-        2,
-        1,
-        RawVideoPixelFormat::Gbrp14Le,
-        Rational::ONE,
-    );
+    exercise_rawvideo(&gbrp14, 2, 1, RawVideoPixelFormat::Gbrp14Le, Rational::ONE);
     let gbrp16 = (0..12).collect::<Vec<_>>();
-    exercise_rawvideo(
-        &gbrp16,
-        2,
-        1,
-        RawVideoPixelFormat::Gbrp16Le,
-        Rational::ONE,
-    );
+    exercise_rawvideo(&gbrp16, 2, 1, RawVideoPixelFormat::Gbrp16Le, Rational::ONE);
     let gbrpf16 = (0..12).collect::<Vec<_>>();
     exercise_rawvideo(
         &gbrpf16,
@@ -171,29 +129,11 @@ fuzz_target!(|data: &[u8]| {
         Rational::ONE,
     );
     let rgbf16 = (0..12).collect::<Vec<_>>();
-    exercise_rawvideo(
-        &rgbf16,
-        2,
-        1,
-        RawVideoPixelFormat::RgbF16Le,
-        Rational::ONE,
-    );
+    exercise_rawvideo(&rgbf16, 2, 1, RawVideoPixelFormat::RgbF16Le, Rational::ONE);
     let rgbf32 = (0..12).collect::<Vec<_>>();
-    exercise_rawvideo(
-        &rgbf32,
-        1,
-        1,
-        RawVideoPixelFormat::RgbF32Be,
-        Rational::ONE,
-    );
+    exercise_rawvideo(&rgbf32, 1, 1, RawVideoPixelFormat::RgbF32Be, Rational::ONE);
     let rgb96 = (0..12).collect::<Vec<_>>();
-    exercise_rawvideo(
-        &rgb96,
-        1,
-        1,
-        RawVideoPixelFormat::Rgb96Le,
-        Rational::ONE,
-    );
+    exercise_rawvideo(&rgb96, 1, 1, RawVideoPixelFormat::Rgb96Le, Rational::ONE);
     let rgbaf16 = (0..16).collect::<Vec<_>>();
     exercise_rawvideo(
         &rgbaf16,
@@ -219,13 +159,7 @@ fuzz_target!(|data: &[u8]| {
         Rational::ONE,
     );
     let gbrap = (0..8).collect::<Vec<_>>();
-    exercise_rawvideo(
-        &gbrap,
-        2,
-        1,
-        RawVideoPixelFormat::Gbrap,
-        Rational::ONE,
-    );
+    exercise_rawvideo(&gbrap, 2, 1, RawVideoPixelFormat::Gbrap, Rational::ONE);
     let gbrap16 = (0..16).collect::<Vec<_>>();
     exercise_rawvideo(
         &gbrap16,
@@ -242,13 +176,7 @@ fuzz_target!(|data: &[u8]| {
         RawVideoPixelFormat::GbrapF32Le,
         Rational::ONE,
     );
-    exercise_rawvideo(
-        b"abcdefgh",
-        2,
-        2,
-        RawVideoPixelFormat::Ya8,
-        Rational::ONE,
-    );
+    exercise_rawvideo(b"abcdefgh", 2, 2, RawVideoPixelFormat::Ya8, Rational::ONE);
     exercise_rawvideo(
         b"abcdefgh",
         2,

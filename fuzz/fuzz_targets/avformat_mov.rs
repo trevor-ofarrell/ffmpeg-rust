@@ -370,17 +370,13 @@ fn exercise_timed_text_sample(input: &[u8]) {
             previous_end_time = event.highlight_end_time();
             assert!(event.text_range().end_char() >= event.text_range().start_char());
             assert!(usize::from(event.text_range().start_char()) <= char_count);
-            assert!(
-                usize::from(event.text_range().end_char()) <= char_count.saturating_add(1)
-            );
+            assert!(usize::from(event.text_range().end_char()) <= char_count.saturating_add(1));
         }
     }
     for hyperlink in sample.hyperlinks() {
         assert!(hyperlink.text_range().end_char() >= hyperlink.text_range().start_char());
         assert!(usize::from(hyperlink.text_range().start_char()) <= char_count);
-        assert!(
-            usize::from(hyperlink.text_range().end_char()) <= char_count.saturating_add(1)
-        );
+        assert!(usize::from(hyperlink.text_range().end_char()) <= char_count.saturating_add(1));
     }
     for range in sample.blinks() {
         assert!(range.end_char() >= range.start_char());
@@ -449,7 +445,13 @@ fn valid_timed_text_mov() -> Vec<u8> {
 fn valid_xml_subtitle_mov() -> Vec<u8> {
     let samples = [b"<tt/>".as_slice()];
     let durations = [1_000_u32];
-    mov_with_sample_entry(*b"stpp", 1, &xml_subtitle_entry_extra(), &samples, &durations)
+    mov_with_sample_entry(
+        *b"stpp",
+        1,
+        &xml_subtitle_entry_extra(),
+        &samples,
+        &durations,
+    )
 }
 
 fn valid_text_subtitle_mov() -> Vec<u8> {
@@ -486,19 +488,37 @@ fn valid_webvtt_mov() -> Vec<u8> {
 fn valid_xml_metadata_mov() -> Vec<u8> {
     let samples = [b"<metadata/>".as_slice()];
     let durations = [1_000_u32];
-    mov_with_sample_entry(*b"metx", 1, &xml_metadata_entry_extra(), &samples, &durations)
+    mov_with_sample_entry(
+        *b"metx",
+        1,
+        &xml_metadata_entry_extra(),
+        &samples,
+        &durations,
+    )
 }
 
 fn valid_text_metadata_mov() -> Vec<u8> {
     let samples = [b"metadata".as_slice()];
     let durations = [1_000_u32];
-    mov_with_sample_entry(*b"mett", 1, &text_metadata_entry_extra(), &samples, &durations)
+    mov_with_sample_entry(
+        *b"mett",
+        1,
+        &text_metadata_entry_extra(),
+        &samples,
+        &durations,
+    )
 }
 
 fn valid_uri_metadata_mov() -> Vec<u8> {
     let samples = [b"uri-metadata".as_slice()];
     let durations = [1_000_u32];
-    mov_with_sample_entry(*b"urim", 1, &uri_metadata_entry_extra(), &samples, &durations)
+    mov_with_sample_entry(
+        *b"urim",
+        1,
+        &uri_metadata_entry_extra(),
+        &samples,
+        &durations,
+    )
 }
 
 fn timed_text_entry_extra() -> Vec<u8> {
@@ -671,12 +691,7 @@ fn trak_v0(
     sample_sizes: &[u32],
     sample_durations: &[u32],
 ) -> Vec<u8> {
-    let stbl = stbl_box(
-        chunk_offset,
-        sample_entry,
-        sample_sizes,
-        sample_durations,
-    );
+    let stbl = stbl_box(chunk_offset, sample_entry, sample_sizes, sample_durations);
     let minf = box4(*b"minf", &stbl);
     let mdia = box4(*b"mdia", &[mdhd_v0(timescale, duration), minf].concat());
     box4(

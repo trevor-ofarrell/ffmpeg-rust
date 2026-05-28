@@ -675,15 +675,15 @@ mod tests {
                 "xv36be",
                 2,
                 1,
-                (8..20).collect::<Vec<_>>(),
-                12,
+                (8..24).collect::<Vec<_>>(),
+                16,
             ),
             (
                 PixelFormat::Xv48Le,
                 "xv48le",
                 1,
                 2,
-                (20..36).collect::<Vec<_>>(),
+                (24..40).collect::<Vec<_>>(),
                 8,
             ),
             (
@@ -691,7 +691,7 @@ mod tests {
                 "v30xbe",
                 2,
                 1,
-                (36..44).collect::<Vec<_>>(),
+                (40..48).collect::<Vec<_>>(),
                 8,
             ),
         ] {

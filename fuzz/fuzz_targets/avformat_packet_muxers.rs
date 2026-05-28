@@ -5,8 +5,8 @@ use avformat::{
     NullMuxer, StreamHashMuxer, StreamHashStreamType,
 };
 use avutil::{
-    adler32, crc32_ieee, md5, murmur3, ripemd128, ripemd160, ripemd256, ripemd320, sha1,
-    sha224, sha256, sha384, sha512, sha512_224, sha512_256, AvErrorKind, Packet, SideData,
+    adler32, crc32_ieee, md5, murmur3, ripemd128, ripemd160, ripemd256, ripemd320, sha1, sha224,
+    sha256, sha384, sha512, sha512_224, sha512_256, AvErrorKind, Packet, SideData,
 };
 use libfuzzer_sys::fuzz_target;
 
@@ -149,11 +149,12 @@ fn exercise_framecrc_muxer(packets: &[Packet]) {
         assert_eq!(record.duration(), packet.duration());
         assert_eq!(record.size(), packet.data().len());
         assert_eq!(record.checksum(), ffmpeg_framecrc_checksum(packet.data()));
-        assert!(record.line().starts_with(&format!("{},", packet.stream_index())));
-        assert!(record.line().contains(&format!(
-            ", {:>8}, 0x",
-            packet.data().len()
-        )));
+        assert!(record
+            .line()
+            .starts_with(&format!("{},", packet.stream_index())));
+        assert!(record
+            .line()
+            .contains(&format!(", {:>8}, 0x", packet.data().len())));
     }
 
     let before_finish = muxer.render();
@@ -204,10 +205,9 @@ fn exercise_framehash_muxers(packets: &[Packet]) {
             assert!(record
                 .line()
                 .starts_with(&format!("{},", packet.stream_index())));
-            assert!(record.line().contains(&format!(
-                ", {:>8}, ",
-                packet.data().len()
-            )));
+            assert!(record
+                .line()
+                .contains(&format!(", {:>8}, ", packet.data().len())));
             assert!(record
                 .line()
                 .contains(&digest_for(algorithm, packet.data()).hex()));

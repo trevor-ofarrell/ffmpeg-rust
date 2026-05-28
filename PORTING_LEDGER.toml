@@ -1859,8 +1859,9 @@ fuzz_targets = ["avutil_core_models"]
 # prefixing for both NULL and normalized AVClass contexts.
 # Latest update: pinned libavutil av_log_set_callback rows now prove custom
 # callbacks are dispatched even for messages above the configured av_log level,
-# bypass SKIP_REPEATED, and receive the raw level, formatted message text, NULL
-# item fallback, or AVClass item_name for bounded NULL/context calls.
+# bypass SKIP_REPEATED for repeated duplicate messages, and receive the raw
+# level, formatted message text, NULL item fallback, or AVClass item_name for
+# bounded NULL/context calls.
 # Latest FATE disposition: pinned FFmpeg 8.1.1 has a libavutil/tests/log
 # upstream test program, but tests/fate/libavutil.mak has no fate-log target.
 # The upstream mapping builds and runs libavutil/tests/log and records the

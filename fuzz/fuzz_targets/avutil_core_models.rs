@@ -2412,6 +2412,18 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
             record.message().to_owned(),
         ))
     });
+    for _ in 0..2 {
+        callback_logger.log_custom_callback(
+            LogRecord::new(LogLevel::Warning, "", "repeat"),
+            |record| {
+                raw_callback_seen.push((
+                    record.level(),
+                    record.target().to_owned(),
+                    record.message().to_owned(),
+                ))
+            },
+        );
+    }
     callback_logger.log_custom_callback(
         LogRecord::new(LogLevel::Warning, "rustctx", "ctx:3"),
         |record| {
@@ -2422,12 +2434,36 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
             ))
         },
     );
+    for _ in 0..2 {
+        callback_logger.log_custom_callback(
+            LogRecord::new(LogLevel::Warning, "rustctx", "ctxrepeat"),
+            |record| {
+                raw_callback_seen.push((
+                    record.level(),
+                    record.target().to_owned(),
+                    record.message().to_owned(),
+                ))
+            },
+        );
+    }
     assert_eq!(
         raw_callback_seen.as_slice(),
         &[
             (LogLevel::Info, String::new(), "hidden".to_owned()),
             (LogLevel::Error, String::new(), "raw:5\n".to_owned()),
+            (LogLevel::Warning, String::new(), "repeat".to_owned()),
+            (LogLevel::Warning, String::new(), "repeat".to_owned()),
             (LogLevel::Warning, "rustctx".to_owned(), "ctx:3".to_owned()),
+            (
+                LogLevel::Warning,
+                "rustctx".to_owned(),
+                "ctxrepeat".to_owned()
+            ),
+            (
+                LogLevel::Warning,
+                "rustctx".to_owned(),
+                "ctxrepeat".to_owned()
+            ),
         ]
     );
     callback_logger.clear();

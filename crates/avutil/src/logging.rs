@@ -2351,6 +2351,15 @@ mod tests {
                 record.message().to_owned(),
             ));
         });
+        for _ in 0..2 {
+            logger.log_custom_callback(LogRecord::new(LogLevel::Warning, "", "repeat"), |record| {
+                seen.push((
+                    record.level(),
+                    record.target().to_owned(),
+                    record.message().to_owned(),
+                ));
+            });
+        }
         logger.log_custom_callback(
             LogRecord::new(LogLevel::Warning, "rustctx", "ctx:3"),
             |record| {
@@ -2361,16 +2370,40 @@ mod tests {
                 ));
             },
         );
+        for _ in 0..2 {
+            logger.log_custom_callback(
+                LogRecord::new(LogLevel::Warning, "rustctx", "ctxrepeat"),
+                |record| {
+                    seen.push((
+                        record.level(),
+                        record.target().to_owned(),
+                        record.message().to_owned(),
+                    ));
+                },
+            );
+        }
 
         assert_eq!(
             seen,
             [
                 (LogLevel::Info, String::new(), "hidden".to_owned()),
                 (LogLevel::Error, String::new(), "raw:5\n".to_owned()),
+                (LogLevel::Warning, String::new(), "repeat".to_owned()),
+                (LogLevel::Warning, String::new(), "repeat".to_owned()),
                 (LogLevel::Warning, "rustctx".to_owned(), "ctx:3".to_owned()),
+                (
+                    LogLevel::Warning,
+                    "rustctx".to_owned(),
+                    "ctxrepeat".to_owned()
+                ),
+                (
+                    LogLevel::Warning,
+                    "rustctx".to_owned(),
+                    "ctxrepeat".to_owned()
+                ),
             ]
         );
-        assert_eq!(logger.records().len(), 3);
+        assert_eq!(logger.records().len(), 7);
     }
 
     #[test]

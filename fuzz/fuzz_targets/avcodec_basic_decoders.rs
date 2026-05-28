@@ -658,10 +658,10 @@ fn exercise_fixtures() {
                 | PixelFormat::V30xLe
                 | PixelFormat::V30xBe
         ) {
-                (1, 1)
-            } else {
-                (2, 2)
-            };
+            (1, 1)
+        } else {
+            (2, 2)
+        };
         let decoder = RawVideoDecoder::new(width, height, format).unwrap();
         assert!(decoder
             .decode_packet(&Packet::new(vec![0; valid_len], 0))
@@ -729,9 +729,7 @@ fn exercise_fixtures() {
     );
 
     let rgbaf32 = RawVideoDecoder::new(1, 1, PixelFormat::RgbaF32Be).unwrap();
-    assert!(rgbaf32
-        .decode_packet(&Packet::new(vec![0; 16], 0))
-        .is_ok());
+    assert!(rgbaf32.decode_packet(&Packet::new(vec![0; 16], 0)).is_ok());
     assert_eq!(
         rgbaf32
             .decode_packet(&Packet::new(vec![0; 15], 0))
@@ -741,9 +739,7 @@ fn exercise_fixtures() {
     );
 
     let rgba128 = RawVideoDecoder::new(1, 1, PixelFormat::Rgba128Be).unwrap();
-    assert!(rgba128
-        .decode_packet(&Packet::new(vec![0; 16], 0))
-        .is_ok());
+    assert!(rgba128.decode_packet(&Packet::new(vec![0; 16], 0)).is_ok());
     assert_eq!(
         rgba128
             .decode_packet(&Packet::new(vec![0; 15], 0))
@@ -772,9 +768,7 @@ fn exercise_fixtures() {
     );
 
     let yuva420 = RawVideoDecoder::new(4, 2, PixelFormat::Yuva420p).unwrap();
-    assert!(yuva420
-        .decode_packet(&Packet::new(vec![0; 20], 0))
-        .is_ok());
+    assert!(yuva420.decode_packet(&Packet::new(vec![0; 20], 0)).is_ok());
     assert_eq!(
         yuva420
             .decode_packet(&Packet::new(vec![0; 19], 0))
@@ -824,9 +818,7 @@ fn exercise_fixtures() {
     );
 
     let yuv420p9 = RawVideoDecoder::new(4, 2, PixelFormat::Yuv420p9Le).unwrap();
-    assert!(yuv420p9
-        .decode_packet(&Packet::new(vec![0; 24], 0))
-        .is_ok());
+    assert!(yuv420p9.decode_packet(&Packet::new(vec![0; 24], 0)).is_ok());
     assert_eq!(
         yuv420p9
             .decode_packet(&Packet::new(vec![0; 23], 0))

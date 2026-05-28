@@ -224,13 +224,8 @@ fn exercise_fixtures() {
     raw.write_packet(&Packet::new(vec![0, 1, 2, 3], 0)).unwrap();
     assert_eq!(raw.finish(), vec![0, 1, 2, 3]);
 
-    let mut raw_gray16 = RawVideoMuxer::new(
-        2,
-        1,
-        PixelFormat::Gray16Be,
-        Rational::new(24, 1).unwrap(),
-    )
-    .unwrap();
+    let mut raw_gray16 =
+        RawVideoMuxer::new(2, 1, PixelFormat::Gray16Be, Rational::new(24, 1).unwrap()).unwrap();
     raw_gray16
         .write_packet(&Packet::new((0..4).collect(), 0))
         .unwrap();
@@ -279,13 +274,8 @@ fn exercise_fixtures() {
         assert!(raw_bayer_demuxer.read_packet().unwrap().is_none());
     }
 
-    let mut raw_gray10 = RawVideoMuxer::new(
-        2,
-        1,
-        PixelFormat::Gray10Le,
-        Rational::new(24, 1).unwrap(),
-    )
-    .unwrap();
+    let mut raw_gray10 =
+        RawVideoMuxer::new(2, 1, PixelFormat::Gray10Le, Rational::new(24, 1).unwrap()).unwrap();
     raw_gray10
         .write_packet(&Packet::new((0..4).collect(), 0))
         .unwrap();
@@ -304,13 +294,8 @@ fn exercise_fixtures() {
     );
     assert!(raw_gray10_demuxer.read_packet().unwrap().is_none());
 
-    let mut raw_gray32 = RawVideoMuxer::new(
-        2,
-        1,
-        PixelFormat::Gray32Be,
-        Rational::new(24, 1).unwrap(),
-    )
-    .unwrap();
+    let mut raw_gray32 =
+        RawVideoMuxer::new(2, 1, PixelFormat::Gray32Be, Rational::new(24, 1).unwrap()).unwrap();
     raw_gray32
         .write_packet(&Packet::new((0..8).collect(), 0))
         .unwrap();
@@ -329,13 +314,8 @@ fn exercise_fixtures() {
     );
     assert!(raw_gray32_demuxer.read_packet().unwrap().is_none());
 
-    let mut raw_grayf16 = RawVideoMuxer::new(
-        2,
-        1,
-        PixelFormat::GrayF16Le,
-        Rational::new(24, 1).unwrap(),
-    )
-    .unwrap();
+    let mut raw_grayf16 =
+        RawVideoMuxer::new(2, 1, PixelFormat::GrayF16Le, Rational::new(24, 1).unwrap()).unwrap();
     raw_grayf16
         .write_packet(&Packet::new((0..4).collect(), 0))
         .unwrap();
@@ -354,13 +334,8 @@ fn exercise_fixtures() {
     );
     assert!(raw_grayf16_demuxer.read_packet().unwrap().is_none());
 
-    let mut raw_grayf32 = RawVideoMuxer::new(
-        2,
-        1,
-        PixelFormat::GrayF32Be,
-        Rational::new(24, 1).unwrap(),
-    )
-    .unwrap();
+    let mut raw_grayf32 =
+        RawVideoMuxer::new(2, 1, PixelFormat::GrayF32Be, Rational::new(24, 1).unwrap()).unwrap();
     raw_grayf32
         .write_packet(&Packet::new((0..8).collect(), 0))
         .unwrap();
@@ -385,7 +360,9 @@ fn exercise_fixtures() {
     ] {
         let mut raw_yaf =
             RawVideoMuxer::new(width, height, format, Rational::new(24, 1).unwrap()).unwrap();
-        raw_yaf.write_packet(&Packet::new(payload.clone(), 0)).unwrap();
+        raw_yaf
+            .write_packet(&Packet::new(payload.clone(), 0))
+            .unwrap();
         let raw_yaf_output = raw_yaf.finish();
         let mut raw_yaf_demuxer = RawVideoDemuxer::open(
             &raw_yaf_output,
@@ -489,10 +466,7 @@ fn exercise_fixtures() {
             .data(),
         &(0..12).collect::<Vec<_>>()
     );
-    assert!(raw_gbrp10_msb_demuxer
-        .read_packet()
-        .unwrap()
-        .is_none());
+    assert!(raw_gbrp10_msb_demuxer.read_packet().unwrap().is_none());
 
     let mut raw_gbrp12 =
         RawVideoMuxer::new(2, 1, PixelFormat::Gbrp12Le, Rational::new(24, 1).unwrap()).unwrap();
@@ -1071,20 +1045,14 @@ fn exercise_fixtures() {
         (PixelFormat::V30xLe, (128..132).collect::<Vec<_>>()),
         (PixelFormat::V30xBe, (132..136).collect::<Vec<_>>()),
     ] {
-        let mut raw_xv =
-            RawVideoMuxer::new(1, 1, format, Rational::new(24, 1).unwrap()).unwrap();
+        let mut raw_xv = RawVideoMuxer::new(1, 1, format, Rational::new(24, 1).unwrap()).unwrap();
         raw_xv
             .write_packet(&Packet::new(payload.clone(), 0))
             .unwrap();
         let raw_xv_output = raw_xv.finish();
-        let mut raw_xv_demuxer = RawVideoDemuxer::open(
-            &raw_xv_output,
-            1,
-            1,
-            format,
-            Rational::new(24, 1).unwrap(),
-        )
-        .unwrap();
+        let mut raw_xv_demuxer =
+            RawVideoDemuxer::open(&raw_xv_output, 1, 1, format, Rational::new(24, 1).unwrap())
+                .unwrap();
         assert_eq!(
             raw_xv_demuxer.read_packet().unwrap().unwrap().data(),
             payload.as_slice()
@@ -1281,8 +1249,13 @@ fn exercise_fixtures() {
     );
     assert!(raw_yuva420_demuxer.read_packet().unwrap().is_none());
 
-    let mut raw_yuva420p9 =
-        RawVideoMuxer::new(4, 2, PixelFormat::Yuva420p9Le, Rational::new(25, 1).unwrap()).unwrap();
+    let mut raw_yuva420p9 = RawVideoMuxer::new(
+        4,
+        2,
+        PixelFormat::Yuva420p9Le,
+        Rational::new(25, 1).unwrap(),
+    )
+    .unwrap();
     raw_yuva420p9
         .write_packet(&Packet::new((0..40).collect(), 0))
         .unwrap();
@@ -1296,50 +1269,23 @@ fn exercise_fixtures() {
     )
     .unwrap();
     assert_eq!(
-        raw_yuva420p9_demuxer
-            .read_packet()
-            .unwrap()
-            .unwrap()
-            .data(),
+        raw_yuva420p9_demuxer.read_packet().unwrap().unwrap().data(),
         &(0..40).collect::<Vec<_>>()
     );
     assert!(raw_yuva420p9_demuxer.read_packet().unwrap().is_none());
 
     for (format, width, height, payload) in [
-        (
-            PixelFormat::YuvJ420p,
-            4,
-            2,
-            (0..12).collect::<Vec<_>>(),
-        ),
-        (
-            PixelFormat::YuvJ422p,
-            4,
-            3,
-            (0..24).collect::<Vec<_>>(),
-        ),
-        (
-            PixelFormat::YuvJ411p,
-            4,
-            3,
-            (0..18).collect::<Vec<_>>(),
-        ),
-        (
-            PixelFormat::YuvJ440p,
-            3,
-            2,
-            (0..12).collect::<Vec<_>>(),
-        ),
-        (
-            PixelFormat::YuvJ444p,
-            3,
-            2,
-            (0..18).collect::<Vec<_>>(),
-        ),
+        (PixelFormat::YuvJ420p, 4, 2, (0..12).collect::<Vec<_>>()),
+        (PixelFormat::YuvJ422p, 4, 3, (0..24).collect::<Vec<_>>()),
+        (PixelFormat::YuvJ411p, 4, 3, (0..18).collect::<Vec<_>>()),
+        (PixelFormat::YuvJ440p, 3, 2, (0..12).collect::<Vec<_>>()),
+        (PixelFormat::YuvJ444p, 3, 2, (0..18).collect::<Vec<_>>()),
     ] {
         let mut raw_yuvj =
             RawVideoMuxer::new(width, height, format, Rational::new(25, 1).unwrap()).unwrap();
-        raw_yuvj.write_packet(&Packet::new(payload.clone(), 0)).unwrap();
+        raw_yuvj
+            .write_packet(&Packet::new(payload.clone(), 0))
+            .unwrap();
         let raw_yuvj_output = raw_yuvj.finish();
         let mut raw_yuvj_demuxer = RawVideoDemuxer::open(
             &raw_yuvj_output,
@@ -1357,54 +1303,14 @@ fn exercise_fixtures() {
     }
 
     for (format, width, height, payload) in [
-        (
-            PixelFormat::Yuv420p9Le,
-            4,
-            2,
-            (0..24).collect::<Vec<_>>(),
-        ),
-        (
-            PixelFormat::Yuv422p9Be,
-            4,
-            3,
-            (0..48).collect::<Vec<_>>(),
-        ),
-        (
-            PixelFormat::Yuv444p9Be,
-            3,
-            2,
-            (0..36).collect::<Vec<_>>(),
-        ),
-        (
-            PixelFormat::Yuv420p10Le,
-            4,
-            2,
-            (0..24).collect::<Vec<_>>(),
-        ),
-        (
-            PixelFormat::Yuv440p10Le,
-            3,
-            2,
-            (0..24).collect::<Vec<_>>(),
-        ),
-        (
-            PixelFormat::Yuv422p12Be,
-            4,
-            3,
-            (0..48).collect::<Vec<_>>(),
-        ),
-        (
-            PixelFormat::Yuv440p12Be,
-            3,
-            2,
-            (0..24).collect::<Vec<_>>(),
-        ),
-        (
-            PixelFormat::Yuv444p10Be,
-            3,
-            2,
-            (0..36).collect::<Vec<_>>(),
-        ),
+        (PixelFormat::Yuv420p9Le, 4, 2, (0..24).collect::<Vec<_>>()),
+        (PixelFormat::Yuv422p9Be, 4, 3, (0..48).collect::<Vec<_>>()),
+        (PixelFormat::Yuv444p9Be, 3, 2, (0..36).collect::<Vec<_>>()),
+        (PixelFormat::Yuv420p10Le, 4, 2, (0..24).collect::<Vec<_>>()),
+        (PixelFormat::Yuv440p10Le, 3, 2, (0..24).collect::<Vec<_>>()),
+        (PixelFormat::Yuv422p12Be, 4, 3, (0..48).collect::<Vec<_>>()),
+        (PixelFormat::Yuv440p12Be, 3, 2, (0..24).collect::<Vec<_>>()),
+        (PixelFormat::Yuv444p10Be, 3, 2, (0..36).collect::<Vec<_>>()),
         (
             PixelFormat::Yuv444p10MsbLe,
             3,
@@ -1417,28 +1323,15 @@ fn exercise_fixtures() {
             2,
             (0..36).collect::<Vec<_>>(),
         ),
-        (
-            PixelFormat::Yuv420p14Le,
-            4,
-            2,
-            (0..24).collect::<Vec<_>>(),
-        ),
-        (
-            PixelFormat::Yuv422p16Be,
-            4,
-            3,
-            (0..48).collect::<Vec<_>>(),
-        ),
-        (
-            PixelFormat::Yuv444p16Be,
-            3,
-            2,
-            (0..36).collect::<Vec<_>>(),
-        ),
+        (PixelFormat::Yuv420p14Le, 4, 2, (0..24).collect::<Vec<_>>()),
+        (PixelFormat::Yuv422p16Be, 4, 3, (0..48).collect::<Vec<_>>()),
+        (PixelFormat::Yuv444p16Be, 3, 2, (0..36).collect::<Vec<_>>()),
     ] {
         let mut raw_yuv =
             RawVideoMuxer::new(width, height, format, Rational::new(25, 1).unwrap()).unwrap();
-        raw_yuv.write_packet(&Packet::new(payload.clone(), 0)).unwrap();
+        raw_yuv
+            .write_packet(&Packet::new(payload.clone(), 0))
+            .unwrap();
         let raw_yuv_output = raw_yuv.finish();
         let mut raw_yuv_demuxer = RawVideoDemuxer::open(
             &raw_yuv_output,
@@ -1478,7 +1371,11 @@ fn exercise_fixtures() {
         )
         .unwrap();
         assert_eq!(
-            raw_packed_yuv_demuxer.read_packet().unwrap().unwrap().data(),
+            raw_packed_yuv_demuxer
+                .read_packet()
+                .unwrap()
+                .unwrap()
+                .data(),
             payload.as_slice()
         );
         assert!(raw_packed_yuv_demuxer.read_packet().unwrap().is_none());
