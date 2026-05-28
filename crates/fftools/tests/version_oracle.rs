@@ -4,7 +4,7 @@ use fftools::{
 };
 use std::{
     collections::BTreeMap,
-    env,
+    env, fs,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -71,6 +71,76 @@ fn loglevel_directive_acceptance_matches_oracle_for_version_requests() {
     for value in rejected {
         compare_loglevel_acceptance(value, false);
     }
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn ffmpeg_repeated_diagnostics_match_default_repeat_summary_shape() {
+    let input_pattern = invalid_jpeg_sequence_pattern();
+    let input_pattern = input_pattern.to_string_lossy().into_owned();
+    let oracle = oracle_tool("ffmpeg");
+
+    let default_output = run_oracle(
+        &oracle,
+        "ffmpeg",
+        &[
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-framerate",
+            "1",
+            "-i",
+            &input_pattern,
+            "-f",
+            "null",
+            "-",
+        ],
+    );
+    let default_stderr = normalize_newlines(&default_output.stderr);
+    assert!(
+        !default_output.status_success,
+        "invalid MJPEG sequence should fail, got stdout:\n{}\nstderr:\n{}",
+        default_output.stdout, default_output.stderr
+    );
+    assert!(
+        default_stderr.contains("\n    Last message repeated 1 times\n"),
+        "default FFmpeg stderr should include an indented repeat summary, got:\n{default_stderr}"
+    );
+    assert!(
+        !default_stderr.contains("\nLast message repeated"),
+        "default FFmpeg stderr should not emit an unindented repeat summary, got:\n{default_stderr}"
+    );
+
+    let repeat_output = run_oracle(
+        &oracle,
+        "ffmpeg",
+        &[
+            "-hide_banner",
+            "-loglevel",
+            "repeat+error",
+            "-framerate",
+            "1",
+            "-i",
+            &input_pattern,
+            "-f",
+            "null",
+            "-",
+        ],
+    );
+    let repeat_stderr = normalize_newlines(&repeat_output.stderr);
+    assert!(
+        !repeat_output.status_success,
+        "invalid MJPEG sequence with repeat+error should fail, got stdout:\n{}\nstderr:\n{}",
+        repeat_output.stdout, repeat_output.stderr
+    );
+    assert!(
+        !repeat_stderr.contains("Last message repeated"),
+        "repeat+error should print duplicate diagnostics instead of a summary, got:\n{repeat_stderr}"
+    );
+    assert!(
+        repeat_stderr.matches("No JPEG data found in image").count() >= 2,
+        "repeat+error should preserve duplicate decoder diagnostics, got:\n{repeat_stderr}"
+    );
 }
 
 #[test]
@@ -317,6 +387,34 @@ fn run_oracle(path: &Path, tool_name: &str, args: &[&str]) -> OracleOutput {
 
 fn strings(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| value.to_string()).collect()
+}
+
+fn invalid_jpeg_sequence_pattern() -> PathBuf {
+    let dir = repository_root()
+        .join("target/oracle/fftools-cli-repeat-diagnostics")
+        .join(std::process::id().to_string());
+    fs::create_dir_all(&dir).unwrap_or_else(|err| {
+        panic!(
+            "create invalid MJPEG sequence oracle directory `{}`: {err}",
+            dir.display()
+        )
+    });
+
+    for index in 1..=2 {
+        let path = dir.join(format!("img{index:03}.jpg"));
+        fs::write(&path, [0_u8, 1, 2, 3, 4, 5, 6, 7, 8, 9]).unwrap_or_else(|err| {
+            panic!(
+                "write invalid MJPEG sequence file `{}`: {err}",
+                path.display()
+            )
+        });
+    }
+
+    dir.join("img%03d.jpg")
+}
+
+fn normalize_newlines(value: &str) -> String {
+    value.replace("\r\n", "\n")
 }
 
 fn parse_library_versions(stdout: &str) -> BTreeMap<String, String> {

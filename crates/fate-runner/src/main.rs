@@ -448,7 +448,7 @@ const PATH_RULES: &[PathRule] = &[
     },
     PathRule {
         path: "crates/fftools/tests/version_oracle.rs",
-        exact_ids: &["fftools-version"],
+        exact_ids: &["avutil-logging", "fftools-version", "fftools-option-parser"],
         id_prefixes: &[],
     },
     PathRule {
@@ -1997,12 +1997,20 @@ mod tests {
 
     #[test]
     fn changed_selection_maps_version_oracle_test_to_component() {
-        let component_ids = component_ids_from_ledger(&ledger(&["fftools-version"]));
+        let component_ids = component_ids_from_ledger(&ledger(&[
+            "avutil-logging",
+            "fftools-version",
+            "fftools-option-parser",
+        ]));
         let paths = vec!["crates/fftools/tests/version_oracle.rs".to_string()];
 
         assert_eq!(
             changed_components(&component_ids, &paths),
-            vec!["fftools-version".to_string()]
+            vec![
+                "avutil-logging".to_string(),
+                "fftools-version".to_string(),
+                "fftools-option-parser".to_string()
+            ]
         );
     }
 
