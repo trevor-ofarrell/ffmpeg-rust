@@ -159,6 +159,8 @@ The newest default-callback threshold rows prove `AV_LOG_INFO` is suppressed at 
 
 The newest raw-flag rows prove `av_log_set_flags()` stores raw flag integers without truncating unknown bits: isolated unknown bits, mixed known/unknown bits, and raw `-1` round-trip through `av_log_get_flags()`.
 
+The newest raw-level rows prove `av_log_set_level()` stores arbitrary integers, including `-1`, `23`, and `57`, and that default-callback threshold filtering uses raw integer comparison for levels between named constants.
+
 ```sh
 cargo test -p avutil --test logging_oracle -- --ignored
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-logging --target oracle-libavutil-logging --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg

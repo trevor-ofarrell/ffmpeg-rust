@@ -1068,7 +1068,7 @@ struct EmitResult {
 
 #[derive(Debug, Clone)]
 pub struct Logger {
-    level: LogLevel,
+    level: i32,
     flags: LogFlags,
     records: Vec<LogRecord>,
     repeated: Option<RepeatedLogState>,
@@ -1087,8 +1087,12 @@ impl Logger {
     }
 
     pub fn new_with_flags(level: LogLevel, flags: LogFlags) -> Self {
+        Self::new_with_raw_level(level.as_ffmpeg_value(), flags)
+    }
+
+    pub fn new_with_raw_level(raw_level: i32, flags: LogFlags) -> Self {
         Self {
-            level,
+            level: raw_level,
             flags,
             records: Vec::new(),
             repeated: None,
@@ -1097,11 +1101,23 @@ impl Logger {
     }
 
     pub fn level(&self) -> LogLevel {
+        LogLevel::from_ffmpeg_value(self.level).unwrap_or(LogLevel::Trace)
+    }
+
+    pub fn known_level(&self) -> Option<LogLevel> {
+        LogLevel::from_ffmpeg_value(self.level)
+    }
+
+    pub fn raw_level(&self) -> i32 {
         self.level
     }
 
     pub fn set_level(&mut self, level: LogLevel) {
-        self.level = level;
+        self.set_raw_level(level.as_ffmpeg_value());
+    }
+
+    pub fn set_raw_level(&mut self, raw_level: i32) {
+        self.level = raw_level;
     }
 
     pub fn flags(&self) -> LogFlags {
@@ -1123,7 +1139,7 @@ impl Logger {
     }
 
     pub fn enabled(&self, level: LogLevel) -> bool {
-        level <= self.level
+        level.as_ffmpeg_value() <= self.level
     }
 
     pub fn set_callback<F>(&mut self, callback: F)
@@ -1300,8 +1316,20 @@ pub fn global_log_level() -> LogLevel {
     global_logger().lock().unwrap().level()
 }
 
+pub fn global_known_log_level() -> Option<LogLevel> {
+    global_logger().lock().unwrap().known_level()
+}
+
+pub fn global_raw_log_level() -> i32 {
+    global_logger().lock().unwrap().raw_level()
+}
+
 pub fn set_global_log_level(level: LogLevel) {
     global_logger().lock().unwrap().set_level(level);
+}
+
+pub fn set_global_raw_log_level(raw_level: i32) {
+    global_logger().lock().unwrap().set_raw_level(raw_level);
 }
 
 pub fn global_log_flags() -> LogFlags {
@@ -1397,6 +1425,36 @@ mod tests {
 
         assert_eq!(logger.records().len(), 1);
         assert_eq!(logger.records()[0].message(), "kept");
+    }
+
+    #[test]
+    fn raw_level_thresholds_match_ffmpeg_integer_filtering() {
+        let mut logger = Logger::new_with_raw_level(23, LogFlags::PRINT_LEVEL);
+
+        assert_eq!(logger.raw_level(), 23);
+        assert_eq!(logger.known_level(), None);
+        assert!(logger.enabled(LogLevel::Error));
+        assert!(!logger.enabled(LogLevel::Warning));
+        assert!(logger.log(LogRecord::new(LogLevel::Error, "ffmpeg", "raw shown\n")));
+        assert!(!logger.log(LogRecord::new(LogLevel::Warning, "ffmpeg", "raw hidden\n")));
+        assert_eq!(logger.records().len(), 1);
+        assert_eq!(
+            logger.records()[0]
+                .format_default_callback_line_null_context_with_flags(LogFlags::PRINT_LEVEL),
+            "[error] raw shown\n"
+        );
+
+        logger.set_raw_level(-1);
+        assert_eq!(logger.raw_level(), -1);
+        assert!(logger.enabled(LogLevel::Quiet));
+        assert!(!logger.enabled(LogLevel::Panic));
+        assert!(logger.log(LogRecord::new(LogLevel::Quiet, "ffmpeg", "quiet\n")));
+        assert!(!logger.log(LogRecord::new(LogLevel::Panic, "ffmpeg", "panic hidden\n")));
+
+        logger.set_level(LogLevel::Warning);
+        assert_eq!(logger.raw_level(), LogLevel::Warning.as_ffmpeg_value());
+        assert_eq!(logger.known_level(), Some(LogLevel::Warning));
+        assert_eq!(logger.level(), LogLevel::Warning);
     }
 
     #[test]

@@ -23,6 +23,8 @@ This repository is a Rust workspace for a compatibility-oriented FFmpeg 8.1.1 re
 
 `LogFlags` preserves the raw integer stored by FFmpeg's `av_log_set_flags()` rather than truncating unknown bits. Known-bit helpers still drive formatting decisions for `AV_LOG_SKIP_REPEATED`, `AV_LOG_PRINT_LEVEL`, `AV_LOG_PRINT_TIME`, and `AV_LOG_PRINT_DATETIME`, while `from_bits_truncate` remains available for call sites that intentionally want the known-mask subset.
 
+`Logger` stores its threshold as the raw integer used by `av_log_set_level()` so non-enum thresholds retain exact `av_log_get_level()` state and filter records by FFmpeg's integer comparison. `known_level()` exposes named thresholds while `raw_level()` preserves arbitrary values.
+
 `OptionSet::query_avoption_ranges` exposes the current bounded root-object `av_opt_query_ranges(..., flags=0)` shape through `AvOptionRanges`, keeping it separate from the older ergonomic typed `OptionRange` helper.
 
 `OptionSet::get_avoption_string_with_flags` and `OptionSet::set_avoption_from_str_with_flags` expose the current bounded `av_opt_get`/`av_opt_set` direct-child search shape: `AV_OPT_SEARCH_CHILDREN` searches direct child option sets before the root, while `AV_OPT_SEARCH_FAKE_OBJ` remains a find-only/class-introspection path and is reported as not found for get/set. `OptionSearchFlags` also exposes `AV_OPT_ALLOW_NULL`; `OptionValue::NullString`, `OptionValue::NullBinary`, and `OptionValue::NullDictionary` model NULL storage for the three public nullable `av_opt_get` types, ordinary string getters return the FFmpeg-compatible empty string for that storage, and `get_avoption_string_nullable_with_flags` returns `None` only when `AV_OPT_ALLOW_NULL` is set for NULL storage.

@@ -1978,6 +1978,28 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     );
     assert_eq!(LogFlags::from_bits_retain(u32::MAX).bits() as i32, -1);
 
+    let raw_threshold = i32::from(cursor.next().unwrap_or_default()) - 32;
+    let mut raw_level_logger = Logger::new_with_raw_level(raw_threshold, LogFlags::PRINT_LEVEL);
+    assert_eq!(raw_level_logger.raw_level(), raw_threshold);
+    assert_eq!(
+        raw_level_logger.known_level(),
+        LogLevel::from_ffmpeg_value(raw_threshold)
+    );
+    assert_eq!(
+        raw_level_logger.enabled(LogLevel::Warning),
+        LogLevel::Warning.as_ffmpeg_value() <= raw_threshold
+    );
+    raw_level_logger.set_raw_level(23);
+    assert_eq!(raw_level_logger.raw_level(), 23);
+    assert!(raw_level_logger.enabled(LogLevel::Error));
+    assert!(!raw_level_logger.enabled(LogLevel::Warning));
+    raw_level_logger.set_level(LogLevel::Warning);
+    assert_eq!(
+        raw_level_logger.raw_level(),
+        LogLevel::Warning.as_ffmpeg_value()
+    );
+    assert_eq!(raw_level_logger.known_level(), Some(LogLevel::Warning));
+
     let mut logger = Logger::new_with_flags(LogLevel::Info, flags);
     let repeated = LogRecord::new(LogLevel::Warning, "decoder", "damaged packet");
     let repeat_count = usize::from(cursor.next().unwrap_or_default() % 5);

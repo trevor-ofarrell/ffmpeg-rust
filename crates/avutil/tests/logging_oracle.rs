@@ -163,6 +163,9 @@ fn expected_rows() -> BTreeMap<&'static str, i32> {
         ("set-level-verbose", LogLevel::Verbose.as_ffmpeg_value()),
         ("set-level-debug", LogLevel::Debug.as_ffmpeg_value()),
         ("set-level-trace", LogLevel::Trace.as_ffmpeg_value()),
+        ("set-level-raw-minus-one", -1),
+        ("set-level-raw-between-error-warning", 23),
+        ("set-level-raw-above-trace", 57),
         ("set-flags-empty", LogFlags::empty().bits() as i32),
         (
             "set-flags-skip-repeated",
@@ -474,6 +477,28 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
                 .format_default_callback_line_null_context_with_flags(LogFlags::PRINT_LEVEL)
                 .as_bytes(),
         ),
+    );
+    let mut raw_threshold_logger = Logger::new_with_raw_level(23, LogFlags::PRINT_LEVEL);
+    assert!(raw_threshold_logger.log(LogRecord::new(LogLevel::Error, "ignored", "raw shown\n")));
+    rows.insert(
+        "default-callback-filter-error-at-raw23-line",
+        escape_row_text(
+            raw_threshold_logger
+                .records()
+                .last()
+                .unwrap()
+                .format_default_callback_line_null_context_with_flags(LogFlags::PRINT_LEVEL)
+                .as_bytes(),
+        ),
+    );
+    assert!(!raw_threshold_logger.log(LogRecord::new(
+        LogLevel::Warning,
+        "ignored",
+        "raw hidden\n"
+    )));
+    rows.insert(
+        "default-callback-filter-warning-at-raw23-line",
+        String::new(),
     );
     let mut quiet_logger = Logger::new_with_flags(
         LogLevel::Quiet,
@@ -2099,6 +2124,12 @@ static void print_default_callback_rows(void) {
         "default-callback-filter-warning-at-warning-line", NULL,
         AV_LOG_WARNING, AV_LOG_WARNING, AV_LOG_PRINT_LEVEL, "shown");
     print_default_callback_threshold_row(
+        "default-callback-filter-error-at-raw23-line", NULL,
+        23, AV_LOG_ERROR, AV_LOG_PRINT_LEVEL, "raw shown");
+    print_default_callback_threshold_row(
+        "default-callback-filter-warning-at-raw23-line", NULL,
+        23, AV_LOG_WARNING, AV_LOG_PRINT_LEVEL, "raw hidden");
+    print_default_callback_threshold_row(
         "default-callback-quiet-at-quiet-line", NULL, AV_LOG_QUIET,
         AV_LOG_QUIET, AV_LOG_PRINT_TIME | AV_LOG_PRINT_LEVEL, "quiet");
     print_default_callback_threshold_row(
@@ -2328,6 +2359,9 @@ int main(int argc, char **argv) {
     print_level_after_set("set-level-verbose", AV_LOG_VERBOSE);
     print_level_after_set("set-level-debug", AV_LOG_DEBUG);
     print_level_after_set("set-level-trace", AV_LOG_TRACE);
+    print_level_after_set("set-level-raw-minus-one", -1);
+    print_level_after_set("set-level-raw-between-error-warning", 23);
+    print_level_after_set("set-level-raw-above-trace", 57);
 
     print_flags_after_set("set-flags-empty", 0);
     print_flags_after_set("set-flags-skip-repeated", AV_LOG_SKIP_REPEATED);

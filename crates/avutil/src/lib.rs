@@ -84,12 +84,13 @@ pub use hash::{
 };
 pub use logging::{
     clear_global_log_callback, clear_global_log_records, flush_global_log_repeated,
-    global_formatted_log_records, global_formatted_log_records_with_options, global_log,
-    global_log_flags, global_log_level, global_log_once, set_global_log_callback,
-    set_global_log_flag, set_global_log_flags, set_global_log_level, take_global_log_records,
-    AvLogContextPrefix, AvLogFormatLine, AvLogFormatLine2, DefaultCallbackColorState,
-    DefaultCallbackPrefixState, LogColorMode, LogFlags, LogFormatOptions, LogLevel, LogOnceState,
-    LogRecord, LogTimestamp, Logger, AV_LOG_FORCE_COLOR_ENV, AV_LOG_FORCE_NOCOLOR_ENV,
+    global_formatted_log_records, global_formatted_log_records_with_options,
+    global_known_log_level, global_log, global_log_flags, global_log_level, global_log_once,
+    global_raw_log_level, set_global_log_callback, set_global_log_flag, set_global_log_flags,
+    set_global_log_level, set_global_raw_log_level, take_global_log_records, AvLogContextPrefix,
+    AvLogFormatLine, AvLogFormatLine2, DefaultCallbackColorState, DefaultCallbackPrefixState,
+    LogColorMode, LogFlags, LogFormatOptions, LogLevel, LogOnceState, LogRecord, LogTimestamp,
+    Logger, AV_LOG_FORCE_COLOR_ENV, AV_LOG_FORCE_NOCOLOR_ENV,
 };
 pub use options::{
     AvOptionRangeEntry, AvOptionRanges, OptionArrayKind, OptionChild, OptionConstant,
