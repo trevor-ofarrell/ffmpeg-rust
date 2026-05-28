@@ -2433,6 +2433,20 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     assert!(!line2_prefix);
 
     line2_prefix = true;
+    let quiet_context_line2 = LogRecord::new(LogLevel::Quiet, "decoder", "quiet")
+        .format_av_log_line2_context(
+            &callback_context,
+            LogFlags::PRINT_LEVEL,
+            &mut line2_prefix,
+            128,
+        )
+        .unwrap();
+    assert_eq!(quiet_context_line2.bytes(), b"[rustctx @ <ptr>] quiet");
+    assert_eq!(quiet_context_line2.full_len(), 23);
+    assert!(!quiet_context_line2.truncated());
+    assert!(!line2_prefix);
+
+    line2_prefix = true;
     let line2_newline = LogRecord::new(LogLevel::Info, "ffmpeg", "withnl\n")
         .format_av_log_line2_null_context(LogFlags::PRINT_LEVEL, &mut line2_prefix, 8)
         .unwrap();
@@ -2509,6 +2523,13 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     assert!(!line.truncated());
     assert!(!line_prefix);
     line_prefix = true;
+    let quiet_line = LogRecord::new(LogLevel::Quiet, "decoder", "quiet")
+        .format_av_log_line_null_context(LogFlags::PRINT_LEVEL, &mut line_prefix, 128)
+        .unwrap();
+    assert_eq!(quiet_line.bytes(), b"quiet");
+    assert!(!quiet_line.truncated());
+    assert!(!line_prefix);
+    line_prefix = true;
     let small_line = LogRecord::new(LogLevel::Warning, "decoder", "plain")
         .format_av_log_line_null_context(LogFlags::PRINT_LEVEL, &mut line_prefix, 8)
         .unwrap();
@@ -2533,6 +2554,18 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
         .unwrap();
     assert_eq!(context_line.bytes(), b"[rustctx @ <ptr>] [warning] ctxmsg");
     assert!(!context_line.truncated());
+    assert!(!line_prefix);
+    line_prefix = true;
+    let quiet_context_line = LogRecord::new(LogLevel::Quiet, "decoder", "quiet")
+        .format_av_log_line_context(
+            &context_prefix,
+            LogFlags::PRINT_LEVEL,
+            &mut line_prefix,
+            128,
+        )
+        .unwrap();
+    assert_eq!(quiet_context_line.bytes(), b"[rustctx @ <ptr>] quiet");
+    assert!(!quiet_context_line.truncated());
     assert!(!line_prefix);
     line_prefix = true;
     let context_carriage_return_line = LogRecord::new(LogLevel::Info, "decoder", "withcr\r")

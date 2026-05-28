@@ -279,6 +279,13 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
         rust_format_line2(LogLevel::Warning, "plain", LogFlags::PRINT_LEVEL, true, 128);
     rows.insert("format-line2-level-line", escape_row_text(level.bytes()));
 
+    let (quiet_level, _) =
+        rust_format_line2(LogLevel::Quiet, "quiet", LogFlags::PRINT_LEVEL, true, 128);
+    rows.insert(
+        "format-line2-quiet-level-line",
+        escape_row_text(quiet_level.bytes()),
+    );
+
     let (no_prefix, _) =
         rust_format_line2(LogLevel::Error, "after", LogFlags::PRINT_LEVEL, false, 128);
     rows.insert(
@@ -323,6 +330,13 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
     rows.insert(
         "format-line2-context-level-line",
         escape_row_text(context_level.bytes()),
+    );
+
+    let (context_quiet_level, _) =
+        rust_format_line2_context(LogLevel::Quiet, "quiet", LogFlags::PRINT_LEVEL, true, 128);
+    rows.insert(
+        "format-line2-context-quiet-level-line",
+        escape_row_text(context_quiet_level.bytes()),
     );
 
     let (context_no_prefix, _) = rust_format_line2_context(
@@ -786,6 +800,13 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
     let (level, _) = rust_format_line(LogLevel::Warning, "plain", LogFlags::PRINT_LEVEL, true, 128);
     rows.insert("format-line-level-line", escape_row_text(level.bytes()));
 
+    let (quiet_level, _) =
+        rust_format_line(LogLevel::Quiet, "quiet", LogFlags::PRINT_LEVEL, true, 128);
+    rows.insert(
+        "format-line-quiet-level-line",
+        escape_row_text(quiet_level.bytes()),
+    );
+
     let (no_prefix, _) =
         rust_format_line(LogLevel::Error, "after", LogFlags::PRINT_LEVEL, false, 128);
     rows.insert(
@@ -820,6 +841,13 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
     rows.insert(
         "format-line-context-level-line",
         escape_row_text(context_level.bytes()),
+    );
+
+    let (context_quiet_level, _) =
+        rust_format_line_context(LogLevel::Quiet, "quiet", LogFlags::PRINT_LEVEL, true, 128);
+    rows.insert(
+        "format-line-context-quiet-level-line",
+        escape_row_text(context_quiet_level.bytes()),
     );
 
     let (context_no_prefix, _) = rust_format_line_context(
@@ -875,6 +903,21 @@ fn add_format_line2_int_rows(rows: &mut BTreeMap<&'static str, i32>) {
     rows.insert("format-line2-level-ret", usize_to_i32(level.full_len()));
     rows.insert("format-line2-level-prefix", bool_to_i32(level_prefix));
     rows.insert("format-line2-level-len", usize_to_i32(level.bytes().len()));
+
+    let (quiet_level, quiet_level_prefix) =
+        rust_format_line2(LogLevel::Quiet, "quiet", LogFlags::PRINT_LEVEL, true, 128);
+    rows.insert(
+        "format-line2-quiet-level-ret",
+        usize_to_i32(quiet_level.full_len()),
+    );
+    rows.insert(
+        "format-line2-quiet-level-prefix",
+        bool_to_i32(quiet_level_prefix),
+    );
+    rows.insert(
+        "format-line2-quiet-level-len",
+        usize_to_i32(quiet_level.bytes().len()),
+    );
 
     let (no_prefix, no_prefix_state) =
         rust_format_line2(LogLevel::Error, "after", LogFlags::PRINT_LEVEL, false, 128);
@@ -952,6 +995,13 @@ fn add_format_line2_int_rows(rows: &mut BTreeMap<&'static str, i32>) {
     rows.insert(
         "format-line2-context-level-prefix",
         bool_to_i32(context_level_prefix),
+    );
+
+    let (_, context_quiet_level_prefix) =
+        rust_format_line2_context(LogLevel::Quiet, "quiet", LogFlags::PRINT_LEVEL, true, 128);
+    rows.insert(
+        "format-line2-context-quiet-level-prefix",
+        bool_to_i32(context_quiet_level_prefix),
     );
 
     let (_, context_no_prefix_state) = rust_format_line2_context(
@@ -1050,6 +1100,17 @@ fn add_format_line_int_rows(rows: &mut BTreeMap<&'static str, i32>) {
     rows.insert("format-line-level-prefix", bool_to_i32(level_prefix));
     rows.insert("format-line-level-len", usize_to_i32(level.bytes().len()));
 
+    let (quiet_level, quiet_level_prefix) =
+        rust_format_line(LogLevel::Quiet, "quiet", LogFlags::PRINT_LEVEL, true, 128);
+    rows.insert(
+        "format-line-quiet-level-prefix",
+        bool_to_i32(quiet_level_prefix),
+    );
+    rows.insert(
+        "format-line-quiet-level-len",
+        usize_to_i32(quiet_level.bytes().len()),
+    );
+
     let (no_prefix, no_prefix_state) =
         rust_format_line(LogLevel::Error, "after", LogFlags::PRINT_LEVEL, false, 128);
     rows.insert("format-line-noprefix-prefix", bool_to_i32(no_prefix_state));
@@ -1097,6 +1158,13 @@ fn add_format_line_int_rows(rows: &mut BTreeMap<&'static str, i32>) {
     rows.insert(
         "format-line-context-level-prefix",
         bool_to_i32(context_level_prefix),
+    );
+
+    let (_, context_quiet_level_prefix) =
+        rust_format_line_context(LogLevel::Quiet, "quiet", LogFlags::PRINT_LEVEL, true, 128);
+    rows.insert(
+        "format-line-context-quiet-level-prefix",
+        bool_to_i32(context_quiet_level_prefix),
     );
 
     let (_, context_no_prefix_state) = rust_format_line_context(
@@ -1903,6 +1971,15 @@ static void print_format_line2_rows(void) {
     ROW_STR("format-line2-level-line", line);
 
     memset(line, 'X', sizeof(line));
+    print_prefix = 1;
+    ret = call_format_line2(NULL, line, sizeof(line), &print_prefix,
+                            AV_LOG_QUIET, "%s", "quiet");
+    ROW("format-line2-quiet-level-ret", ret);
+    ROW("format-line2-quiet-level-prefix", print_prefix);
+    ROW("format-line2-quiet-level-len", strlen(line));
+    ROW_STR("format-line2-quiet-level-line", line);
+
+    memset(line, 'X', sizeof(line));
     print_prefix = 0;
     ret = call_format_line2(NULL, line, sizeof(line), &print_prefix,
                             AV_LOG_ERROR, "%s", "after");
@@ -2006,6 +2083,14 @@ static void print_format_line2_rows(void) {
     ROW_STR_NORMALIZED_CONTEXT("format-line2-context-level-line", line);
 
     memset(line, 'X', sizeof(line));
+    print_prefix = 1;
+    ret = call_format_line2(&ctx, line, sizeof(line), &print_prefix,
+                            AV_LOG_QUIET, "%s", "quiet");
+    (void)ret;
+    ROW("format-line2-context-quiet-level-prefix", print_prefix);
+    ROW_STR_NORMALIZED_CONTEXT("format-line2-context-quiet-level-line", line);
+
+    memset(line, 'X', sizeof(line));
     print_prefix = 0;
     ret = call_format_line2(&ctx, line, sizeof(line), &print_prefix,
                             AV_LOG_WARNING, "%s", "nopfx");
@@ -2062,6 +2147,14 @@ static void print_format_line_rows(void) {
     ROW_STR("format-line-level-line", line);
 
     memset(line, 'X', sizeof(line));
+    print_prefix = 1;
+    call_format_line(NULL, line, sizeof(line), &print_prefix,
+                     AV_LOG_QUIET, "%s", "quiet");
+    ROW("format-line-quiet-level-prefix", print_prefix);
+    ROW("format-line-quiet-level-len", strlen(line));
+    ROW_STR("format-line-quiet-level-line", line);
+
+    memset(line, 'X', sizeof(line));
     print_prefix = 0;
     call_format_line(NULL, line, sizeof(line), &print_prefix,
                      AV_LOG_ERROR, "%s", "after");
@@ -2111,6 +2204,13 @@ static void print_format_line_rows(void) {
                      AV_LOG_WARNING, "%s", "ctxmsg");
     ROW("format-line-context-level-prefix", print_prefix);
     ROW_STR_NORMALIZED_CONTEXT("format-line-context-level-line", line);
+
+    memset(line, 'X', sizeof(line));
+    print_prefix = 1;
+    call_format_line(&ctx, line, sizeof(line), &print_prefix,
+                     AV_LOG_QUIET, "%s", "quiet");
+    ROW("format-line-context-quiet-level-prefix", print_prefix);
+    ROW_STR_NORMALIZED_CONTEXT("format-line-context-quiet-level-line", line);
 
     memset(line, 'X', sizeof(line));
     print_prefix = 0;

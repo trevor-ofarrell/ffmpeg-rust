@@ -2078,6 +2078,15 @@ mod tests {
         assert!(!leveled.truncated());
         assert!(!prefix);
 
+        prefix = true;
+        let quiet = LogRecord::new(LogLevel::Quiet, "decoder", "quiet")
+            .format_av_log_line2_context(&context, LogFlags::PRINT_LEVEL, &mut prefix, 128)
+            .unwrap();
+        assert_eq!(quiet.full_len(), 23);
+        assert_eq!(quiet.bytes(), b"[rustctx @ <ptr>] quiet");
+        assert!(!quiet.truncated());
+        assert!(!prefix);
+
         prefix = false;
         let no_prefix = LogRecord::new(LogLevel::Warning, "decoder", "nopfx")
             .format_av_log_line2_context(&context, LogFlags::PRINT_LEVEL, &mut prefix, 128)
@@ -2137,6 +2146,14 @@ mod tests {
         assert!(!leveled.truncated());
         assert!(!prefix);
 
+        prefix = true;
+        let quiet = LogRecord::new(LogLevel::Quiet, "decoder", "quiet")
+            .format_av_log_line_null_context(LogFlags::PRINT_LEVEL, &mut prefix, 128)
+            .unwrap();
+        assert_eq!(quiet.bytes(), b"quiet");
+        assert!(!quiet.truncated());
+        assert!(!prefix);
+
         prefix = false;
         let no_prefix = LogRecord::new(LogLevel::Error, "demuxer", "after")
             .format_av_log_line_null_context(LogFlags::PRINT_LEVEL, &mut prefix, 128)
@@ -2180,6 +2197,14 @@ mod tests {
             .unwrap();
         assert_eq!(context_line.bytes(), b"[rustctx @ <ptr>] [warning] ctxmsg");
         assert!(!context_line.truncated());
+        assert!(!prefix);
+
+        prefix = true;
+        let context_quiet = LogRecord::new(LogLevel::Quiet, "decoder", "quiet")
+            .format_av_log_line_context(&context, LogFlags::PRINT_LEVEL, &mut prefix, 128)
+            .unwrap();
+        assert_eq!(context_quiet.bytes(), b"[rustctx @ <ptr>] quiet");
+        assert!(!context_quiet.truncated());
         assert!(!prefix);
 
         prefix = true;
