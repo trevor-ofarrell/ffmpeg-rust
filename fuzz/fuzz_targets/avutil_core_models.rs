@@ -3290,110 +3290,22 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                 || descriptor_bpp_is_below_storage_lane
         );
     } else {
-        assert!(matches!(
+        let bit_packed_single_plane = matches!(
             pixel_format,
-            PixelFormat::Uyyvyy411
-                | PixelFormat::Yuv420p
-                | PixelFormat::YuvJ420p
-                | PixelFormat::Yuv422p
-                | PixelFormat::YuvJ422p
-                | PixelFormat::Yuv410p
-                | PixelFormat::Yuv411p
-                | PixelFormat::YuvJ411p
-                | PixelFormat::Yuv440p
-                | PixelFormat::YuvJ440p
-                | PixelFormat::Yuv444p
-                | PixelFormat::YuvJ444p
-                | PixelFormat::Yuva420p
-                | PixelFormat::Yuva422p
-                | PixelFormat::Yuva444p
-                | PixelFormat::Yuva420p9Le
-                | PixelFormat::Yuva420p9Be
-                | PixelFormat::Yuva422p9Le
-                | PixelFormat::Yuva422p9Be
-                | PixelFormat::Yuva444p9Le
-                | PixelFormat::Yuva444p9Be
-                | PixelFormat::Yuva420p10Le
-                | PixelFormat::Yuva420p10Be
-                | PixelFormat::Yuva422p10Le
-                | PixelFormat::Yuva422p10Be
-                | PixelFormat::Yuva444p10Le
-                | PixelFormat::Yuva444p10Be
-                | PixelFormat::Yuva422p12Le
-                | PixelFormat::Yuva422p12Be
-                | PixelFormat::Yuva444p12Le
-                | PixelFormat::Yuva444p12Be
-                | PixelFormat::Yuva420p16Le
-                | PixelFormat::Yuva420p16Be
-                | PixelFormat::Yuva422p16Le
-                | PixelFormat::Yuva422p16Be
-                | PixelFormat::Yuva444p16Le
-                | PixelFormat::Yuva444p16Be
-                | PixelFormat::Yuv440p10Le
-                | PixelFormat::Yuv440p10Be
-                | PixelFormat::Yuv440p12Le
-                | PixelFormat::Yuv440p12Be
-                | PixelFormat::Yuv420p9Le
-                | PixelFormat::Yuv420p9Be
-                | PixelFormat::Yuv422p9Le
-                | PixelFormat::Yuv422p9Be
-                | PixelFormat::Yuv444p9Le
-                | PixelFormat::Yuv444p9Be
-                | PixelFormat::Yuv420p10Le
-                | PixelFormat::Yuv420p10Be
-                | PixelFormat::Yuv422p10Le
-                | PixelFormat::Yuv422p10Be
-                | PixelFormat::Yuv444p10Le
-                | PixelFormat::Yuv444p10Be
-                | PixelFormat::Yuv420p12Le
-                | PixelFormat::Yuv420p12Be
-                | PixelFormat::Yuv422p12Le
-                | PixelFormat::Yuv422p12Be
-                | PixelFormat::Yuv444p12Le
-                | PixelFormat::Yuv444p12Be
-                | PixelFormat::Yuv420p14Le
-                | PixelFormat::Yuv420p14Be
-                | PixelFormat::Yuv422p14Le
-                | PixelFormat::Yuv422p14Be
-                | PixelFormat::Yuv444p14Le
-                | PixelFormat::Yuv444p14Be
-                | PixelFormat::Yuv420p16Le
-                | PixelFormat::Yuv420p16Be
-                | PixelFormat::Yuv422p16Le
-                | PixelFormat::Yuv422p16Be
-                | PixelFormat::Yuv444p16Le
-                | PixelFormat::Yuv444p16Be
-                | PixelFormat::Nv12
-                | PixelFormat::Nv21
-                | PixelFormat::Nv16
-                | PixelFormat::Nv20Le
-                | PixelFormat::Nv20Be
-                | PixelFormat::Nv24
-                | PixelFormat::Nv42
-                | PixelFormat::P010Le
-                | PixelFormat::P010Be
-                | PixelFormat::P012Le
-                | PixelFormat::P012Be
-                | PixelFormat::P016Le
-                | PixelFormat::P016Be
-                | PixelFormat::P210Le
-                | PixelFormat::P210Be
-                | PixelFormat::P212Le
-                | PixelFormat::P212Be
-                | PixelFormat::P216Le
-                | PixelFormat::P216Be
-                | PixelFormat::P410Le
-                | PixelFormat::P410Be
-                | PixelFormat::P412Le
-                | PixelFormat::P412Be
-                | PixelFormat::P416Le
-                | PixelFormat::P416Be
-                | PixelFormat::GbrpF16Le
-                | PixelFormat::GbrpF16Be
-                | PixelFormat::GbrpF32Le
-                | PixelFormat::GbrpF32Be
-        ));
-        assert_eq!(pixel_format.has_alpha(), is_yuva_pixel_format(pixel_format));
+            PixelFormat::MonoWhite
+                | PixelFormat::MonoBlack
+                | PixelFormat::Rgb4
+                | PixelFormat::Bgr4
+                | PixelFormat::Uyyvyy411
+        );
+        assert!(
+            pixel_format.is_planar() || bit_packed_single_plane,
+            "{pixel_format:?} has no fixed byte stride but is neither planar nor bit-packed"
+        );
+        assert_eq!(
+            pixel_format.has_alpha(),
+            is_yuva_pixel_format(pixel_format) || is_gbra_pixel_format(pixel_format)
+        );
     }
 
     let Ok(plane_sizes) = pixel_format.plane_sizes(width, height) else {
@@ -27075,6 +26987,27 @@ fn is_yuva_pixel_format(pixel_format: PixelFormat) -> bool {
             | PixelFormat::Yuva422p16Be
             | PixelFormat::Yuva444p16Le
             | PixelFormat::Yuva444p16Be
+    )
+}
+
+fn is_gbra_pixel_format(pixel_format: PixelFormat) -> bool {
+    matches!(
+        pixel_format,
+        PixelFormat::Gbrap
+            | PixelFormat::Gbrap10Le
+            | PixelFormat::Gbrap10Be
+            | PixelFormat::Gbrap12Le
+            | PixelFormat::Gbrap12Be
+            | PixelFormat::Gbrap14Le
+            | PixelFormat::Gbrap14Be
+            | PixelFormat::Gbrap16Le
+            | PixelFormat::Gbrap16Be
+            | PixelFormat::Gbrap32Le
+            | PixelFormat::Gbrap32Be
+            | PixelFormat::GbrapF16Le
+            | PixelFormat::GbrapF16Be
+            | PixelFormat::GbrapF32Le
+            | PixelFormat::GbrapF32Be
     )
 }
 
