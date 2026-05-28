@@ -874,7 +874,8 @@ impl LogRecord {
         } else {
             line.push_str(&self.message);
         }
-        let next_print_prefix = self.message.as_bytes().last().copied() == Some(b'\n');
+        let next_print_prefix =
+            matches!(self.message.as_bytes().last().copied(), Some(b'\n' | b'\r'));
         (line, next_print_prefix)
     }
 
@@ -1784,6 +1785,20 @@ mod tests {
         assert!(state.print_prefix());
 
         assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "progress\r")
+                .format_default_callback_line_null_context_with_state(flags, &mut state),
+            "[warning] progress\r"
+        );
+        assert!(state.print_prefix());
+
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "done\n")
+                .format_default_callback_line_null_context_with_state(flags, &mut state),
+            "[warning] done\n"
+        );
+        assert!(state.print_prefix());
+
+        assert_eq!(
             LogRecord::new(LogLevel::Warning, "ignored", "next\n")
                 .format_default_callback_line_null_context_with_state(flags, &mut state),
             "[warning] next\n"
@@ -1810,6 +1825,27 @@ mod tests {
                     &mut context_state
                 ),
             "tail\n"
+        );
+        assert!(context_state.print_prefix());
+
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "progress\r")
+                .format_default_callback_line_context_with_state(
+                    &context,
+                    flags,
+                    &mut context_state
+                ),
+            "[rustctx @ <ptr>] [warning] progress\r"
+        );
+        assert!(context_state.print_prefix());
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "done\n")
+                .format_default_callback_line_context_with_state(
+                    &context,
+                    flags,
+                    &mut context_state
+                ),
+            "[rustctx @ <ptr>] [warning] done\n"
         );
         assert!(context_state.print_prefix());
 

@@ -2297,6 +2297,24 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     );
     assert!(default_callback_prefix_state.print_prefix());
     assert_eq!(
+        LogRecord::new(LogLevel::Warning, "ignored", "progress\r")
+            .format_default_callback_line_null_context_with_state(
+                LogFlags::PRINT_LEVEL,
+                &mut default_callback_prefix_state
+            ),
+        "[warning] progress\r"
+    );
+    assert!(default_callback_prefix_state.print_prefix());
+    assert_eq!(
+        LogRecord::new(LogLevel::Warning, "ignored", "done\n")
+            .format_default_callback_line_null_context_with_state(
+                LogFlags::PRINT_LEVEL,
+                &mut default_callback_prefix_state
+            ),
+        "[warning] done\n"
+    );
+    assert!(default_callback_prefix_state.print_prefix());
+    assert_eq!(
         LogRecord::new(LogLevel::Warning, "ignored", "next\n")
             .format_default_callback_line_context_with_state(
                 &callback_context,
@@ -2305,6 +2323,27 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
             ),
         "[rustctx @ <ptr>] [warning] next\n"
     );
+    let mut context_carriage_prefix_state = DefaultCallbackPrefixState::new();
+    assert_eq!(
+        LogRecord::new(LogLevel::Warning, "ignored", "progress\r")
+            .format_default_callback_line_context_with_state(
+                &callback_context,
+                LogFlags::PRINT_LEVEL,
+                &mut context_carriage_prefix_state
+            ),
+        "[rustctx @ <ptr>] [warning] progress\r"
+    );
+    assert!(context_carriage_prefix_state.print_prefix());
+    assert_eq!(
+        LogRecord::new(LogLevel::Warning, "ignored", "done\n")
+            .format_default_callback_line_context_with_state(
+                &callback_context,
+                LogFlags::PRINT_LEVEL,
+                &mut context_carriage_prefix_state
+            ),
+        "[rustctx @ <ptr>] [warning] done\n"
+    );
+    assert!(context_carriage_prefix_state.print_prefix());
     let default_callback_color =
         LogFormatOptions::new(LogFlags::PRINT_LEVEL).with_color_mode(LogColorMode::Always);
     assert_eq!(

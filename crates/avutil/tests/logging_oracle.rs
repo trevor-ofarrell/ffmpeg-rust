@@ -589,6 +589,18 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
         "default-callback-prefix-continuation-context-level-line",
         escape_row_text(default_prefix_continuation_context_level.as_bytes()),
     );
+    let default_prefix_carriage_return_level =
+        rust_default_callback_prefix_carriage_return_lines(LogFlags::PRINT_LEVEL, None);
+    rows.insert(
+        "default-callback-prefix-carriage-return-level-line",
+        escape_row_text(default_prefix_carriage_return_level.as_bytes()),
+    );
+    let default_prefix_carriage_return_context_level =
+        rust_default_callback_prefix_carriage_return_lines(LogFlags::PRINT_LEVEL, Some(&context));
+    rows.insert(
+        "default-callback-prefix-carriage-return-context-level-line",
+        escape_row_text(default_prefix_carriage_return_context_level.as_bytes()),
+    );
     let default_color_warning =
         rust_default_callback_color_line(LogLevel::Warning, None, LogFlags::empty());
     rows.insert(
@@ -1189,6 +1201,26 @@ fn rust_default_callback_prefix_continuation_lines(
 ) -> String {
     let mut state = DefaultCallbackPrefixState::new();
     ["part", "tail\n", "next\n"]
+        .into_iter()
+        .map(|message| {
+            let record = LogRecord::new(LogLevel::Warning, "ignored", message);
+            match context {
+                Some(context) => record
+                    .format_default_callback_line_context_with_state(context, flags, &mut state),
+                None => {
+                    record.format_default_callback_line_null_context_with_state(flags, &mut state)
+                }
+            }
+        })
+        .collect()
+}
+
+fn rust_default_callback_prefix_carriage_return_lines(
+    flags: LogFlags,
+    context: Option<&AvLogContextPrefix>,
+) -> String {
+    let mut state = DefaultCallbackPrefixState::new();
+    ["progress\r", "done\n"]
         .into_iter()
         .map(|message| {
             let record = LogRecord::new(LogLevel::Warning, "ignored", message);
@@ -2221,6 +2253,44 @@ static void print_default_callback_prefix_continuation_row(const char *name,
     ROW_STR_NORMALIZED_DEFAULT_CALLBACK(name, captured);
 }
 
+static void print_default_callback_prefix_carriage_return_row(const char *name,
+                                                              void *ptr,
+                                                              int flags) {
+    char captured[2048];
+    FILE *capture = tmpfile();
+    if (!capture) {
+        ROW_STR(name, "<tmpfile-error>");
+        return;
+    }
+
+    fflush(stderr);
+    int saved_stderr = dup(fileno(stderr));
+    if (saved_stderr < 0 || dup2(fileno(capture), fileno(stderr)) < 0) {
+        if (saved_stderr >= 0)
+            close(saved_stderr);
+        fclose(capture);
+        ROW_STR(name, "<stderr-redirect-error>");
+        return;
+    }
+
+    av_log_set_callback(av_log_default_callback);
+    av_log_set_level(AV_LOG_TRACE);
+    av_log_set_flags(flags);
+    av_log(ptr, AV_LOG_WARNING, "%s", "progress\r");
+    av_log(ptr, AV_LOG_WARNING, "%s\n", "done");
+    fflush(stderr);
+
+    dup2(saved_stderr, fileno(stderr));
+    close(saved_stderr);
+
+    rewind(capture);
+    size_t len = fread(captured, 1, sizeof(captured) - 1, capture);
+    captured[len] = '\0';
+    fclose(capture);
+
+    ROW_STR_NORMALIZED_DEFAULT_CALLBACK(name, captured);
+}
+
 static void print_default_callback_rows(void) {
     setenv("AV_LOG_FORCE_NOCOLOR", "1", 1);
     TestLogContext ctx = { &test_log_class };
@@ -2294,6 +2364,12 @@ static void print_default_callback_rows(void) {
         AV_LOG_PRINT_LEVEL);
     print_default_callback_prefix_continuation_row(
         "default-callback-prefix-continuation-context-level-line", &ctx,
+        AV_LOG_PRINT_LEVEL);
+    print_default_callback_prefix_carriage_return_row(
+        "default-callback-prefix-carriage-return-level-line", NULL,
+        AV_LOG_PRINT_LEVEL);
+    print_default_callback_prefix_carriage_return_row(
+        "default-callback-prefix-carriage-return-context-level-line", &ctx,
         AV_LOG_PRINT_LEVEL);
 }
 
