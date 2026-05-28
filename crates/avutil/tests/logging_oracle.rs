@@ -763,6 +763,56 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
         "default-callback-no-force-tty-context-level-line",
         escape_row_text(default_no_force_tty_context.as_bytes()),
     );
+    let default_no_force_tty_term_256_context = rust_default_callback_no_force_tty_term_line(
+        Some(OsStr::new("xterm-256color")),
+        LogLevel::Warning,
+        Some(&context),
+        LogFlags::PRINT_LEVEL,
+    );
+    rows.insert(
+        "default-callback-no-force-tty-term-256color-context-warning-level-line",
+        escape_row_text(default_no_force_tty_term_256_context.as_bytes()),
+    );
+    let default_no_force_tty_term_256_error = rust_default_callback_no_force_tty_term_line(
+        Some(OsStr::new("xterm-256color")),
+        LogLevel::Error,
+        None,
+        LogFlags::PRINT_LEVEL,
+    );
+    rows.insert(
+        "default-callback-no-force-tty-term-256color-error-level-line",
+        escape_row_text(default_no_force_tty_term_256_error.as_bytes()),
+    );
+    let default_no_force_tty_term_256_fatal = rust_default_callback_no_force_tty_term_line(
+        Some(OsStr::new("xterm-256color")),
+        LogLevel::Fatal,
+        None,
+        LogFlags::PRINT_LEVEL,
+    );
+    rows.insert(
+        "default-callback-no-force-tty-term-256color-fatal-level-line",
+        escape_row_text(default_no_force_tty_term_256_fatal.as_bytes()),
+    );
+    let default_no_force_tty_term_256_panic = rust_default_callback_no_force_tty_term_line(
+        Some(OsStr::new("xterm-256color")),
+        LogLevel::Panic,
+        None,
+        LogFlags::PRINT_LEVEL,
+    );
+    rows.insert(
+        "default-callback-no-force-tty-term-256color-panic-level-line",
+        escape_row_text(default_no_force_tty_term_256_panic.as_bytes()),
+    );
+    let default_no_force_tty_term_256_info = rust_default_callback_no_force_tty_term_line(
+        Some(OsStr::new("xterm-256color")),
+        LogLevel::Info,
+        None,
+        LogFlags::empty(),
+    );
+    rows.insert(
+        "default-callback-no-force-tty-term-256color-info-line",
+        escape_row_text(default_no_force_tty_term_256_info.as_bytes()),
+    );
     let default_no_force_tty_term_unset = rust_default_callback_no_force_tty_term_line(
         None,
         LogLevel::Warning,
@@ -2935,6 +2985,21 @@ static void print_default_callback_no_force_tty_rows(void) {
     print_default_callback_tty_level_row(
         "default-callback-no-force-tty-context-level-line",
         &ctx, AV_LOG_WARNING, AV_LOG_PRINT_LEVEL, "plain");
+    print_default_callback_tty_level_row(
+        "default-callback-no-force-tty-term-256color-context-warning-level-line",
+        &ctx, AV_LOG_WARNING, AV_LOG_PRINT_LEVEL, "plain");
+    print_default_callback_tty_level_row(
+        "default-callback-no-force-tty-term-256color-error-level-line",
+        NULL, AV_LOG_ERROR, AV_LOG_PRINT_LEVEL, "plain");
+    print_default_callback_tty_level_row(
+        "default-callback-no-force-tty-term-256color-fatal-level-line",
+        NULL, AV_LOG_FATAL, AV_LOG_PRINT_LEVEL, "plain");
+    print_default_callback_tty_level_row(
+        "default-callback-no-force-tty-term-256color-panic-level-line",
+        NULL, AV_LOG_PANIC, AV_LOG_PRINT_LEVEL, "plain");
+    print_default_callback_tty_level_row(
+        "default-callback-no-force-tty-term-256color-info-line",
+        NULL, AV_LOG_INFO, 0, "plain");
 }
 
 static void print_default_callback_no_force_tty_term_unset_row(void) {

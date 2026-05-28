@@ -73,6 +73,7 @@ use avutil::{
 };
 use libfuzzer_sys::fuzz_target;
 use std::cmp::Ordering;
+use std::ffi::OsStr;
 use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, UNIX_EPOCH};
@@ -2655,9 +2656,34 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
         LogColorMode::from_ffmpeg_env_vars_stderr_and_term(
             |_| false,
             true,
-            Some(std::ffi::OsStr::new("xterm-256color")),
+            Some(OsStr::new("xterm-256color")),
         ),
         LogColorMode::Always
+    );
+    let mut term_256_color_state = DefaultCallbackColorState::new();
+    let term_256_options = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
+        .with_default_callback_color_state_and_resolver(&mut term_256_color_state, || {
+            LogColorMode::from_ffmpeg_env_vars_stderr_and_term(
+                |_| false,
+                true,
+                Some(OsStr::new("xterm-256color")),
+            )
+        });
+    assert_eq!(term_256_options.color_mode(), LogColorMode::Always);
+    assert_eq!(
+        LogRecord::new(LogLevel::Error, "ignored", "plain\n")
+            .format_default_callback_line_null_context_with_options(term_256_options),
+        "\x1b[48;5;0m\x1b[38;5;196m[error] \x1b[0m\x1b[48;5;0m\x1b[38;5;196mplain\n\x1b[0m"
+    );
+    assert_eq!(
+        LogRecord::new(LogLevel::Fatal, "ignored", "plain\n")
+            .format_default_callback_line_null_context_with_options(term_256_options),
+        "\x1b[48;5;0m\x1b[38;5;208m[fatal] \x1b[0m\x1b[48;5;0m\x1b[38;5;208mplain\n\x1b[0m"
+    );
+    assert_eq!(
+        LogRecord::new(LogLevel::Panic, "ignored", "plain\n")
+            .format_default_callback_line_null_context_with_options(term_256_options),
+        "\x1b[48;5;52m\x1b[38;5;196m[panic] \x1b[0m\x1b[48;5;52m\x1b[38;5;196mplain\n\x1b[0m"
     );
     assert_eq!(
         LogColorMode::from_ffmpeg_env_vars_stderr_and_term(|_| false, true, None),
@@ -2667,7 +2693,7 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
         LogColorMode::from_ffmpeg_env_vars_stderr_and_term(
             |_| false,
             true,
-            Some(std::ffi::OsStr::new("dumb")),
+            Some(OsStr::new("dumb")),
         ),
         LogColorMode::Basic
     );
@@ -2675,7 +2701,7 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
         LogColorMode::from_ffmpeg_env_vars_stderr_and_term(
             |_| false,
             true,
-            Some(std::ffi::OsStr::new("")),
+            Some(OsStr::new("")),
         ),
         LogColorMode::Basic
     );

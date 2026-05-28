@@ -2464,6 +2464,28 @@ mod tests {
             ),
             LogColorMode::Always
         );
+        let term_256_options = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
+            .with_ffmpeg_env_color_vars_stderr_and_term(
+                |_| false,
+                true,
+                Some(OsStr::new("xterm-256color")),
+            );
+        assert_eq!(term_256_options.color_mode(), LogColorMode::Always);
+        assert_eq!(
+            LogRecord::new(LogLevel::Error, "ignored", "plain\n")
+                .format_default_callback_line_null_context_with_options(term_256_options),
+            "\x1b[48;5;0m\x1b[38;5;196m[error] \x1b[0m\x1b[48;5;0m\x1b[38;5;196mplain\n\x1b[0m"
+        );
+        assert_eq!(
+            LogRecord::new(LogLevel::Fatal, "ignored", "plain\n")
+                .format_default_callback_line_null_context_with_options(term_256_options),
+            "\x1b[48;5;0m\x1b[38;5;208m[fatal] \x1b[0m\x1b[48;5;0m\x1b[38;5;208mplain\n\x1b[0m"
+        );
+        assert_eq!(
+            LogRecord::new(LogLevel::Panic, "ignored", "plain\n")
+                .format_default_callback_line_null_context_with_options(term_256_options),
+            "\x1b[48;5;52m\x1b[38;5;196m[panic] \x1b[0m\x1b[48;5;52m\x1b[38;5;196mplain\n\x1b[0m"
+        );
         assert_eq!(
             LogColorMode::from_ffmpeg_env_vars_stderr_and_term(|_| false, true, None),
             LogColorMode::Never
