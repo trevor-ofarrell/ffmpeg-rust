@@ -2143,6 +2143,33 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     assert_eq!(context_line2_newline.full_len(), 32);
     assert!(context_line2_newline.truncated());
     assert!(!line2_prefix);
+
+    let mut line_prefix = true;
+    let line = LogRecord::new(LogLevel::Warning, "decoder", "plain")
+        .format_av_log_line_null_context(LogFlags::PRINT_LEVEL, &mut line_prefix, 128)
+        .unwrap();
+    assert_eq!(line.bytes(), b"[warning] plain");
+    assert!(!line.truncated());
+    assert!(!line_prefix);
+    line_prefix = true;
+    let small_line = LogRecord::new(LogLevel::Warning, "decoder", "plain")
+        .format_av_log_line_null_context(LogFlags::PRINT_LEVEL, &mut line_prefix, 8)
+        .unwrap();
+    assert_eq!(small_line.bytes(), b"[warnin");
+    assert!(small_line.truncated());
+    assert!(!line_prefix);
+    line_prefix = true;
+    let context_line = LogRecord::new(LogLevel::Warning, "decoder", "ctxmsg")
+        .format_av_log_line_context(
+            &context_prefix,
+            LogFlags::PRINT_LEVEL,
+            &mut line_prefix,
+            128,
+        )
+        .unwrap();
+    assert_eq!(context_line.bytes(), b"[rustctx @ <ptr>] [warning] ctxmsg");
+    assert!(!context_line.truncated());
+    assert!(!line_prefix);
     assert_eq!(
         LogColorMode::from_ffmpeg_env_vars(|name| name == AV_LOG_FORCE_COLOR_ENV),
         LogColorMode::Always

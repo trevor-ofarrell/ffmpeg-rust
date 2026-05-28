@@ -4,7 +4,7 @@ This repository is a Rust workspace for a compatibility-oriented FFmpeg 8.1.1 re
 
 ## Workspace Layout
 
-- `crates/avutil`: shared errors, rational/timebase math, FFmpeg-style log levels, log flags, and in-memory records, reference-counted buffers, packets, frames, dictionaries, options, pixel/sample/color formats, channel layouts, hashes, bit I/O, and memory abstractions.
+- `crates/avutil`: shared errors, rational/timebase math, FFmpeg-style log levels, log flags, bounded `av_log_format_line`/`av_log_format_line2` buffer models, and in-memory records, reference-counted buffers, packets, frames, dictionaries, options, pixel/sample/color formats, channel layouts, hashes, bit I/O, and memory abstractions.
 - `crates/avcodec`: codec registries, parser traits, send/receive model, bitstream filters, threading, DSP primitives, and native codecs.
 - `crates/avformat`: AVIO-like I/O, protocols, probing, demuxers, muxers, streams, interleaving, metadata, chapters, programs, and stream groups.
 - `crates/avfilter`: filter registry, graph parser, scheduler, framesync, format negotiation, sources, sinks, and filters.

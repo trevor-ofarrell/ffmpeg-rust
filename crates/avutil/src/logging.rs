@@ -277,6 +277,38 @@ impl From<LogFlags> for LogFormatOptions {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AvLogFormatLine {
+    line: Vec<u8>,
+    truncated: bool,
+}
+
+impl AvLogFormatLine {
+    pub fn new(line: Vec<u8>, truncated: bool) -> Self {
+        Self { line, truncated }
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        &self.line
+    }
+
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.line
+    }
+
+    pub fn as_utf8(&self) -> Option<&str> {
+        std::str::from_utf8(&self.line).ok()
+    }
+
+    pub fn line_lossy(&self) -> String {
+        String::from_utf8_lossy(&self.line).into_owned()
+    }
+
+    pub const fn truncated(&self) -> bool {
+        self.truncated
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AvLogFormatLine2 {
     line: Vec<u8>,
     full_len: usize,
@@ -314,6 +346,13 @@ impl AvLogFormatLine2 {
 
     pub const fn truncated(&self) -> bool {
         self.truncated
+    }
+}
+
+impl From<AvLogFormatLine2> for AvLogFormatLine {
+    fn from(line2: AvLogFormatLine2) -> Self {
+        let truncated = line2.truncated();
+        Self::new(line2.into_bytes(), truncated)
     }
 }
 
@@ -521,6 +560,27 @@ impl LogRecord {
             }
         }
         line
+    }
+
+    pub fn format_av_log_line_null_context(
+        &self,
+        flags: LogFlags,
+        print_prefix: &mut bool,
+        line_size: usize,
+    ) -> AvResult<AvLogFormatLine> {
+        self.format_av_log_line2_null_context(flags, print_prefix, line_size)
+            .map(AvLogFormatLine::from)
+    }
+
+    pub fn format_av_log_line_context(
+        &self,
+        context: &AvLogContextPrefix,
+        flags: LogFlags,
+        print_prefix: &mut bool,
+        line_size: usize,
+    ) -> AvResult<AvLogFormatLine> {
+        self.format_av_log_line2_context(context, flags, print_prefix, line_size)
+            .map(AvLogFormatLine::from)
     }
 
     pub fn format_av_log_line2_null_context(
@@ -1281,6 +1341,73 @@ mod tests {
         prefix = true;
         let time_err = LogRecord::new(LogLevel::Warning, "decoder", "ctxmsg")
             .format_av_log_line2_context(&context, LogFlags::PRINT_DATETIME, &mut prefix, 128)
+            .unwrap_err();
+        assert_eq!(time_err.code(), Some(crate::error::AvErrorCode::ENOSYS));
+        assert!(prefix);
+    }
+
+    #[test]
+    fn av_log_format_line_matches_bounded_wrapper_shape() {
+        let context = AvLogContextPrefix::new("rustctx", "<ptr>");
+
+        let mut prefix = true;
+        let leveled = LogRecord::new(LogLevel::Warning, "decoder", "plain")
+            .format_av_log_line_null_context(LogFlags::PRINT_LEVEL, &mut prefix, 128)
+            .unwrap();
+        assert_eq!(leveled.bytes(), b"[warning] plain");
+        assert_eq!(leveled.as_utf8(), Some("[warning] plain"));
+        assert_eq!(leveled.line_lossy(), "[warning] plain");
+        assert!(!leveled.truncated());
+        assert!(!prefix);
+
+        prefix = false;
+        let no_prefix = LogRecord::new(LogLevel::Error, "demuxer", "after")
+            .format_av_log_line_null_context(LogFlags::PRINT_LEVEL, &mut prefix, 128)
+            .unwrap();
+        assert_eq!(no_prefix.into_bytes(), b"after");
+        assert!(!prefix);
+
+        prefix = true;
+        let newline = LogRecord::new(LogLevel::Info, "ffmpeg", "withnl\n")
+            .format_av_log_line_null_context(LogFlags::PRINT_LEVEL, &mut prefix, 128)
+            .unwrap();
+        assert_eq!(newline.bytes(), b"[info] withnl\n");
+        assert!(prefix);
+
+        prefix = true;
+        let small = LogRecord::new(LogLevel::Warning, "decoder", "plain")
+            .format_av_log_line_null_context(LogFlags::PRINT_LEVEL, &mut prefix, 8)
+            .unwrap();
+        assert_eq!(small.bytes(), b"[warnin");
+        assert!(small.truncated());
+        assert!(!prefix);
+
+        prefix = true;
+        let size1 = LogRecord::new(LogLevel::Warning, "decoder", "plain")
+            .format_av_log_line_null_context(LogFlags::PRINT_LEVEL, &mut prefix, 1)
+            .unwrap();
+        assert_eq!(size1.bytes(), b"");
+        assert!(size1.truncated());
+        assert!(!prefix);
+
+        prefix = true;
+        let context_line = LogRecord::new(LogLevel::Warning, "decoder", "ctxmsg")
+            .format_av_log_line_context(&context, LogFlags::PRINT_LEVEL, &mut prefix, 128)
+            .unwrap();
+        assert_eq!(context_line.bytes(), b"[rustctx @ <ptr>] [warning] ctxmsg");
+        assert!(!context_line.truncated());
+        assert!(!prefix);
+
+        prefix = false;
+        let context_no_prefix = LogRecord::new(LogLevel::Warning, "decoder", "nopfx")
+            .format_av_log_line_context(&context, LogFlags::PRINT_LEVEL, &mut prefix, 128)
+            .unwrap();
+        assert_eq!(context_no_prefix.bytes(), b"nopfx");
+        assert!(!prefix);
+
+        prefix = true;
+        let time_err = LogRecord::new(LogLevel::Warning, "decoder", "plain")
+            .format_av_log_line_null_context(LogFlags::PRINT_TIME, &mut prefix, 128)
             .unwrap_err();
         assert_eq!(time_err.code(), Some(crate::error::AvErrorCode::ENOSYS));
         assert!(prefix);
