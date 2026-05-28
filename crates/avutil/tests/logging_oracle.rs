@@ -214,6 +214,10 @@ fn expected_rows() -> BTreeMap<&'static str, i32> {
     );
     rows.insert("custom-callback-raw-level-count", 1);
     rows.insert("custom-callback-raw-level-level", 23);
+    rows.insert("custom-callback-raw-negative-count", 1);
+    rows.insert("custom-callback-raw-negative-level", -1);
+    rows.insert("custom-callback-raw-high-format-count", 1);
+    rows.insert("custom-callback-raw-high-format-level", 57);
     rows.insert("custom-callback-null-count", 1);
     rows.insert(
         "custom-callback-null-level",
@@ -233,6 +237,11 @@ fn expected_rows() -> BTreeMap<&'static str, i32> {
     rows.insert(
         "custom-callback-context-repeat-level",
         LogLevel::Warning.as_ffmpeg_value(),
+    );
+    rows.insert("custom-callback-context-quiet-count", 1);
+    rows.insert(
+        "custom-callback-context-quiet-level",
+        LogLevel::Quiet.as_ffmpeg_value(),
     );
     rows
 }
@@ -939,6 +948,26 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
         "custom-callback-raw-level-item",
         escape_row_text(custom_raw_level_item.as_bytes()),
     );
+    let (custom_raw_negative_message, custom_raw_negative_item) =
+        rust_custom_callback_raw_negative_text();
+    rows.insert(
+        "custom-callback-raw-negative-message",
+        escape_row_text(custom_raw_negative_message.as_bytes()),
+    );
+    rows.insert(
+        "custom-callback-raw-negative-item",
+        escape_row_text(custom_raw_negative_item.as_bytes()),
+    );
+    let (custom_raw_high_format_message, custom_raw_high_format_item) =
+        rust_custom_callback_raw_high_format_text();
+    rows.insert(
+        "custom-callback-raw-high-format-message",
+        escape_row_text(custom_raw_high_format_message.as_bytes()),
+    );
+    rows.insert(
+        "custom-callback-raw-high-format-item",
+        escape_row_text(custom_raw_high_format_item.as_bytes()),
+    );
     let (custom_null_message, custom_null_item) = rust_custom_callback_null_text();
     rows.insert(
         "custom-callback-null-message",
@@ -975,6 +1004,16 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
     rows.insert(
         "custom-callback-context-repeat-item",
         escape_row_text(custom_context_repeat_item.as_bytes()),
+    );
+    let (custom_context_quiet_message, custom_context_quiet_item) =
+        rust_custom_callback_context_quiet_text(&context);
+    rows.insert(
+        "custom-callback-context-quiet-message",
+        escape_row_text(custom_context_quiet_message.as_bytes()),
+    );
+    rows.insert(
+        "custom-callback-context-quiet-item",
+        escape_row_text(custom_context_quiet_item.as_bytes()),
     );
 
     let (plain, _) = rust_format_line(LogLevel::Warning, "plain", LogFlags::empty(), true, 128);
@@ -1748,6 +1787,36 @@ fn rust_custom_callback_raw_level_text() -> (String, String) {
     seen.remove(0)
 }
 
+fn rust_custom_callback_raw_negative_text() -> (String, String) {
+    let mut logger = Logger::new_with_flags(LogLevel::Warning, LogFlags::PRINT_LEVEL);
+    let mut seen = Vec::new();
+    logger.log_custom_callback(
+        LogRecord::new(LogLevel::Warning, "", "rawneg").with_raw_level(-1),
+        |record| {
+            assert_eq!(record.raw_level(), -1);
+            assert_eq!(record.known_level(), None);
+            seen.push((record.message().to_owned(), "<none>".to_owned()));
+        },
+    );
+    assert_eq!(seen.len(), 1);
+    seen.remove(0)
+}
+
+fn rust_custom_callback_raw_high_format_text() -> (String, String) {
+    let mut logger = Logger::new_with_flags(LogLevel::Warning, LogFlags::PRINT_LEVEL);
+    let mut seen = Vec::new();
+    logger.log_custom_callback(
+        LogRecord::new(LogLevel::Warning, "", "mix:arg:7:Q:%").with_raw_level(57),
+        |record| {
+            assert_eq!(record.raw_level(), 57);
+            assert_eq!(record.known_level(), None);
+            seen.push((record.message().to_owned(), "<none>".to_owned()));
+        },
+    );
+    assert_eq!(seen.len(), 1);
+    seen.remove(0)
+}
+
 fn rust_custom_callback_null_text() -> (String, String) {
     let mut logger = Logger::new_with_flags(LogLevel::Warning, LogFlags::PRINT_LEVEL);
     let mut seen = Vec::new();
@@ -1796,6 +1865,17 @@ fn rust_custom_callback_context_repeat_text(context: &AvLogContextPrefix) -> (St
     }
     assert_eq!(seen.len(), 2);
     seen.pop().expect("context repeat callback row")
+}
+
+fn rust_custom_callback_context_quiet_text(context: &AvLogContextPrefix) -> (String, String) {
+    let mut logger = Logger::new_with_flags(LogLevel::Warning, LogFlags::PRINT_LEVEL);
+    let mut seen = Vec::new();
+    logger.log_custom_callback(
+        LogRecord::new(LogLevel::Quiet, context.item_name(), "quietctx"),
+        |record| seen.push((record.message().to_owned(), record.target().to_owned())),
+    );
+    assert_eq!(seen.len(), 1);
+    seen.remove(0)
 }
 
 fn normalize_default_callback_timestamp(line: &str) -> String {
@@ -3114,6 +3194,20 @@ static void print_custom_callback_rows(void) {
     ROW_STR("custom-callback-raw-level-item", captured_item);
 
     reset_capture();
+    av_log(NULL, -1, "%s", "rawneg");
+    ROW("custom-callback-raw-negative-count", captured_count);
+    ROW("custom-callback-raw-negative-level", captured_level);
+    ROW_STR("custom-callback-raw-negative-message", captured_message);
+    ROW_STR("custom-callback-raw-negative-item", captured_item);
+
+    reset_capture();
+    av_log(NULL, 57, "mix:%s:%d:%c:%%", "arg", 7, 'Q');
+    ROW("custom-callback-raw-high-format-count", captured_count);
+    ROW("custom-callback-raw-high-format-level", captured_level);
+    ROW_STR("custom-callback-raw-high-format-message", captured_message);
+    ROW_STR("custom-callback-raw-high-format-item", captured_item);
+
+    reset_capture();
     av_log(NULL, AV_LOG_ERROR, "%s:%d\n", "raw", 5);
     ROW("custom-callback-null-count", captured_count);
     ROW("custom-callback-null-level", captured_level);
@@ -3142,6 +3236,13 @@ static void print_custom_callback_rows(void) {
     ROW("custom-callback-context-repeat-level", captured_level);
     ROW_STR("custom-callback-context-repeat-message", captured_message);
     ROW_STR("custom-callback-context-repeat-item", captured_item);
+
+    reset_capture();
+    av_log(&ctx, AV_LOG_QUIET, "%s", "quietctx");
+    ROW("custom-callback-context-quiet-count", captured_count);
+    ROW("custom-callback-context-quiet-level", captured_level);
+    ROW_STR("custom-callback-context-quiet-message", captured_message);
+    ROW_STR("custom-callback-context-quiet-item", captured_item);
 
     av_log_set_callback(av_log_default_callback);
 }

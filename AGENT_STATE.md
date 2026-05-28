@@ -2,6 +2,16 @@
 
 ## Current Status
 
+Latest `avutil-logging` custom-callback raw/quiet slice: pinned FFmpeg 8.1.1 libavutil `av_log_set_callback` rows now prove custom callbacks receive raw negative and high non-enum delivered levels (`-1` and `57`), multi-argument `va_list` formatted message text, and AVClass-context `AV_LOG_QUIET` records with the raw quiet level and item name. Rust unit coverage, `logging_oracle`, and `avutil_core_models` mirror these bounded rows. `avutil-logging` remains `fate_pass`, not complete, because this still models bounded callback delivery rather than the full exported C callback ABI/function-pointer/`va_list` surface, and broader real-timezone/DST behavior, byte-identical default-callback stderr/color policy, media-progress stderr, and sustained fuzz evidence remain pending. Strict completion remains 11/96 components, about 11.5%.
+
+Latest validation commands for the custom-callback raw/quiet slice passed: `cargo fmt --all`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib custom_callback_dispatch_ignores_level_filter_and_repeat_flags -- --nocapture`; `$env:CARGO_TARGET_DIR='target-codex'; cargo check --manifest-path fuzz\\Cargo.toml --bin avutil_core_models`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --test logging_oracle libavutil_logging_constants_and_state_match_current_model -- --ignored --nocapture`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib logging -- --nocapture`; `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy -p avutil --all-targets --all-features -- -D warnings`; `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --manifest-path fuzz\\Cargo.toml --bin avutil_core_models -- -D warnings`; `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-logging`; `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-logging --target oracle-libavutil-logging --oracle-ffmpeg .\\third_party\\ffmpeg-oracle\\build\\bin\\ffmpeg.cmd`; and WSL `RUST_MIN_STACK=33554432 CXXFLAGS='-O1' HOST_CXXFLAGS='-O1' CARGO_TARGET_DIR=target-wsl-logging-custom-callback-fuzz-o1 cargo fuzz run avutil_core_models -- -runs=1`.
+
+Final repository gates for the custom-callback raw/quiet slice also passed: `cargo fmt --all -- --check`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p fate-runner current_ledger -- --nocapture`; `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- guard-runtime`; `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- oracle-doctor`; `git diff --check` with CRLF conversion warnings only; `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --workspace --all-targets --all-features -- -D warnings`; and `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed`.
+
+Latest failing commands for the custom-callback raw/quiet slice: none. The WSL fuzz command rebuilt sanitizer artifacts for the new target dir and then passed the one-run corpus smoke.
+
+Latest change summary: `Pin av_log custom callback raw extremes`.
+
 Latest `avutil-logging` no-force TTY `TERM=xterm-256color` severity slice: pinned FFmpeg 8.1.1 libavutil default-callback rows now prove the ordinary pseudo-terminal 256-color path, without `AV_LOG_FORCE_COLOR`, uses the same context, warning, error, fatal, and panic 256-color palette while info stays plain. Rust unit coverage, `logging_oracle`, and `avutil_core_models` mirror these bounded rows. `avutil-logging` remains `fate_pass`, not complete, because full exported C callback ABI/`va_list`, broader real-timezone/DST behavior, broader byte-identical default-callback stderr/color policy beyond the pinned env/TERM rows, media-progress stderr beyond bounded carriage-return rows, and sustained fuzz evidence remain pending. Strict completion remains 11/96 components, about 11.5%.
 
 Latest validation commands for the no-force TTY `TERM=xterm-256color` severity slice passed: `cargo fmt --all`; `cargo test -p avutil --lib color_mode_uses_term_for_terminal_palette_without_force_env -- --nocapture`; `cargo check --manifest-path fuzz\\Cargo.toml --bin avutil_core_models`; `cargo test -p avutil --test logging_oracle libavutil_logging_constants_and_state_match_current_model -- --ignored --nocapture`; `cargo test -p avutil --lib logging -- --nocapture`; `cargo clippy --manifest-path fuzz\\Cargo.toml --bin avutil_core_models -- -D warnings`; `cargo clippy -p avutil --all-targets --all-features -- -D warnings`; `cargo run -p fate-runner -- run --component avutil-logging`; `cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-logging --target oracle-libavutil-logging --oracle-ffmpeg .\\third_party\\ffmpeg-oracle\\build\\bin\\ffmpeg.cmd`; WSL `RUST_MIN_STACK=33554432 CXXFLAGS='-O1' HOST_CXXFLAGS='-O1' CARGO_TARGET_DIR=target-wsl-logging-term-256-fuzz-o1 cargo fuzz run avutil_core_models -- -runs=1`; `cargo fmt --all -- --check`; `cargo test -p fate-runner current_ledger -- --nocapture`; `cargo run -p xtask -- guard-runtime`; `cargo run -p xtask -- oracle-doctor`; `cargo clippy --workspace --all-targets --all-features -- -D warnings`; and `cargo run -p fate-runner -- run --changed`.
@@ -1399,6 +1409,25 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-logging` custom-callback raw/quiet slice:
+  - `cargo fmt --all`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib custom_callback_dispatch_ignores_level_filter_and_repeat_flags -- --nocapture`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo check --manifest-path fuzz\\Cargo.toml --bin avutil_core_models`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --test logging_oracle libavutil_logging_constants_and_state_match_current_model -- --ignored --nocapture`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib logging -- --nocapture`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy -p avutil --all-targets --all-features -- -D warnings`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --manifest-path fuzz\\Cargo.toml --bin avutil_core_models -- -D warnings`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-logging`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-logging --target oracle-libavutil-logging --oracle-ffmpeg .\\third_party\\ffmpeg-oracle\\build\\bin\\ffmpeg.cmd`
+  - WSL `RUST_MIN_STACK=33554432 CXXFLAGS='-O1' HOST_CXXFLAGS='-O1' CARGO_TARGET_DIR=target-wsl-logging-custom-callback-fuzz-o1 cargo fuzz run avutil_core_models -- -runs=1`
+  - `cargo fmt --all -- --check`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p fate-runner current_ledger -- --nocapture`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- guard-runtime`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- oracle-doctor`
+  - `git diff --check` (CRLF warnings only)
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --workspace --all-targets --all-features -- -D warnings`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed`
 
 - Current `avutil-logging` no-force TTY `TERM=xterm-256color` severity slice:
   - `cargo fmt --all`
@@ -7431,6 +7460,9 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-logging` custom-callback raw/quiet slice:
+  - None. The WSL fuzz command rebuilt sanitizer artifacts for the new target dir before passing the one-run corpus smoke.
+
 - Current `avutil-logging` basic TERM severity slice:
   - The first expanded `cargo test -p avutil --test logging_oracle libavutil_logging_constants_and_state_match_current_model -- --ignored --nocapture` rerun failed because Rust left the `TERM=dumb` AVClass context prefix plain; the pinned oracle proved `0;39m` context coloring. Subsequent oracle reruns proved basic error uses `1;31m` and fatal/panic use `4;31m`; Rust constants were separated and the oracle rerun passed.
   - The first `cargo test -p avutil --lib logging -- --nocapture` rerun failed because the new Basic assertions had been placed in the legacy `from_ffmpeg_env_vars_and_stderr(..., terminal=true)` test, whose expected mode remains `Always`; the assertions were moved into the TERM-aware Basic test and the rerun passed.
@@ -8129,6 +8161,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-logging` remains the current focus. The latest coherent slice expands bounded custom-callback evidence to raw negative and high non-enum delivered levels, multi-argument `va_list` formatting, and AVClass-context quiet-level delivery. The component remains `fate_pass`, not complete, because full exported C callback ABI/function-pointer integration, broader real-timezone/DST behavior, byte-identical default-callback stderr/color policy, full media-progress stderr parity, and sustained fuzz evidence remain pending.
+
 `avutil-logging` remains the current focus. The latest coherent slice expands no-force pseudo-terminal `TERM=xterm-256color` parity to context, warning, error, fatal, panic, and info rows without relying on `AV_LOG_FORCE_COLOR`. The component remains `fate_pass`, not complete, because full exported C callback ABI/`va_list`, broader real-timezone/DST behavior, broader byte-identical default-callback stderr/color policy beyond the bounded env/TERM rows, full media-progress stderr parity, and sustained fuzz evidence remain pending.
 
 `avutil-logging` remains the current focus. The latest coherent slice expands no-force pseudo-terminal `TERM=dumb` parity to basic context, warning, error, fatal, panic, and info rows. The component remains `fate_pass`, not complete, because full exported C callback ABI/`va_list`, broader real-timezone/DST behavior, broader byte-identical default-callback stderr/color policy beyond the bounded env/TERM rows, full media-progress stderr parity, and sustained fuzz evidence remain pending.
@@ -8615,12 +8649,13 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Next 3 Concrete Actions
 
-1. Continue `avutil-logging` closure with broader default-callback stderr/color/timezone rows or exported C callback ABI/`va_list` rows, without treating the bounded raw-level, raw-flag, quiet-threshold, repeat, color, carriage-return, force-env presence, TERM palette, and custom-callback rows as full parity.
+1. Continue `avutil-logging` closure with broader default-callback stderr/color/timezone rows or exported C callback ABI/function-pointer rows, without treating the bounded raw-level, raw-flag, quiet-threshold, repeat, color, carriage-return, force-env presence, TERM palette, and custom-callback raw/quiet rows as full parity.
 2. Add bounded oracle rows for media-progress stderr or callback ABI behavior before changing any completion status.
 3. Strengthen fuzz evidence with saved-crash replays or longer WSL campaigns, but do not mark `avutil-logging` complete until all strict completion rules are met.
 
 ## Known Blockers
 
+- `avutil-logging` now has expanded pinned custom-callback evidence for raw delivered levels `-1`, `23`, and `57`, multi-argument `va_list` formatting, repeated NULL/context delivery under `AV_LOG_SKIP_REPEATED`, and AVClass-context `AV_LOG_QUIET` delivery. It remains below strict completion because the exported C callback ABI/function-pointer surface, broader default-callback stderr behavior, broader terminal/color policy, real-timezone/DST behavior, media-progress stderr, and sustained fuzz evidence are still incomplete.
 - `avutil-logging` now has expanded pinned no-force pseudo-terminal `TERM=xterm-256color` severity evidence for context, warning, error, fatal, panic, and info rows. It remains below strict completion because that is still bounded color evidence; broader terminal/default-callback color policy, byte-identical stderr closure, C callback ABI/`va_list`, real-timezone/DST behavior, media-progress stderr, and sustained fuzz evidence remain incomplete.
 - `avutil-logging` now has expanded pinned no-force pseudo-terminal `TERM=dumb` basic severity evidence for context, warning, error, fatal, panic, and info rows, plus unset and empty TERM rows. It remains below strict completion because that is still bounded color evidence; broader terminal/default-callback color policy, byte-identical stderr closure, C callback ABI/`va_list`, real-timezone/DST behavior, media-progress stderr, and sustained fuzz evidence remain incomplete.
 - `avutil-logging` now also has pinned no-force pseudo-terminal TERM palette evidence: unset `TERM` stays plain, `TERM=dumb` and empty `TERM` emit basic ANSI warning coloring, and 256-color terminals keep the existing 256-color warning/context path. It remains below strict completion because that is still bounded color evidence; broader terminal/default-callback color policy, byte-identical stderr closure, C callback ABI/`va_list`, real-timezone/DST behavior, media-progress stderr, and sustained fuzz evidence remain incomplete.
@@ -8772,6 +8807,8 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added bounded custom-callback raw/quiet evidence for `avutil-logging`. `crates/avutil/tests/logging_oracle.rs` now pins custom `av_log_set_callback` rows for raw delivered levels `-1` and `57`, multi-argument `va_list` formatted callback text, and AVClass-context `AV_LOG_QUIET` delivery; `crates/avutil/src/logging.rs` extends focused unit coverage; and `fuzz/fuzz_targets/avutil_core_models.rs` mirrors the deterministic rows. Docs, ledger, and state record the evidence. `avutil-logging` remains `fate_pass`; no component was marked complete, so strict completion count is unchanged at 11/96.
 
 Latest slice: expanded no-force pseudo-terminal `TERM=xterm-256color` severity evidence for `avutil-logging`. `crates/avutil/tests/logging_oracle.rs` now pins context, warning, error, fatal, panic, and info rows without `AV_LOG_FORCE_COLOR`; `crates/avutil/src/logging.rs` asserts the TERM-aware resolver uses the 256-color palette; and `fuzz/fuzz_targets/avutil_core_models.rs` mirrors the deterministic rows. Docs, ledger, and state record the evidence. `avutil-logging` remains `fate_pass`; no component was marked complete, so strict completion count is unchanged at 11/96.
 

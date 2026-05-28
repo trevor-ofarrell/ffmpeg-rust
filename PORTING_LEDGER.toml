@@ -1803,6 +1803,13 @@ fate_tests = [
   "not_applicable: pinned FFmpeg 8.1.1 tests/fate/libavutil.mak has no fate-log target; libavutil/tests/log is an upstream TESTPROGS utility and is built/run through the upstream mapping",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: pinned libavutil custom-callback rows now prove custom
+# `av_log_set_callback` dispatch preserves raw negative and high non-enum
+# delivered levels (`-1` and `57`), formats multi-argument `va_list` payloads
+# before callback delivery, and still dispatches AVClass-context `AV_LOG_QUIET`
+# rows with the raw quiet level and item name. Rust unit coverage and
+# avutil_core_models mirror the bounded behavior. avutil-logging remains
+# fate_pass because this is not yet the exported C ABI callback surface.
 # Latest update: pinned libavutil no-force pseudo-terminal TERM rows now prove
 # TERM affects the default-callback palette rather than simple color enablement:
 # unset TERM stays plain, TERM=dumb emits basic ANSI context/warning/error/

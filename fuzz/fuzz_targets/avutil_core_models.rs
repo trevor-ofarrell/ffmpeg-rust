@@ -2850,6 +2850,28 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
             ))
         },
     );
+    callback_logger.log_custom_callback(
+        LogRecord::new(LogLevel::Warning, "", "rawneg").with_raw_level(-1),
+        |record| {
+            raw_callback_seen.push((
+                record.level(),
+                record.raw_level(),
+                record.target().to_owned(),
+                record.message().to_owned(),
+            ))
+        },
+    );
+    callback_logger.log_custom_callback(
+        LogRecord::new(LogLevel::Warning, "", "mix:arg:7:Q:%").with_raw_level(57),
+        |record| {
+            raw_callback_seen.push((
+                record.level(),
+                record.raw_level(),
+                record.target().to_owned(),
+                record.message().to_owned(),
+            ))
+        },
+    );
     callback_logger.log_custom_callback(LogRecord::new(LogLevel::Error, "", "raw:5\n"), |record| {
         raw_callback_seen.push((
             record.level(),
@@ -2895,6 +2917,17 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
             },
         );
     }
+    callback_logger.log_custom_callback(
+        LogRecord::new(LogLevel::Quiet, "rustctx", "quietctx"),
+        |record| {
+            raw_callback_seen.push((
+                record.level(),
+                record.raw_level(),
+                record.target().to_owned(),
+                record.message().to_owned(),
+            ))
+        },
+    );
     assert_eq!(
         raw_callback_seen.as_slice(),
         &[
@@ -2905,6 +2938,13 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
                 "hidden".to_owned()
             ),
             (LogLevel::Warning, 23, String::new(), "rawlevel".to_owned()),
+            (LogLevel::Warning, -1, String::new(), "rawneg".to_owned()),
+            (
+                LogLevel::Warning,
+                57,
+                String::new(),
+                "mix:arg:7:Q:%".to_owned()
+            ),
             (
                 LogLevel::Error,
                 LogLevel::Error.as_ffmpeg_value(),
@@ -2940,6 +2980,12 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
                 LogLevel::Warning.as_ffmpeg_value(),
                 "rustctx".to_owned(),
                 "ctxrepeat".to_owned()
+            ),
+            (
+                LogLevel::Quiet,
+                LogLevel::Quiet.as_ffmpeg_value(),
+                "rustctx".to_owned(),
+                "quietctx".to_owned()
             ),
         ]
     );
