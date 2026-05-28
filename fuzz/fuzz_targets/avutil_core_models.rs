@@ -2093,6 +2093,28 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
         timestamped.format_line_with_options(plain_options),
         "[error] demuxer: bad header"
     );
+    let mut line2_prefix = true;
+    let line2 = LogRecord::new(LogLevel::Warning, "decoder", "plain")
+        .format_av_log_line2_null_context(LogFlags::PRINT_LEVEL, &mut line2_prefix, 128)
+        .unwrap();
+    assert_eq!(line2.bytes(), b"[warning] plain");
+    assert_eq!(line2.full_len(), 15);
+    assert!(!line2.truncated());
+    assert!(!line2_prefix);
+
+    line2_prefix = true;
+    let line2_newline = LogRecord::new(LogLevel::Info, "ffmpeg", "withnl\n")
+        .format_av_log_line2_null_context(LogFlags::PRINT_LEVEL, &mut line2_prefix, 8)
+        .unwrap();
+    assert_eq!(line2_newline.bytes(), b"[info] ");
+    assert_eq!(line2_newline.full_len(), 14);
+    assert!(line2_newline.truncated());
+    assert!(!line2_prefix);
+
+    let line2_time_err = LogRecord::new(LogLevel::Warning, "decoder", "plain")
+        .format_av_log_line2_null_context(LogFlags::PRINT_TIME, &mut line2_prefix, 128)
+        .unwrap_err();
+    assert_eq!(line2_time_err.code(), Some(AvErrorCode::ENOSYS));
     assert_eq!(
         LogColorMode::from_ffmpeg_env_vars(|name| name == AV_LOG_FORCE_COLOR_ENV),
         LogColorMode::Always

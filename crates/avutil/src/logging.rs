@@ -2,6 +2,8 @@ use std::io::IsTerminal;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use crate::error::{AvError, AvResult};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LogLevel {
     Quiet,
@@ -274,6 +276,47 @@ impl From<LogFlags> for LogFormatOptions {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AvLogFormatLine2 {
+    line: Vec<u8>,
+    full_len: usize,
+    truncated: bool,
+}
+
+impl AvLogFormatLine2 {
+    pub fn new(line: Vec<u8>, full_len: usize, truncated: bool) -> Self {
+        Self {
+            line,
+            full_len,
+            truncated,
+        }
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        &self.line
+    }
+
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.line
+    }
+
+    pub fn as_utf8(&self) -> Option<&str> {
+        std::str::from_utf8(&self.line).ok()
+    }
+
+    pub fn line_lossy(&self) -> String {
+        String::from_utf8_lossy(&self.line).into_owned()
+    }
+
+    pub const fn full_len(&self) -> usize {
+        self.full_len
+    }
+
+    pub const fn truncated(&self) -> bool {
+        self.truncated
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LogTimestamp {
     unix_micros: i64,
@@ -455,6 +498,33 @@ impl LogRecord {
             }
         }
         line
+    }
+
+    pub fn format_av_log_line2_null_context(
+        &self,
+        flags: LogFlags,
+        print_prefix: &mut bool,
+        line_size: usize,
+    ) -> AvResult<AvLogFormatLine2> {
+        if flags.intersects(LogFlags::PRINT_TIME | LogFlags::PRINT_DATETIME) {
+            return Err(AvError::unsupported(
+                "av_log_format_line2 time prefixes require default-callback clock parity",
+            ));
+        }
+
+        let full_line = if *print_prefix && flags.contains(LogFlags::PRINT_LEVEL) {
+            format!("[{}] {}", self.level.name(), self.message)
+        } else {
+            self.message.clone()
+        };
+        let full_bytes = full_line.into_bytes();
+        let full_len = full_bytes.len();
+        let copied_len = line_size.saturating_sub(1).min(full_len);
+        let line = full_bytes[..copied_len].to_vec();
+        *print_prefix = line.last().copied() == Some(b'\n');
+        let truncated = full_len >= line_size;
+
+        Ok(AvLogFormatLine2::new(line, full_len, truncated))
     }
 
     fn format_plain_line_with_flags(&self, flags: LogFlags) -> String {
@@ -1039,6 +1109,70 @@ mod tests {
             LogRecord::new(LogLevel::Info, "", "ready").format_line_with_flags(LogFlags::empty()),
             "ready"
         );
+    }
+
+    #[test]
+    fn av_log_format_line2_null_context_matches_bounded_prefix_shape() {
+        let mut prefix = true;
+        let plain = LogRecord::new(LogLevel::Warning, "decoder", "plain")
+            .format_av_log_line2_null_context(LogFlags::empty(), &mut prefix, 128)
+            .unwrap();
+        assert_eq!(plain.full_len(), 5);
+        assert_eq!(plain.bytes(), b"plain");
+        assert_eq!(plain.as_utf8(), Some("plain"));
+        assert!(!plain.truncated());
+        assert!(!prefix);
+
+        prefix = true;
+        let leveled = LogRecord::new(LogLevel::Warning, "decoder", "plain")
+            .format_av_log_line2_null_context(LogFlags::PRINT_LEVEL, &mut prefix, 128)
+            .unwrap();
+        assert_eq!(leveled.full_len(), 15);
+        assert_eq!(leveled.bytes(), b"[warning] plain");
+        assert!(!leveled.truncated());
+        assert!(!prefix);
+
+        prefix = false;
+        let no_prefix = LogRecord::new(LogLevel::Error, "demuxer", "after")
+            .format_av_log_line2_null_context(LogFlags::PRINT_LEVEL, &mut prefix, 128)
+            .unwrap();
+        assert_eq!(no_prefix.full_len(), 5);
+        assert_eq!(no_prefix.bytes(), b"after");
+        assert!(!prefix);
+
+        prefix = true;
+        let newline = LogRecord::new(LogLevel::Info, "ffmpeg", "withnl\n")
+            .format_av_log_line2_null_context(LogFlags::PRINT_LEVEL, &mut prefix, 128)
+            .unwrap();
+        assert_eq!(newline.full_len(), 14);
+        assert_eq!(newline.bytes(), b"[info] withnl\n");
+        assert_eq!(newline.line_lossy(), "[info] withnl\n");
+        assert!(prefix);
+
+        prefix = true;
+        let small = LogRecord::new(LogLevel::Warning, "decoder", "plain")
+            .format_av_log_line2_null_context(LogFlags::PRINT_LEVEL, &mut prefix, 8)
+            .unwrap();
+        assert_eq!(small.full_len(), 15);
+        assert_eq!(small.bytes(), b"[warnin");
+        assert!(small.truncated());
+        assert!(!prefix);
+
+        prefix = true;
+        let null_zero = LogRecord::new(LogLevel::Warning, "decoder", "plain")
+            .format_av_log_line2_null_context(LogFlags::PRINT_LEVEL, &mut prefix, 0)
+            .unwrap();
+        assert_eq!(null_zero.full_len(), 15);
+        assert_eq!(null_zero.bytes(), b"");
+        assert!(null_zero.truncated());
+        assert!(!prefix);
+
+        prefix = true;
+        let time_err = LogRecord::new(LogLevel::Warning, "decoder", "plain")
+            .format_av_log_line2_null_context(LogFlags::PRINT_TIME, &mut prefix, 128)
+            .unwrap_err();
+        assert_eq!(time_err.code(), Some(crate::error::AvErrorCode::ENOSYS));
+        assert!(prefix);
     }
 
     #[test]

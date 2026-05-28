@@ -5,7 +5,7 @@ use std::{
     process::Command,
 };
 
-use avutil::{LogFlags, LogLevel};
+use avutil::{AvLogFormatLine2, LogFlags, LogLevel, LogRecord};
 
 #[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 libavutil oracle under third_party/ffmpeg-oracle/wsl"]
@@ -40,9 +40,23 @@ fn libavutil_logging_constants_and_state_match_current_model() {
         let actual = oracle
             .get(name)
             .unwrap_or_else(|| panic!("missing oracle row `{name}`"));
+        let actual = actual
+            .parse::<i32>()
+            .unwrap_or_else(|err| panic!("invalid value in oracle row `{name}`: {err}"));
         assert_eq!(
-            *actual, expected_value,
+            actual, expected_value,
             "logging oracle mismatch for `{name}`"
+        );
+    }
+
+    let expected_text = expected_text_rows();
+    for (name, expected_value) in expected_text {
+        let actual = oracle
+            .get(name)
+            .unwrap_or_else(|| panic!("missing oracle row `{name}`"));
+        assert_eq!(
+            actual, &expected_value,
+            "logging oracle text mismatch for `{name}`"
         );
     }
 }
@@ -52,7 +66,7 @@ fn expected_rows() -> BTreeMap<&'static str, i32> {
         | LogFlags::PRINT_LEVEL
         | LogFlags::PRINT_TIME
         | LogFlags::PRINT_DATETIME;
-    [
+    let mut rows = [
         ("AV_LOG_QUIET", LogLevel::Quiet.as_ffmpeg_value()),
         ("AV_LOG_PANIC", LogLevel::Panic.as_ffmpeg_value()),
         ("AV_LOG_FATAL", LogLevel::Fatal.as_ffmpeg_value()),
@@ -109,10 +123,145 @@ fn expected_rows() -> BTreeMap<&'static str, i32> {
         ("log-once-preseed-level", LogLevel::Error.as_ffmpeg_value()),
     ]
     .into_iter()
-    .collect()
+    .collect::<BTreeMap<_, _>>();
+
+    add_format_line2_int_rows(&mut rows);
+    rows
 }
 
-fn parse_oracle_output(stdout: &str) -> BTreeMap<String, i32> {
+fn expected_text_rows() -> BTreeMap<&'static str, String> {
+    let mut rows = BTreeMap::new();
+    let (plain, _) = rust_format_line2(LogLevel::Warning, "plain", LogFlags::empty(), true, 128);
+    rows.insert("format-line2-plain-line", escape_row_text(plain.bytes()));
+
+    let (level, _) =
+        rust_format_line2(LogLevel::Warning, "plain", LogFlags::PRINT_LEVEL, true, 128);
+    rows.insert("format-line2-level-line", escape_row_text(level.bytes()));
+
+    let (no_prefix, _) =
+        rust_format_line2(LogLevel::Error, "after", LogFlags::PRINT_LEVEL, false, 128);
+    rows.insert(
+        "format-line2-noprefix-line",
+        escape_row_text(no_prefix.bytes()),
+    );
+
+    let (newline, _) =
+        rust_format_line2(LogLevel::Info, "withnl\n", LogFlags::PRINT_LEVEL, true, 128);
+    rows.insert(
+        "format-line2-newline-line",
+        escape_row_text(newline.bytes()),
+    );
+
+    let (small, _) = rust_format_line2(LogLevel::Warning, "plain", LogFlags::PRINT_LEVEL, true, 8);
+    rows.insert("format-line2-small-line", escape_row_text(small.bytes()));
+
+    let (size1, _) = rust_format_line2(LogLevel::Warning, "plain", LogFlags::PRINT_LEVEL, true, 1);
+    rows.insert("format-line2-size1-line", escape_row_text(size1.bytes()));
+
+    rows
+}
+
+fn add_format_line2_int_rows(rows: &mut BTreeMap<&'static str, i32>) {
+    let (plain, plain_prefix) =
+        rust_format_line2(LogLevel::Warning, "plain", LogFlags::empty(), true, 128);
+    rows.insert("format-line2-plain-ret", usize_to_i32(plain.full_len()));
+    rows.insert("format-line2-plain-prefix", bool_to_i32(plain_prefix));
+    rows.insert("format-line2-plain-len", usize_to_i32(plain.bytes().len()));
+
+    let (level, level_prefix) =
+        rust_format_line2(LogLevel::Warning, "plain", LogFlags::PRINT_LEVEL, true, 128);
+    rows.insert("format-line2-level-ret", usize_to_i32(level.full_len()));
+    rows.insert("format-line2-level-prefix", bool_to_i32(level_prefix));
+    rows.insert("format-line2-level-len", usize_to_i32(level.bytes().len()));
+
+    let (no_prefix, no_prefix_state) =
+        rust_format_line2(LogLevel::Error, "after", LogFlags::PRINT_LEVEL, false, 128);
+    rows.insert(
+        "format-line2-noprefix-ret",
+        usize_to_i32(no_prefix.full_len()),
+    );
+    rows.insert("format-line2-noprefix-prefix", bool_to_i32(no_prefix_state));
+    rows.insert(
+        "format-line2-noprefix-len",
+        usize_to_i32(no_prefix.bytes().len()),
+    );
+
+    let (newline, newline_prefix) =
+        rust_format_line2(LogLevel::Info, "withnl\n", LogFlags::PRINT_LEVEL, true, 128);
+    rows.insert("format-line2-newline-ret", usize_to_i32(newline.full_len()));
+    rows.insert("format-line2-newline-prefix", bool_to_i32(newline_prefix));
+    rows.insert(
+        "format-line2-newline-len",
+        usize_to_i32(newline.bytes().len()),
+    );
+
+    let (small, small_prefix) =
+        rust_format_line2(LogLevel::Warning, "plain", LogFlags::PRINT_LEVEL, true, 8);
+    rows.insert("format-line2-small-ret", usize_to_i32(small.full_len()));
+    rows.insert("format-line2-small-prefix", bool_to_i32(small_prefix));
+    rows.insert("format-line2-small-len", usize_to_i32(small.bytes().len()));
+
+    let (null_zero, null_zero_prefix) =
+        rust_format_line2(LogLevel::Warning, "plain", LogFlags::PRINT_LEVEL, true, 0);
+    rows.insert(
+        "format-line2-nullzero-ret",
+        usize_to_i32(null_zero.full_len()),
+    );
+    rows.insert(
+        "format-line2-nullzero-prefix",
+        bool_to_i32(null_zero_prefix),
+    );
+
+    let (size1, size1_prefix) =
+        rust_format_line2(LogLevel::Warning, "plain", LogFlags::PRINT_LEVEL, true, 1);
+    rows.insert("format-line2-size1-ret", usize_to_i32(size1.full_len()));
+    rows.insert("format-line2-size1-prefix", bool_to_i32(size1_prefix));
+    rows.insert("format-line2-size1-len", usize_to_i32(size1.bytes().len()));
+}
+
+fn rust_format_line2(
+    level: LogLevel,
+    message: &str,
+    flags: LogFlags,
+    initial_prefix: bool,
+    line_size: usize,
+) -> (AvLogFormatLine2, bool) {
+    let mut prefix = initial_prefix;
+    let line = LogRecord::new(level, "ignored", message)
+        .format_av_log_line2_null_context(flags, &mut prefix, line_size)
+        .expect("bounded av_log_format_line2 model should support this flag shape");
+    (line, prefix)
+}
+
+fn bool_to_i32(value: bool) -> i32 {
+    if value {
+        1
+    } else {
+        0
+    }
+}
+
+fn usize_to_i32(value: usize) -> i32 {
+    i32::try_from(value).expect("oracle row should fit in i32")
+}
+
+fn escape_row_text(bytes: &[u8]) -> String {
+    let mut escaped = String::new();
+    for &byte in bytes {
+        match byte {
+            b'\n' => escaped.push_str("\\n"),
+            b'\r' => escaped.push_str("\\r"),
+            b'\t' => escaped.push_str("\\t"),
+            b'\\' => escaped.push_str("\\\\"),
+            b'|' => escaped.push_str("\\x7c"),
+            0x20..=0x7e => escaped.push(char::from(byte)),
+            _ => escaped.push_str(&format!("\\x{byte:02x}")),
+        }
+    }
+    escaped
+}
+
+fn parse_oracle_output(stdout: &str) -> BTreeMap<String, String> {
     let mut rows = BTreeMap::new();
     for line in stdout.lines() {
         let mut parts = line.splitn(2, '|');
@@ -120,8 +269,7 @@ fn parse_oracle_output(stdout: &str) -> BTreeMap<String, i32> {
         let value = parts
             .next()
             .unwrap_or_else(|| panic!("missing value in oracle row `{line}`"))
-            .parse::<i32>()
-            .unwrap_or_else(|err| panic!("invalid value in oracle row `{line}`: {err}"));
+            .to_string();
         assert!(
             rows.insert(name, value).is_none(),
             "duplicate oracle row `{line}`"
@@ -178,9 +326,45 @@ fn compile_and_run_oracle(
 fn oracle_c_source() -> &'static str {
     r#"#include <stdarg.h>
 #include <stdio.h>
+#include <string.h>
 #include <libavutil/log.h>
 
 #define ROW(name, value) printf("%s|%d\n", name, (int)(value))
+
+static void ROW_STR(const char *name, const char *value) {
+    printf("%s|", name);
+    if (!value) {
+        printf("<null>\n");
+        return;
+    }
+    for (const unsigned char *p = (const unsigned char *)value; *p; p++) {
+        if (*p == '\n')
+            printf("\\n");
+        else if (*p == '\r')
+            printf("\\r");
+        else if (*p == '\t')
+            printf("\\t");
+        else if (*p == '\\')
+            printf("\\\\");
+        else if (*p == '|')
+            printf("\\x7c");
+        else if (*p < 32 || *p > 126)
+            printf("\\x%02x", *p);
+        else
+            putchar(*p);
+    }
+    putchar('\n');
+}
+
+static int call_format_line2(char *line, int line_size, int *print_prefix,
+                             int level, const char *fmt, ...) {
+    va_list vl;
+    va_start(vl, fmt);
+    int ret = av_log_format_line2(NULL, level, fmt, vl, line, line_size,
+                                  print_prefix);
+    va_end(vl);
+    return ret;
+}
 
 static int captured_count = 0;
 static int captured_level = -999;
@@ -201,6 +385,75 @@ static void print_level_after_set(const char *name, int level) {
 static void print_flags_after_set(const char *name, int flags) {
     av_log_set_flags(flags);
     ROW(name, av_log_get_flags());
+}
+
+static void print_format_line2_rows(void) {
+    char line[128];
+    int print_prefix;
+    int ret;
+
+    av_log_set_flags(0);
+    memset(line, 'X', sizeof(line));
+    print_prefix = 1;
+    ret = call_format_line2(line, sizeof(line), &print_prefix,
+                            AV_LOG_WARNING, "%s", "plain");
+    ROW("format-line2-plain-ret", ret);
+    ROW("format-line2-plain-prefix", print_prefix);
+    ROW("format-line2-plain-len", strlen(line));
+    ROW_STR("format-line2-plain-line", line);
+
+    av_log_set_flags(AV_LOG_PRINT_LEVEL);
+    memset(line, 'X', sizeof(line));
+    print_prefix = 1;
+    ret = call_format_line2(line, sizeof(line), &print_prefix,
+                            AV_LOG_WARNING, "%s", "plain");
+    ROW("format-line2-level-ret", ret);
+    ROW("format-line2-level-prefix", print_prefix);
+    ROW("format-line2-level-len", strlen(line));
+    ROW_STR("format-line2-level-line", line);
+
+    memset(line, 'X', sizeof(line));
+    print_prefix = 0;
+    ret = call_format_line2(line, sizeof(line), &print_prefix,
+                            AV_LOG_ERROR, "%s", "after");
+    ROW("format-line2-noprefix-ret", ret);
+    ROW("format-line2-noprefix-prefix", print_prefix);
+    ROW("format-line2-noprefix-len", strlen(line));
+    ROW_STR("format-line2-noprefix-line", line);
+
+    memset(line, 'X', sizeof(line));
+    print_prefix = 1;
+    ret = call_format_line2(line, sizeof(line), &print_prefix,
+                            AV_LOG_INFO, "%s\n", "withnl");
+    ROW("format-line2-newline-ret", ret);
+    ROW("format-line2-newline-prefix", print_prefix);
+    ROW("format-line2-newline-len", strlen(line));
+    ROW_STR("format-line2-newline-line", line);
+
+    char small[8];
+    memset(small, 'X', sizeof(small));
+    print_prefix = 1;
+    ret = call_format_line2(small, sizeof(small), &print_prefix,
+                            AV_LOG_WARNING, "%s", "plain");
+    ROW("format-line2-small-ret", ret);
+    ROW("format-line2-small-prefix", print_prefix);
+    ROW("format-line2-small-len", strlen(small));
+    ROW_STR("format-line2-small-line", small);
+
+    print_prefix = 1;
+    ret = call_format_line2(NULL, 0, &print_prefix,
+                            AV_LOG_WARNING, "%s", "plain");
+    ROW("format-line2-nullzero-ret", ret);
+    ROW("format-line2-nullzero-prefix", print_prefix);
+
+    memset(line, 'X', sizeof(line));
+    print_prefix = 1;
+    ret = call_format_line2(line, 1, &print_prefix,
+                            AV_LOG_WARNING, "%s", "plain");
+    ROW("format-line2-size1-ret", ret);
+    ROW("format-line2-size1-prefix", print_prefix);
+    ROW("format-line2-size1-len", strlen(line));
+    ROW_STR("format-line2-size1-line", line);
 }
 
 int main(void) {
@@ -238,6 +491,7 @@ int main(void) {
     print_flags_after_set("set-flags-all-known",
                           AV_LOG_SKIP_REPEATED | AV_LOG_PRINT_LEVEL |
                           AV_LOG_PRINT_TIME | AV_LOG_PRINT_DATETIME);
+    print_format_line2_rows();
     av_log_set_callback(capture_log_callback);
     int once_state = 0;
     av_log_once(NULL, AV_LOG_WARNING, AV_LOG_DEBUG, &once_state, "%s", "once");
