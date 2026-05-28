@@ -44,11 +44,11 @@ use avutil::{
     FrameStereo3dView, FrameThreeDReferenceDisplay, FrameThreeDReferenceDisplays,
     FrameVideoBlockParams, FrameVideoEncParams, FrameVideoEncParamsType, FrameVideoHint,
     FrameVideoHintType, FrameVideoRect, FrameViewId, HashAlgorithm, HashContext, LogColorMode,
-    LogFlags, LogFormatOptions, LogLevel, LogRecord, LogTimestamp, Logger, MatchMode, Md5, Murmur3,
-    NativeChannelMaskLayout, Packet, PacketA53ClosedCaptions, PacketActiveFormatDescription,
-    PacketAmbientViewingEnvironment, PacketAudioServiceType, PacketContentLightMetadata,
-    PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf, PacketDoviCompression,
-    PacketDynamicHdr10Plus, PacketEncryptionInfo, PacketEncryptionInitInfo,
+    LogFlags, LogFormatOptions, LogLevel, LogOnceState, LogRecord, LogTimestamp, Logger, MatchMode,
+    Md5, Murmur3, NativeChannelMaskLayout, Packet, PacketA53ClosedCaptions,
+    PacketActiveFormatDescription, PacketAmbientViewingEnvironment, PacketAudioServiceType,
+    PacketContentLightMetadata, PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf,
+    PacketDoviCompression, PacketDynamicHdr10Plus, PacketEncryptionInfo, PacketEncryptionInitInfo,
     PacketEncryptionSubsample, PacketExif, PacketFallbackTrack, PacketFifo, PacketFifoFlags,
     PacketFlags, PacketFrameCropping, PacketH263MbInfo, PacketH263MbInfoEntry,
     PacketHdrPlusColorTransformParams, PacketIamfAnimationType, PacketIamfDemixingInfoParam,
@@ -2000,6 +2000,44 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     logger.clear();
     assert!(logger.records().is_empty());
     assert!(logger.formatted_records().is_empty());
+
+    let mut once_logger = Logger::new(LogLevel::Warning);
+    let mut once_state = LogOnceState::new();
+    assert_eq!(once_state.raw(), 0);
+    assert!(once_logger.log_once(
+        &mut once_state,
+        LogRecord::new(LogLevel::Warning, "ffmpeg", "once"),
+        LogLevel::Debug,
+    ));
+    assert_eq!(once_state.raw(), 1);
+    assert!(!once_logger.log_once(
+        &mut once_state,
+        LogRecord::new(LogLevel::Warning, "ffmpeg", "once"),
+        LogLevel::Debug,
+    ));
+    assert_eq!(once_logger.records().len(), 1);
+    assert_eq!(once_logger.records()[0].level(), LogLevel::Warning);
+    let mut filtered_once_state = LogOnceState::new();
+    assert!(!once_logger.log_once(
+        &mut filtered_once_state,
+        LogRecord::new(LogLevel::Info, "ffmpeg", "hidden-once"),
+        LogLevel::Error,
+    ));
+    assert_eq!(filtered_once_state.raw(), 1);
+    assert!(once_logger.log_once(
+        &mut filtered_once_state,
+        LogRecord::new(LogLevel::Info, "ffmpeg", "visible-once"),
+        LogLevel::Error,
+    ));
+    assert_eq!(once_logger.records()[1].level(), LogLevel::Error);
+    let mut preseeded_once_state = LogOnceState::from_raw(7);
+    assert!(once_logger.log_once(
+        &mut preseeded_once_state,
+        LogRecord::new(LogLevel::Info, "ffmpeg", "preseeded-once"),
+        LogLevel::Error,
+    ));
+    assert_eq!(preseeded_once_state.raw(), 1);
+    assert_eq!(once_logger.records()[2].level(), LogLevel::Error);
 
     let timestamp = LogTimestamp::from_unix_micros(1_704_112_705_123_456);
     assert_eq!(timestamp.format_time_utc(), "12:38:25.123456");

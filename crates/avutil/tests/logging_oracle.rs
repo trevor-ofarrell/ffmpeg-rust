@@ -98,6 +98,15 @@ fn expected_rows() -> BTreeMap<&'static str, i32> {
             LogFlags::PRINT_DATETIME.bits() as i32,
         ),
         ("set-flags-all-known", all_flags.bits() as i32),
+        ("log-once-first-state", 1),
+        ("log-once-first-count", 1),
+        ("log-once-first-level", LogLevel::Warning.as_ffmpeg_value()),
+        ("log-once-second-state", 1),
+        ("log-once-second-count", 2),
+        ("log-once-second-level", LogLevel::Debug.as_ffmpeg_value()),
+        ("log-once-preseed-state", 1),
+        ("log-once-preseed-count", 3),
+        ("log-once-preseed-level", LogLevel::Error.as_ffmpeg_value()),
     ]
     .into_iter()
     .collect()
@@ -167,10 +176,22 @@ fn compile_and_run_oracle(
 }
 
 fn oracle_c_source() -> &'static str {
-    r#"#include <stdio.h>
+    r#"#include <stdarg.h>
+#include <stdio.h>
 #include <libavutil/log.h>
 
 #define ROW(name, value) printf("%s|%d\n", name, (int)(value))
+
+static int captured_count = 0;
+static int captured_level = -999;
+
+static void capture_log_callback(void *ptr, int level, const char *fmt, va_list vl) {
+    (void)ptr;
+    (void)fmt;
+    (void)vl;
+    captured_count++;
+    captured_level = level;
+}
 
 static void print_level_after_set(const char *name, int level) {
     av_log_set_level(level);
@@ -217,6 +238,22 @@ int main(void) {
     print_flags_after_set("set-flags-all-known",
                           AV_LOG_SKIP_REPEATED | AV_LOG_PRINT_LEVEL |
                           AV_LOG_PRINT_TIME | AV_LOG_PRINT_DATETIME);
+    av_log_set_callback(capture_log_callback);
+    int once_state = 0;
+    av_log_once(NULL, AV_LOG_WARNING, AV_LOG_DEBUG, &once_state, "%s", "once");
+    ROW("log-once-first-state", once_state);
+    ROW("log-once-first-count", captured_count);
+    ROW("log-once-first-level", captured_level);
+    av_log_once(NULL, AV_LOG_WARNING, AV_LOG_DEBUG, &once_state, "%s", "once");
+    ROW("log-once-second-state", once_state);
+    ROW("log-once-second-count", captured_count);
+    ROW("log-once-second-level", captured_level);
+    int preseed_state = 7;
+    av_log_once(NULL, AV_LOG_INFO, AV_LOG_ERROR, &preseed_state, "%s", "preseed");
+    ROW("log-once-preseed-state", preseed_state);
+    ROW("log-once-preseed-count", captured_count);
+    ROW("log-once-preseed-level", captured_level);
+    av_log_set_callback(av_log_default_callback);
     return 0;
 }
 "#

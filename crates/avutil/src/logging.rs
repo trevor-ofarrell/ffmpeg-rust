@@ -151,6 +151,33 @@ impl LogFlags {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct LogOnceState {
+    raw: i32,
+}
+
+impl LogOnceState {
+    pub const fn new() -> Self {
+        Self { raw: 0 }
+    }
+
+    pub const fn from_raw(raw: i32) -> Self {
+        Self { raw }
+    }
+
+    pub const fn raw(self) -> i32 {
+        self.raw
+    }
+
+    pub const fn has_logged(self) -> bool {
+        self.raw != 0
+    }
+
+    fn mark_logged(&mut self) {
+        self.raw = 1;
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LogColorMode {
     #[default]
     Never,
@@ -368,6 +395,11 @@ impl LogRecord {
 
     pub fn with_current_timestamp(self) -> Option<Self> {
         LogTimestamp::now_utc().map(|timestamp| self.with_timestamp(timestamp))
+    }
+
+    pub fn with_level(mut self, level: LogLevel) -> Self {
+        self.level = level;
+        self
     }
 
     fn repetition_summary(count: usize) -> Self {
@@ -625,6 +657,22 @@ impl Logger {
         }
     }
 
+    pub fn log_once(
+        &mut self,
+        state: &mut LogOnceState,
+        record: LogRecord,
+        subsequent_level: LogLevel,
+    ) -> bool {
+        let level = if state.has_logged() {
+            subsequent_level
+        } else {
+            record.level()
+        };
+        let logged = self.log(record.with_level(level));
+        state.mark_logged();
+        logged
+    }
+
     pub fn records(&self) -> &[LogRecord] {
         &self.records
     }
@@ -762,6 +810,17 @@ pub fn clear_global_log_callback() -> bool {
 
 pub fn global_log(record: LogRecord) -> bool {
     global_logger().lock().unwrap().log(record)
+}
+
+pub fn global_log_once(
+    state: &mut LogOnceState,
+    record: LogRecord,
+    subsequent_level: LogLevel,
+) -> bool {
+    global_logger()
+        .lock()
+        .unwrap()
+        .log_once(state, record, subsequent_level)
 }
 
 pub fn flush_global_log_repeated() -> bool {
@@ -1372,6 +1431,84 @@ mod tests {
 
         assert_eq!(seen, ["[error] ffmpeg: bad packet"]);
         assert_eq!(logger.formatted_records().len(), 2);
+    }
+
+    #[test]
+    fn log_once_uses_initial_then_subsequent_level_and_marks_state() {
+        let mut logger = Logger::new(LogLevel::Warning);
+        let mut state = LogOnceState::new();
+
+        assert_eq!(state.raw(), 0);
+        assert!(!state.has_logged());
+        assert!(logger.log_once(
+            &mut state,
+            LogRecord::new(LogLevel::Warning, "ffmpeg", "one-shot"),
+            LogLevel::Debug,
+        ));
+        assert_eq!(state.raw(), 1);
+        assert!(state.has_logged());
+        assert_eq!(logger.records().len(), 1);
+        assert_eq!(logger.records()[0].level(), LogLevel::Warning);
+
+        assert!(!logger.log_once(
+            &mut state,
+            LogRecord::new(LogLevel::Warning, "ffmpeg", "one-shot"),
+            LogLevel::Debug,
+        ));
+        assert_eq!(state.raw(), 1);
+        assert_eq!(logger.records().len(), 1);
+
+        let mut filtered_first = LogOnceState::new();
+        assert!(!logger.log_once(
+            &mut filtered_first,
+            LogRecord::new(LogLevel::Info, "ffmpeg", "filtered first"),
+            LogLevel::Error,
+        ));
+        assert_eq!(filtered_first.raw(), 1);
+        assert!(logger.log_once(
+            &mut filtered_first,
+            LogRecord::new(LogLevel::Info, "ffmpeg", "second visible"),
+            LogLevel::Error,
+        ));
+        assert_eq!(logger.records().len(), 2);
+        assert_eq!(logger.records()[1].level(), LogLevel::Error);
+        assert_eq!(logger.records()[1].message(), "second visible");
+
+        let mut preseeded = LogOnceState::from_raw(7);
+        assert!(preseeded.has_logged());
+        assert!(logger.log_once(
+            &mut preseeded,
+            LogRecord::new(LogLevel::Info, "ffmpeg", "preseeded"),
+            LogLevel::Error,
+        ));
+        assert_eq!(preseeded.raw(), 1);
+        assert_eq!(logger.records()[2].level(), LogLevel::Error);
+        assert_eq!(logger.records()[2].message(), "preseeded");
+    }
+
+    #[test]
+    fn global_log_once_uses_shared_logger_state() {
+        let _guard = GLOBAL_LOGGER_TEST_LOCK.lock().unwrap();
+        reset_global_logger_for_tests(LogLevel::Warning, LogFlags::PRINT_LEVEL);
+        let mut state = LogOnceState::new();
+
+        assert!(global_log_once(
+            &mut state,
+            LogRecord::new(LogLevel::Warning, "ffmpeg", "once"),
+            LogLevel::Debug,
+        ));
+        assert!(!global_log_once(
+            &mut state,
+            LogRecord::new(LogLevel::Warning, "ffmpeg", "once"),
+            LogLevel::Debug,
+        ));
+
+        let records = take_global_log_records();
+        assert_eq!(state.raw(), 1);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].level(), LogLevel::Warning);
+
+        reset_global_logger_for_tests(LogLevel::Info, LogFlags::PRINT_LEVEL);
     }
 
     #[test]

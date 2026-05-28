@@ -238,6 +238,11 @@ const PATH_RULES: &[PathRule] = &[
         id_prefixes: &[],
     },
     PathRule {
+        path: "crates/avutil/tests/logging_oracle.rs",
+        exact_ids: &["avutil-logging"],
+        id_prefixes: &[],
+    },
+    PathRule {
         path: "crates/avutil/src/byteio.rs",
         exact_ids: &["avutil-byteio"],
         id_prefixes: &[],
@@ -2041,6 +2046,17 @@ mod tests {
         assert_eq!(
             changed_components(&component_ids, &paths),
             vec!["avutil-buffer".to_string()]
+        );
+    }
+
+    #[test]
+    fn changed_selection_maps_logging_oracle_test_to_component() {
+        let component_ids = component_ids_from_ledger(&ledger(&["avutil-logging"]));
+        let paths = vec!["crates/avutil/tests/logging_oracle.rs".to_string()];
+
+        assert_eq!(
+            changed_components(&component_ids, &paths),
+            vec!["avutil-logging".to_string()]
         );
     }
 
