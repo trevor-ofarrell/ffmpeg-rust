@@ -188,6 +188,13 @@ pub enum LogColorMode {
 
 pub const AV_LOG_FORCE_COLOR_ENV: &str = "AV_LOG_FORCE_COLOR";
 pub const AV_LOG_FORCE_NOCOLOR_ENV: &str = "AV_LOG_FORCE_NOCOLOR";
+const DEFAULT_CALLBACK_CONTEXT_COLOR: &str = "\x1b[48;5;0m\x1b[38;5;250m";
+const DEFAULT_CALLBACK_WARNING_COLOR: &str = "\x1b[48;5;0m\x1b[38;5;226m";
+const DEFAULT_CALLBACK_ERROR_COLOR: &str = "\x1b[48;5;0m\x1b[38;5;196m";
+
+fn colorize(color_code: &str, text: &str) -> String {
+    format!("{color_code}{text}\x1b[0m")
+}
 
 impl LogColorMode {
     pub fn from_ffmpeg_env() -> Self {
@@ -575,7 +582,7 @@ impl LogRecord {
     }
 
     pub fn format_default_callback_line_null_context_with_flags(&self, flags: LogFlags) -> String {
-        self.format_default_callback_line_with_context(None, flags)
+        self.format_default_callback_line_with_context(None, LogFormatOptions::new(flags))
     }
 
     pub fn format_default_callback_line_context_with_flags(
@@ -583,18 +590,38 @@ impl LogRecord {
         context: &AvLogContextPrefix,
         flags: LogFlags,
     ) -> String {
-        self.format_default_callback_line_with_context(Some(context), flags)
+        self.format_default_callback_line_with_context(Some(context), LogFormatOptions::new(flags))
+    }
+
+    pub fn format_default_callback_line_null_context_with_options(
+        &self,
+        options: LogFormatOptions,
+    ) -> String {
+        self.format_default_callback_line_with_context(None, options)
+    }
+
+    pub fn format_default_callback_line_context_with_options(
+        &self,
+        context: &AvLogContextPrefix,
+        options: LogFormatOptions,
+    ) -> String {
+        self.format_default_callback_line_with_context(Some(context), options)
     }
 
     fn format_default_callback_line_with_context(
         &self,
         context: Option<&AvLogContextPrefix>,
-        flags: LogFlags,
+        options: LogFormatOptions,
     ) -> String {
         if self.is_repetition_summary() {
             return format!("    {}\n", self.message);
         }
 
+        let flags = options.flags();
+        let use_color = matches!(options.color_mode(), LogColorMode::Always);
+        let severity_color = use_color
+            .then(|| self.default_callback_ansi_color_code())
+            .flatten();
         let mut line = String::new();
         if let Some(timestamp) = self.timestamp {
             if flags.contains(LogFlags::PRINT_DATETIME) {
@@ -606,18 +633,26 @@ impl LogRecord {
             }
         }
         if let Some(context) = context {
-            line.push('[');
-            line.push_str(context.item_name());
-            line.push_str(" @ ");
-            line.push_str(context.address());
-            line.push_str("] ");
+            let context_prefix = format!("[{} @ {}] ", context.item_name(), context.address());
+            if use_color {
+                line.push_str(&colorize(DEFAULT_CALLBACK_CONTEXT_COLOR, &context_prefix));
+            } else {
+                line.push_str(&context_prefix);
+            }
         }
         if flags.contains(LogFlags::PRINT_LEVEL) {
-            line.push('[');
-            line.push_str(self.level.name());
-            line.push_str("] ");
+            let level_prefix = format!("[{}] ", self.level.name());
+            if let Some(color_code) = severity_color {
+                line.push_str(&colorize(color_code, &level_prefix));
+            } else {
+                line.push_str(&level_prefix);
+            }
         }
-        line.push_str(&self.message);
+        if let Some(color_code) = severity_color {
+            line.push_str(&colorize(color_code, &self.message));
+        } else {
+            line.push_str(&self.message);
+        }
         line
     }
 
@@ -727,6 +762,20 @@ impl LogRecord {
         match self.level {
             LogLevel::Panic | LogLevel::Fatal | LogLevel::Error => Some("\x1b[31m"),
             LogLevel::Warning => Some("\x1b[33m"),
+            LogLevel::Quiet
+            | LogLevel::Info
+            | LogLevel::Verbose
+            | LogLevel::Debug
+            | LogLevel::Trace => None,
+        }
+    }
+
+    fn default_callback_ansi_color_code(&self) -> Option<&'static str> {
+        match self.level {
+            LogLevel::Panic | LogLevel::Fatal | LogLevel::Error => {
+                Some(DEFAULT_CALLBACK_ERROR_COLOR)
+            }
+            LogLevel::Warning => Some(DEFAULT_CALLBACK_WARNING_COLOR),
             LogLevel::Quiet
             | LogLevel::Info
             | LogLevel::Verbose
@@ -1332,6 +1381,37 @@ mod tests {
                     LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL
                 ),
             "2024-01-01 12:38:25.123 [rustctx @ <ptr>] [warning] ctxmsg\n"
+        );
+
+        let force_color =
+            LogFormatOptions::new(LogFlags::empty()).with_color_mode(LogColorMode::Always);
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "plain\n")
+                .format_default_callback_line_null_context_with_options(force_color),
+            "\x1b[48;5;0m\x1b[38;5;226mplain\n\x1b[0m"
+        );
+        assert_eq!(
+            LogRecord::new(LogLevel::Error, "ignored", "plain\n")
+                .format_default_callback_line_null_context_with_options(force_color),
+            "\x1b[48;5;0m\x1b[38;5;196mplain\n\x1b[0m"
+        );
+        assert_eq!(
+            LogRecord::new(LogLevel::Info, "ignored", "plain\n")
+                .format_default_callback_line_null_context_with_options(force_color),
+            "plain\n"
+        );
+
+        let force_color_level =
+            LogFormatOptions::new(LogFlags::PRINT_LEVEL).with_color_mode(LogColorMode::Always);
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "plain\n")
+                .format_default_callback_line_null_context_with_options(force_color_level),
+            "\x1b[48;5;0m\x1b[38;5;226m[warning] \x1b[0m\x1b[48;5;0m\x1b[38;5;226mplain\n\x1b[0m"
+        );
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "plain\n")
+                .format_default_callback_line_context_with_options(&context, force_color_level),
+            "\x1b[48;5;0m\x1b[38;5;250m[rustctx @ <ptr>] \x1b[0m\x1b[48;5;0m\x1b[38;5;226m[warning] \x1b[0m\x1b[48;5;0m\x1b[38;5;226mplain\n\x1b[0m"
         );
     }
 

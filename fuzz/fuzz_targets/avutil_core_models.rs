@@ -2129,6 +2129,16 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
         default_callback_repeat_lines,
         "[warning] repeat\n    Last message repeated 2 times\n[error] next\n"
     );
+    let default_callback_color =
+        LogFormatOptions::new(LogFlags::PRINT_LEVEL).with_color_mode(LogColorMode::Always);
+    assert_eq!(
+        LogRecord::new(LogLevel::Warning, "ignored", "plain\n")
+            .format_default_callback_line_context_with_options(
+                &callback_context,
+                default_callback_color
+            ),
+        "\x1b[48;5;0m\x1b[38;5;250m[rustctx @ <ptr>] \x1b[0m\x1b[48;5;0m\x1b[38;5;226m[warning] \x1b[0m\x1b[48;5;0m\x1b[38;5;226mplain\n\x1b[0m"
+    );
     let color_options =
         LogFormatOptions::new(LogFlags::PRINT_LEVEL).with_color_mode(LogColorMode::Always);
     let plain_options =

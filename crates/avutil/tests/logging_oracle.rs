@@ -6,8 +6,8 @@ use std::{
 };
 
 use avutil::{
-    AvLogContextPrefix, AvLogFormatLine, AvLogFormatLine2, LogFlags, LogLevel, LogRecord,
-    LogTimestamp, Logger,
+    AvLogContextPrefix, AvLogFormatLine, AvLogFormatLine2, LogColorMode, LogFlags,
+    LogFormatOptions, LogLevel, LogRecord, LogTimestamp, Logger,
 };
 
 #[test]
@@ -240,6 +240,7 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
     );
 
     let timestamp = LogTimestamp::from_unix_micros(1_704_112_705_123_456);
+    let context = AvLogContextPrefix::new("rustctx", "<ptr>");
     let default_time = rust_default_callback_line(LogFlags::PRINT_TIME, Some(timestamp));
     rows.insert(
         "default-callback-time-line",
@@ -319,6 +320,36 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
     rows.insert(
         "default-callback-repeat-noskip-line",
         escape_row_text(default_repeat_no_skip.as_bytes()),
+    );
+    let default_color_warning =
+        rust_default_callback_color_line(LogLevel::Warning, None, LogFlags::empty());
+    rows.insert(
+        "default-callback-color-warning-line",
+        escape_row_text(default_color_warning.as_bytes()),
+    );
+    let default_color_warning_level =
+        rust_default_callback_color_line(LogLevel::Warning, None, LogFlags::PRINT_LEVEL);
+    rows.insert(
+        "default-callback-color-warning-level-line",
+        escape_row_text(default_color_warning_level.as_bytes()),
+    );
+    let default_color_warning_context_level =
+        rust_default_callback_color_line(LogLevel::Warning, Some(&context), LogFlags::PRINT_LEVEL);
+    rows.insert(
+        "default-callback-color-warning-context-level-line",
+        escape_row_text(default_color_warning_context_level.as_bytes()),
+    );
+    let default_color_error =
+        rust_default_callback_color_line(LogLevel::Error, None, LogFlags::empty());
+    rows.insert(
+        "default-callback-color-error-line",
+        escape_row_text(default_color_error.as_bytes()),
+    );
+    let default_color_info =
+        rust_default_callback_color_line(LogLevel::Info, None, LogFlags::empty());
+    rows.insert(
+        "default-callback-color-info-line",
+        escape_row_text(default_color_info.as_bytes()),
     );
 
     let (plain, _) = rust_format_line(LogLevel::Warning, "plain", LogFlags::empty(), true, 128);
@@ -718,6 +749,19 @@ fn rust_default_callback_repeat_lines(flags: LogFlags) -> String {
         .collect()
 }
 
+fn rust_default_callback_color_line(
+    level: LogLevel,
+    context: Option<&AvLogContextPrefix>,
+    flags: LogFlags,
+) -> String {
+    let options = LogFormatOptions::new(flags).with_color_mode(LogColorMode::Always);
+    let record = LogRecord::new(level, "ignored", "plain\n");
+    match context {
+        Some(context) => record.format_default_callback_line_context_with_options(context, options),
+        None => record.format_default_callback_line_null_context_with_options(options),
+    }
+}
+
 fn normalize_default_callback_timestamp(line: &str) -> String {
     if is_default_datetime_prefix(line) {
         format!("<datetime> {}", &line[24..])
@@ -828,10 +872,11 @@ fn compile_and_run_oracle(
 ) -> String {
     let output = if cfg!(windows) {
         let script = format!(
-            "gcc -I {} {} {} -lm -pthread -ldl -o {} && {}",
+            "gcc -I {} {} {} -lm -pthread -ldl -o {} && {} && {} --color",
             shell_quote(&to_wsl_path(include_dir)),
             shell_quote(&to_wsl_path(source)),
             shell_quote(&to_wsl_path(libavutil)),
+            shell_quote(&to_wsl_path(executable)),
             shell_quote(&to_wsl_path(executable)),
             shell_quote(&to_wsl_path(executable))
         );
@@ -843,10 +888,11 @@ fn compile_and_run_oracle(
         Command::new("sh")
             .arg("-c")
             .arg(format!(
-                "gcc -I {} {} {} -lm -pthread -ldl -o {} && {}",
+                "gcc -I {} {} {} -lm -pthread -ldl -o {} && {} && {} --color",
                 shell_quote(&include_dir.display().to_string()),
                 shell_quote(&source.display().to_string()),
                 shell_quote(&libavutil.display().to_string()),
+                shell_quote(&executable.display().to_string()),
                 shell_quote(&executable.display().to_string()),
                 shell_quote(&executable.display().to_string())
             ))
@@ -1274,8 +1320,8 @@ static void print_format_line_rows(void) {
     ROW_STR("format-line-time-level-line", line);
 }
 
-static void print_default_callback_row(const char *name, void *ptr, int flags,
-                                       const char *message) {
+static void print_default_callback_level_row(const char *name, void *ptr, int level,
+                                             int flags, const char *message) {
     char captured[1024];
     FILE *capture = tmpfile();
     if (!capture) {
@@ -1296,7 +1342,7 @@ static void print_default_callback_row(const char *name, void *ptr, int flags,
     av_log_set_callback(av_log_default_callback);
     av_log_set_level(AV_LOG_TRACE);
     av_log_set_flags(flags);
-    av_log(ptr, AV_LOG_WARNING, "%s\n", message);
+    av_log(ptr, level, "%s\n", message);
     fflush(stderr);
 
     dup2(saved_stderr, fileno(stderr));
@@ -1308,6 +1354,11 @@ static void print_default_callback_row(const char *name, void *ptr, int flags,
     fclose(capture);
 
     ROW_STR_NORMALIZED_DEFAULT_CALLBACK(name, captured);
+}
+
+static void print_default_callback_row(const char *name, void *ptr, int flags,
+                                       const char *message) {
+    print_default_callback_level_row(name, ptr, AV_LOG_WARNING, flags, message);
 }
 
 static void print_default_callback_repeat_row(const char *name, int flags) {
@@ -1381,7 +1432,30 @@ static void print_default_callback_rows(void) {
     print_default_callback_repeat_row("default-callback-repeat-noskip-line", 0);
 }
 
-int main(void) {
+static void print_default_callback_color_rows(void) {
+    TestLogContext ctx = { &test_log_class };
+    unsetenv("AV_LOG_FORCE_NOCOLOR");
+    setenv("AV_LOG_FORCE_COLOR", "1", 1);
+    print_default_callback_level_row("default-callback-color-warning-line", NULL,
+                                     AV_LOG_WARNING, 0, "plain");
+    print_default_callback_level_row("default-callback-color-warning-level-line", NULL,
+                                     AV_LOG_WARNING, AV_LOG_PRINT_LEVEL, "plain");
+    print_default_callback_level_row("default-callback-color-warning-context-level-line",
+                                     &ctx, AV_LOG_WARNING, AV_LOG_PRINT_LEVEL,
+                                     "plain");
+    print_default_callback_level_row("default-callback-color-error-line", NULL,
+                                     AV_LOG_ERROR, 0, "plain");
+    print_default_callback_level_row("default-callback-color-info-line", NULL,
+                                     AV_LOG_INFO, 0, "plain");
+    unsetenv("AV_LOG_FORCE_COLOR");
+}
+
+int main(int argc, char **argv) {
+    if (argc > 1 && strcmp(argv[1], "--color") == 0) {
+        print_default_callback_color_rows();
+        return 0;
+    }
+
     ROW("AV_LOG_QUIET", AV_LOG_QUIET);
     ROW("AV_LOG_PANIC", AV_LOG_PANIC);
     ROW("AV_LOG_FATAL", AV_LOG_FATAL);
