@@ -2679,6 +2679,36 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
         ),
         LogColorMode::Basic
     );
+    let basic_options =
+        LogFormatOptions::new(LogFlags::PRINT_LEVEL).with_color_mode(LogColorMode::Basic);
+    let basic_context = AvLogContextPrefix::new("rustctx", "<ptr>");
+    assert_eq!(
+        LogRecord::new(LogLevel::Warning, "ignored", "plain\n")
+            .format_default_callback_line_context_with_options(&basic_context, basic_options),
+        "\x1b[0;39m[rustctx @ <ptr>] \x1b[0m\x1b[0;33m[warning] \x1b[0m\x1b[0;33mplain\n\x1b[0m"
+    );
+    assert_eq!(
+        LogRecord::new(LogLevel::Error, "ignored", "plain\n")
+            .format_default_callback_line_null_context_with_options(basic_options),
+        "\x1b[1;31m[error] \x1b[0m\x1b[1;31mplain\n\x1b[0m"
+    );
+    assert_eq!(
+        LogRecord::new(LogLevel::Fatal, "ignored", "plain\n")
+            .format_default_callback_line_null_context_with_options(basic_options),
+        "\x1b[4;31m[fatal] \x1b[0m\x1b[4;31mplain\n\x1b[0m"
+    );
+    assert_eq!(
+        LogRecord::new(LogLevel::Panic, "ignored", "plain\n")
+            .format_default_callback_line_null_context_with_options(basic_options),
+        "\x1b[4;31m[panic] \x1b[0m\x1b[4;31mplain\n\x1b[0m"
+    );
+    assert_eq!(
+        LogRecord::new(LogLevel::Info, "ignored", "plain\n")
+            .format_default_callback_line_null_context_with_options(
+                LogFormatOptions::new(LogFlags::empty()).with_color_mode(LogColorMode::Basic),
+            ),
+        "plain\n"
+    );
     assert_eq!(
         LogColorMode::from_ffmpeg_env_vars_and_stderr(
             |name| name == AV_LOG_FORCE_NOCOLOR_ENV,

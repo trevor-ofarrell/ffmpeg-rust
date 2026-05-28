@@ -177,7 +177,7 @@ The newest default-callback forced-color severity rows add fatal and panic `PRIN
 
 The default-callback repeat/color rows also add normalized AVClass-context repeated diagnostics, context-switch diagnostics, forced-color repeated diagnostics, and forced-color quiet diagnostics, proving distinct AVClass instances with identical warning text are not coalesced, warning/error segments colorize while the repeat summary stays the plain four-space line, and quiet messages use panic color while still suppressing optional time/level prefixes.
 
-The newest no-force pseudo-terminal TERM rows run as fresh oracle processes because FFmpeg caches the first default-callback color decision. They prove unset `TERM` produces plain warning output, `TERM=dumb` and empty `TERM` produce basic ANSI warning coloring (`0;33m`), and existing 256-color terminal rows keep the 256-color warning/context segment model.
+The newest no-force pseudo-terminal TERM rows run as fresh oracle processes because FFmpeg caches the first default-callback color decision. They prove unset `TERM` produces plain warning output, `TERM=dumb` produces basic ANSI context (`0;39m`), warning (`0;33m`), error (`1;31m`), and fatal/panic (`4;31m`) segments while info stays plain, empty `TERM` produces the same basic warning row, and existing 256-color terminal rows keep the 256-color warning/context segment model.
 
 ```sh
 cargo test -p avutil --test logging_oracle -- --ignored

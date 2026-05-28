@@ -763,19 +763,82 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
         "default-callback-no-force-tty-context-level-line",
         escape_row_text(default_no_force_tty_context.as_bytes()),
     );
-    let default_no_force_tty_term_unset = rust_default_callback_no_force_tty_term_line(None);
+    let default_no_force_tty_term_unset = rust_default_callback_no_force_tty_term_line(
+        None,
+        LogLevel::Warning,
+        None,
+        LogFlags::PRINT_LEVEL,
+    );
     rows.insert(
         "default-callback-no-force-tty-term-unset-warning-level-line",
         escape_row_text(default_no_force_tty_term_unset.as_bytes()),
     );
-    let default_no_force_tty_term_dumb =
-        rust_default_callback_no_force_tty_term_line(Some(OsStr::new("dumb")));
+    let default_no_force_tty_term_dumb = rust_default_callback_no_force_tty_term_line(
+        Some(OsStr::new("dumb")),
+        LogLevel::Warning,
+        None,
+        LogFlags::PRINT_LEVEL,
+    );
     rows.insert(
         "default-callback-no-force-tty-term-dumb-warning-level-line",
         escape_row_text(default_no_force_tty_term_dumb.as_bytes()),
     );
-    let default_no_force_tty_term_empty =
-        rust_default_callback_no_force_tty_term_line(Some(OsStr::new("")));
+    let default_no_force_tty_term_dumb_context = rust_default_callback_no_force_tty_term_line(
+        Some(OsStr::new("dumb")),
+        LogLevel::Warning,
+        Some(&context),
+        LogFlags::PRINT_LEVEL,
+    );
+    rows.insert(
+        "default-callback-no-force-tty-term-dumb-context-warning-level-line",
+        escape_row_text(default_no_force_tty_term_dumb_context.as_bytes()),
+    );
+    let default_no_force_tty_term_dumb_error = rust_default_callback_no_force_tty_term_line(
+        Some(OsStr::new("dumb")),
+        LogLevel::Error,
+        None,
+        LogFlags::PRINT_LEVEL,
+    );
+    rows.insert(
+        "default-callback-no-force-tty-term-dumb-error-level-line",
+        escape_row_text(default_no_force_tty_term_dumb_error.as_bytes()),
+    );
+    let default_no_force_tty_term_dumb_fatal = rust_default_callback_no_force_tty_term_line(
+        Some(OsStr::new("dumb")),
+        LogLevel::Fatal,
+        None,
+        LogFlags::PRINT_LEVEL,
+    );
+    rows.insert(
+        "default-callback-no-force-tty-term-dumb-fatal-level-line",
+        escape_row_text(default_no_force_tty_term_dumb_fatal.as_bytes()),
+    );
+    let default_no_force_tty_term_dumb_panic = rust_default_callback_no_force_tty_term_line(
+        Some(OsStr::new("dumb")),
+        LogLevel::Panic,
+        None,
+        LogFlags::PRINT_LEVEL,
+    );
+    rows.insert(
+        "default-callback-no-force-tty-term-dumb-panic-level-line",
+        escape_row_text(default_no_force_tty_term_dumb_panic.as_bytes()),
+    );
+    let default_no_force_tty_term_dumb_info = rust_default_callback_no_force_tty_term_line(
+        Some(OsStr::new("dumb")),
+        LogLevel::Info,
+        None,
+        LogFlags::empty(),
+    );
+    rows.insert(
+        "default-callback-no-force-tty-term-dumb-info-line",
+        escape_row_text(default_no_force_tty_term_dumb_info.as_bytes()),
+    );
+    let default_no_force_tty_term_empty = rust_default_callback_no_force_tty_term_line(
+        Some(OsStr::new("")),
+        LogLevel::Warning,
+        None,
+        LogFlags::PRINT_LEVEL,
+    );
     rows.insert(
         "default-callback-no-force-tty-term-empty-warning-level-line",
         escape_row_text(default_no_force_tty_term_empty.as_bytes()),
@@ -1572,9 +1635,14 @@ fn rust_default_callback_no_force_tty_line(
     }
 }
 
-fn rust_default_callback_no_force_tty_term_line(term: Option<&OsStr>) -> String {
+fn rust_default_callback_no_force_tty_term_line(
+    term: Option<&OsStr>,
+    level: LogLevel,
+    context: Option<&AvLogContextPrefix>,
+    flags: LogFlags,
+) -> String {
     let mut color_state = DefaultCallbackColorState::new();
-    let options = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
+    let options = LogFormatOptions::new(flags)
         .with_default_callback_color_state_and_resolver(&mut color_state, || {
             LogColorMode::from_ffmpeg_env_vars_stderr_and_term(|_| false, true, term)
         });
@@ -1585,8 +1653,11 @@ fn rust_default_callback_no_force_tty_term_line(term: Option<&OsStr>) -> String 
     };
     assert_eq!(options.color_mode(), expected_mode);
     assert_eq!(color_state.cached_mode(), Some(expected_mode));
-    LogRecord::new(LogLevel::Warning, "ignored", "plain\n")
-        .format_default_callback_line_null_context_with_options(options)
+    let record = LogRecord::new(level, "ignored", "plain\n");
+    match context {
+        Some(context) => record.format_default_callback_line_context_with_options(context, options),
+        None => record.format_default_callback_line_null_context_with_options(options),
+    }
 }
 
 fn rust_default_callback_nocolor_wins_line() -> String {
@@ -2876,12 +2947,28 @@ static void print_default_callback_no_force_tty_term_unset_row(void) {
 }
 
 static void print_default_callback_no_force_tty_term_dumb_row(void) {
+    TestLogContext ctx = { &test_log_class };
     unsetenv("AV_LOG_FORCE_NOCOLOR");
     unsetenv("AV_LOG_FORCE_COLOR");
     setenv("TERM", "dumb", 1);
     print_default_callback_tty_level_row(
         "default-callback-no-force-tty-term-dumb-warning-level-line",
         NULL, AV_LOG_WARNING, AV_LOG_PRINT_LEVEL, "plain");
+    print_default_callback_tty_level_row(
+        "default-callback-no-force-tty-term-dumb-context-warning-level-line",
+        &ctx, AV_LOG_WARNING, AV_LOG_PRINT_LEVEL, "plain");
+    print_default_callback_tty_level_row(
+        "default-callback-no-force-tty-term-dumb-error-level-line",
+        NULL, AV_LOG_ERROR, AV_LOG_PRINT_LEVEL, "plain");
+    print_default_callback_tty_level_row(
+        "default-callback-no-force-tty-term-dumb-fatal-level-line",
+        NULL, AV_LOG_FATAL, AV_LOG_PRINT_LEVEL, "plain");
+    print_default_callback_tty_level_row(
+        "default-callback-no-force-tty-term-dumb-panic-level-line",
+        NULL, AV_LOG_PANIC, AV_LOG_PRINT_LEVEL, "plain");
+    print_default_callback_tty_level_row(
+        "default-callback-no-force-tty-term-dumb-info-line",
+        NULL, AV_LOG_INFO, 0, "plain");
 }
 
 static void print_default_callback_no_force_tty_term_empty_row(void) {

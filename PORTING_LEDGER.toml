@@ -1805,11 +1805,13 @@ fate_tests = [
 fuzz_targets = ["avutil_core_models"]
 # Latest update: pinned libavutil no-force pseudo-terminal TERM rows now prove
 # TERM affects the default-callback palette rather than simple color enablement:
-# unset TERM stays plain, TERM=dumb and empty TERM emit basic ANSI warning
-# segments (`0;33m`), and TERM containing `256color` keeps the existing 256-color
-# warning/context path. Rust LogColorMode now distinguishes Basic from Always,
-# logging_oracle runs those rows in fresh processes, and avutil_core_models
-# mirrors the bounded TERM invariant. avutil-logging remains fate_pass.
+# unset TERM stays plain, TERM=dumb emits basic ANSI context/warning/error/
+# fatal/panic segments (`0;39m`, `0;33m`, `1;31m`, and `4;31m`) while info
+# stays plain, empty TERM emits the same basic warning row, and TERM containing
+# `256color` keeps the existing 256-color warning/context path. Rust LogColorMode
+# distinguishes Basic from Always, logging_oracle runs those rows in fresh
+# processes, and avutil_core_models mirrors the bounded TERM invariant.
+# avutil-logging remains fate_pass.
 # Latest update: pinned libavutil default-callback color environment rows now
 # prove `AV_LOG_FORCE_COLOR` and `AV_LOG_FORCE_NOCOLOR` are presence-only: empty
 # string and `0` values still count as set, and no-color wins over force-color.
@@ -1976,7 +1978,8 @@ fuzz_targets = ["avutil_core_models"]
 # normalized context, forced-color, and context-switch default-callback repeat rows,
 # default-callback threshold/quiet-prefix rows,
 # default-callback color-cache/forced/no-force redirected-stderr/no-force TTY
-# rows, no-force TTY TERM unset/dumb/empty palette rows,
+# rows, no-force TTY TERM unset/dumb/empty palette rows including basic
+# context/error/fatal/panic color segments,
 # presence-only empty/zero force-color and force-no-color environment rows,
 # including forced-color quiet-message color behavior,
 # bounded plain/colored partial-line prefix continuation and carriage-return

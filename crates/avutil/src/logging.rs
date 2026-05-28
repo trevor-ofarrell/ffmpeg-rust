@@ -202,6 +202,9 @@ const DEFAULT_CALLBACK_WARNING_COLOR: &str = "\x1b[48;5;0m\x1b[38;5;226m";
 const DEFAULT_CALLBACK_FATAL_COLOR: &str = "\x1b[48;5;0m\x1b[38;5;208m";
 const DEFAULT_CALLBACK_ERROR_COLOR: &str = "\x1b[48;5;0m\x1b[38;5;196m";
 const DEFAULT_CALLBACK_PANIC_COLOR: &str = "\x1b[48;5;52m\x1b[38;5;196m";
+const DEFAULT_CALLBACK_BASIC_CONTEXT_COLOR: &str = "\x1b[0;39m";
+const DEFAULT_CALLBACK_BASIC_ERROR_COLOR: &str = "\x1b[1;31m";
+const DEFAULT_CALLBACK_BASIC_FATAL_COLOR: &str = "\x1b[4;31m";
 const DEFAULT_CALLBACK_BASIC_WARNING_COLOR: &str = "\x1b[0;33m";
 
 fn colorize(color_code: &str, text: &str) -> String {
@@ -923,10 +926,17 @@ impl LogRecord {
             }
             if let Some(context) = context {
                 let context_prefix = format!("[{} @ {}] ", context.item_name(), context.address());
-                if matches!(options.color_mode(), LogColorMode::Always) {
-                    line.push_str(&colorize(DEFAULT_CALLBACK_CONTEXT_COLOR, &context_prefix));
-                } else {
-                    line.push_str(&context_prefix);
+                match options.color_mode() {
+                    LogColorMode::Never => line.push_str(&context_prefix),
+                    LogColorMode::Basic => {
+                        line.push_str(&colorize(
+                            DEFAULT_CALLBACK_BASIC_CONTEXT_COLOR,
+                            &context_prefix,
+                        ));
+                    }
+                    LogColorMode::Always => {
+                        line.push_str(&colorize(DEFAULT_CALLBACK_CONTEXT_COLOR, &context_prefix));
+                    }
                 }
             }
             if self.level.permits_prefix_fields() && flags.contains(LogFlags::PRINT_LEVEL) {
@@ -1081,11 +1091,10 @@ impl LogRecord {
 
     fn default_callback_basic_ansi_color_code(&self) -> Option<&'static str> {
         match self.level {
+            LogLevel::Panic | LogLevel::Fatal => Some(DEFAULT_CALLBACK_BASIC_FATAL_COLOR),
+            LogLevel::Error => Some(DEFAULT_CALLBACK_BASIC_ERROR_COLOR),
             LogLevel::Warning => Some(DEFAULT_CALLBACK_BASIC_WARNING_COLOR),
             LogLevel::Quiet
-            | LogLevel::Panic
-            | LogLevel::Fatal
-            | LogLevel::Error
             | LogLevel::Info
             | LogLevel::Verbose
             | LogLevel::Debug
@@ -2499,6 +2508,35 @@ mod tests {
             LogRecord::new(LogLevel::Warning, "decoder", "damaged packet")
                 .format_line_with_options(options),
             "\x1b[33m[warning] decoder: damaged packet\x1b[0m"
+        );
+
+        let context = AvLogContextPrefix::new("rustctx", "<ptr>");
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "plain\n")
+                .format_default_callback_line_context_with_options(&context, options),
+            "\x1b[0;39m[rustctx @ <ptr>] \x1b[0m\x1b[0;33m[warning] \x1b[0m\x1b[0;33mplain\n\x1b[0m"
+        );
+        assert_eq!(
+            LogRecord::new(LogLevel::Error, "ignored", "plain\n")
+                .format_default_callback_line_null_context_with_options(options),
+            "\x1b[1;31m[error] \x1b[0m\x1b[1;31mplain\n\x1b[0m"
+        );
+        assert_eq!(
+            LogRecord::new(LogLevel::Fatal, "ignored", "plain\n")
+                .format_default_callback_line_null_context_with_options(options),
+            "\x1b[4;31m[fatal] \x1b[0m\x1b[4;31mplain\n\x1b[0m"
+        );
+        assert_eq!(
+            LogRecord::new(LogLevel::Panic, "ignored", "plain\n")
+                .format_default_callback_line_null_context_with_options(options),
+            "\x1b[4;31m[panic] \x1b[0m\x1b[4;31mplain\n\x1b[0m"
+        );
+        assert_eq!(
+            LogRecord::new(LogLevel::Info, "ignored", "plain\n")
+                .format_default_callback_line_null_context_with_options(
+                    LogFormatOptions::new(LogFlags::empty()).with_color_mode(LogColorMode::Basic),
+                ),
+            "plain\n"
         );
     }
 
