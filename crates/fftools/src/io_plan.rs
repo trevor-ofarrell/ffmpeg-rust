@@ -294,7 +294,7 @@ mod tests {
         let plan = build_io_plan(&command).unwrap();
 
         assert_eq!(plan.log_config().level(), LogLevel::Warning);
-        assert!(plan.log_config().flags().contains(LogFlags::SKIP_REPEATED));
+        assert!(!plan.log_config().flags().contains(LogFlags::SKIP_REPEATED));
         assert!(plan.log_config().flags().contains(LogFlags::PRINT_TIME));
         assert!(!plan.log_config().flags().contains(LogFlags::PRINT_LEVEL));
     }

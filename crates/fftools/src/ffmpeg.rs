@@ -311,6 +311,8 @@ pub fn run_ffmpeg_tool(args: &[String]) -> i32 {
 
 pub fn ffmpeg_output(args: &[String]) -> Result<FfmpegOutput, FfmpegError> {
     if args.iter().any(|arg| arg == "-version") {
+        parse_ffmpeg_args(args)
+            .map_err(|err| FfmpegError::usage(format!("failed to parse options: {err}")))?;
         return Ok(FfmpegOutput::version(version_banner("ffmpeg")));
     }
 

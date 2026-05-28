@@ -506,11 +506,12 @@ cargo test -p avutil --test buffer_oracle -- --ignored
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-buffer --target oracle-libavutil-buffer --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
 ```
 
-`crates/fftools/tests/version_oracle.rs` is an ignored oracle harness for `ffmpeg -version`, `ffprobe -version`, and the `-hide_banner -version` variant. It checks the pinned tool-version prefix and the libav* ABI versions reported by the oracle against the Rust `ffmpeg-rs`/`ffprobe-rs` banner constants, and verifies that `-hide_banner -version` preserves the same version surface as `-version`. `FFMPEG_ORACLE` points to the pinned `ffmpeg` binary; `ffprobe` is found through `FFPROBE_ORACLE`, a sibling of `FFMPEG_ORACLE`, or the standard `third_party/ffmpeg-oracle/build/bin/ffprobe(.exe)` path. Run it with:
+`crates/fftools/tests/version_oracle.rs` is an ignored oracle harness for `ffmpeg -version`, `ffprobe -version`, and the `-hide_banner -version` variant. It checks the pinned tool-version prefix and the libav* ABI versions reported by the oracle against the Rust `ffmpeg-rs`/`ffprobe-rs` banner constants, verifies that `-hide_banner -version` preserves the same version surface as `-version`, and compares accepted/rejected `-loglevel` directive forms on version requests for both tools. The loglevel rows pin case-sensitive names, standalone `repeat`/`level`/`time`/`datetime` flag directives, `repeat`/`+repeat` versus `-repeat` CLI semantics, compound flag+level values, `+error`, known numeric levels, and representative rejected aliases such as `warn` and `ERROR`. `FFMPEG_ORACLE` points to the pinned `ffmpeg` binary; `ffprobe` is found through `FFPROBE_ORACLE`, a sibling of `FFMPEG_ORACLE`, or the standard `third_party/ffmpeg-oracle/build/bin/ffprobe(.exe)` path. Run it with:
 
 ```sh
 FFMPEG_ORACLE=./third_party/ffmpeg-oracle/build/bin/ffmpeg cargo test -p fftools --test version_oracle -- --ignored
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component fftools-version --target oracle-ffmpeg-version --target oracle-ffprobe-version --target oracle-hide-banner-version --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
+cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component fftools-option-parser --component avutil-logging --target oracle-cli-loglevel-directives --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
 ```
 
 The same harness also checks that `--version` is not a clean successful version request for either tool, matching upstream option parsing rather than GNU-style aliases:

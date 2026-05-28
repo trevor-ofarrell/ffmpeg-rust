@@ -447,6 +447,8 @@ pub fn run_ffprobe_tool(args: &[String]) -> i32 {
 
 pub fn ffprobe_output(args: &[String]) -> Result<String, FfprobeError> {
     if args.iter().any(|arg| arg == "-version") {
+        crate::option_parser::validate_loglevel_options(args)
+            .map_err(|err| FfprobeError::usage(format!("failed to parse options: {err}")))?;
         return Ok(crate::version_banner("ffprobe"));
     }
 
@@ -1847,7 +1849,7 @@ mod tests {
         assert_eq!(command.writer_format, WriterFormat::Json);
         assert_eq!(command.input_format, Some(ForcedInputFormat::Avi));
         assert_eq!(command.log_level, LogLevel::Error);
-        assert_eq!(command.log_flags, LogFlags::empty());
+        assert_eq!(command.log_flags, LogFlags::SKIP_REPEATED);
         assert_eq!(command.input_url, "clip.mp4");
     }
 
@@ -1869,7 +1871,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(command.log_level, LogLevel::Debug);
-        assert!(command.log_flags.contains(LogFlags::SKIP_REPEATED));
+        assert!(!command.log_flags.contains(LogFlags::SKIP_REPEATED));
         assert!(!command.log_flags.contains(LogFlags::PRINT_LEVEL));
 
         assert!(parse_ffprobe_args(&strings(

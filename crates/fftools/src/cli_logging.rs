@@ -221,11 +221,24 @@ mod tests {
     }
 
     #[test]
-    fn repeat_flag_compresses_repeated_tool_errors() {
+    fn repeated_tool_errors_are_compressed_by_default() {
         assert_eq!(
             tool_diagnostics_stderr_with_timestamp(
                 "ffmpeg",
-                &strings(&["-loglevel", "repeat+level+error"]),
+                &strings(&[]),
+                &["bad packet", "bad packet", "bad packet", "bad output"],
+                None,
+            ),
+            "ffmpeg: bad packet\nLast message repeated 2 times\nffmpeg: bad output\n"
+        );
+    }
+
+    #[test]
+    fn minus_repeat_flag_compresses_repeated_tool_errors() {
+        assert_eq!(
+            tool_diagnostics_stderr_with_timestamp(
+                "ffmpeg",
+                &strings(&["-loglevel", "-repeat+level+error"]),
                 &["bad packet", "bad packet", "bad packet", "bad output"],
                 None,
             ),
@@ -234,7 +247,20 @@ mod tests {
     }
 
     #[test]
-    fn repeated_tool_errors_are_preserved_without_repeat_flag() {
+    fn repeat_flag_preserves_repeated_tool_errors() {
+        assert_eq!(
+            tool_diagnostics_stderr_with_timestamp(
+                "ffmpeg",
+                &strings(&["-loglevel", "repeat+level+error"]),
+                &["bad packet", "bad packet"],
+                None,
+            ),
+            "[error] ffmpeg: bad packet\n[error] ffmpeg: bad packet\n"
+        );
+    }
+
+    #[test]
+    fn absolute_level_flag_preserves_repeated_tool_errors() {
         assert_eq!(
             tool_diagnostics_stderr_with_timestamp(
                 "ffprobe",

@@ -14,8 +14,8 @@ pub use ffprobe::{
 };
 pub use io_plan::{build_io_plan, Endpoint, FileRole, IoPlan, IoPlanError, PlannedFile};
 pub use option_parser::{
-    log_config_from_options, parse_ffmpeg_args, parse_log_level_value, CliFile, CliLogConfig,
-    CliOption, CliParseError, ParsedCommand,
+    log_config_from_options, parse_ffmpeg_args, parse_log_level_value, validate_loglevel_options,
+    CliFile, CliLogConfig, CliOption, CliParseError, ParsedCommand,
 };
 
 pub const TARGET_FFMPEG_VERSION: &str = "8.1.1";
@@ -57,6 +57,10 @@ pub fn run_version_tool(tool_name: &str, args: &[String]) -> i32 {
     let asks_version = args.iter().any(|arg| arg == "-version");
 
     if asks_version {
+        if let Err(err) = validate_loglevel_options(args) {
+            eprintln!("{tool_name}: failed to parse options: {err}");
+            return 1;
+        }
         print!("{}", version_banner(tool_name));
         return 0;
     }

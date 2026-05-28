@@ -135,7 +135,7 @@ impl Default for CliLogConfig {
     fn default() -> Self {
         Self {
             level: LogLevel::Info,
-            flags: LogFlags::empty(),
+            flags: LogFlags::SKIP_REPEATED,
         }
     }
 }
@@ -155,6 +155,7 @@ pub struct LogLevelDirective {
     level: Option<LogLevel>,
     enable_flags: LogFlags,
     disable_flags: LogFlags,
+    reset_flags: bool,
 }
 
 impl LogLevelDirective {
@@ -168,6 +169,10 @@ impl LogLevelDirective {
 
     pub fn disable_flags(&self) -> LogFlags {
         self.disable_flags
+    }
+
+    pub fn reset_flags(&self) -> bool {
+        self.reset_flags
     }
 }
 
@@ -331,28 +336,70 @@ pub fn parse_log_level_directive(value: &str) -> Option<LogLevelDirective> {
         return None;
     }
 
-    if let Some(level) = parse_plain_log_level(value) {
-        return Some(LogLevelDirective {
-            level: Some(level),
-            enable_flags: LogFlags::empty(),
-            disable_flags: LogFlags::empty(),
-        });
+    let mut rest = value;
+    let mut consumed_flags = false;
+    let mut reset_flags = false;
+    let mut enable_flags = LogFlags::empty();
+    let mut disable_flags = LogFlags::empty();
+
+    while !rest.is_empty() {
+        let token_start = rest;
+        let (cmd, token) = match token_start.as_bytes()[0] {
+            b'+' => (Some(b'+'), &token_start[1..]),
+            b'-' => (Some(b'-'), &token_start[1..]),
+            _ => (None, token_start),
+        };
+
+        if !consumed_flags && cmd.is_none() {
+            reset_flags = true;
+        }
+
+        let Some((flag, suffix, repeat_flag)) = consume_log_flag(token) else {
+            rest = token_start;
+            break;
+        };
+
+        if repeat_flag {
+            if cmd == Some(b'-') {
+                enable_flags.insert(flag);
+            } else {
+                disable_flags.insert(flag);
+            }
+        } else if cmd == Some(b'-') {
+            disable_flags.insert(flag);
+        } else {
+            enable_flags.insert(flag);
+        }
+
+        consumed_flags = true;
+        rest = suffix;
     }
 
-    if let Some(rest) = value.strip_prefix('+') {
-        return parse_prefixed_log_flags(rest, true);
+    let level = if rest.is_empty() {
+        None
+    } else {
+        let level_text = rest.strip_prefix('+').unwrap_or(rest);
+        Some(parse_plain_log_level(level_text)?)
+    };
+
+    if !consumed_flags {
+        reset_flags = false;
     }
 
-    if let Some(rest) = value.strip_prefix('-') {
-        return parse_prefixed_log_flags(rest, false);
-    }
-
-    parse_log_flags_and_level(value)
+    Some(LogLevelDirective {
+        level,
+        enable_flags,
+        disable_flags,
+        reset_flags,
+    })
 }
 
 pub fn apply_log_level_value(config: &mut CliLogConfig, value: &str) -> Option<()> {
     let directive = parse_log_level_directive(value)?;
 
+    if directive.reset_flags() {
+        config.flags = LogFlags::empty();
+    }
     if let Some(level) = directive.level() {
         config.level = level;
     }
@@ -363,7 +410,7 @@ pub fn apply_log_level_value(config: &mut CliLogConfig, value: &str) -> Option<(
 }
 
 fn parse_plain_log_level(value: &str) -> Option<LogLevel> {
-    LogLevel::from_name(value).or_else(|| {
+    parse_named_log_level(value).or_else(|| {
         value
             .parse::<i32>()
             .ok()
@@ -371,54 +418,55 @@ fn parse_plain_log_level(value: &str) -> Option<LogLevel> {
     })
 }
 
-fn parse_prefixed_log_flags(rest: &str, enable: bool) -> Option<LogLevelDirective> {
-    let flags = parse_log_flag_list(rest)?;
-    Some(if enable {
-        LogLevelDirective {
-            level: None,
-            enable_flags: flags,
-            disable_flags: LogFlags::empty(),
-        }
-    } else {
-        LogLevelDirective {
-            level: None,
-            enable_flags: LogFlags::empty(),
-            disable_flags: flags,
-        }
-    })
-}
-
-fn parse_log_flags_and_level(value: &str) -> Option<LogLevelDirective> {
-    let (flags, level) = value.rsplit_once('+')?;
-    let level = parse_plain_log_level(level)?;
-    Some(LogLevelDirective {
-        level: Some(level),
-        enable_flags: parse_log_flag_list(flags)?,
-        disable_flags: LogFlags::empty(),
-    })
-}
-
-fn parse_log_flag_list(value: &str) -> Option<LogFlags> {
-    let mut flags = LogFlags::empty();
-    for flag_name in value.split('+') {
-        let flag = parse_log_flag_name(flag_name)?;
-        flags.insert(flag);
+fn parse_named_log_level(value: &str) -> Option<LogLevel> {
+    match value {
+        "quiet" => Some(LogLevel::Quiet),
+        "panic" => Some(LogLevel::Panic),
+        "fatal" => Some(LogLevel::Fatal),
+        "error" => Some(LogLevel::Error),
+        "warning" => Some(LogLevel::Warning),
+        "info" => Some(LogLevel::Info),
+        "verbose" => Some(LogLevel::Verbose),
+        "debug" => Some(LogLevel::Debug),
+        "trace" => Some(LogLevel::Trace),
+        _ => None,
     }
-    Some(flags)
 }
 
-fn parse_log_flag_name(value: &str) -> Option<LogFlags> {
-    if value.eq_ignore_ascii_case("repeat") {
-        Some(LogFlags::SKIP_REPEATED)
-    } else if value.eq_ignore_ascii_case("level") {
-        Some(LogFlags::PRINT_LEVEL)
-    } else if value.eq_ignore_ascii_case("time") {
-        Some(LogFlags::PRINT_TIME)
-    } else if value.eq_ignore_ascii_case("datetime") {
-        Some(LogFlags::PRINT_DATETIME)
+fn consume_log_flag(token: &str) -> Option<(LogFlags, &str, bool)> {
+    if let Some(suffix) = token.strip_prefix("repeat") {
+        Some((LogFlags::SKIP_REPEATED, suffix, true))
+    } else if let Some(suffix) = token.strip_prefix("level") {
+        Some((LogFlags::PRINT_LEVEL, suffix, false))
+    } else if let Some(suffix) = token.strip_prefix("time") {
+        Some((LogFlags::PRINT_TIME, suffix, false))
+    } else if let Some(suffix) = token.strip_prefix("datetime") {
+        Some((LogFlags::PRINT_DATETIME, suffix, false))
     } else {
         None
     }
+}
+
+pub fn validate_loglevel_options(args: &[String]) -> Result<(), CliParseError> {
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "-loglevel" | "-v" => {
+                let option = args[index].as_str();
+                let value = args
+                    .get(index + 1)
+                    .ok_or_else(|| CliParseError::new(format!("missing value for `{option}`")))?;
+                if parse_log_level_directive(value).is_none() {
+                    return Err(CliParseError::new(format!(
+                        "invalid loglevel `{value}` for `{option}`"
+                    )));
+                }
+                index += 2;
+            }
+            _ => index += 1,
+        }
+    }
+    Ok(())
 }
 
 pub fn log_config_from_options(options: &[CliOption]) -> Result<CliLogConfig, CliParseError> {
@@ -552,9 +600,10 @@ mod tests {
         assert_eq!(parsed.global_options()[0].value_ref(), Some("warning"));
         assert_eq!(parsed.global_options()[1].value_ref(), Some("-8"));
         assert_eq!(config.level(), LogLevel::Quiet);
-        assert_eq!(config.flags(), LogFlags::empty());
+        assert_eq!(config.flags(), LogFlags::SKIP_REPEATED);
         assert_eq!(parse_log_level_value("48"), Some(LogLevel::Debug));
-        assert_eq!(parse_log_level_value("ERROR"), Some(LogLevel::Error));
+        assert_eq!(parse_log_level_value("+error"), Some(LogLevel::Error));
+        assert_eq!(parse_log_level_value("ERROR"), None);
     }
 
     #[test]
@@ -575,16 +624,19 @@ mod tests {
         let config = log_config_from_options(parsed.global_options()).unwrap();
 
         assert_eq!(config.level(), LogLevel::Debug);
-        assert!(config.flags().contains(LogFlags::SKIP_REPEATED));
+        assert!(!config.flags().contains(LogFlags::SKIP_REPEATED));
         assert!(config.flags().contains(LogFlags::PRINT_TIME));
         assert!(!config.flags().contains(LogFlags::PRINT_LEVEL));
         assert_eq!(
-            parse_log_level_value("REPEAT+datetime+trace"),
+            parse_log_level_value("repeat+datetime+trace"),
             Some(LogLevel::Trace)
         );
+        assert_eq!(parse_log_level_value("REPEAT+datetime+trace"), None);
         assert_eq!(parse_log_level_value("+repeat"), None);
         assert!(parse_log_level_directive("+repeat").is_some());
-        assert!(parse_log_level_directive("repeat").is_none());
+        assert!(parse_log_level_directive("-repeat").is_some());
+        assert!(parse_log_level_directive("repeat").is_some());
+        assert!(parse_log_level_directive("level").is_some());
     }
 
     #[test]

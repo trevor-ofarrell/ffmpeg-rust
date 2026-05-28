@@ -1,6 +1,6 @@
 use fftools::{
-    ffmpeg_output, ffprobe_output, version_banner, TARGET_FFMPEG_VERSION, TARGET_LIBRARY_VERSIONS,
-    TARGET_RELEASE_NAME,
+    ffmpeg_output, ffprobe_output, option_parser::parse_log_level_directive, version_banner,
+    TARGET_FFMPEG_VERSION, TARGET_LIBRARY_VERSIONS, TARGET_RELEASE_NAME,
 };
 use std::{
     collections::BTreeMap,
@@ -33,6 +33,34 @@ fn double_dash_version_is_not_a_success_version_request() {
 fn hide_banner_version_matches_plain_version_surface() {
     compare_hide_banner_version("ffmpeg");
     compare_hide_banner_version("ffprobe");
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn loglevel_directive_acceptance_matches_oracle_for_version_requests() {
+    let accepted = [
+        "repeat",
+        "+repeat",
+        "-repeat",
+        "level",
+        "+level",
+        "-level",
+        "repeat+level+error",
+        "-repeat+level+error",
+        "level+error",
+        "time+datetime+level+error",
+        "+error",
+        "48",
+        "-8",
+    ];
+    let rejected = ["warn", "foo", "repeat+warn", "ERROR"];
+
+    for value in accepted {
+        compare_loglevel_acceptance(value, true);
+    }
+    for value in rejected {
+        compare_loglevel_acceptance(value, false);
+    }
 }
 
 #[test]
@@ -176,6 +204,54 @@ fn version_error_output(output: &str) -> bool {
     output.contains("Unrecognized option")
         || output.contains("Option not found")
         || output.contains("Missing argument for option")
+        || output.contains("Invalid loglevel")
+}
+
+fn compare_loglevel_acceptance(value: &str, expected_success: bool) {
+    for tool_name in ["ffmpeg", "ffprobe"] {
+        let oracle = oracle_tool(tool_name);
+        let oracle_output = run_oracle(
+            &oracle,
+            tool_name,
+            &["-hide_banner", "-loglevel", value, "-version"],
+        );
+        let combined = format!("{}{}", oracle_output.stdout, oracle_output.stderr);
+        assert_eq!(
+            oracle_output.status_success,
+            expected_success,
+            "oracle `{}` {tool_name} -loglevel {value:?} acceptance mismatch, output:\n{}",
+            oracle.display(),
+            combined
+        );
+
+        assert_eq!(
+            parse_log_level_directive(value).is_some(),
+            expected_success,
+            "Rust parser acceptance mismatch for -loglevel {value:?}"
+        );
+
+        match tool_name {
+            "ffmpeg" => {
+                let rust =
+                    ffmpeg_output(&strings(&["-hide_banner", "-loglevel", value, "-version"]));
+                assert_eq!(
+                    rust.is_ok(),
+                    expected_success,
+                    "Rust ffmpeg-rs -loglevel {value:?} version acceptance mismatch: {rust:?}"
+                );
+            }
+            "ffprobe" => {
+                let rust =
+                    ffprobe_output(&strings(&["-hide_banner", "-loglevel", value, "-version"]));
+                assert_eq!(
+                    rust.is_ok(),
+                    expected_success,
+                    "Rust ffprobe-rs -loglevel {value:?} version acceptance mismatch: {rust:?}"
+                );
+            }
+            other => panic!("unsupported tool `{other}`"),
+        }
+    }
 }
 
 struct OracleOutput {
