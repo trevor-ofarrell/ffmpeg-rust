@@ -611,6 +611,7 @@ const PATH_RULES: &[PathRule] = &[
             "avutil-frame",
             "avutil-pixel-format",
             "avutil-sample-format",
+            "avutil-logging",
             "avutil-channel-layout",
             "avutil-color",
             "avutil-hash",
@@ -2458,9 +2459,11 @@ mod tests {
             "avformat-image2-demuxer",
             "avformat-image2-muxer",
             "avformat-mov-demuxer",
+            "avutil-logging",
             "fftools-option-parser",
         ]));
         let paths = vec![
+            "fuzz/fuzz_targets/avutil_core_models.rs".to_string(),
             "fuzz\\fuzz_targets\\avformat_mov.rs".to_string(),
             "fuzz/fuzz_targets/avformat_image2.rs".to_string(),
             "fuzz/fuzz_targets/avformat_packet_muxers.rs".to_string(),
@@ -2475,6 +2478,7 @@ mod tests {
                 "avformat-image2-demuxer".to_string(),
                 "avformat-image2-muxer".to_string(),
                 "avformat-mov-demuxer".to_string(),
+                "avutil-logging".to_string(),
                 "fftools-option-parser".to_string(),
             ]
         );
