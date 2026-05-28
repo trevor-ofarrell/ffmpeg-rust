@@ -2079,6 +2079,15 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
         timestamp.format_default_callback_datetime_utc(),
         "2024-01-01 12:38:25.123"
     );
+    assert_eq!(
+        timestamp.format_default_callback_time_with_offset_seconds(2 * 3_600),
+        Some("14:38:25.123".to_string())
+    );
+    let utc_minus_eight_timestamp = LogTimestamp::from_unix_micros(1_704_070_923_456_789);
+    assert_eq!(
+        utc_minus_eight_timestamp.format_default_callback_datetime_with_offset_seconds(-8 * 3_600),
+        Some("2023-12-31 17:02:03.456".to_string())
+    );
     let callback_line =
         LogRecord::new(LogLevel::Warning, "ignored", "plain\n").with_timestamp(timestamp);
     assert_eq!(
@@ -2092,6 +2101,20 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
             LogFlags::PRINT_TIME | LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL
         ),
         "2024-01-01 12:38:25.123 [warning] plain\n"
+    );
+    let utc_plus_two = LogFormatOptions::new(LogFlags::PRINT_TIME)
+        .with_default_callback_time_offset_seconds(2 * 3_600);
+    assert_eq!(
+        callback_line.format_default_callback_line_null_context_with_options(utc_plus_two),
+        "14:38:25.123 plain\n"
+    );
+    let utc_minus_eight = LogFormatOptions::new(LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL)
+        .with_default_callback_time_offset_seconds(-8 * 3_600);
+    assert_eq!(
+        LogRecord::new(LogLevel::Warning, "ignored", "local\n")
+            .with_timestamp(utc_minus_eight_timestamp)
+            .format_default_callback_line_null_context_with_options(utc_minus_eight),
+        "2023-12-31 17:02:03.456 [warning] local\n"
     );
     let callback_context = AvLogContextPrefix::new("rustctx", "<ptr>");
     assert_eq!(

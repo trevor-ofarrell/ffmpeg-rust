@@ -425,6 +425,26 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
             normalize_default_callback_timestamp(&default_context_datetime_level).as_bytes(),
         ),
     );
+    let fixed_local_time = LogRecord::new(LogLevel::Warning, "ignored", "local\n")
+        .with_timestamp(timestamp)
+        .format_default_callback_line_null_context_with_options(
+            LogFormatOptions::new(LogFlags::PRINT_TIME)
+                .with_default_callback_time_offset_seconds(2 * 3_600),
+        );
+    rows.insert(
+        "default-callback-fixed-time-utcplus2-line",
+        escape_row_text(fixed_local_time.as_bytes()),
+    );
+    let fixed_local_datetime = LogRecord::new(LogLevel::Warning, "ignored", "local\n")
+        .with_timestamp(LogTimestamp::from_unix_micros(1_704_070_923_456_789))
+        .format_default_callback_line_null_context_with_options(
+            LogFormatOptions::new(LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL)
+                .with_default_callback_time_offset_seconds(-8 * 3_600),
+        );
+    rows.insert(
+        "default-callback-fixed-datetime-utcminus8-level-line",
+        escape_row_text(fixed_local_datetime.as_bytes()),
+    );
     let default_repeat_skip = rust_default_callback_repeat_lines(LogFlags::SKIP_REPEATED);
     rows.insert(
         "default-callback-repeat-skip-line",
@@ -1319,10 +1339,12 @@ fn oracle_c_source() -> &'static str {
     r#"#include <stdarg.h>
 #include <ctype.h>
 #include <pty.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <termios.h>
+#include <time.h>
 #include <unistd.h>
 #include <libavutil/log.h>
 #include <libavutil/version.h>
@@ -1352,6 +1374,12 @@ static void ROW_STR(const char *name, const char *value) {
             putchar(*p);
     }
     putchar('\n');
+}
+
+static int64_t fixed_av_gettime_value = 0;
+
+int64_t av_gettime(void) {
+    return fixed_av_gettime_value;
 }
 
 static void ROW_STR_NORMALIZED_CONTEXT(const char *name, const char *value) {
@@ -1805,6 +1833,51 @@ static void print_default_callback_row(const char *name, void *ptr, int flags,
     print_default_callback_level_row(name, ptr, AV_LOG_WARNING, flags, message);
 }
 
+static void print_default_callback_fixed_time_row(const char *name,
+                                                  const char *tz,
+                                                  int64_t time_us,
+                                                  int flags,
+                                                  const char *message) {
+    char captured[1024];
+    FILE *capture = tmpfile();
+    if (!capture) {
+        ROW_STR(name, "<tmpfile-error>");
+        return;
+    }
+
+    setenv("AV_LOG_FORCE_NOCOLOR", "1", 1);
+    unsetenv("AV_LOG_FORCE_COLOR");
+    setenv("TZ", tz, 1);
+    tzset();
+    fixed_av_gettime_value = time_us;
+
+    fflush(stderr);
+    int saved_stderr = dup(fileno(stderr));
+    if (saved_stderr < 0 || dup2(fileno(capture), fileno(stderr)) < 0) {
+        if (saved_stderr >= 0)
+            close(saved_stderr);
+        fclose(capture);
+        ROW_STR(name, "<stderr-redirect-error>");
+        return;
+    }
+
+    av_log_set_callback(av_log_default_callback);
+    av_log_set_level(AV_LOG_TRACE);
+    av_log_set_flags(flags);
+    av_log(NULL, AV_LOG_WARNING, "%s\n", message);
+    fflush(stderr);
+
+    dup2(saved_stderr, fileno(stderr));
+    close(saved_stderr);
+
+    rewind(capture);
+    size_t len = fread(captured, 1, sizeof(captured) - 1, capture);
+    captured[len] = '\0';
+    fclose(capture);
+
+    ROW_STR(name, captured);
+}
+
 static void print_default_callback_repeat_row(const char *name, int flags) {
     char captured[2048];
     FILE *capture = tmpfile();
@@ -1908,6 +1981,13 @@ static void print_default_callback_rows(void) {
     print_default_callback_row("default-callback-context-datetime-level-line",
                                &ctx, AV_LOG_PRINT_DATETIME | AV_LOG_PRINT_LEVEL,
                                "ctxmsg");
+    print_default_callback_fixed_time_row(
+        "default-callback-fixed-time-utcplus2-line", "Etc/GMT-2",
+        1704112705123456LL, AV_LOG_PRINT_TIME, "local");
+    print_default_callback_fixed_time_row(
+        "default-callback-fixed-datetime-utcminus8-level-line", "Etc/GMT+8",
+        1704070923456789LL, AV_LOG_PRINT_DATETIME | AV_LOG_PRINT_LEVEL,
+        "local");
     print_default_callback_repeat_row("default-callback-repeat-skip-line",
                                       AV_LOG_SKIP_REPEATED);
     print_default_callback_repeat_row("default-callback-repeat-skip-level-line",

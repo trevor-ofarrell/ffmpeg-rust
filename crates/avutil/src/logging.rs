@@ -299,6 +299,7 @@ impl DefaultCallbackPrefixState {
 pub struct LogFormatOptions {
     flags: LogFlags,
     color_mode: LogColorMode,
+    default_callback_time_offset_seconds: i32,
 }
 
 impl Default for LogFormatOptions {
@@ -312,6 +313,7 @@ impl LogFormatOptions {
         Self {
             flags,
             color_mode: LogColorMode::Never,
+            default_callback_time_offset_seconds: 0,
         }
     }
 
@@ -319,6 +321,18 @@ impl LogFormatOptions {
         Self {
             flags: self.flags,
             color_mode,
+            default_callback_time_offset_seconds: self.default_callback_time_offset_seconds,
+        }
+    }
+
+    pub const fn with_default_callback_time_offset_seconds(
+        self,
+        default_callback_time_offset_seconds: i32,
+    ) -> Self {
+        Self {
+            flags: self.flags,
+            color_mode: self.color_mode,
+            default_callback_time_offset_seconds,
         }
     }
 
@@ -359,6 +373,10 @@ impl LogFormatOptions {
 
     pub const fn color_mode(self) -> LogColorMode {
         self.color_mode
+    }
+
+    pub const fn default_callback_time_offset_seconds(self) -> i32 {
+        self.default_callback_time_offset_seconds
     }
 }
 
@@ -519,6 +537,28 @@ impl LogTimestamp {
         format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}:{second:02}.{millis:03}")
     }
 
+    pub fn format_default_callback_time_with_offset_seconds(
+        self,
+        offset_seconds: i32,
+    ) -> Option<String> {
+        let (_, _, _, hour, minute, second, micros) =
+            self.parts_with_offset_seconds(offset_seconds)?;
+        let millis = micros / 1_000;
+        Some(format!("{hour:02}:{minute:02}:{second:02}.{millis:03}"))
+    }
+
+    pub fn format_default_callback_datetime_with_offset_seconds(
+        self,
+        offset_seconds: i32,
+    ) -> Option<String> {
+        let (year, month, day, hour, minute, second, micros) =
+            self.parts_with_offset_seconds(offset_seconds)?;
+        let millis = micros / 1_000;
+        Some(format!(
+            "{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}:{second:02}.{millis:03}"
+        ))
+    }
+
     fn parts_utc(self) -> (i64, i64, i64, i64, i64, i64, i64) {
         const MICROS_PER_SECOND: i64 = 1_000_000;
         const SECONDS_PER_DAY: i64 = 86_400;
@@ -533,6 +573,14 @@ impl LogTimestamp {
         let (year, month, day) = civil_from_unix_days(days);
 
         (year, month, day, hour, minute, second, micros)
+    }
+
+    fn parts_with_offset_seconds(
+        self,
+        offset_seconds: i32,
+    ) -> Option<(i64, i64, i64, i64, i64, i64, i64)> {
+        let offset_micros = i64::from(offset_seconds).checked_mul(1_000_000)?;
+        Some(Self::from_unix_micros(self.unix_micros.checked_add(offset_micros)?).parts_utc())
     }
 }
 
@@ -777,11 +825,23 @@ impl LogRecord {
         if print_prefix {
             if let Some(timestamp) = self.timestamp {
                 if flags.contains(LogFlags::PRINT_DATETIME) {
-                    line.push_str(&timestamp.format_default_callback_datetime_utc());
-                    line.push(' ');
+                    if let Some(formatted) = timestamp
+                        .format_default_callback_datetime_with_offset_seconds(
+                            options.default_callback_time_offset_seconds(),
+                        )
+                    {
+                        line.push_str(&formatted);
+                        line.push(' ');
+                    }
                 } else if flags.contains(LogFlags::PRINT_TIME) {
-                    line.push_str(&timestamp.format_default_callback_time_utc());
-                    line.push(' ');
+                    if let Some(formatted) = timestamp
+                        .format_default_callback_time_with_offset_seconds(
+                            options.default_callback_time_offset_seconds(),
+                        )
+                    {
+                        line.push_str(&formatted);
+                        line.push(' ');
+                    }
                 }
             }
             if let Some(context) = context {
@@ -1388,6 +1448,15 @@ mod tests {
             timestamp.format_default_callback_datetime_utc(),
             "2024-01-01 12:38:25.123"
         );
+        assert_eq!(
+            timestamp.format_default_callback_time_with_offset_seconds(2 * 3_600),
+            Some("14:38:25.123".to_string())
+        );
+        assert_eq!(
+            LogTimestamp::from_unix_micros(1_704_070_923_456_789)
+                .format_default_callback_datetime_with_offset_seconds(-8 * 3_600),
+            Some("2023-12-31 17:02:03.456".to_string())
+        );
 
         let before_epoch = LogTimestamp::from_unix_micros(-1);
         assert_eq!(
@@ -1544,6 +1613,23 @@ mod tests {
                     LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL
                 ),
             "2024-01-01 12:38:25.123 [rustctx @ <ptr>] [warning] ctxmsg\n"
+        );
+
+        let utc_plus_two = LogFormatOptions::new(LogFlags::PRINT_TIME)
+            .with_default_callback_time_offset_seconds(2 * 3_600);
+        assert_eq!(
+            record.format_default_callback_line_null_context_with_options(utc_plus_two),
+            "14:38:25.123 plain\n"
+        );
+
+        let utc_minus_eight =
+            LogFormatOptions::new(LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL)
+                .with_default_callback_time_offset_seconds(-8 * 3_600);
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "local\n")
+                .with_timestamp(LogTimestamp::from_unix_micros(1_704_070_923_456_789))
+                .format_default_callback_line_null_context_with_options(utc_minus_eight),
+            "2023-12-31 17:02:03.456 [warning] local\n"
         );
 
         let force_color =
