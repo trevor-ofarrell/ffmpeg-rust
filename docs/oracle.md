@@ -167,6 +167,8 @@ The newest raw-level rows prove `av_log_set_level()` stores arbitrary integers, 
 
 The newest CLI loglevel rows prove pinned `ffmpeg` and `ffprobe` accept raw numeric `-loglevel` thresholds on version requests, including `23`, `57`, `-1`, `999`, `repeat+23`, `level+23`, `+23`, `time+23`, `repeat+level+23`, and `-repeat+23`.
 
+Local `fftools` diagnostic stderr unit coverage now applies the pinned default-callback repeat-summary indentation shape to process-level repeated diagnostics: compressed rows emit `    Last message repeated N times` while non-repeating paths preserve duplicate records. This uses the libavutil default-callback oracle rows as formatting evidence; a real upstream CLI repeated-diagnostic oracle row is still pending.
+
 ```sh
 cargo test -p avutil --test logging_oracle -- --ignored
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-logging --target oracle-libavutil-logging --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg

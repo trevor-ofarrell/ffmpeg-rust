@@ -93,11 +93,23 @@ where
         logger.log(record);
     }
 
-    let lines = logger.formatted_records_with_options(format_options);
+    let lines: Vec<_> = logger
+        .formatted_records_with_options(format_options)
+        .into_iter()
+        .map(format_tool_stderr_line)
+        .collect();
     if lines.is_empty() {
         String::new()
     } else {
         format!("{}\n", lines.join("\n"))
+    }
+}
+
+fn format_tool_stderr_line(line: String) -> String {
+    if line.starts_with("Last message repeated ") {
+        format!("    {line}")
+    } else {
+        line
     }
 }
 
@@ -249,7 +261,7 @@ mod tests {
                 &["bad packet", "bad packet", "bad packet", "bad output"],
                 None,
             ),
-            "ffmpeg: bad packet\nLast message repeated 2 times\nffmpeg: bad output\n"
+            "ffmpeg: bad packet\n    Last message repeated 2 times\nffmpeg: bad output\n"
         );
     }
 
@@ -262,7 +274,7 @@ mod tests {
                 &["bad packet", "bad packet", "bad packet", "bad output"],
                 None,
             ),
-            "[error] ffmpeg: bad packet\nLast message repeated 2 times\n[error] ffmpeg: bad output\n"
+            "[error] ffmpeg: bad packet\n    Last message repeated 2 times\n[error] ffmpeg: bad output\n"
         );
     }
 
