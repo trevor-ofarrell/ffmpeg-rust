@@ -2112,10 +2112,12 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     assert!(line2_newline.truncated());
     assert!(!line2_prefix);
 
-    let line2_time_err = LogRecord::new(LogLevel::Warning, "decoder", "plain")
+    let line2_time_ignored = LogRecord::new(LogLevel::Warning, "decoder", "plain")
         .format_av_log_line2_null_context(LogFlags::PRINT_TIME, &mut line2_prefix, 128)
-        .unwrap_err();
-    assert_eq!(line2_time_err.code(), Some(AvErrorCode::ENOSYS));
+        .unwrap();
+    assert_eq!(line2_time_ignored.bytes(), b"plain");
+    assert_eq!(line2_time_ignored.full_len(), 5);
+    assert!(!line2_prefix);
     let context_prefix = AvLogContextPrefix::new("rustctx", "<ptr>");
     line2_prefix = true;
     let context_line2 = LogRecord::new(LogLevel::Warning, "decoder", "ctxmsg")

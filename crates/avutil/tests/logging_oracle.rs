@@ -199,6 +199,45 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
         escape_row_text(context_newline.bytes()),
     );
 
+    let (time, _) = rust_format_line2(LogLevel::Warning, "plain", LogFlags::PRINT_TIME, true, 128);
+    rows.insert("format-line2-time-line", escape_row_text(time.bytes()));
+
+    let (datetime_level, _) = rust_format_line2(
+        LogLevel::Warning,
+        "plain",
+        LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL,
+        true,
+        128,
+    );
+    rows.insert(
+        "format-line2-datetime-level-line",
+        escape_row_text(datetime_level.bytes()),
+    );
+
+    let (both_level, _) = rust_format_line2(
+        LogLevel::Warning,
+        "plain",
+        LogFlags::PRINT_TIME | LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL,
+        true,
+        128,
+    );
+    rows.insert(
+        "format-line2-time-datetime-level-line",
+        escape_row_text(both_level.bytes()),
+    );
+
+    let (context_time_level, _) = rust_format_line2_context(
+        LogLevel::Warning,
+        "ctxmsg",
+        LogFlags::PRINT_TIME | LogFlags::PRINT_LEVEL,
+        true,
+        128,
+    );
+    rows.insert(
+        "format-line2-context-time-level-line",
+        escape_row_text(context_time_level.bytes()),
+    );
+
     let (plain, _) = rust_format_line(LogLevel::Warning, "plain", LogFlags::empty(), true, 128);
     rows.insert("format-line-plain-line", escape_row_text(plain.bytes()));
 
@@ -251,6 +290,18 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
     rows.insert(
         "format-line-context-newline-line",
         escape_row_text(context_newline.bytes()),
+    );
+
+    let (time_level, _) = rust_format_line(
+        LogLevel::Warning,
+        "plain",
+        LogFlags::PRINT_TIME | LogFlags::PRINT_LEVEL,
+        true,
+        128,
+    );
+    rows.insert(
+        "format-line-time-level-line",
+        escape_row_text(time_level.bytes()),
     );
 
     rows
@@ -350,6 +401,64 @@ fn add_format_line2_int_rows(rows: &mut BTreeMap<&'static str, i32>) {
         "format-line2-context-newline-prefix",
         bool_to_i32(context_newline_prefix),
     );
+
+    let (time, time_prefix) =
+        rust_format_line2(LogLevel::Warning, "plain", LogFlags::PRINT_TIME, true, 128);
+    rows.insert("format-line2-time-ret", usize_to_i32(time.full_len()));
+    rows.insert("format-line2-time-prefix", bool_to_i32(time_prefix));
+    rows.insert("format-line2-time-len", usize_to_i32(time.bytes().len()));
+
+    let (datetime_level, datetime_level_prefix) = rust_format_line2(
+        LogLevel::Warning,
+        "plain",
+        LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL,
+        true,
+        128,
+    );
+    rows.insert(
+        "format-line2-datetime-level-ret",
+        usize_to_i32(datetime_level.full_len()),
+    );
+    rows.insert(
+        "format-line2-datetime-level-prefix",
+        bool_to_i32(datetime_level_prefix),
+    );
+    rows.insert(
+        "format-line2-datetime-level-len",
+        usize_to_i32(datetime_level.bytes().len()),
+    );
+
+    let (both_level, both_level_prefix) = rust_format_line2(
+        LogLevel::Warning,
+        "plain",
+        LogFlags::PRINT_TIME | LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL,
+        true,
+        128,
+    );
+    rows.insert(
+        "format-line2-time-datetime-level-ret",
+        usize_to_i32(both_level.full_len()),
+    );
+    rows.insert(
+        "format-line2-time-datetime-level-prefix",
+        bool_to_i32(both_level_prefix),
+    );
+    rows.insert(
+        "format-line2-time-datetime-level-len",
+        usize_to_i32(both_level.bytes().len()),
+    );
+
+    let (_, context_time_level_prefix) = rust_format_line2_context(
+        LogLevel::Warning,
+        "ctxmsg",
+        LogFlags::PRINT_TIME | LogFlags::PRINT_LEVEL,
+        true,
+        128,
+    );
+    rows.insert(
+        "format-line2-context-time-level-prefix",
+        bool_to_i32(context_time_level_prefix),
+    );
 }
 
 fn add_format_line_int_rows(rows: &mut BTreeMap<&'static str, i32>) {
@@ -418,6 +527,22 @@ fn add_format_line_int_rows(rows: &mut BTreeMap<&'static str, i32>) {
     rows.insert(
         "format-line-context-newline-prefix",
         bool_to_i32(context_newline_prefix),
+    );
+
+    let (time_level, time_level_prefix) = rust_format_line(
+        LogLevel::Warning,
+        "plain",
+        LogFlags::PRINT_TIME | LogFlags::PRINT_LEVEL,
+        true,
+        128,
+    );
+    rows.insert(
+        "format-line-time-level-prefix",
+        bool_to_i32(time_level_prefix),
+    );
+    rows.insert(
+        "format-line-time-level-len",
+        usize_to_i32(time_level.bytes().len()),
     );
 }
 
@@ -736,6 +861,37 @@ static void print_format_line2_rows(void) {
     ROW("format-line2-size1-len", strlen(line));
     ROW_STR("format-line2-size1-line", line);
 
+    av_log_set_flags(AV_LOG_PRINT_TIME);
+    memset(line, 'X', sizeof(line));
+    print_prefix = 1;
+    ret = call_format_line2(NULL, line, sizeof(line), &print_prefix,
+                            AV_LOG_WARNING, "%s", "plain");
+    ROW("format-line2-time-ret", ret);
+    ROW("format-line2-time-prefix", print_prefix);
+    ROW("format-line2-time-len", strlen(line));
+    ROW_STR("format-line2-time-line", line);
+
+    av_log_set_flags(AV_LOG_PRINT_DATETIME | AV_LOG_PRINT_LEVEL);
+    memset(line, 'X', sizeof(line));
+    print_prefix = 1;
+    ret = call_format_line2(NULL, line, sizeof(line), &print_prefix,
+                            AV_LOG_WARNING, "%s", "plain");
+    ROW("format-line2-datetime-level-ret", ret);
+    ROW("format-line2-datetime-level-prefix", print_prefix);
+    ROW("format-line2-datetime-level-len", strlen(line));
+    ROW_STR("format-line2-datetime-level-line", line);
+
+    av_log_set_flags(AV_LOG_PRINT_TIME | AV_LOG_PRINT_DATETIME |
+                     AV_LOG_PRINT_LEVEL);
+    memset(line, 'X', sizeof(line));
+    print_prefix = 1;
+    ret = call_format_line2(NULL, line, sizeof(line), &print_prefix,
+                            AV_LOG_WARNING, "%s", "plain");
+    ROW("format-line2-time-datetime-level-ret", ret);
+    ROW("format-line2-time-datetime-level-prefix", print_prefix);
+    ROW("format-line2-time-datetime-level-len", strlen(line));
+    ROW_STR("format-line2-time-datetime-level-line", line);
+
     TestLogContext ctx = { &test_log_class };
 
     av_log_set_flags(0);
@@ -771,6 +927,15 @@ static void print_format_line2_rows(void) {
     (void)ret;
     ROW("format-line2-context-newline-prefix", print_prefix);
     ROW_STR_NORMALIZED_CONTEXT("format-line2-context-newline-line", line);
+
+    av_log_set_flags(AV_LOG_PRINT_TIME | AV_LOG_PRINT_LEVEL);
+    memset(line, 'X', sizeof(line));
+    print_prefix = 1;
+    ret = call_format_line2(&ctx, line, sizeof(line), &print_prefix,
+                            AV_LOG_WARNING, "%s", "ctxmsg");
+    (void)ret;
+    ROW("format-line2-context-time-level-prefix", print_prefix);
+    ROW_STR_NORMALIZED_CONTEXT("format-line2-context-time-level-line", line);
 }
 
 static void print_format_line_rows(void) {
@@ -851,6 +1016,15 @@ static void print_format_line_rows(void) {
                      AV_LOG_INFO, "%s\n", "withnl");
     ROW("format-line-context-newline-prefix", print_prefix);
     ROW_STR_NORMALIZED_CONTEXT("format-line-context-newline-line", line);
+
+    av_log_set_flags(AV_LOG_PRINT_TIME | AV_LOG_PRINT_LEVEL);
+    memset(line, 'X', sizeof(line));
+    print_prefix = 1;
+    call_format_line(NULL, line, sizeof(line), &print_prefix,
+                     AV_LOG_WARNING, "%s", "plain");
+    ROW("format-line-time-level-prefix", print_prefix);
+    ROW("format-line-time-level-len", strlen(line));
+    ROW_STR("format-line-time-level-line", line);
 }
 
 int main(void) {

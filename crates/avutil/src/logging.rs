@@ -2,7 +2,7 @@ use std::io::IsTerminal;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::error::{AvError, AvResult};
+use crate::error::AvResult;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LogLevel {
@@ -609,12 +609,6 @@ impl LogRecord {
         print_prefix: &mut bool,
         line_size: usize,
     ) -> AvResult<AvLogFormatLine2> {
-        if flags.intersects(LogFlags::PRINT_TIME | LogFlags::PRINT_DATETIME) {
-            return Err(AvError::unsupported(
-                "av_log_format_line2 time prefixes require default-callback clock parity",
-            ));
-        }
-
         let mut full_line = String::new();
         if *print_prefix {
             if let Some(context) = context {
@@ -1282,11 +1276,12 @@ mod tests {
         assert!(!prefix);
 
         prefix = true;
-        let time_err = LogRecord::new(LogLevel::Warning, "decoder", "plain")
+        let time_ignored = LogRecord::new(LogLevel::Warning, "decoder", "plain")
             .format_av_log_line2_null_context(LogFlags::PRINT_TIME, &mut prefix, 128)
-            .unwrap_err();
-        assert_eq!(time_err.code(), Some(crate::error::AvErrorCode::ENOSYS));
-        assert!(prefix);
+            .unwrap();
+        assert_eq!(time_ignored.full_len(), 5);
+        assert_eq!(time_ignored.bytes(), b"plain");
+        assert!(!prefix);
     }
 
     #[test]
@@ -1339,11 +1334,12 @@ mod tests {
         assert!(!prefix);
 
         prefix = true;
-        let time_err = LogRecord::new(LogLevel::Warning, "decoder", "ctxmsg")
+        let time_ignored = LogRecord::new(LogLevel::Warning, "decoder", "ctxmsg")
             .format_av_log_line2_context(&context, LogFlags::PRINT_DATETIME, &mut prefix, 128)
-            .unwrap_err();
-        assert_eq!(time_err.code(), Some(crate::error::AvErrorCode::ENOSYS));
-        assert!(prefix);
+            .unwrap();
+        assert_eq!(time_ignored.full_len(), 24);
+        assert_eq!(time_ignored.bytes(), b"[rustctx @ <ptr>] ctxmsg");
+        assert!(!prefix);
     }
 
     #[test]
@@ -1406,11 +1402,11 @@ mod tests {
         assert!(!prefix);
 
         prefix = true;
-        let time_err = LogRecord::new(LogLevel::Warning, "decoder", "plain")
+        let time_ignored = LogRecord::new(LogLevel::Warning, "decoder", "plain")
             .format_av_log_line_null_context(LogFlags::PRINT_TIME, &mut prefix, 128)
-            .unwrap_err();
-        assert_eq!(time_err.code(), Some(crate::error::AvErrorCode::ENOSYS));
-        assert!(prefix);
+            .unwrap();
+        assert_eq!(time_ignored.bytes(), b"plain");
+        assert!(!prefix);
     }
 
     #[test]
