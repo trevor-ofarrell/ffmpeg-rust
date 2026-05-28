@@ -7084,6 +7084,27 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .contains(PacketFlags::DISCARD));
     assert_eq!(mixed_dts_rescale_packet.data(), &[0xcc, 0xdd]);
 
+    let mut zero_duration_rescale_packet = Packet::from_data(vec![0xee]).unwrap();
+    zero_duration_rescale_packet.set_pts(Some(180_000));
+    zero_duration_rescale_packet.set_dts(Some(90_000));
+    zero_duration_rescale_packet.set_pos(Some(789)).unwrap();
+    zero_duration_rescale_packet
+        .set_time_base(rescale_src)
+        .unwrap();
+    zero_duration_rescale_packet.set_flag(PacketFlags::TRUSTED, true);
+    zero_duration_rescale_packet
+        .rescale_ts(rescale_src, rescale_dst)
+        .unwrap();
+    assert_eq!(zero_duration_rescale_packet.pts(), Some(2_000));
+    assert_eq!(zero_duration_rescale_packet.dts(), Some(1_000));
+    assert_eq!(zero_duration_rescale_packet.duration(), 0);
+    assert_eq!(zero_duration_rescale_packet.pos(), Some(789));
+    assert_eq!(zero_duration_rescale_packet.time_base(), rescale_src);
+    assert!(zero_duration_rescale_packet
+        .flags()
+        .contains(PacketFlags::TRUSTED));
+    assert_eq!(zero_duration_rescale_packet.data(), &[0xee]);
+
     let opaque_len = usize::from(cursor.next().unwrap_or_default() % 16);
     let opaque_payload = payload_from(cursor, opaque_len);
     packet.set_opaque_ref(Some(BufferRef::copy_from_slice(&opaque_payload)));

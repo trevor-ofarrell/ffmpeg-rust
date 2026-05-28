@@ -12840,6 +12840,23 @@ mod tests {
         assert_eq!(mixed_dts.time_base(), src);
         assert!(mixed_dts.flags().contains(PacketFlags::DISCARD));
         assert_eq!(mixed_dts.data(), &[0xcc, 0xdd]);
+
+        let mut zero_duration = Packet::from_data(vec![0xee]).unwrap();
+        zero_duration.set_pts(Some(180_000));
+        zero_duration.set_dts(Some(90_000));
+        zero_duration.set_pos(Some(789)).unwrap();
+        zero_duration.set_time_base(src).unwrap();
+        zero_duration.set_flag(PacketFlags::TRUSTED, true);
+
+        zero_duration.rescale_ts(src, dst).unwrap();
+
+        assert_eq!(zero_duration.pts(), Some(2_000));
+        assert_eq!(zero_duration.dts(), Some(1_000));
+        assert_eq!(zero_duration.duration(), 0);
+        assert_eq!(zero_duration.pos(), Some(789));
+        assert_eq!(zero_duration.time_base(), src);
+        assert!(zero_duration.flags().contains(PacketFlags::TRUSTED));
+        assert_eq!(zero_duration.data(), &[0xee]);
     }
 
     #[test]

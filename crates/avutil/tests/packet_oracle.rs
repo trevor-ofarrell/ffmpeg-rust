@@ -221,6 +221,25 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         packet_fields(&rescaled_mixed_dts),
     );
 
+    let mut rescaled_zero_duration = Packet::new(vec![0xee], 5);
+    rescaled_zero_duration.set_pts(Some(180_000));
+    rescaled_zero_duration.set_dts(Some(90_000));
+    rescaled_zero_duration.set_pos(Some(789)).unwrap();
+    rescaled_zero_duration.set_flag(PacketFlags::TRUSTED, true);
+    rescaled_zero_duration
+        .set_time_base(Rational::new(1, 90_000).unwrap())
+        .unwrap();
+    rescaled_zero_duration
+        .rescale_ts(
+            Rational::new(1, 90_000).unwrap(),
+            Rational::new(1, 1_000).unwrap(),
+        )
+        .unwrap();
+    rows.insert(
+        "packet:rescale-zero-duration".to_string(),
+        packet_fields(&rescaled_zero_duration),
+    );
+
     let src = packet_with_common_props();
     let mut copied = Packet::new(vec![0x99, 0x88], 1);
     copied.copy_props_from(&src);
@@ -5671,6 +5690,20 @@ int main(void) {
     pkt->time_base = (AVRational){ 1, 90000 };
     av_packet_rescale_ts(pkt, (AVRational){ 1, 90000 }, (AVRational){ 1, 1000 });
     print_packet("packet:rescale-mixed-dts", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    fail_if(av_new_packet(pkt, 1) < 0, "av_new_packet zero duration rescale failed");
+    pkt->data[0] = 0xee;
+    pkt->pts = 180000;
+    pkt->dts = 90000;
+    pkt->duration = 0;
+    pkt->pos = 789;
+    pkt->stream_index = 5;
+    pkt->flags = AV_PKT_FLAG_TRUSTED;
+    pkt->time_base = (AVRational){ 1, 90000 };
+    av_packet_rescale_ts(pkt, (AVRational){ 1, 90000 }, (AVRational){ 1, 1000 });
+    print_packet("packet:rescale-zero-duration", pkt);
     av_packet_free(&pkt);
 
     AVPacket *src = packet_with_common_props();
