@@ -2372,6 +2372,24 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
             .format_default_callback_line_null_context_with_options(default_callback_color),
         "\x1b[48;5;52m\x1b[38;5;196m[panic] \x1b[0m\x1b[48;5;52m\x1b[38;5;196mplain\n\x1b[0m"
     );
+    let quiet_force_color =
+        LogFormatOptions::new(LogFlags::PRINT_TIME | LogFlags::PRINT_LEVEL)
+            .with_color_mode(LogColorMode::Always);
+    assert_eq!(
+        LogRecord::new(LogLevel::Quiet, "ignored", "quiet\n")
+            .with_timestamp(timestamp)
+            .format_default_callback_line_null_context_with_options(quiet_force_color),
+        "\x1b[48;5;52m\x1b[38;5;196mquiet\n\x1b[0m"
+    );
+    assert_eq!(
+        LogRecord::new(LogLevel::Quiet, "ignored", "quiet\n")
+            .with_timestamp(timestamp)
+            .format_default_callback_line_context_with_options(
+                &callback_context,
+                quiet_force_color
+            ),
+        "\x1b[48;5;0m\x1b[38;5;250m[rustctx @ <ptr>] \x1b[0m\x1b[48;5;52m\x1b[38;5;196mquiet\n\x1b[0m"
+    );
     let mut default_callback_color_prefix_state = DefaultCallbackPrefixState::new();
     assert_eq!(
         LogRecord::new(LogLevel::Warning, "ignored", "part")

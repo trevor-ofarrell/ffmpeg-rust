@@ -649,6 +649,20 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
         "default-callback-color-warning-context-level-line",
         escape_row_text(default_color_warning_context_level.as_bytes()),
     );
+    let quiet_color_options = LogFormatOptions::new(LogFlags::PRINT_TIME | LogFlags::PRINT_LEVEL)
+        .with_color_mode(LogColorMode::Always);
+    let default_color_quiet = LogRecord::new(LogLevel::Quiet, "ignored", "quiet\n")
+        .format_default_callback_line_null_context_with_options(quiet_color_options);
+    rows.insert(
+        "default-callback-color-quiet-line",
+        escape_row_text(default_color_quiet.as_bytes()),
+    );
+    let default_color_quiet_context = LogRecord::new(LogLevel::Quiet, "ignored", "quiet\n")
+        .format_default_callback_line_context_with_options(&context, quiet_color_options);
+    rows.insert(
+        "default-callback-color-quiet-context-level-line",
+        escape_row_text(default_color_quiet_context.as_bytes()),
+    );
     let default_color_repeat_level = rust_default_callback_color_repeat_lines(
         LogFlags::SKIP_REPEATED | LogFlags::PRINT_LEVEL,
         None,
@@ -2622,6 +2636,14 @@ static void print_default_callback_color_rows(void) {
     print_default_callback_level_row("default-callback-color-warning-context-level-line",
                                      &ctx, AV_LOG_WARNING, AV_LOG_PRINT_LEVEL,
                                      "plain");
+    print_default_callback_level_row("default-callback-color-quiet-line", NULL,
+                                     AV_LOG_QUIET,
+                                     AV_LOG_PRINT_TIME | AV_LOG_PRINT_LEVEL,
+                                     "quiet");
+    print_default_callback_level_row("default-callback-color-quiet-context-level-line",
+                                     &ctx, AV_LOG_QUIET,
+                                     AV_LOG_PRINT_TIME | AV_LOG_PRINT_LEVEL,
+                                     "quiet");
     print_default_callback_repeat_row("default-callback-color-repeat-level-line", NULL,
                                       AV_LOG_SKIP_REPEATED | AV_LOG_PRINT_LEVEL);
     print_default_callback_repeat_row("default-callback-color-repeat-context-level-line", &ctx,

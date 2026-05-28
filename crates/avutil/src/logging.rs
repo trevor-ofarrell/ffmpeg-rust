@@ -847,9 +847,14 @@ impl LogRecord {
 
         let flags = options.flags();
         let use_color = matches!(options.color_mode(), LogColorMode::Always);
-        let severity_color = use_color
-            .then(|| self.default_callback_ansi_color_code())
-            .flatten();
+        let severity_color = if use_color {
+            match self.level {
+                LogLevel::Quiet => Some(DEFAULT_CALLBACK_PANIC_COLOR),
+                _ => self.default_callback_ansi_color_code(),
+            }
+        } else {
+            None
+        };
         let mut line = String::new();
         if print_prefix {
             if let Some(timestamp) = self.timestamp {
@@ -1809,6 +1814,16 @@ mod tests {
             LogRecord::new(LogLevel::Warning, "ignored", "plain\n")
                 .format_default_callback_line_context_with_options(&context, force_color_level),
             "\x1b[48;5;0m\x1b[38;5;250m[rustctx @ <ptr>] \x1b[0m\x1b[48;5;0m\x1b[38;5;226m[warning] \x1b[0m\x1b[48;5;0m\x1b[38;5;226mplain\n\x1b[0m"
+        );
+        let quiet_force_color = LogFormatOptions::new(LogFlags::PRINT_TIME | LogFlags::PRINT_LEVEL)
+            .with_color_mode(LogColorMode::Always);
+        assert_eq!(
+            quiet.format_default_callback_line_null_context_with_options(quiet_force_color),
+            "\x1b[48;5;52m\x1b[38;5;196mquiet\n\x1b[0m"
+        );
+        assert_eq!(
+            quiet.format_default_callback_line_context_with_options(&context, quiet_force_color),
+            "\x1b[48;5;0m\x1b[38;5;250m[rustctx @ <ptr>] \x1b[0m\x1b[48;5;52m\x1b[38;5;196mquiet\n\x1b[0m"
         );
     }
 
