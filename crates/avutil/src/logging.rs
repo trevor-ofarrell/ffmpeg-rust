@@ -592,7 +592,7 @@ impl LogRecord {
         flags: LogFlags,
     ) -> String {
         if self.is_repetition_summary() {
-            return self.message.clone();
+            return format!("    {}\n", self.message);
         }
 
         let mut line = String::new();
@@ -2139,6 +2139,10 @@ mod tests {
         assert_eq!(
             summary.format_line_with_flags(LogFlags::PRINT_LEVEL),
             "Last message repeated 3 times"
+        );
+        assert_eq!(
+            summary.format_default_callback_line_null_context_with_flags(LogFlags::PRINT_LEVEL),
+            "    Last message repeated 3 times\n"
         );
     }
 

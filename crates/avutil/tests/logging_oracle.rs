@@ -7,7 +7,7 @@ use std::{
 
 use avutil::{
     AvLogContextPrefix, AvLogFormatLine, AvLogFormatLine2, LogFlags, LogLevel, LogRecord,
-    LogTimestamp,
+    LogTimestamp, Logger,
 };
 
 #[test]
@@ -303,6 +303,22 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
         escape_row_text(
             normalize_default_callback_timestamp(&default_context_datetime_level).as_bytes(),
         ),
+    );
+    let default_repeat_skip = rust_default_callback_repeat_lines(LogFlags::SKIP_REPEATED);
+    rows.insert(
+        "default-callback-repeat-skip-line",
+        escape_row_text(default_repeat_skip.as_bytes()),
+    );
+    let default_repeat_skip_level =
+        rust_default_callback_repeat_lines(LogFlags::SKIP_REPEATED | LogFlags::PRINT_LEVEL);
+    rows.insert(
+        "default-callback-repeat-skip-level-line",
+        escape_row_text(default_repeat_skip_level.as_bytes()),
+    );
+    let default_repeat_no_skip = rust_default_callback_repeat_lines(LogFlags::empty());
+    rows.insert(
+        "default-callback-repeat-noskip-line",
+        escape_row_text(default_repeat_no_skip.as_bytes()),
     );
 
     let (plain, _) = rust_format_line(LogLevel::Warning, "plain", LogFlags::empty(), true, 128);
@@ -686,6 +702,20 @@ fn rust_default_callback_context_line(flags: LogFlags, timestamp: Option<LogTime
         record = record.with_timestamp(timestamp);
     }
     record.format_default_callback_line_context_with_flags(&context, flags)
+}
+
+fn rust_default_callback_repeat_lines(flags: LogFlags) -> String {
+    let mut logger = Logger::new_with_flags(LogLevel::Trace, flags);
+    let repeated = LogRecord::new(LogLevel::Warning, "ignored", "repeat\n");
+    assert!(logger.log(repeated.clone()));
+    assert!(logger.log(repeated.clone()));
+    assert!(logger.log(repeated));
+    assert!(logger.log(LogRecord::new(LogLevel::Error, "ignored", "next\n")));
+    logger
+        .records()
+        .iter()
+        .map(|record| record.format_default_callback_line_null_context_with_flags(flags))
+        .collect()
 }
 
 fn normalize_default_callback_timestamp(line: &str) -> String {
@@ -1280,6 +1310,44 @@ static void print_default_callback_row(const char *name, void *ptr, int flags,
     ROW_STR_NORMALIZED_DEFAULT_CALLBACK(name, captured);
 }
 
+static void print_default_callback_repeat_row(const char *name, int flags) {
+    char captured[2048];
+    FILE *capture = tmpfile();
+    if (!capture) {
+        ROW_STR(name, "<tmpfile-error>");
+        return;
+    }
+
+    fflush(stderr);
+    int saved_stderr = dup(fileno(stderr));
+    if (saved_stderr < 0 || dup2(fileno(capture), fileno(stderr)) < 0) {
+        if (saved_stderr >= 0)
+            close(saved_stderr);
+        fclose(capture);
+        ROW_STR(name, "<stderr-redirect-error>");
+        return;
+    }
+
+    av_log_set_callback(av_log_default_callback);
+    av_log_set_level(AV_LOG_TRACE);
+    av_log_set_flags(flags);
+    av_log(NULL, AV_LOG_WARNING, "%s\n", "repeat");
+    av_log(NULL, AV_LOG_WARNING, "%s\n", "repeat");
+    av_log(NULL, AV_LOG_WARNING, "%s\n", "repeat");
+    av_log(NULL, AV_LOG_ERROR, "%s\n", "next");
+    fflush(stderr);
+
+    dup2(saved_stderr, fileno(stderr));
+    close(saved_stderr);
+
+    rewind(capture);
+    size_t len = fread(captured, 1, sizeof(captured) - 1, capture);
+    captured[len] = '\0';
+    fclose(capture);
+
+    ROW_STR_NORMALIZED_DEFAULT_CALLBACK(name, captured);
+}
+
 static void print_default_callback_rows(void) {
     setenv("AV_LOG_FORCE_NOCOLOR", "1", 1);
     TestLogContext ctx = { &test_log_class };
@@ -1306,6 +1374,11 @@ static void print_default_callback_rows(void) {
     print_default_callback_row("default-callback-context-datetime-level-line",
                                &ctx, AV_LOG_PRINT_DATETIME | AV_LOG_PRINT_LEVEL,
                                "ctxmsg");
+    print_default_callback_repeat_row("default-callback-repeat-skip-line",
+                                      AV_LOG_SKIP_REPEATED);
+    print_default_callback_repeat_row("default-callback-repeat-skip-level-line",
+                                      AV_LOG_SKIP_REPEATED | AV_LOG_PRINT_LEVEL);
+    print_default_callback_repeat_row("default-callback-repeat-noskip-line", 0);
 }
 
 int main(void) {

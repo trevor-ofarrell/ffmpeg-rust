@@ -2110,6 +2110,25 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
             ),
         "12:38:25.123 [rustctx @ <ptr>] [warning] ctxmsg\n"
     );
+    let mut callback_repeat_flags = LogFlags::SKIP_REPEATED;
+    callback_repeat_flags.insert(LogFlags::PRINT_LEVEL);
+    let mut callback_repeat_logger = Logger::new_with_flags(LogLevel::Trace, callback_repeat_flags);
+    let repeated_callback = LogRecord::new(LogLevel::Warning, "ignored", "repeat\n");
+    assert!(callback_repeat_logger.log(repeated_callback.clone()));
+    assert!(callback_repeat_logger.log(repeated_callback.clone()));
+    assert!(callback_repeat_logger.log(repeated_callback));
+    assert!(callback_repeat_logger.log(LogRecord::new(LogLevel::Error, "ignored", "next\n")));
+    let default_callback_repeat_lines = callback_repeat_logger
+        .records()
+        .iter()
+        .map(|record| {
+            record.format_default_callback_line_null_context_with_flags(callback_repeat_flags)
+        })
+        .collect::<String>();
+    assert_eq!(
+        default_callback_repeat_lines,
+        "[warning] repeat\n    Last message repeated 2 times\n[error] next\n"
+    );
     let color_options =
         LogFormatOptions::new(LogFlags::PRINT_LEVEL).with_color_mode(LogColorMode::Always);
     let plain_options =
