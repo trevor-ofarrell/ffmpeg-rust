@@ -469,6 +469,18 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
         "default-callback-color-cache-after-nocolor-line",
         escape_row_text(default_color_cache_after_nocolor.as_bytes()),
     );
+    let default_no_force_redirected =
+        rust_default_callback_no_force_redirected_line(None, LogFlags::PRINT_LEVEL);
+    rows.insert(
+        "default-callback-no-force-redirected-warning-level-line",
+        escape_row_text(default_no_force_redirected.as_bytes()),
+    );
+    let default_no_force_redirected_context =
+        rust_default_callback_no_force_redirected_line(Some(&context), LogFlags::PRINT_LEVEL);
+    rows.insert(
+        "default-callback-no-force-redirected-context-level-line",
+        escape_row_text(default_no_force_redirected_context.as_bytes()),
+    );
     let default_nocolor_wins = rust_default_callback_nocolor_wins_line();
     rows.insert(
         "default-callback-nocolor-wins-warning-line",
@@ -918,6 +930,24 @@ fn rust_default_callback_color_cache_after_nocolor_line() -> String {
         .format_default_callback_line_null_context_with_options(cached_options)
 }
 
+fn rust_default_callback_no_force_redirected_line(
+    context: Option<&AvLogContextPrefix>,
+    flags: LogFlags,
+) -> String {
+    let mut color_state = DefaultCallbackColorState::new();
+    let options = LogFormatOptions::new(flags)
+        .with_default_callback_color_state_and_resolver(&mut color_state, || {
+            LogColorMode::from_ffmpeg_env_vars_and_stderr(|_| false, false)
+        });
+    assert_eq!(options.color_mode(), LogColorMode::Never);
+    assert_eq!(color_state.cached_mode(), Some(LogColorMode::Never));
+    let record = LogRecord::new(LogLevel::Warning, "ignored", "plain\n");
+    match context {
+        Some(context) => record.format_default_callback_line_context_with_options(context, options),
+        None => record.format_default_callback_line_null_context_with_options(options),
+    }
+}
+
 fn rust_default_callback_nocolor_wins_line() -> String {
     let mut color_state = DefaultCallbackColorState::new();
     let options = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
@@ -1041,10 +1071,11 @@ fn compile_and_run_oracle(
 ) -> String {
     let output = if cfg!(windows) {
         let script = format!(
-            "gcc -I {} {} {} -lm -pthread -ldl -o {} && {} && {} --color && {} --nocolor",
+            "gcc -I {} {} {} -lm -pthread -ldl -o {} && {} && {} --plain && {} --color && {} --nocolor",
             shell_quote(&to_wsl_path(include_dir)),
             shell_quote(&to_wsl_path(source)),
             shell_quote(&to_wsl_path(libavutil)),
+            shell_quote(&to_wsl_path(executable)),
             shell_quote(&to_wsl_path(executable)),
             shell_quote(&to_wsl_path(executable)),
             shell_quote(&to_wsl_path(executable)),
@@ -1058,10 +1089,11 @@ fn compile_and_run_oracle(
         Command::new("sh")
             .arg("-c")
             .arg(format!(
-                "gcc -I {} {} {} -lm -pthread -ldl -o {} && {} && {} --color && {} --nocolor",
+                "gcc -I {} {} {} -lm -pthread -ldl -o {} && {} && {} --plain && {} --color && {} --nocolor",
                 shell_quote(&include_dir.display().to_string()),
                 shell_quote(&source.display().to_string()),
                 shell_quote(&libavutil.display().to_string()),
+                shell_quote(&executable.display().to_string()),
                 shell_quote(&executable.display().to_string()),
                 shell_quote(&executable.display().to_string()),
                 shell_quote(&executable.display().to_string()),
@@ -1703,6 +1735,18 @@ static void print_default_callback_color_cache_after_nocolor_rows(void) {
     unsetenv("AV_LOG_FORCE_COLOR");
 }
 
+static void print_default_callback_no_force_redirected_rows(void) {
+    TestLogContext ctx = { &test_log_class };
+    unsetenv("AV_LOG_FORCE_NOCOLOR");
+    unsetenv("AV_LOG_FORCE_COLOR");
+    print_default_callback_level_row(
+        "default-callback-no-force-redirected-warning-level-line",
+        NULL, AV_LOG_WARNING, AV_LOG_PRINT_LEVEL, "plain");
+    print_default_callback_level_row(
+        "default-callback-no-force-redirected-context-level-line",
+        &ctx, AV_LOG_WARNING, AV_LOG_PRINT_LEVEL, "plain");
+}
+
 static void print_default_callback_nocolor_rows(void) {
     setenv("AV_LOG_FORCE_NOCOLOR", "1", 1);
     setenv("AV_LOG_FORCE_COLOR", "1", 1);
@@ -1714,6 +1758,10 @@ static void print_default_callback_nocolor_rows(void) {
 }
 
 int main(int argc, char **argv) {
+    if (argc > 1 && strcmp(argv[1], "--plain") == 0) {
+        print_default_callback_no_force_redirected_rows();
+        return 0;
+    }
     if (argc > 1 && strcmp(argv[1], "--color") == 0) {
         print_default_callback_color_rows();
         return 0;

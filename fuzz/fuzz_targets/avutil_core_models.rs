@@ -2314,6 +2314,20 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
         default_callback_color_state.cached_mode(),
         Some(LogColorMode::Always)
     );
+    default_callback_color_state.reset();
+    let redirected_plain_options = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
+        .with_default_callback_color_state_and_resolver(&mut default_callback_color_state, || {
+            LogColorMode::from_ffmpeg_env_vars_and_stderr(|_| false, false)
+        });
+    assert_eq!(redirected_plain_options.color_mode(), LogColorMode::Never);
+    assert_eq!(
+        LogRecord::new(LogLevel::Warning, "ignored", "plain\n")
+            .format_default_callback_line_context_with_options(
+                &callback_context,
+                redirected_plain_options
+            ),
+        "[rustctx @ <ptr>] [warning] plain\n"
+    );
     let env_color_options = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
         .with_ffmpeg_env_color_vars(|name| name == AV_LOG_FORCE_COLOR_ENV);
     assert_eq!(env_color_options.color_mode(), LogColorMode::Always);

@@ -1975,6 +1975,30 @@ mod tests {
     }
 
     #[test]
+    fn default_callback_color_state_stays_plain_for_redirected_stderr_without_force_env() {
+        let mut state = DefaultCallbackColorState::new();
+        let options = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
+            .with_default_callback_color_state_and_resolver(&mut state, || {
+                LogColorMode::from_ffmpeg_env_vars_and_stderr(|_| false, false)
+            });
+
+        assert_eq!(options.color_mode(), LogColorMode::Never);
+        assert_eq!(state.cached_mode(), Some(LogColorMode::Never));
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "plain\n")
+                .format_default_callback_line_null_context_with_options(options),
+            "[warning] plain\n"
+        );
+
+        let context = AvLogContextPrefix::new("rustctx", "<ptr>");
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "plain\n")
+                .format_default_callback_line_context_with_options(&context, options),
+            "[rustctx @ <ptr>] [warning] plain\n"
+        );
+    }
+
+    #[test]
     fn logger_formats_records_with_configured_flags() {
         let mut logger = Logger::new_with_flags(LogLevel::Info, LogFlags::empty());
 
