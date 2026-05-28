@@ -222,6 +222,46 @@ impl LogColorMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct DefaultCallbackColorState {
+    resolved: Option<LogColorMode>,
+}
+
+impl DefaultCallbackColorState {
+    pub const fn new() -> Self {
+        Self { resolved: None }
+    }
+
+    pub const fn from_resolved(color_mode: LogColorMode) -> Self {
+        Self {
+            resolved: Some(color_mode),
+        }
+    }
+
+    pub const fn cached_mode(self) -> Option<LogColorMode> {
+        self.resolved
+    }
+
+    pub fn resolve_with(&mut self, resolver: impl FnOnce() -> LogColorMode) -> LogColorMode {
+        match self.resolved {
+            Some(color_mode) => color_mode,
+            None => {
+                let color_mode = resolver();
+                self.resolved = Some(color_mode);
+                color_mode
+            }
+        }
+    }
+
+    pub fn resolve_ffmpeg_env(&mut self) -> LogColorMode {
+        self.resolve_with(LogColorMode::from_ffmpeg_env)
+    }
+
+    pub fn reset(&mut self) {
+        self.resolved = None;
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LogFormatOptions {
     flags: LogFlags,
@@ -266,6 +306,18 @@ impl LogFormatOptions {
             is_set,
             stderr_is_terminal,
         ))
+    }
+
+    pub fn with_default_callback_color_state(self, state: &mut DefaultCallbackColorState) -> Self {
+        self.with_color_mode(state.resolve_ffmpeg_env())
+    }
+
+    pub fn with_default_callback_color_state_and_resolver(
+        self,
+        state: &mut DefaultCallbackColorState,
+        resolver: impl FnOnce() -> LogColorMode,
+    ) -> Self {
+        self.with_color_mode(state.resolve_with(resolver))
     }
 
     pub const fn flags(self) -> LogFlags {
@@ -1725,6 +1777,40 @@ mod tests {
                 .format_line_with_options(options),
             "[error] demuxer: bad header"
         );
+    }
+
+    #[test]
+    fn default_callback_color_state_caches_first_resolution() {
+        let mut state = DefaultCallbackColorState::new();
+        assert_eq!(state.cached_mode(), None);
+
+        let first = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
+            .with_default_callback_color_state_and_resolver(&mut state, || LogColorMode::Never);
+        assert_eq!(first.color_mode(), LogColorMode::Never);
+        assert_eq!(state.cached_mode(), Some(LogColorMode::Never));
+
+        let second = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
+            .with_default_callback_color_state_and_resolver(&mut state, || LogColorMode::Always);
+        assert_eq!(second.color_mode(), LogColorMode::Never);
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "plain\n")
+                .format_default_callback_line_null_context_with_options(second),
+            "[warning] plain\n"
+        );
+
+        state.reset();
+        let fresh = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
+            .with_default_callback_color_state_and_resolver(&mut state, || LogColorMode::Always);
+        assert_eq!(fresh.color_mode(), LogColorMode::Always);
+        assert_eq!(state.cached_mode(), Some(LogColorMode::Always));
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "plain\n")
+                .format_default_callback_line_null_context_with_options(fresh),
+            "\x1b[48;5;0m\x1b[38;5;226m[warning] \x1b[0m\x1b[48;5;0m\x1b[38;5;226mplain\n\x1b[0m"
+        );
+
+        let pre_resolved = DefaultCallbackColorState::from_resolved(LogColorMode::Always);
+        assert_eq!(pre_resolved.cached_mode(), Some(LogColorMode::Always));
     }
 
     #[test]

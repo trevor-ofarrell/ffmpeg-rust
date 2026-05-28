@@ -13,18 +13,18 @@ use avutil::{
     sha512_256, take_global_log_records, Adler32, AmbisonicChannelLayout, AudioFrame, AvError,
     AvErrorCode, AvErrorKind, AvLogContextPrefix, BufferPool, BufferPoolAllocation,
     BufferPoolCallbacks, BufferRef, Channel, ChannelCustom, ChannelId, ChannelLayout,
-    ChannelLayoutSpec, Crc32, CustomChannelLayout, Dictionary, Frame, FrameA53ClosedCaptions,
-    FrameActiveFormatDescription, FrameAlphaMode, FrameAmbientViewingEnvironment,
-    FrameAudioServiceType, FrameChromaLocation, FrameColorPrimaries, FrameColorRange,
-    FrameColorSpace, FrameColorTransferCharacteristic, FrameContentLightMetadata, FrameCrop,
-    FrameCropFlags, FrameData, FrameDecodeErrorFlags, FrameDetectionBbox, FrameDetectionBboxes,
-    FrameDisplayMatrix, FrameDolbyVisionColorMetadata, FrameDolbyVisionDataMapping,
-    FrameDolbyVisionDmData, FrameDolbyVisionMetadata, FrameDolbyVisionRpuBuffer,
-    FrameDolbyVisionRpuDataHeader, FrameDownmixInfo, FrameDownmixType, FrameDynamicHdrPlus,
-    FrameDynamicHdrVivid, FrameExif, FrameExifColorSpace, FrameExifCompositeImage,
-    FrameExifContrast, FrameExifCustomRendered, FrameExifEndian, FrameExifEntry,
-    FrameExifExposureMode, FrameExifExposureProgram, FrameExifFileSource, FrameExifFlash,
-    FrameExifGainControl, FrameExifGpsAltitudeRef, FrameExifGpsDifferential,
+    ChannelLayoutSpec, Crc32, CustomChannelLayout, DefaultCallbackColorState, Dictionary, Frame,
+    FrameA53ClosedCaptions, FrameActiveFormatDescription, FrameAlphaMode,
+    FrameAmbientViewingEnvironment, FrameAudioServiceType, FrameChromaLocation,
+    FrameColorPrimaries, FrameColorRange, FrameColorSpace, FrameColorTransferCharacteristic,
+    FrameContentLightMetadata, FrameCrop, FrameCropFlags, FrameData, FrameDecodeErrorFlags,
+    FrameDetectionBbox, FrameDetectionBboxes, FrameDisplayMatrix, FrameDolbyVisionColorMetadata,
+    FrameDolbyVisionDataMapping, FrameDolbyVisionDmData, FrameDolbyVisionMetadata,
+    FrameDolbyVisionRpuBuffer, FrameDolbyVisionRpuDataHeader, FrameDownmixInfo, FrameDownmixType,
+    FrameDynamicHdrPlus, FrameDynamicHdrVivid, FrameExif, FrameExifColorSpace,
+    FrameExifCompositeImage, FrameExifContrast, FrameExifCustomRendered, FrameExifEndian,
+    FrameExifEntry, FrameExifExposureMode, FrameExifExposureProgram, FrameExifFileSource,
+    FrameExifFlash, FrameExifGainControl, FrameExifGpsAltitudeRef, FrameExifGpsDifferential,
     FrameExifGpsDirectionRef, FrameExifGpsDistanceRef, FrameExifGpsLatitudeRef,
     FrameExifGpsLongitudeRef, FrameExifGpsMeasureMode, FrameExifGpsSpeedRef, FrameExifGpsStatus,
     FrameExifIfdPointerKind, FrameExifLightSource, FrameExifMeteringMode, FrameExifNewSubfileType,
@@ -2258,6 +2258,32 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
             true,
         ),
         LogColorMode::Never
+    );
+    let mut default_callback_color_state = DefaultCallbackColorState::new();
+    let cached_plain_options = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
+        .with_default_callback_color_state_and_resolver(&mut default_callback_color_state, || {
+            LogColorMode::Never
+        });
+    assert_eq!(cached_plain_options.color_mode(), LogColorMode::Never);
+    let cached_after_force_options = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
+        .with_default_callback_color_state_and_resolver(&mut default_callback_color_state, || {
+            LogColorMode::Always
+        });
+    assert_eq!(cached_after_force_options.color_mode(), LogColorMode::Never);
+    assert_eq!(
+        LogRecord::new(LogLevel::Warning, "ignored", "plain\n")
+            .format_default_callback_line_null_context_with_options(cached_after_force_options),
+        "[warning] plain\n"
+    );
+    default_callback_color_state.reset();
+    let cached_force_options = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
+        .with_default_callback_color_state_and_resolver(&mut default_callback_color_state, || {
+            LogColorMode::Always
+        });
+    assert_eq!(cached_force_options.color_mode(), LogColorMode::Always);
+    assert_eq!(
+        default_callback_color_state.cached_mode(),
+        Some(LogColorMode::Always)
     );
     let env_color_options = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
         .with_ffmpeg_env_color_vars(|name| name == AV_LOG_FORCE_COLOR_ENV);

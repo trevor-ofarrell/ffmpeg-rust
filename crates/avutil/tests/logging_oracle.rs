@@ -6,8 +6,8 @@ use std::{
 };
 
 use avutil::{
-    AvLogContextPrefix, AvLogFormatLine, AvLogFormatLine2, LogColorMode, LogFlags,
-    LogFormatOptions, LogLevel, LogRecord, LogTimestamp, Logger,
+    AvLogContextPrefix, AvLogFormatLine, AvLogFormatLine2, DefaultCallbackColorState, LogColorMode,
+    LogFlags, LogFormatOptions, LogLevel, LogRecord, LogTimestamp, Logger,
 };
 
 #[test]
@@ -445,6 +445,16 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
         "default-callback-color-info-line",
         escape_row_text(default_color_info.as_bytes()),
     );
+    let default_color_cache_after_nocolor = rust_default_callback_color_cache_after_nocolor_line();
+    rows.insert(
+        "default-callback-color-cache-after-nocolor-line",
+        escape_row_text(default_color_cache_after_nocolor.as_bytes()),
+    );
+    let default_nocolor_wins = rust_default_callback_nocolor_wins_line();
+    rows.insert(
+        "default-callback-nocolor-wins-warning-line",
+        escape_row_text(default_nocolor_wins.as_bytes()),
+    );
 
     let (plain, _) = rust_format_line(LogLevel::Warning, "plain", LogFlags::empty(), true, 128);
     rows.insert("format-line-plain-line", escape_row_text(plain.bytes()));
@@ -856,6 +866,32 @@ fn rust_default_callback_color_line(
     }
 }
 
+fn rust_default_callback_color_cache_after_nocolor_line() -> String {
+    let mut color_state = DefaultCallbackColorState::new();
+    let first_options = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
+        .with_default_callback_color_state_and_resolver(&mut color_state, || LogColorMode::Never);
+    assert_eq!(first_options.color_mode(), LogColorMode::Never);
+
+    let cached_options = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
+        .with_default_callback_color_state_and_resolver(&mut color_state, || LogColorMode::Always);
+    assert_eq!(cached_options.color_mode(), LogColorMode::Never);
+    LogRecord::new(LogLevel::Warning, "ignored", "plain\n")
+        .format_default_callback_line_null_context_with_options(cached_options)
+}
+
+fn rust_default_callback_nocolor_wins_line() -> String {
+    let mut color_state = DefaultCallbackColorState::new();
+    let options = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
+        .with_default_callback_color_state_and_resolver(&mut color_state, || {
+            LogColorMode::from_ffmpeg_env_vars(|name| {
+                name == avutil::AV_LOG_FORCE_NOCOLOR_ENV || name == avutil::AV_LOG_FORCE_COLOR_ENV
+            })
+        });
+    assert_eq!(options.color_mode(), LogColorMode::Never);
+    LogRecord::new(LogLevel::Warning, "ignored", "plain\n")
+        .format_default_callback_line_null_context_with_options(options)
+}
+
 fn normalize_default_callback_timestamp(line: &str) -> String {
     if is_default_datetime_prefix(line) {
         format!("<datetime> {}", &line[24..])
@@ -966,10 +1002,11 @@ fn compile_and_run_oracle(
 ) -> String {
     let output = if cfg!(windows) {
         let script = format!(
-            "gcc -I {} {} {} -lm -pthread -ldl -o {} && {} && {} --color",
+            "gcc -I {} {} {} -lm -pthread -ldl -o {} && {} && {} --color && {} --nocolor",
             shell_quote(&to_wsl_path(include_dir)),
             shell_quote(&to_wsl_path(source)),
             shell_quote(&to_wsl_path(libavutil)),
+            shell_quote(&to_wsl_path(executable)),
             shell_quote(&to_wsl_path(executable)),
             shell_quote(&to_wsl_path(executable)),
             shell_quote(&to_wsl_path(executable))
@@ -982,10 +1019,11 @@ fn compile_and_run_oracle(
         Command::new("sh")
             .arg("-c")
             .arg(format!(
-                "gcc -I {} {} {} -lm -pthread -ldl -o {} && {} && {} --color",
+                "gcc -I {} {} {} -lm -pthread -ldl -o {} && {} && {} --color && {} --nocolor",
                 shell_quote(&include_dir.display().to_string()),
                 shell_quote(&source.display().to_string()),
                 shell_quote(&libavutil.display().to_string()),
+                shell_quote(&executable.display().to_string()),
                 shell_quote(&executable.display().to_string()),
                 shell_quote(&executable.display().to_string()),
                 shell_quote(&executable.display().to_string())
@@ -1544,9 +1582,32 @@ static void print_default_callback_color_rows(void) {
     unsetenv("AV_LOG_FORCE_COLOR");
 }
 
+static void print_default_callback_color_cache_after_nocolor_rows(void) {
+    unsetenv("AV_LOG_FORCE_NOCOLOR");
+    setenv("AV_LOG_FORCE_COLOR", "1", 1);
+    print_default_callback_level_row("default-callback-color-cache-after-nocolor-line",
+                                     NULL, AV_LOG_WARNING, AV_LOG_PRINT_LEVEL,
+                                     "plain");
+    unsetenv("AV_LOG_FORCE_COLOR");
+}
+
+static void print_default_callback_nocolor_rows(void) {
+    setenv("AV_LOG_FORCE_NOCOLOR", "1", 1);
+    setenv("AV_LOG_FORCE_COLOR", "1", 1);
+    print_default_callback_level_row("default-callback-nocolor-wins-warning-line",
+                                     NULL, AV_LOG_WARNING, AV_LOG_PRINT_LEVEL,
+                                     "plain");
+    unsetenv("AV_LOG_FORCE_COLOR");
+    unsetenv("AV_LOG_FORCE_NOCOLOR");
+}
+
 int main(int argc, char **argv) {
     if (argc > 1 && strcmp(argv[1], "--color") == 0) {
         print_default_callback_color_rows();
+        return 0;
+    }
+    if (argc > 1 && strcmp(argv[1], "--nocolor") == 0) {
+        print_default_callback_nocolor_rows();
         return 0;
     }
 
@@ -1587,6 +1648,7 @@ int main(int argc, char **argv) {
     print_format_line2_rows();
     print_format_line_rows();
     print_default_callback_rows();
+    print_default_callback_color_cache_after_nocolor_rows();
     av_log_set_callback(capture_log_callback);
     int once_state = 0;
     av_log_once(NULL, AV_LOG_WARNING, AV_LOG_DEBUG, &once_state, "%s", "once");

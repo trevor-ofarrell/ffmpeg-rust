@@ -87,8 +87,8 @@ pub use logging::{
     global_formatted_log_records, global_formatted_log_records_with_options, global_log,
     global_log_flags, global_log_level, global_log_once, set_global_log_callback,
     set_global_log_flag, set_global_log_flags, set_global_log_level, take_global_log_records,
-    AvLogContextPrefix, AvLogFormatLine, AvLogFormatLine2, LogColorMode, LogFlags,
-    LogFormatOptions, LogLevel, LogOnceState, LogRecord, LogTimestamp, Logger,
+    AvLogContextPrefix, AvLogFormatLine, AvLogFormatLine2, DefaultCallbackColorState, LogColorMode,
+    LogFlags, LogFormatOptions, LogLevel, LogOnceState, LogRecord, LogTimestamp, Logger,
     AV_LOG_FORCE_COLOR_ENV, AV_LOG_FORCE_NOCOLOR_ENV,
 };
 pub use options::{
