@@ -11,20 +11,20 @@ use avutil::{
     PacketActiveFormatDescription, PacketAmbientViewingEnvironment, PacketAudioServiceType,
     PacketContentLightMetadata, PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf,
     PacketDoviCompression, PacketDynamicHdr10Plus, PacketEncryptionSubsample, PacketFallbackTrack,
-    PacketFifo, PacketFlags, PacketFrameCropping, PacketHdrPlusColorTransformParams,
-    PacketIamfAnimationType, PacketIamfDemixingInfoSubblock, PacketIamfMixGainSubblock,
-    PacketIamfParamDefinition, PacketIamfParamDefinitionType, PacketIamfReconGainSubblock,
-    PacketJpDualMono, PacketJpDualMonoSelection, PacketMasteringDisplayMetadata,
-    PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketOpaque, PacketParamChange,
-    PacketPictureType, PacketProducerReferenceTime, PacketQualityStats, PacketReplayGain,
-    PacketRtcpSenderReport, PacketS12mTimecode, PacketSideDataKind, PacketSideDataList,
-    PacketSkipSamples, PacketSkipSamplesReason, PacketSphericalMapping, PacketSphericalProjection,
-    PacketStereo3d, PacketStereo3dFlags, PacketStereo3dPrimaryEye, PacketStereo3dType,
-    PacketStereo3dView, PacketSubtitlePosition, PacketThreeDReferenceDisplay,
-    PacketThreeDReferenceDisplays, PacketWebVttIdentifier, PacketWebVttSettings, Rational, SetMode,
-    SideData, AVPALETTE_SIZE, AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE, AV_PACKET_ABI_LAYOUT,
-    AV_PACKET_LIST_ABI_LAYOUT, AV_PACKET_MAX_PAYLOAD_SIZE, AV_PACKET_POS_UNKNOWN,
-    AV_PACKET_SIDE_DATA_ABI_LAYOUT,
+    PacketFifo, PacketFifoFlags, PacketFlags, PacketFrameCropping,
+    PacketHdrPlusColorTransformParams, PacketIamfAnimationType, PacketIamfDemixingInfoSubblock,
+    PacketIamfMixGainSubblock, PacketIamfParamDefinition, PacketIamfParamDefinitionType,
+    PacketIamfReconGainSubblock, PacketJpDualMono, PacketJpDualMonoSelection,
+    PacketMasteringDisplayMetadata, PacketMatroskaBlockAdditional, PacketMpegTsStreamId,
+    PacketOpaque, PacketParamChange, PacketPictureType, PacketProducerReferenceTime,
+    PacketQualityStats, PacketReplayGain, PacketRtcpSenderReport, PacketS12mTimecode,
+    PacketSideDataKind, PacketSideDataList, PacketSkipSamples, PacketSkipSamplesReason,
+    PacketSphericalMapping, PacketSphericalProjection, PacketStereo3d, PacketStereo3dFlags,
+    PacketStereo3dPrimaryEye, PacketStereo3dType, PacketStereo3dView, PacketSubtitlePosition,
+    PacketThreeDReferenceDisplay, PacketThreeDReferenceDisplays, PacketWebVttIdentifier,
+    PacketWebVttSettings, Rational, SetMode, SideData, AVPALETTE_SIZE,
+    AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE, AV_PACKET_ABI_LAYOUT, AV_PACKET_LIST_ABI_LAYOUT,
+    AV_PACKET_MAX_PAYLOAD_SIZE, AV_PACKET_POS_UNKNOWN, AV_PACKET_SIDE_DATA_ABI_LAYOUT,
 };
 
 #[test]
@@ -1985,6 +1985,69 @@ fn insert_packet_fifo_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     );
     rows.insert(
         "packet:fifo-after-read-move-replace-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+
+    let mut user_move_src = packet_with_common_props();
+    fifo.write_with_flags(&mut user_move_src, PacketFifoFlags::USER)
+        .unwrap();
+    rows.insert(
+        "packet:fifo-write-user-move-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:fifo-write-user-move-src".to_string(),
+        packet_fields(&user_move_src),
+    );
+    rows.insert(
+        "packet:fifo-after-write-user-move-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+    let mut user_move_dst = Packet::default();
+    fifo.read_with_flags(&mut user_move_dst, PacketFifoFlags::USER)
+        .unwrap();
+    rows.insert(
+        "packet:fifo-read-user-move-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:fifo-read-user-move-dst".to_string(),
+        packet_fields(&user_move_dst),
+    );
+    rows.insert(
+        "packet:fifo-after-read-user-move-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+
+    let mut user_ref_src = packet_with_common_props();
+    let user_ref_flags = PacketFifoFlags::REF | PacketFifoFlags::USER;
+    fifo.write_with_flags(&mut user_ref_src, user_ref_flags)
+        .unwrap();
+    rows.insert(
+        "packet:fifo-write-user-ref-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:fifo-write-user-ref-src".to_string(),
+        packet_fields(&user_ref_src),
+    );
+    rows.insert(
+        "packet:fifo-after-write-user-ref-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+    let mut user_ref_dst = Packet::default();
+    fifo.read_with_flags(&mut user_ref_dst, user_ref_flags)
+        .unwrap();
+    rows.insert(
+        "packet:fifo-read-user-ref-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:fifo-read-user-ref-dst".to_string(),
+        packet_fields(&user_ref_dst),
+    );
+    rows.insert(
+        "packet:fifo-after-read-user-ref-can-read".to_string(),
         vec![fifo.can_read().to_string()],
     );
 
@@ -5629,6 +5692,44 @@ static void exercise_packet_fifo_api(void) {
            av_container_fifo_can_read(fifo));
     av_packet_free(&move_replace_dst);
     av_packet_free(&move_replace_src);
+
+    AVPacket *user_move_src = packet_with_common_props();
+    ret = av_container_fifo_write(fifo, user_move_src,
+                                  AV_CONTAINER_FIFO_FLAG_USER);
+    printf("packet:fifo-write-user-move-ret|%d\n", ret);
+    fail_if(ret < 0, "av_container_fifo_write user move failed");
+    print_packet("packet:fifo-write-user-move-src", user_move_src);
+    printf("packet:fifo-after-write-user-move-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+    AVPacket *user_move_dst = new_packet();
+    ret = av_container_fifo_read(fifo, user_move_dst,
+                                 AV_CONTAINER_FIFO_FLAG_USER);
+    printf("packet:fifo-read-user-move-ret|%d\n", ret);
+    fail_if(ret < 0, "av_container_fifo_read user move failed");
+    print_packet("packet:fifo-read-user-move-dst", user_move_dst);
+    printf("packet:fifo-after-read-user-move-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+    av_packet_free(&user_move_dst);
+    av_packet_free(&user_move_src);
+
+    AVPacket *user_ref_src = packet_with_common_props();
+    unsigned user_ref_flags =
+        AV_CONTAINER_FIFO_FLAG_REF | AV_CONTAINER_FIFO_FLAG_USER;
+    ret = av_container_fifo_write(fifo, user_ref_src, user_ref_flags);
+    printf("packet:fifo-write-user-ref-ret|%d\n", ret);
+    fail_if(ret < 0, "av_container_fifo_write user ref failed");
+    print_packet("packet:fifo-write-user-ref-src", user_ref_src);
+    printf("packet:fifo-after-write-user-ref-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+    AVPacket *user_ref_dst = new_packet();
+    ret = av_container_fifo_read(fifo, user_ref_dst, user_ref_flags);
+    printf("packet:fifo-read-user-ref-ret|%d\n", ret);
+    fail_if(ret < 0, "av_container_fifo_read user ref failed");
+    print_packet("packet:fifo-read-user-ref-dst", user_ref_dst);
+    printf("packet:fifo-after-read-user-ref-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+    av_packet_free(&user_ref_dst);
+    av_packet_free(&user_ref_src);
 
     AVPacket *first = new_packet();
     fail_if(av_new_packet(first, 1) < 0, "fifo first seed failed");

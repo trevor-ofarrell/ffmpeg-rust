@@ -49,8 +49,8 @@ use avutil::{
     PacketAmbientViewingEnvironment, PacketAudioServiceType, PacketContentLightMetadata,
     PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf, PacketDoviCompression,
     PacketDynamicHdr10Plus, PacketEncryptionInfo, PacketEncryptionInitInfo,
-    PacketEncryptionSubsample, PacketExif, PacketFallbackTrack, PacketFifo, PacketFlags,
-    PacketFrameCropping, PacketH263MbInfo, PacketH263MbInfoEntry,
+    PacketEncryptionSubsample, PacketExif, PacketFallbackTrack, PacketFifo, PacketFifoFlags,
+    PacketFlags, PacketFrameCropping, PacketH263MbInfo, PacketH263MbInfoEntry,
     PacketHdrPlusColorTransformParams, PacketIamfAnimationType, PacketIamfDemixingInfoParam,
     PacketIamfMixGainParam, PacketIamfParamDefinitionType, PacketIamfReconGainInfoParam,
     PacketIamfReconGainSubblock, PacketIccProfile, PacketJpDualMono, PacketJpDualMonoSelection,
@@ -7803,6 +7803,50 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             .data(),
         &[0x07, 0x08]
     );
+
+    assert_eq!(PacketFifoFlags::REF.bits(), 1);
+    assert_eq!(PacketFifoFlags::USER.bits(), 1 << 16);
+    assert!(PacketFifoFlags::from_bits(0x8001_0000).contains(PacketFifoFlags::USER));
+    let fifo_user_move_payload = vec![cursor.next().unwrap_or_default()];
+    let mut fifo_user_move_src = Packet::from_data(fifo_user_move_payload.clone()).unwrap();
+    let fifo_user_move_storage = fifo_user_move_src.data_buffer().clone();
+    packet_fifo
+        .write_with_flags(&mut fifo_user_move_src, PacketFifoFlags::USER)
+        .unwrap();
+    assert!(fifo_user_move_src.is_empty());
+    assert_eq!(packet_fifo.can_read(), 1);
+    let mut fifo_user_move_dst = Packet::default();
+    packet_fifo
+        .read_with_flags(&mut fifo_user_move_dst, PacketFifoFlags::USER)
+        .unwrap();
+    assert_eq!(packet_fifo.can_read(), 0);
+    assert_eq!(fifo_user_move_dst.data(), fifo_user_move_payload.as_slice());
+    assert!(fifo_user_move_dst
+        .data_buffer()
+        .shares_storage(&fifo_user_move_storage));
+
+    let fifo_user_ref_payload = vec![cursor.next().unwrap_or_default()];
+    let mut fifo_user_ref_src = Packet::from_data(fifo_user_ref_payload.clone()).unwrap();
+    fifo_user_ref_src.set_pts(Some(1_234));
+    let fifo_user_ref_storage = fifo_user_ref_src.data_buffer().clone();
+    let fifo_user_ref_flags = PacketFifoFlags::REF | PacketFifoFlags::USER;
+    packet_fifo
+        .write_with_flags(&mut fifo_user_ref_src, fifo_user_ref_flags)
+        .unwrap();
+    assert_eq!(fifo_user_ref_src.data(), fifo_user_ref_payload.as_slice());
+    assert_eq!(fifo_user_ref_src.pts(), Some(1_234));
+    assert_eq!(packet_fifo.can_read(), 1);
+    let mut fifo_user_ref_dst = Packet::default();
+    packet_fifo
+        .read_with_flags(&mut fifo_user_ref_dst, fifo_user_ref_flags)
+        .unwrap();
+    assert_eq!(packet_fifo.can_read(), 0);
+    assert_eq!(fifo_user_ref_dst.data(), fifo_user_ref_payload.as_slice());
+    assert_eq!(fifo_user_ref_dst.pts(), Some(1_234));
+    assert!(fifo_user_ref_dst
+        .data_buffer()
+        .shares_storage(&fifo_user_ref_storage));
+    assert_eq!(fifo_user_ref_src.data(), fifo_user_ref_payload.as_slice());
 
     let mut fifo_first = Packet::new(vec![0x01], 1);
     let mut fifo_second = Packet::new(vec![0x02], 2);

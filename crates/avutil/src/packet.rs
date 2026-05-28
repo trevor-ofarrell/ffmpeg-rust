@@ -214,6 +214,44 @@ impl PacketFlags {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct PacketFifoFlags {
+    bits: u32,
+}
+
+impl PacketFifoFlags {
+    pub const REF: Self = Self { bits: 1 << 0 };
+    pub const USER: Self = Self { bits: 1 << 16 };
+
+    pub const fn empty() -> Self {
+        Self { bits: 0 }
+    }
+
+    pub const fn from_bits(bits: u32) -> Self {
+        Self { bits }
+    }
+
+    pub const fn bits(self) -> u32 {
+        self.bits
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.bits == 0
+    }
+
+    pub const fn contains(self, other: Self) -> bool {
+        self.bits & other.bits == other.bits
+    }
+}
+
+impl core::ops::BitOr for PacketFifoFlags {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self::from_bits(self.bits | rhs.bits)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum PacketPictureType {
@@ -5641,17 +5679,29 @@ impl PacketFifo {
     }
 
     pub fn write_move(&mut self, packet: &mut Packet) -> AvResult<()> {
-        let mut stored = Packet::default();
-        stored.move_ref_from(packet);
-        self.entries.push_back(stored);
-        Ok(())
+        self.write_with_flags(packet, PacketFifoFlags::empty())
     }
 
     pub fn write_ref(&mut self, packet: &Packet) -> AvResult<()> {
         let mut stored = Packet::default();
-        stored.ref_from(packet);
+        stored.try_ref_from(packet)?;
         self.entries.push_back(stored);
         Ok(())
+    }
+
+    pub fn write_with_flags(
+        &mut self,
+        packet: &mut Packet,
+        flags: PacketFifoFlags,
+    ) -> AvResult<()> {
+        if flags.contains(PacketFifoFlags::REF) {
+            self.write_ref(packet)
+        } else {
+            let mut stored = Packet::default();
+            stored.move_ref_from(packet);
+            self.entries.push_back(stored);
+            Ok(())
+        }
     }
 
     pub fn read_move(&mut self, packet: &mut Packet) -> AvResult<()> {
@@ -5662,8 +5712,16 @@ impl PacketFifo {
 
     pub fn read_ref(&mut self, packet: &mut Packet) -> AvResult<()> {
         let stored = self.pop_front()?;
-        packet.ref_from(&stored);
+        packet.try_ref_from(&stored)?;
         Ok(())
+    }
+
+    pub fn read_with_flags(&mut self, packet: &mut Packet, flags: PacketFifoFlags) -> AvResult<()> {
+        if flags.contains(PacketFifoFlags::REF) {
+            self.read_ref(packet)
+        } else {
+            self.read_move(packet)
+        }
     }
 
     pub fn peek(&self, offset: usize) -> AvResult<&Packet> {
@@ -12237,6 +12295,14 @@ mod tests {
 
     #[test]
     fn packet_fifo_moves_refs_peeks_reads_and_drains_packets() {
+        assert_eq!(PacketFifoFlags::REF.bits(), 1);
+        assert_eq!(PacketFifoFlags::USER.bits(), 1 << 16);
+        assert!(
+            PacketFifoFlags::from_bits(PacketFifoFlags::USER.bits() | 0x8000_0000)
+                .contains(PacketFifoFlags::USER)
+        );
+        assert!((PacketFifoFlags::REF | PacketFifoFlags::USER).contains(PacketFifoFlags::REF));
+
         let mut fifo = PacketFifo::new();
         assert!(fifo.is_empty());
         assert_eq!(fifo.can_read(), 0);
@@ -12392,6 +12458,39 @@ mod tests {
                 .data(),
             &[0x07, 0x08]
         );
+
+        let mut user_move_src = Packet::from_data(vec![0x90]).unwrap();
+        let user_move_storage = user_move_src.data_buffer().clone();
+        fifo.write_with_flags(&mut user_move_src, PacketFifoFlags::USER)
+            .unwrap();
+        assert!(user_move_src.is_empty());
+        assert_eq!(fifo.can_read(), 1);
+        let mut user_move_dst = Packet::default();
+        fifo.read_with_flags(&mut user_move_dst, PacketFifoFlags::USER)
+            .unwrap();
+        assert_eq!(fifo.can_read(), 0);
+        assert_eq!(user_move_dst.data(), &[0x90]);
+        assert!(user_move_dst
+            .data_buffer()
+            .shares_storage(&user_move_storage));
+
+        let mut user_ref_src = Packet::from_data(vec![0x91, 0x92]).unwrap();
+        user_ref_src.set_pts(Some(9092));
+        let user_ref_storage = user_ref_src.data_buffer().clone();
+        let user_ref_flags = PacketFifoFlags::REF | PacketFifoFlags::USER;
+        fifo.write_with_flags(&mut user_ref_src, user_ref_flags)
+            .unwrap();
+        assert_eq!(user_ref_src.data(), &[0x91, 0x92]);
+        assert_eq!(user_ref_src.pts(), Some(9092));
+        assert_eq!(fifo.can_read(), 1);
+        let mut user_ref_dst = Packet::default();
+        fifo.read_with_flags(&mut user_ref_dst, user_ref_flags)
+            .unwrap();
+        assert_eq!(fifo.can_read(), 0);
+        assert_eq!(user_ref_dst.data(), &[0x91, 0x92]);
+        assert_eq!(user_ref_dst.pts(), Some(9092));
+        assert!(user_ref_dst.data_buffer().shares_storage(&user_ref_storage));
+        assert_eq!(user_ref_src.data(), &[0x91, 0x92]);
 
         let mut first = Packet::new(vec![1], 1);
         let mut second = Packet::new(vec![2], 2);
