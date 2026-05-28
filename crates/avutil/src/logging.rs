@@ -2894,6 +2894,30 @@ mod tests {
     }
 
     #[test]
+    fn default_callback_repeat_summary_stays_plain_when_colored() {
+        let flags = LogFlags::SKIP_REPEATED | LogFlags::PRINT_LEVEL;
+        let options = LogFormatOptions::new(flags).with_color_mode(LogColorMode::Always);
+        let mut logger = Logger::new_with_flags(LogLevel::Trace, flags);
+        let repeated = LogRecord::new(LogLevel::Warning, "ignored", "repeat\n");
+
+        assert!(logger.log(repeated.clone()));
+        assert!(logger.log(repeated.clone()));
+        assert!(logger.log(repeated));
+        assert!(logger.log(LogRecord::new(LogLevel::Error, "ignored", "next\n")));
+
+        let lines: String = logger
+            .records()
+            .iter()
+            .map(|record| record.format_default_callback_line_null_context_with_options(options))
+            .collect();
+        assert!(lines.contains("\x1b[48;5;0m\x1b[38;5;226m[warning] \x1b[0m"));
+        assert!(lines.contains("    Last message repeated 2 times\n"));
+        assert!(!lines.contains("\x1b[48;5;0m\x1b[38;5;226mLast message repeated"));
+        assert!(!lines.contains("\x1b[48;5;0m\x1b[38;5;196mLast message repeated"));
+        assert!(lines.contains("\x1b[48;5;0m\x1b[38;5;196m[error] \x1b[0m"));
+    }
+
+    #[test]
     fn set_level_clear_and_take_records_control_buffer() {
         let mut logger = Logger::new(LogLevel::Error);
 

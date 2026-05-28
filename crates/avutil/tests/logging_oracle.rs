@@ -552,6 +552,14 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
         "default-callback-repeat-skip-level-line",
         escape_row_text(default_repeat_skip_level.as_bytes()),
     );
+    let default_repeat_context_level = rust_default_callback_repeat_context_lines(
+        LogFlags::SKIP_REPEATED | LogFlags::PRINT_LEVEL,
+        &context,
+    );
+    rows.insert(
+        "default-callback-repeat-context-level-line",
+        escape_row_text(default_repeat_context_level.as_bytes()),
+    );
     let default_repeat_no_skip = rust_default_callback_repeat_lines(LogFlags::empty());
     rows.insert(
         "default-callback-repeat-noskip-line",
@@ -592,6 +600,22 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
     rows.insert(
         "default-callback-color-warning-context-level-line",
         escape_row_text(default_color_warning_context_level.as_bytes()),
+    );
+    let default_color_repeat_level = rust_default_callback_color_repeat_lines(
+        LogFlags::SKIP_REPEATED | LogFlags::PRINT_LEVEL,
+        None,
+    );
+    rows.insert(
+        "default-callback-color-repeat-level-line",
+        escape_row_text(default_color_repeat_level.as_bytes()),
+    );
+    let default_color_repeat_context_level = rust_default_callback_color_repeat_lines(
+        LogFlags::SKIP_REPEATED | LogFlags::PRINT_LEVEL,
+        Some(&context),
+    );
+    rows.insert(
+        "default-callback-color-repeat-context-level-line",
+        escape_row_text(default_color_repeat_context_level.as_bytes()),
     );
     let default_color_prefix_continuation_level =
         rust_default_callback_color_prefix_continuation_lines(LogFlags::PRINT_LEVEL, None);
@@ -1085,6 +1109,36 @@ fn rust_default_callback_context_line(flags: LogFlags, timestamp: Option<LogTime
 }
 
 fn rust_default_callback_repeat_lines(flags: LogFlags) -> String {
+    rust_default_callback_repeat_lines_with_options(flags, None, LogFormatOptions::new(flags))
+}
+
+fn rust_default_callback_repeat_context_lines(
+    flags: LogFlags,
+    context: &AvLogContextPrefix,
+) -> String {
+    rust_default_callback_repeat_lines_with_options(
+        flags,
+        Some(context),
+        LogFormatOptions::new(flags),
+    )
+}
+
+fn rust_default_callback_color_repeat_lines(
+    flags: LogFlags,
+    context: Option<&AvLogContextPrefix>,
+) -> String {
+    rust_default_callback_repeat_lines_with_options(
+        flags,
+        context,
+        LogFormatOptions::new(flags).with_color_mode(LogColorMode::Always),
+    )
+}
+
+fn rust_default_callback_repeat_lines_with_options(
+    flags: LogFlags,
+    context: Option<&AvLogContextPrefix>,
+    options: LogFormatOptions,
+) -> String {
     let mut logger = Logger::new_with_flags(LogLevel::Trace, flags);
     let repeated = LogRecord::new(LogLevel::Warning, "ignored", "repeat\n");
     assert!(logger.log(repeated.clone()));
@@ -1094,7 +1148,12 @@ fn rust_default_callback_repeat_lines(flags: LogFlags) -> String {
     logger
         .records()
         .iter()
-        .map(|record| record.format_default_callback_line_null_context_with_flags(flags))
+        .map(|record| match context {
+            Some(context) => {
+                record.format_default_callback_line_context_with_options(context, options)
+            }
+            None => record.format_default_callback_line_null_context_with_options(options),
+        })
         .collect()
 }
 
@@ -2017,7 +2076,7 @@ static void print_default_callback_threshold_row(const char *name,
     ROW_STR_NORMALIZED_DEFAULT_CALLBACK(name, captured);
 }
 
-static void print_default_callback_repeat_row(const char *name, int flags) {
+static void print_default_callback_repeat_row(const char *name, void *ptr, int flags) {
     char captured[2048];
     FILE *capture = tmpfile();
     if (!capture) {
@@ -2038,10 +2097,10 @@ static void print_default_callback_repeat_row(const char *name, int flags) {
     av_log_set_callback(av_log_default_callback);
     av_log_set_level(AV_LOG_TRACE);
     av_log_set_flags(flags);
-    av_log(NULL, AV_LOG_WARNING, "%s\n", "repeat");
-    av_log(NULL, AV_LOG_WARNING, "%s\n", "repeat");
-    av_log(NULL, AV_LOG_WARNING, "%s\n", "repeat");
-    av_log(NULL, AV_LOG_ERROR, "%s\n", "next");
+    av_log(ptr, AV_LOG_WARNING, "%s\n", "repeat");
+    av_log(ptr, AV_LOG_WARNING, "%s\n", "repeat");
+    av_log(ptr, AV_LOG_WARNING, "%s\n", "repeat");
+    av_log(ptr, AV_LOG_ERROR, "%s\n", "next");
     fflush(stderr);
 
     dup2(saved_stderr, fileno(stderr));
@@ -2150,11 +2209,13 @@ static void print_default_callback_rows(void) {
         "default-callback-quiet-context-at-quiet-line", &ctx,
         AV_LOG_QUIET, AV_LOG_QUIET, AV_LOG_PRINT_TIME | AV_LOG_PRINT_LEVEL,
         "quiet");
-    print_default_callback_repeat_row("default-callback-repeat-skip-line",
+    print_default_callback_repeat_row("default-callback-repeat-skip-line", NULL,
                                       AV_LOG_SKIP_REPEATED);
-    print_default_callback_repeat_row("default-callback-repeat-skip-level-line",
+    print_default_callback_repeat_row("default-callback-repeat-skip-level-line", NULL,
                                       AV_LOG_SKIP_REPEATED | AV_LOG_PRINT_LEVEL);
-    print_default_callback_repeat_row("default-callback-repeat-noskip-line", 0);
+    print_default_callback_repeat_row("default-callback-repeat-context-level-line", &ctx,
+                                      AV_LOG_SKIP_REPEATED | AV_LOG_PRINT_LEVEL);
+    print_default_callback_repeat_row("default-callback-repeat-noskip-line", NULL, 0);
     print_default_callback_prefix_continuation_row(
         "default-callback-prefix-continuation-plain-line", NULL, 0);
     print_default_callback_prefix_continuation_row(
@@ -2176,6 +2237,10 @@ static void print_default_callback_color_rows(void) {
     print_default_callback_level_row("default-callback-color-warning-context-level-line",
                                      &ctx, AV_LOG_WARNING, AV_LOG_PRINT_LEVEL,
                                      "plain");
+    print_default_callback_repeat_row("default-callback-color-repeat-level-line", NULL,
+                                      AV_LOG_SKIP_REPEATED | AV_LOG_PRINT_LEVEL);
+    print_default_callback_repeat_row("default-callback-color-repeat-context-level-line", &ctx,
+                                      AV_LOG_SKIP_REPEATED | AV_LOG_PRINT_LEVEL);
     print_default_callback_prefix_continuation_row(
         "default-callback-color-prefix-continuation-level-line", NULL,
         AV_LOG_PRINT_LEVEL);
