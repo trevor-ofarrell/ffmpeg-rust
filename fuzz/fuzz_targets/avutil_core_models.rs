@@ -2236,6 +2236,47 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
         default_callback_repeat_lines,
         "[warning] repeat\n    Last message repeated 2 times\n[error] next\n"
     );
+    let mut context_switch_repeat_logger =
+        Logger::new_with_flags(LogLevel::Trace, callback_repeat_flags);
+    assert!(context_switch_repeat_logger.log(LogRecord::new(
+        LogLevel::Warning,
+        "ctx@one",
+        "repeat\n",
+    )));
+    assert!(context_switch_repeat_logger.log(LogRecord::new(
+        LogLevel::Warning,
+        "ctx@two",
+        "repeat\n",
+    )));
+    assert!(context_switch_repeat_logger.log(LogRecord::new(
+        LogLevel::Warning,
+        "ctx@one",
+        "repeat\n",
+    )));
+    assert!(context_switch_repeat_logger.log(LogRecord::new(
+        LogLevel::Error,
+        "ctx@one",
+        "next\n",
+    )));
+    assert_eq!(context_switch_repeat_logger.records().len(), 4);
+    assert!(context_switch_repeat_logger
+        .records()
+        .iter()
+        .all(|record| record.repetition_count().is_none()));
+    let context_switch_repeat_lines = context_switch_repeat_logger
+        .records()
+        .iter()
+        .map(|record| {
+            record.format_default_callback_line_context_with_flags(
+                &callback_context,
+                callback_repeat_flags,
+            )
+        })
+        .collect::<String>();
+    assert_eq!(
+        context_switch_repeat_lines,
+        "[rustctx @ <ptr>] [warning] repeat\n[rustctx @ <ptr>] [warning] repeat\n[rustctx @ <ptr>] [warning] repeat\n[rustctx @ <ptr>] [error] next\n"
+    );
     let mut default_callback_prefix_state = DefaultCallbackPrefixState::new();
     assert_eq!(
         LogRecord::new(LogLevel::Warning, "ignored", "part")
