@@ -2092,6 +2092,24 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
         ),
         "2024-01-01 12:38:25.123 [warning] plain\n"
     );
+    let callback_context = AvLogContextPrefix::new("rustctx", "<ptr>");
+    assert_eq!(
+        LogRecord::new(LogLevel::Warning, "ignored", "ctxmsg\n")
+            .format_default_callback_line_context_with_flags(
+                &callback_context,
+                LogFlags::PRINT_LEVEL
+            ),
+        "[rustctx @ <ptr>] [warning] ctxmsg\n"
+    );
+    assert_eq!(
+        LogRecord::new(LogLevel::Warning, "ignored", "ctxmsg\n")
+            .with_timestamp(timestamp)
+            .format_default_callback_line_context_with_flags(
+                &callback_context,
+                LogFlags::PRINT_TIME | LogFlags::PRINT_LEVEL
+            ),
+        "12:38:25.123 [rustctx @ <ptr>] [warning] ctxmsg\n"
+    );
     let color_options =
         LogFormatOptions::new(LogFlags::PRINT_LEVEL).with_color_mode(LogColorMode::Always);
     let plain_options =

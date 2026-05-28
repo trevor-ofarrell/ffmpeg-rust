@@ -274,6 +274,36 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
         "default-callback-time-datetime-level-line",
         escape_row_text(normalize_default_callback_timestamp(&default_both_level).as_bytes()),
     );
+    let default_context = rust_default_callback_context_line(LogFlags::empty(), None);
+    rows.insert(
+        "default-callback-context-line",
+        escape_row_text(default_context.as_bytes()),
+    );
+    let default_context_level = rust_default_callback_context_line(LogFlags::PRINT_LEVEL, None);
+    rows.insert(
+        "default-callback-context-level-line",
+        escape_row_text(default_context_level.as_bytes()),
+    );
+    let default_context_time_level = rust_default_callback_context_line(
+        LogFlags::PRINT_TIME | LogFlags::PRINT_LEVEL,
+        Some(timestamp),
+    );
+    rows.insert(
+        "default-callback-context-time-level-line",
+        escape_row_text(
+            normalize_default_callback_timestamp(&default_context_time_level).as_bytes(),
+        ),
+    );
+    let default_context_datetime_level = rust_default_callback_context_line(
+        LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL,
+        Some(timestamp),
+    );
+    rows.insert(
+        "default-callback-context-datetime-level-line",
+        escape_row_text(
+            normalize_default_callback_timestamp(&default_context_datetime_level).as_bytes(),
+        ),
+    );
 
     let (plain, _) = rust_format_line(LogLevel::Warning, "plain", LogFlags::empty(), true, 128);
     rows.insert("format-line-plain-line", escape_row_text(plain.bytes()));
@@ -649,6 +679,15 @@ fn rust_default_callback_line(flags: LogFlags, timestamp: Option<LogTimestamp>) 
     record.format_default_callback_line_null_context_with_flags(flags)
 }
 
+fn rust_default_callback_context_line(flags: LogFlags, timestamp: Option<LogTimestamp>) -> String {
+    let context = AvLogContextPrefix::new("rustctx", "<ptr>");
+    let mut record = LogRecord::new(LogLevel::Warning, "ignored", "ctxmsg\n");
+    if let Some(timestamp) = timestamp {
+        record = record.with_timestamp(timestamp);
+    }
+    record.format_default_callback_line_context_with_flags(&context, flags)
+}
+
 fn normalize_default_callback_timestamp(line: &str) -> String {
     if is_default_datetime_prefix(line) {
         format!("<datetime> {}", &line[24..])
@@ -894,17 +933,32 @@ static int has_default_datetime_prefix(const char *value) {
            value[23] == ' ';
 }
 
-static void ROW_STR_NORMALIZED_DEFAULT_TIMESTAMP(const char *name, const char *value) {
+static void normalize_context_pointer(const char *value, char *normalized, size_t normalized_size) {
+    const char *marker = value ? strstr(value, " @ 0x") : NULL;
+    if (!marker) {
+        snprintf(normalized, normalized_size, "%s", value ? value : "");
+        return;
+    }
+    const char *ptr_end = marker + 3;
+    while (*ptr_end && *ptr_end != ']')
+        ptr_end++;
+    size_t head_len = (size_t)(marker - value);
+    snprintf(normalized, normalized_size, "%.*s @ <ptr>%s",
+             (int)head_len, value, ptr_end);
+}
+
+static void ROW_STR_NORMALIZED_DEFAULT_CALLBACK(const char *name, const char *value) {
+    char timestamped[1024];
     char normalized[1024];
     if (has_default_datetime_prefix(value)) {
-        snprintf(normalized, sizeof(normalized), "<datetime> %s", value + 24);
-        ROW_STR(name, normalized);
+        snprintf(timestamped, sizeof(timestamped), "<datetime> %s", value + 24);
     } else if (has_default_time_prefix(value)) {
-        snprintf(normalized, sizeof(normalized), "<time> %s", value + 13);
-        ROW_STR(name, normalized);
+        snprintf(timestamped, sizeof(timestamped), "<time> %s", value + 13);
     } else {
-        ROW_STR(name, value);
+        snprintf(timestamped, sizeof(timestamped), "%s", value ? value : "");
     }
+    normalize_context_pointer(timestamped, normalized, sizeof(normalized));
+    ROW_STR(name, normalized);
 }
 
 typedef struct TestLogContext {
@@ -1190,7 +1244,8 @@ static void print_format_line_rows(void) {
     ROW_STR("format-line-time-level-line", line);
 }
 
-static void print_default_callback_row(const char *name, int flags) {
+static void print_default_callback_row(const char *name, void *ptr, int flags,
+                                       const char *message) {
     char captured[1024];
     FILE *capture = tmpfile();
     if (!capture) {
@@ -1211,7 +1266,7 @@ static void print_default_callback_row(const char *name, int flags) {
     av_log_set_callback(av_log_default_callback);
     av_log_set_level(AV_LOG_TRACE);
     av_log_set_flags(flags);
-    av_log(NULL, AV_LOG_WARNING, "%s\n", "plain");
+    av_log(ptr, AV_LOG_WARNING, "%s\n", message);
     fflush(stderr);
 
     dup2(saved_stderr, fileno(stderr));
@@ -1222,20 +1277,35 @@ static void print_default_callback_row(const char *name, int flags) {
     captured[len] = '\0';
     fclose(capture);
 
-    ROW_STR_NORMALIZED_DEFAULT_TIMESTAMP(name, captured);
+    ROW_STR_NORMALIZED_DEFAULT_CALLBACK(name, captured);
 }
 
 static void print_default_callback_rows(void) {
     setenv("AV_LOG_FORCE_NOCOLOR", "1", 1);
-    print_default_callback_row("default-callback-time-line", AV_LOG_PRINT_TIME);
+    TestLogContext ctx = { &test_log_class };
+    print_default_callback_row("default-callback-time-line", NULL, AV_LOG_PRINT_TIME,
+                               "plain");
     print_default_callback_row("default-callback-time-level-line",
-                               AV_LOG_PRINT_TIME | AV_LOG_PRINT_LEVEL);
-    print_default_callback_row("default-callback-datetime-line", AV_LOG_PRINT_DATETIME);
+                               NULL, AV_LOG_PRINT_TIME | AV_LOG_PRINT_LEVEL,
+                               "plain");
+    print_default_callback_row("default-callback-datetime-line", NULL,
+                               AV_LOG_PRINT_DATETIME, "plain");
     print_default_callback_row("default-callback-datetime-level-line",
-                               AV_LOG_PRINT_DATETIME | AV_LOG_PRINT_LEVEL);
+                               NULL, AV_LOG_PRINT_DATETIME | AV_LOG_PRINT_LEVEL,
+                               "plain");
     print_default_callback_row("default-callback-time-datetime-level-line",
-                               AV_LOG_PRINT_TIME | AV_LOG_PRINT_DATETIME |
-                               AV_LOG_PRINT_LEVEL);
+                               NULL, AV_LOG_PRINT_TIME | AV_LOG_PRINT_DATETIME |
+                               AV_LOG_PRINT_LEVEL, "plain");
+    print_default_callback_row("default-callback-context-line", &ctx, 0,
+                               "ctxmsg");
+    print_default_callback_row("default-callback-context-level-line", &ctx,
+                               AV_LOG_PRINT_LEVEL, "ctxmsg");
+    print_default_callback_row("default-callback-context-time-level-line", &ctx,
+                               AV_LOG_PRINT_TIME | AV_LOG_PRINT_LEVEL,
+                               "ctxmsg");
+    print_default_callback_row("default-callback-context-datetime-level-line",
+                               &ctx, AV_LOG_PRINT_DATETIME | AV_LOG_PRINT_LEVEL,
+                               "ctxmsg");
 }
 
 int main(void) {

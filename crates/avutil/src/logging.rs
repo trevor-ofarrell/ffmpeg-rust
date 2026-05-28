@@ -575,6 +575,22 @@ impl LogRecord {
     }
 
     pub fn format_default_callback_line_null_context_with_flags(&self, flags: LogFlags) -> String {
+        self.format_default_callback_line_with_context(None, flags)
+    }
+
+    pub fn format_default_callback_line_context_with_flags(
+        &self,
+        context: &AvLogContextPrefix,
+        flags: LogFlags,
+    ) -> String {
+        self.format_default_callback_line_with_context(Some(context), flags)
+    }
+
+    fn format_default_callback_line_with_context(
+        &self,
+        context: Option<&AvLogContextPrefix>,
+        flags: LogFlags,
+    ) -> String {
         if self.is_repetition_summary() {
             return self.message.clone();
         }
@@ -588,6 +604,13 @@ impl LogRecord {
                 line.push_str(&timestamp.format_default_callback_time_utc());
                 line.push(' ');
             }
+        }
+        if let Some(context) = context {
+            line.push('[');
+            line.push_str(context.item_name());
+            line.push_str(" @ ");
+            line.push_str(context.address());
+            line.push_str("] ");
         }
         if flags.contains(LogFlags::PRINT_LEVEL) {
             line.push('[');
@@ -1251,6 +1274,7 @@ mod tests {
         let timestamp = LogTimestamp::from_unix_micros(1_704_112_705_123_456);
         let record =
             LogRecord::new(LogLevel::Warning, "ignored", "plain\n").with_timestamp(timestamp);
+        let context = AvLogContextPrefix::new("rustctx", "<ptr>");
 
         assert_eq!(
             record.format_default_callback_line_null_context_with_flags(LogFlags::PRINT_TIME),
@@ -1280,6 +1304,34 @@ mod tests {
                     LogFlags::PRINT_TIME | LogFlags::PRINT_LEVEL
                 ),
             "[warning] plain\n"
+        );
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "ctxmsg\n")
+                .format_default_callback_line_context_with_flags(&context, LogFlags::empty()),
+            "[rustctx @ <ptr>] ctxmsg\n"
+        );
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "ctxmsg\n")
+                .format_default_callback_line_context_with_flags(&context, LogFlags::PRINT_LEVEL),
+            "[rustctx @ <ptr>] [warning] ctxmsg\n"
+        );
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "ctxmsg\n")
+                .with_timestamp(timestamp)
+                .format_default_callback_line_context_with_flags(
+                    &context,
+                    LogFlags::PRINT_TIME | LogFlags::PRINT_LEVEL
+                ),
+            "12:38:25.123 [rustctx @ <ptr>] [warning] ctxmsg\n"
+        );
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "ctxmsg\n")
+                .with_timestamp(timestamp)
+                .format_default_callback_line_context_with_flags(
+                    &context,
+                    LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL
+                ),
+            "2024-01-01 12:38:25.123 [rustctx @ <ptr>] [warning] ctxmsg\n"
         );
     }
 
