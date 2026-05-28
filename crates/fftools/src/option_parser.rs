@@ -127,14 +127,14 @@ struct OptionSpec {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CliLogConfig {
-    level: LogLevel,
+    raw_level: i32,
     flags: LogFlags,
 }
 
 impl Default for CliLogConfig {
     fn default() -> Self {
         Self {
-            level: LogLevel::Info,
+            raw_level: LogLevel::Info.as_ffmpeg_value(),
             flags: LogFlags::SKIP_REPEATED,
         }
     }
@@ -142,7 +142,15 @@ impl Default for CliLogConfig {
 
 impl CliLogConfig {
     pub fn level(&self) -> LogLevel {
-        self.level
+        LogLevel::from_ffmpeg_value(self.raw_level).unwrap_or(LogLevel::Trace)
+    }
+
+    pub fn known_level(&self) -> Option<LogLevel> {
+        LogLevel::from_ffmpeg_value(self.raw_level)
+    }
+
+    pub fn raw_level(&self) -> i32 {
+        self.raw_level
     }
 
     pub fn flags(&self) -> LogFlags {
@@ -152,7 +160,7 @@ impl CliLogConfig {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LogLevelDirective {
-    level: Option<LogLevel>,
+    raw_level: Option<i32>,
     enable_flags: LogFlags,
     disable_flags: LogFlags,
     reset_flags: bool,
@@ -160,7 +168,11 @@ pub struct LogLevelDirective {
 
 impl LogLevelDirective {
     pub fn level(&self) -> Option<LogLevel> {
-        self.level
+        self.raw_level.and_then(LogLevel::from_ffmpeg_value)
+    }
+
+    pub fn raw_level(&self) -> Option<i32> {
+        self.raw_level
     }
 
     pub fn enable_flags(&self) -> LogFlags {
@@ -331,6 +343,10 @@ pub fn parse_log_level_value(value: &str) -> Option<LogLevel> {
     parse_log_level_directive(value)?.level()
 }
 
+pub fn parse_log_level_raw_value(value: &str) -> Option<i32> {
+    parse_log_level_directive(value)?.raw_level()
+}
+
 pub fn parse_log_level_directive(value: &str) -> Option<LogLevelDirective> {
     if value.is_empty() {
         return None;
@@ -375,11 +391,11 @@ pub fn parse_log_level_directive(value: &str) -> Option<LogLevelDirective> {
         rest = suffix;
     }
 
-    let level = if rest.is_empty() {
+    let raw_level = if rest.is_empty() {
         None
     } else {
         let level_text = rest.strip_prefix('+').unwrap_or(rest);
-        Some(parse_plain_log_level(level_text)?)
+        Some(parse_plain_log_level_raw(level_text)?)
     };
 
     if !consumed_flags {
@@ -387,7 +403,7 @@ pub fn parse_log_level_directive(value: &str) -> Option<LogLevelDirective> {
     }
 
     Some(LogLevelDirective {
-        level,
+        raw_level,
         enable_flags,
         disable_flags,
         reset_flags,
@@ -400,8 +416,8 @@ pub fn apply_log_level_value(config: &mut CliLogConfig, value: &str) -> Option<(
     if directive.reset_flags() {
         config.flags = LogFlags::empty();
     }
-    if let Some(level) = directive.level() {
-        config.level = level;
+    if let Some(raw_level) = directive.raw_level() {
+        config.raw_level = raw_level;
     }
     config.flags.insert(directive.enable_flags());
     config.flags.remove(directive.disable_flags());
@@ -409,13 +425,10 @@ pub fn apply_log_level_value(config: &mut CliLogConfig, value: &str) -> Option<(
     Some(())
 }
 
-fn parse_plain_log_level(value: &str) -> Option<LogLevel> {
-    parse_named_log_level(value).or_else(|| {
-        value
-            .parse::<i32>()
-            .ok()
-            .and_then(LogLevel::from_ffmpeg_value)
-    })
+fn parse_plain_log_level_raw(value: &str) -> Option<i32> {
+    parse_named_log_level(value)
+        .map(LogLevel::as_ffmpeg_value)
+        .or_else(|| value.parse::<i32>().ok())
 }
 
 fn parse_named_log_level(value: &str) -> Option<LogLevel> {
@@ -600,8 +613,11 @@ mod tests {
         assert_eq!(parsed.global_options()[0].value_ref(), Some("warning"));
         assert_eq!(parsed.global_options()[1].value_ref(), Some("-8"));
         assert_eq!(config.level(), LogLevel::Quiet);
+        assert_eq!(config.known_level(), Some(LogLevel::Quiet));
+        assert_eq!(config.raw_level(), LogLevel::Quiet.as_ffmpeg_value());
         assert_eq!(config.flags(), LogFlags::SKIP_REPEATED);
         assert_eq!(parse_log_level_value("48"), Some(LogLevel::Debug));
+        assert_eq!(parse_log_level_raw_value("48"), Some(48));
         assert_eq!(parse_log_level_value("+error"), Some(LogLevel::Error));
         assert_eq!(parse_log_level_value("ERROR"), None);
     }
@@ -624,6 +640,8 @@ mod tests {
         let config = log_config_from_options(parsed.global_options()).unwrap();
 
         assert_eq!(config.level(), LogLevel::Debug);
+        assert_eq!(config.known_level(), Some(LogLevel::Debug));
+        assert_eq!(config.raw_level(), LogLevel::Debug.as_ffmpeg_value());
         assert!(!config.flags().contains(LogFlags::SKIP_REPEATED));
         assert!(config.flags().contains(LogFlags::PRINT_TIME));
         assert!(!config.flags().contains(LogFlags::PRINT_LEVEL));
@@ -637,6 +655,32 @@ mod tests {
         assert!(parse_log_level_directive("-repeat").is_some());
         assert!(parse_log_level_directive("repeat").is_some());
         assert!(parse_log_level_directive("level").is_some());
+    }
+
+    #[test]
+    fn preserves_raw_numeric_loglevel_thresholds() {
+        let args = strings(&[
+            "-loglevel",
+            "repeat+level+23",
+            "-v",
+            "-1",
+            "-i",
+            "in.wav",
+            "out.wav",
+        ]);
+
+        let parsed = parse_ffmpeg_args(&args).unwrap();
+        let config = log_config_from_options(parsed.global_options()).unwrap();
+
+        assert_eq!(config.raw_level(), -1);
+        assert_eq!(config.known_level(), None);
+        assert_eq!(config.level(), LogLevel::Trace);
+        assert!(parse_log_level_value("23").is_none());
+        assert_eq!(parse_log_level_raw_value("23"), Some(23));
+        assert_eq!(parse_log_level_raw_value("repeat+23"), Some(23));
+        assert_eq!(parse_log_level_raw_value("level+23"), Some(23));
+        assert_eq!(parse_log_level_raw_value("+23"), Some(23));
+        assert_eq!(parse_log_level_raw_value("999"), Some(999));
     }
 
     #[test]

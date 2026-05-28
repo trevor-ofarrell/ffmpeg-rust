@@ -14,8 +14,8 @@ pub use ffprobe::{
 };
 pub use io_plan::{build_io_plan, Endpoint, FileRole, IoPlan, IoPlanError, PlannedFile};
 pub use option_parser::{
-    log_config_from_options, parse_ffmpeg_args, parse_log_level_value, validate_loglevel_options,
-    CliFile, CliLogConfig, CliOption, CliParseError, ParsedCommand,
+    log_config_from_options, parse_ffmpeg_args, parse_log_level_raw_value, parse_log_level_value,
+    validate_loglevel_options, CliFile, CliLogConfig, CliOption, CliParseError, ParsedCommand,
 };
 
 pub const TARGET_FFMPEG_VERSION: &str = "8.1.1";

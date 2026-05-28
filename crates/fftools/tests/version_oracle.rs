@@ -52,6 +52,16 @@ fn loglevel_directive_acceptance_matches_oracle_for_version_requests() {
         "+error",
         "48",
         "-8",
+        "23",
+        "57",
+        "-1",
+        "999",
+        "repeat+23",
+        "level+23",
+        "+23",
+        "time+23",
+        "repeat+level+23",
+        "-repeat+23",
     ];
     let rejected = ["warn", "foo", "repeat+warn", "ERROR"];
 

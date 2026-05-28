@@ -165,6 +165,8 @@ The newest raw-flag rows prove `av_log_set_flags()` stores raw flag integers wit
 
 The newest raw-level rows prove `av_log_set_level()` stores arbitrary integers, including `-1`, `23`, and `57`, and that default-callback threshold filtering uses raw integer comparison for levels between named constants.
 
+The newest CLI loglevel rows prove pinned `ffmpeg` and `ffprobe` accept raw numeric `-loglevel` thresholds on version requests, including `23`, `57`, `-1`, `999`, `repeat+23`, `level+23`, `+23`, `time+23`, `repeat+level+23`, and `-repeat+23`.
+
 ```sh
 cargo test -p avutil --test logging_oracle -- --ignored
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-logging --target oracle-libavutil-logging --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
@@ -506,7 +508,7 @@ cargo test -p avutil --test buffer_oracle -- --ignored
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-buffer --target oracle-libavutil-buffer --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
 ```
 
-`crates/fftools/tests/version_oracle.rs` is an ignored oracle harness for `ffmpeg -version`, `ffprobe -version`, and the `-hide_banner -version` variant. It checks the pinned tool-version prefix and the libav* ABI versions reported by the oracle against the Rust `ffmpeg-rs`/`ffprobe-rs` banner constants, verifies that `-hide_banner -version` preserves the same version surface as `-version`, and compares accepted/rejected `-loglevel` directive forms on version requests for both tools. The loglevel rows pin case-sensitive names, standalone `repeat`/`level`/`time`/`datetime` flag directives, `repeat`/`+repeat` versus `-repeat` CLI semantics, compound flag+level values, `+error`, known numeric levels, and representative rejected aliases such as `warn` and `ERROR`. `FFMPEG_ORACLE` points to the pinned `ffmpeg` binary; `ffprobe` is found through `FFPROBE_ORACLE`, a sibling of `FFMPEG_ORACLE`, or the standard `third_party/ffmpeg-oracle/build/bin/ffprobe(.exe)` path. Run it with:
+`crates/fftools/tests/version_oracle.rs` is an ignored oracle harness for `ffmpeg -version`, `ffprobe -version`, and the `-hide_banner -version` variant. It checks the pinned tool-version prefix and the libav* ABI versions reported by the oracle against the Rust `ffmpeg-rs`/`ffprobe-rs` banner constants, verifies that `-hide_banner -version` preserves the same version surface as `-version`, and compares accepted/rejected `-loglevel` directive forms on version requests for both tools. The loglevel rows pin case-sensitive names, standalone `repeat`/`level`/`time`/`datetime` flag directives, `repeat`/`+repeat` versus `-repeat` CLI semantics, compound flag+level values, `+error`, known numeric levels, raw numeric thresholds including compound raw-threshold forms, and representative rejected aliases such as `warn` and `ERROR`. `FFMPEG_ORACLE` points to the pinned `ffmpeg` binary; `ffprobe` is found through `FFPROBE_ORACLE`, a sibling of `FFMPEG_ORACLE`, or the standard `third_party/ffmpeg-oracle/build/bin/ffprobe(.exe)` path. Run it with:
 
 ```sh
 FFMPEG_ORACLE=./third_party/ffmpeg-oracle/build/bin/ffmpeg cargo test -p fftools --test version_oracle -- --ignored

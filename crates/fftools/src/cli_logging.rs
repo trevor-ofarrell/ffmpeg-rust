@@ -84,7 +84,7 @@ where
     I: IntoIterator<Item = E>,
     E: fmt::Display,
 {
-    let mut logger = Logger::new_with_flags(log_config.level(), log_config.flags());
+    let mut logger = Logger::new_with_raw_level(log_config.raw_level(), log_config.flags());
     for diagnostic in diagnostics {
         let mut record = LogRecord::new(avutil::LogLevel::Error, tool_name, diagnostic.to_string());
         if let Some(timestamp) = timestamp {
@@ -168,6 +168,26 @@ mod tests {
                 |name| name == AV_LOG_FORCE_COLOR_ENV,
             ),
             ""
+        );
+    }
+
+    #[test]
+    fn raw_numeric_loglevel_thresholds_filter_tool_errors() {
+        assert_eq!(
+            tool_error_stderr("ffmpeg", &strings(&["-loglevel", "15"]), "missing command"),
+            ""
+        );
+        assert_eq!(
+            tool_error_stderr("ffmpeg", &strings(&["-loglevel", "23"]), "missing command"),
+            "ffmpeg: missing command\n"
+        );
+        assert_eq!(
+            tool_error_stderr(
+                "ffprobe",
+                &strings(&["-loglevel", "level+23"]),
+                "missing command"
+            ),
+            "[error] ffprobe: missing command\n"
         );
     }
 

@@ -218,7 +218,7 @@ fn fixture_args() -> Vec<String> {
     [
         "-hide_banner",
         "-loglevel",
-        "repeat+level+warning",
+        "repeat+level+23",
         "-v",
         "-level",
         "-f",

@@ -30,6 +30,7 @@ struct FfprobeCommand {
     writer_format: WriterFormat,
     input_format: Option<ForcedInputFormat>,
     log_level: LogLevel,
+    raw_log_level: i32,
     log_flags: LogFlags,
     input_url: String,
 }
@@ -454,6 +455,7 @@ pub fn ffprobe_output(args: &[String]) -> Result<String, FfprobeError> {
 
     let command = parse_ffprobe_args(args)?;
     let _log_level = command.log_level;
+    let _raw_log_level = command.raw_log_level;
     let collect_packets = command.show_packets || command.count_packets;
     let mut report = probe_local_file_inner(
         command.input_url.as_str(),
@@ -625,6 +627,7 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
         writer_format,
         input_format,
         log_level: log_config.level(),
+        raw_log_level: log_config.raw_level(),
         log_flags: log_config.flags(),
         input_url,
     })
@@ -1849,6 +1852,7 @@ mod tests {
         assert_eq!(command.writer_format, WriterFormat::Json);
         assert_eq!(command.input_format, Some(ForcedInputFormat::Avi));
         assert_eq!(command.log_level, LogLevel::Error);
+        assert_eq!(command.raw_log_level, LogLevel::Error.as_ffmpeg_value());
         assert_eq!(command.log_flags, LogFlags::SKIP_REPEATED);
         assert_eq!(command.input_url, "clip.mp4");
     }
@@ -1859,6 +1863,12 @@ mod tests {
             parse_ffprobe_args(&strings(&["-v", "-8", "-show_format", "clip.mp4"])).unwrap();
 
         assert_eq!(command.log_level, LogLevel::Quiet);
+        assert_eq!(command.raw_log_level, LogLevel::Quiet.as_ffmpeg_value());
+
+        let command =
+            parse_ffprobe_args(&strings(&["-v", "23", "-show_format", "clip.mp4"])).unwrap();
+
+        assert_eq!(command.raw_log_level, 23);
 
         let command = parse_ffprobe_args(&strings(&[
             "-loglevel",
@@ -1871,6 +1881,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(command.log_level, LogLevel::Debug);
+        assert_eq!(command.raw_log_level, LogLevel::Debug.as_ffmpeg_value());
         assert!(!command.log_flags.contains(LogFlags::SKIP_REPEATED));
         assert!(!command.log_flags.contains(LogFlags::PRINT_LEVEL));
 
