@@ -1169,6 +1169,10 @@ impl BufferPool {
         })
     }
 
+    pub fn uninit(pool: &mut Option<Self>) {
+        *pool = None;
+    }
+
     pub fn len(&self) -> usize {
         self.inner.len
     }
@@ -2616,6 +2620,29 @@ mod tests {
         drop(pool);
 
         assert_eq!(*pool_frees.lock().unwrap(), vec![88]);
+    }
+
+    #[test]
+    fn buffer_pool_uninit_handles_nullable_c_api_shape() {
+        let mut empty_pool = None;
+        BufferPool::uninit(&mut empty_pool);
+        assert!(empty_pool.is_none());
+
+        let pool_frees = std::sync::Arc::new(std::sync::Mutex::new(Vec::<usize>::new()));
+        let pool_free_capture = std::sync::Arc::clone(&pool_frees);
+        let mut pool = Some(
+            BufferPool::with_callbacks(
+                2,
+                0,
+                BufferPoolCallbacks::default().with_pool_free(move || {
+                    pool_free_capture.lock().unwrap().push(99);
+                }),
+            )
+            .unwrap(),
+        );
+        BufferPool::uninit(&mut pool);
+        assert!(pool.is_none());
+        assert_eq!(*pool_frees.lock().unwrap(), vec![99]);
     }
 
     #[test]

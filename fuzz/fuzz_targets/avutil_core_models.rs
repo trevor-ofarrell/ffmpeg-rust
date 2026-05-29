@@ -1601,8 +1601,14 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     assert!(default_with_free_reuse.pool_opaque_ref::<usize>().is_none());
     drop(default_with_free_reuse);
     assert_eq!(*default_pool_free_count.lock().unwrap(), 0);
-    drop(default_pool_with_free);
+    let mut default_pool_with_free = Some(default_pool_with_free);
+    BufferPool::uninit(&mut default_pool_with_free);
+    assert!(default_pool_with_free.is_none());
     assert_eq!(*default_pool_free_count.lock().unwrap(), 1);
+
+    let mut null_pool = None;
+    BufferPool::uninit(&mut null_pool);
+    assert!(null_pool.is_none());
 
     let cow_pool = BufferPool::new(payload_len, padding_len).unwrap();
     let mut cow_buffer = cow_pool.get().unwrap();
