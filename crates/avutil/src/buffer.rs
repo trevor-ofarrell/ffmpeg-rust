@@ -2246,6 +2246,40 @@ mod tests {
             vec![(321, vec![21, 22, 23])]
         );
 
+        let custom_shrink_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let custom_shrink_capture = std::sync::Arc::clone(&custom_shrink_released);
+        let mut custom_shrink = Some(BufferRef::from_vec_with_opaque_release_callback(
+            vec![24, 25, 26, 27],
+            324usize,
+            move |opaque, storage| {
+                custom_shrink_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, storage));
+            },
+        ));
+        let custom_shrink_storage = std::sync::Arc::as_ptr(&custom_shrink.as_ref().unwrap().data);
+        BufferRef::realloc(&mut custom_shrink, 2).unwrap();
+        let custom_shrink = custom_shrink.expect("custom shrink realloc result");
+        assert_ne!(
+            std::sync::Arc::as_ptr(&custom_shrink.data),
+            custom_shrink_storage
+        );
+        assert!(custom_shrink.data.reallocatable);
+        assert!(custom_shrink.is_writable());
+        assert_eq!(custom_shrink.as_slice(), &[24, 25]);
+        assert!(custom_shrink.opaque_ref::<usize>().is_none());
+        assert_eq!(
+            *custom_shrink_released.lock().unwrap(),
+            vec![(324, vec![24, 25, 26, 27])]
+        );
+        drop(custom_shrink);
+        assert_eq!(
+            *custom_shrink_released.lock().unwrap(),
+            vec![(324, vec![24, 25, 26, 27])]
+        );
+
         let same_source = BufferRef::copy_from_slice(&[10, 20, 30]);
         let mut same_shared = Some(BufferRef::ref_from(&same_source));
         let same_ptr = same_shared.as_ref().unwrap().as_ptr();

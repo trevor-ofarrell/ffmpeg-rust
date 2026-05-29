@@ -514,6 +514,56 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         release_fields(&create_realloc_released),
     );
 
+    let create_realloc_shrink_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_realloc_shrink_capture = Arc::clone(&create_realloc_shrink_released);
+    let mut create_realloc_shrink = Some(BufferRef::from_vec_with_opaque_release_callback(
+        vec![53, 54, 55, 56],
+        790usize,
+        move |opaque, bytes| {
+            create_realloc_shrink_capture
+                .lock()
+                .unwrap()
+                .push((opaque, bytes));
+        },
+    ));
+    let create_realloc_shrink_before = create_realloc_shrink
+        .as_ref()
+        .expect("create shrink realloc input")
+        .as_ptr();
+    BufferRef::realloc(&mut create_realloc_shrink, 2).unwrap();
+    let create_realloc_shrink = create_realloc_shrink.expect("create shrink realloc result");
+    rows.insert(
+        "buffer:create-realloc-shrink-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:create-realloc-shrink".to_string(),
+        buffer_prefix_fields(&create_realloc_shrink, 2),
+    );
+    rows.insert(
+        "buffer:create-realloc-shrink-opaque".to_string(),
+        vec![create_realloc_shrink
+            .opaque_ref::<usize>()
+            .copied()
+            .unwrap_or_default()
+            .to_string()],
+    );
+    rows.insert(
+        "buffer:create-realloc-shrink-replaced".to_string(),
+        vec![bool_field(
+            create_realloc_shrink_before != create_realloc_shrink.as_ptr(),
+        )],
+    );
+    rows.insert(
+        "buffer:create-realloc-shrink-release-before-unref".to_string(),
+        release_fields(&create_realloc_shrink_released),
+    );
+    drop(create_realloc_shrink);
+    rows.insert(
+        "buffer:create-realloc-shrink-release-after-unref".to_string(),
+        release_fields(&create_realloc_shrink_released),
+    );
+
     let mut grow = Some(BufferRef::from_vec(vec![1, 2, 3]));
     let grow_data_before = grow.as_ref().expect("grow input").as_ptr();
     BufferRef::realloc(&mut grow, 5).unwrap();
@@ -2050,6 +2100,35 @@ int main(void) {
            create_realloc_data != create_realloc->data);
     print_create_release("buffer:create-realloc-release");
     av_buffer_unref(&create_realloc);
+
+    reset_create_release();
+    static const uint8_t create_realloc_shrink_bytes[] = { 53, 54, 55, 56 };
+    uint8_t *create_realloc_shrink_data =
+        av_malloc(sizeof(create_realloc_shrink_bytes));
+    fail_if(!create_realloc_shrink_data,
+            "av_malloc create_realloc_shrink_data failed");
+    for (size_t i = 0; i < sizeof(create_realloc_shrink_bytes); i++)
+        create_realloc_shrink_data[i] = create_realloc_shrink_bytes[i];
+    last_create_release_size = sizeof(create_realloc_shrink_bytes);
+    AVBufferRef *create_realloc_shrink =
+        av_buffer_create(create_realloc_shrink_data,
+                         sizeof(create_realloc_shrink_bytes),
+                         test_create_free, (void *)(uintptr_t)790, 0);
+    fail_if(!create_realloc_shrink,
+            "av_buffer_create shrink realloc failed");
+    uint8_t *create_realloc_shrink_before = create_realloc_shrink->data;
+    ret = av_buffer_realloc(&create_realloc_shrink, 2);
+    printf("buffer:create-realloc-shrink-ret|%d\n", ret);
+    print_buffer_prefix("buffer:create-realloc-shrink",
+                        create_realloc_shrink, 2);
+    printf("buffer:create-realloc-shrink-opaque|%llu\n",
+           (unsigned long long)(uintptr_t)
+               av_buffer_get_opaque(create_realloc_shrink));
+    printf("buffer:create-realloc-shrink-replaced|%d\n",
+           create_realloc_shrink_before != create_realloc_shrink->data);
+    print_create_release("buffer:create-realloc-shrink-release-before-unref");
+    av_buffer_unref(&create_realloc_shrink);
+    print_create_release("buffer:create-realloc-shrink-release-after-unref");
 
     static const uint8_t grow_bytes[] = { 1, 2, 3 };
     AVBufferRef *grow = av_buffer_allocz(3);

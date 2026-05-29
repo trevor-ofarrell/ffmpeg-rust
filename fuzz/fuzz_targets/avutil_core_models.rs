@@ -1744,6 +1744,52 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         *custom_realloc_released.lock().unwrap(),
         vec![(payload_len, payload.clone())]
     );
+
+    let custom_realloc_shrink_payload = if payload.is_empty() {
+        vec![0]
+    } else {
+        payload.clone()
+    };
+    let custom_realloc_shrink_len = custom_realloc_shrink_payload.len() - 1;
+    let custom_realloc_shrink_released =
+        Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let custom_realloc_shrink_capture = Arc::clone(&custom_realloc_shrink_released);
+    let mut custom_realloc_shrink = Some(BufferRef::from_vec_with_opaque_release_callback(
+        custom_realloc_shrink_payload.clone(),
+        custom_realloc_shrink_payload.len(),
+        move |opaque, bytes| {
+            custom_realloc_shrink_capture
+                .lock()
+                .unwrap()
+                .push((opaque, bytes));
+        },
+    ));
+    BufferRef::realloc(&mut custom_realloc_shrink, custom_realloc_shrink_len).unwrap();
+    let custom_realloc_shrink =
+        custom_realloc_shrink.expect("custom shrink realloc stays present");
+    assert_eq!(custom_realloc_shrink.len(), custom_realloc_shrink_len);
+    assert_eq!(
+        custom_realloc_shrink.as_slice(),
+        &custom_realloc_shrink_payload[..custom_realloc_shrink_len]
+    );
+    assert!(custom_realloc_shrink.is_writable());
+    assert!(custom_realloc_shrink.opaque_ref::<usize>().is_none());
+    assert_eq!(
+        *custom_realloc_shrink_released.lock().unwrap(),
+        vec![(
+            custom_realloc_shrink_payload.len(),
+            custom_realloc_shrink_payload.clone()
+        )]
+    );
+    drop(custom_realloc_shrink);
+    assert_eq!(
+        *custom_realloc_shrink_released.lock().unwrap(),
+        vec![(
+            custom_realloc_shrink_payload.len(),
+            custom_realloc_shrink_payload
+        )]
+    );
+
     let mut realloc_failed = None;
     let realloc_failed_err = BufferRef::realloc(&mut realloc_failed, usize::MAX).unwrap_err();
     assert_eq!(realloc_failed_err.kind(), AvErrorKind::External);
