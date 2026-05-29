@@ -2,19 +2,51 @@
 
 ## Current Status
 
+Current authoritative turn status: orchestrator workflow is active with all
+current xhigh fast/full-access workers completed and integrated for review.
+This batch added bounded strict-parity evidence for `avutil-options`
+(`metadata=title=clip` with empty pair separators), `avutil-channel-layout`
+(`ambisonic + 1` normalization), `avutil-pixel-format` (`x2rgb10`/`x2bgr10`
+alias lookup), `avformat-image2-demuxer` (padded start-probe exhaustion), and
+`avformat-wav-demuxer` (valid first `fmt ` chunk with truncated duplicate fmt
+ignored). It also maps the new WAV row through `fftools-ffmpeg-wav-framecrc-null`,
+`avformat-framecrc-muxer`, and `avutil-packet` where packet/framecrc output is
+actually exercised. No component was promoted to `complete`; strict completion
+remains 11/96 components, about 11.5%.
+
+Latest committed slice: `Pin parallel edge parity`, integrating and validating
+the xhigh worker edge-evidence batch across mappings, ledger, docs, and state.
+The first attempted fast workers for options and WAV hit model capacity, were
+closed, and were replaced successfully. Completed workers: Socrates
+(`avutil-channel-layout`), Sartre (`avutil-pixel-format`), Fermat
+(`avformat-image2-demuxer`), James (`avutil-options`), and Goodall
+(`avformat-wav-demuxer`).
+
+Latest validation commands for the current xhigh worker edge batch passed:
+focused unit tests for avutil options/channel-layout/pixel and avformat
+image2/WAV; ignored pinned oracle rows for options, channel-layout, pixel-format,
+image2, and WAV; differential mapping runs for the new image2 and WAV targets;
+`cargo test -p fate-runner current_ledger`; `cargo run -p fate-runner -- run
+--changed`; `cargo run -p xtask -- guard-runtime`; `cargo run -p xtask --
+oracle-doctor`; clippy for avutil/avformat/fftools/fate-runner; fuzz target
+check/clippy for avutil_core_models, avutil_metadata_options, avformat_image2,
+and avformat_wav; WSL one-run `cargo fuzz run` smoke for those four fuzz
+targets; `cargo fmt --all -- --check`; and `git diff --check` with expected
+CRLF normalization warnings only.
+
 Current goal directive: continue from the completed 10% strict-parity milestone toward 100% FFmpeg 8.1.1 default-native compatibility using the orchestrator workflow. The main Codex thread is the merge captain and may use up to 10 subagents when tasks have disjoint ownership, independent validation, and low merge risk; default to 3-5 active agents when that is sufficient.
 
 Orchestrator workflow is active: the main Codex thread is the merge captain, delegates only disjoint bounded work, owns ledger/state/docs/mappings/manifests/final status changes/commits, and may use up to 10 subagents when it reduces wall-clock time without creating merge risk. Default to 3-5 active agents, and always give workers exact owned files, forbidden files, tests, and final report requirements.
 
 Current parallel-agent state: no active workers remain. The latest xhigh fast/full-access worker batch was reviewed and integrated serially: `Hooke` handled short malformed WAV PCM `fmt ` chunks, `Meitner` handled yuv4mpegpipe XCOLORRANGE mux/remux parity, `Einstein` handled image2 nonzero `%3d` sequence widths, `Rawls` handled raw pcm_s16le multi-packet file-output timing, and `Linnaeus` handled version/buildconf preemption before late value-taking options. The orchestrator kept ledger/state/docs/mappings/manifests/crate roots reserved and integrated mapping/ledger/state/docs centrally.
 
-Latest pending slice: integrated media and CLI strict-evidence batch for `avutil-options`, `fftools-version`, `avformat-wav-demuxer`, `avformat-yuv4mpegpipe-demuxer`, `avformat-yuv4mpegpipe-muxer`, `avformat-image2-demuxer`, `avformat-pcm-s16le-demuxer`, `avformat-pcm-s16le-muxer`, `fftools-ffmpeg-pcm-s16le-file-output`, `avformat-framecrc-muxer`, and `avutil-packet`. It adds pinned oracle evidence for `av_opt_set_from_string("threads=7:")` trailing separators, `-version/-buildconf -f` success preemption, short WAV PCM fmt rejection, Y4M XCOLORRANGE FULL/LIMITED remux preservation, image2 `%3d` framecrc packet records, and raw pcm_s16le 8193-byte multi-packet file output with odd-tail timing. These are evidence-strengthening slices only; no component status was raised to `complete`. Strict completion remains 11/96 components, about 11.5%.
+Previous integrated media and CLI strict-evidence batch was committed as `11d63f20 Pin orchestrated media edge parity`. It added pinned oracle evidence for `av_opt_set_from_string("threads=7:")` trailing separators, `-version/-buildconf -f` success preemption, short WAV PCM fmt rejection, Y4M XCOLORRANGE FULL/LIMITED remux preservation, image2 `%3d` framecrc packet records, and raw pcm_s16le 8193-byte multi-packet file output with odd-tail timing. These were evidence-strengthening slices only; no component status was raised to `complete`.
 
 Latest validation commands for the integrated xhigh media evidence batch passed: `cargo test -p avutil set_avoptions_from_string_matches_bounded_ffmpeg_shape -- --nocapture`; `cargo check --manifest-path fuzz\\Cargo.toml --bin avutil_metadata_options`; ignored pinned oracle tests `options_oracle::libavutil_option_helpers_match_current_model`, `wav_oracle::wav_short_pcm_fmt_chunk_is_rejected_by_ffmpeg`, `pcm_oracle::pcm_s16le_packetized_file_output_matches_ffmpeg_oracle`, `yuv4mpegpipe_oracle::yuv4mpegpipe_xcolorrange_remux_preserves_color_range_oracle`, `image2_oracle::image2_ppm_nonzero_width_pattern_framecrc_records_match_ffmpeg_oracle`, and `version_oracle::version_and_buildconf_preempt_late_value_options`; `cargo fmt --all`; `cargo fmt --all -- --check`; `cargo test -p avformat -- --nocapture`; `cargo test -p fftools version -- --nocapture`; `cargo check --manifest-path fuzz\\Cargo.toml --bin avformat_wav --bin avformat_yuv4mpegpipe --bin avformat_image2 --bin avformat_pcm_s16le --bin avutil_metadata_options`; `cargo clippy --manifest-path fuzz\\Cargo.toml --bin avformat_wav --bin avformat_yuv4mpegpipe --bin avformat_image2 --bin avformat_pcm_s16le --bin avutil_metadata_options -- -D warnings`; `cargo clippy -p avutil -p avformat -p fftools --all-targets --all-features -- -D warnings`; `cargo test -p fate-runner current_ledger -- --nocapture`; `cargo run -p xtask -- guard-runtime`; `cargo run -p xtask -- oracle-doctor`; and `cargo run -p fate-runner -- run --changed`.
 
 Latest failing commands for the integrated xhigh media evidence batch: the first avutil-options unit attempt asserted integer `7` for a float option and was corrected to `OptionValue::Float(0.5)`. The first focused clippy run flagged a needless borrow in the new yuv4mpegpipe test; changing `Yuv4MpegDemuxer::open(&header.as_bytes())` to `Yuv4MpegDemuxer::open(header.as_bytes())` fixed it. No current validation failures remain.
 
-Latest change summary: pending commit `Pin orchestrated media edge parity`.
+Latest change summary: committed `Pin parallel edge parity` after validating the current xhigh worker edge-evidence batch.
 
 Latest validation commands for the integrated orchestration batch passed: `cargo fmt --all`; `cargo test -p avutil --lib buffer`; `cargo test -p avformat wav`; `cargo test -p fftools option_parser`; `cargo test -p avformat rawvideo`; ignored pinned oracle tests for `buffer_oracle`, `wav_oracle::wav_pcm_s16le_empty_file_output_matches_ffmpeg_oracle`, `rawvideo_oracle::rawvideo_empty_rgb24_framecrc_has_no_packet_records`, and `version_oracle::dash_prefixed_values_are_consumed_before_special_requests`; `cargo fmt --all -- --check`; `cargo test -p fate-runner current_ledger`; `cargo check --manifest-path fuzz\\Cargo.toml --bin avutil_core_models --bin avformat_wav`; `cargo clippy -p avutil -p avformat -p fftools -p fate-runner --all-targets --all-features -- -D warnings`; `cargo clippy --manifest-path fuzz\\Cargo.toml --bin avutil_core_models --bin avformat_wav -- -D warnings`; differential mapping runs for `oracle-libavutil-buffer`, `oracle-pcm-s16le-empty-wav-file-output`, `oracle-rawvideo-empty-framecrc-records`, and `oracle-dash-prefixed-values-before-special-requests`; local `fate-runner -- run` for affected components; `cargo run -p xtask -- guard-runtime`; `cargo run -p xtask -- oracle-doctor`; `cargo run -p fate-runner -- run --changed`; and `git diff --check` with CRLF conversion warnings only.
 
@@ -8580,6 +8612,12 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+Current focus after the xhigh worker edge batch: return to highest-priority
+strict-parity closure work, likely `avutil-buffer` unless a newly failing gate
+appears. The just-integrated batch was evidence-only for options, channel
+layout, pixel format, image2, WAV, framecrc, and packet media-path mappings; no
+component status changed and no worker remains active.
+
 `avutil-buffer` is the current focus. The latest coherent slice pins readonly offset custom-pool allocation behavior against FFmpeg 8.1.1: a custom pool allocator may return a readonly offset visible range for the first checkout, then FFmpeg reuses the original backing pointer at offset zero with pool size as writable storage while preserving opaque data and releasing the full backing allocation at pool uninit. The component remains `differential_pass`, not complete, because remaining AVBuffer/AVBufferRef ABI/lifetime edges, hardware/device ownership integration, and final completion evidence still need closure.
 
 `avutil-buffer` is the current focus. The latest coherent slice pins offset custom-pool allocation behavior against FFmpeg 8.1.1: a custom pool allocator may return an offset visible range for the first checkout, then FFmpeg reuses the original backing pointer at offset zero with pool size while preserving opaque data and releasing the full backing allocation at pool uninit. The component remains `differential_pass`, not complete, because remaining AVBuffer/AVBufferRef ABI/lifetime edges, hardware/device ownership integration, and final completion evidence still need closure.
@@ -9263,6 +9301,16 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: integrated the xhigh fast/full-access worker edge-evidence batch.
+`avutil-options` now has pinned `av_opt_set_from_string()` evidence for
+empty pair separators preserving embedded `=` values, `avutil-channel-layout`
+pins `ambisonic + 1` parser normalization, `avutil-pixel-format` pins bare
+`x2rgb10`/`x2bgr10` alias lookup, image2 pins padded start-probe exhaustion,
+and WAV pins first-valid-`fmt ` behavior when a later duplicate `fmt ` chunk is
+truncated. `tests/differential/mappings.txt`, `PORTING_LEDGER.toml`, docs, and
+fuzz fixtures were updated. No component was marked complete; strict completion
+count remains 11/96.
 
 Latest slice: added bounded custom-callback raw/quiet evidence for `avutil-logging`. `crates/avutil/tests/logging_oracle.rs` now pins custom `av_log_set_callback` rows for raw delivered levels `-1` and `57`, multi-argument `va_list` formatted callback text, and AVClass-context `AV_LOG_QUIET` delivery; `crates/avutil/src/logging.rs` extends focused unit coverage; and `fuzz/fuzz_targets/avutil_core_models.rs` mirrors the deterministic rows. Docs, ledger, and state record the evidence. `avutil-logging` remains `fate_pass`; no component was marked complete, so strict completion count is unchanged at 11/96.
 

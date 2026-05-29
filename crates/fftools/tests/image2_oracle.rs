@@ -103,6 +103,18 @@ fn image2_ppm_sequence_with_start_number_accepts_probe_window_upper_boundary() {
     );
 }
 
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn image2_ppm_padded_width_rejects_start_probe_beyond_window() {
+    compare_image2_sequence_framecrc_fails_when_start_probe_window_is_exhausted(
+        "ppm",
+        "25",
+        1,
+        3,
+        &[(6u64, PPM_1X1_RED)],
+    );
+}
+
 fn compare_image2_file_output(extension: &str, frame_rate: &str, payload: &[u8]) {
     let oracle = oracle_ffmpeg();
     let input_path = write_temp_bytes("image2-single-input", extension, payload);
@@ -624,6 +636,96 @@ fn compare_image2_sequence_framecrc_records_from_sparse_indices(
             &String::from_utf8(oracle_output.stdout)
                 .expect("oracle sparse framecrc output should be UTF-8")
         )
+    );
+}
+
+fn compare_image2_sequence_framecrc_fails_when_start_probe_window_is_exhausted(
+    extension: &str,
+    frame_rate: &str,
+    start_number: u64,
+    frame_width: usize,
+    payloads: &[(u64, &[u8])],
+) {
+    let oracle = oracle_ffmpeg();
+    let input_dir = unique_temp_dir("image2-sequence-framecrc-start-probe-fail");
+
+    fs::create_dir(&input_dir)
+        .expect("temp image2 framecrc probe-fail input dir should be creatable");
+
+    for (frame_number, payload) in payloads.iter().copied() {
+        fs::write(
+            input_dir.join(sequence_file_name_with_width(
+                "in",
+                frame_number,
+                frame_width,
+                extension,
+            )),
+            payload,
+        )
+        .expect("temp image2 sparse framecrc probe-fail input should be writable");
+    }
+
+    let input_pattern = input_dir
+        .join(format!("in-%0{frame_width}d.{extension}"))
+        .to_string_lossy()
+        .into_owned();
+
+    let rust = ffmpeg_output(&strings(&[
+        "-f",
+        "image2",
+        "-framerate",
+        frame_rate,
+        "-start_number",
+        &start_number.to_string(),
+        "-i",
+        input_pattern.as_str(),
+        "-f",
+        "framecrc",
+        "-",
+    ]));
+
+    let oracle_output = Command::new(&oracle)
+        .args([
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "image2",
+            "-framerate",
+            frame_rate,
+            "-start_number",
+            &start_number.to_string(),
+            "-i",
+            input_pattern.as_str(),
+            "-c:v",
+            "copy",
+            "-f",
+            "framecrc",
+            "-",
+        ])
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", oracle.display()));
+
+    remove_temp_dirs(&[input_dir]);
+
+    assert!(
+        !oracle_output.status.success(),
+        "oracle image2 framecrc probe-window exhaustion expected to fail with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        oracle_output.status.code(),
+        String::from_utf8_lossy(&oracle_output.stdout),
+        String::from_utf8_lossy(&oracle_output.stderr)
+    );
+    assert!(
+        rust.is_err(),
+        "Rust image2 framecrc probe-window exhaustion should fail with an error"
+    );
+    assert!(
+        rust.as_ref()
+            .unwrap_err()
+            .to_string()
+            .contains("failed to parse image2 input"),
+        "Rust image2 framecrc probe-window exhaustion should fail while parsing image2 input"
     );
 }
 

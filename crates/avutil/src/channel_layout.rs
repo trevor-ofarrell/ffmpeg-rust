@@ -6465,6 +6465,11 @@ mod tests {
             let err = ChannelLayoutSpec::parse(input).unwrap_err();
             assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
         }
+
+        let spaced_plus = ChannelLayoutSpec::parse("ambisonic + 1").unwrap();
+        let zero_plus_fl = ChannelLayoutSpec::parse("ambisonic 0+FL").unwrap();
+        assert_eq!(spaced_plus, zero_plus_fl);
+        assert_eq!(spaced_plus.describe(), "ambisonic 0+1 channels (FL)");
     }
 
     #[test]

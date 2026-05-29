@@ -18,6 +18,9 @@ fuzz_target!(|data: &[u8]| {
     let duplicate_fmt = wav_with_duplicate_fmt_chunks();
     exercise_wav(&duplicate_fmt);
     exercise_duplicate_fmt_wav(&duplicate_fmt);
+    let short_duplicate_fmt = wav_with_short_second_duplicate_fmt_chunk();
+    exercise_wav(&short_duplicate_fmt);
+    exercise_short_second_duplicate_fmt_wav(&short_duplicate_fmt);
     let empty_generated_wav = empty_generated_wav();
     exercise_wav(&empty_generated_wav);
     assert!(WavDemuxer::open(SHORT_PCM_FMT_WAV).is_err());
@@ -79,6 +82,26 @@ fn exercise_duplicate_fmt_wav(input: &[u8]) {
         .expect("duplicate fmt WAV should produce one packet");
     assert_eq!(packet.data().len(), 8);
     assert_eq!(packet.duration(), 4);
+    assert!(demuxer.read_packet().unwrap().is_none());
+}
+
+fn exercise_short_second_duplicate_fmt_wav(input: &[u8]) {
+    let mut demuxer = WavDemuxer::open(input)
+        .expect("duplicate fmt WAV with short second fmt should open");
+    let info = demuxer.info().clone();
+
+    assert_eq!(info.channels(), 1);
+    assert_eq!(info.sample_rate(), 44_100);
+    assert_eq!(info.byte_rate(), 88_200);
+    assert_eq!(info.block_align(), 2);
+    assert_eq!(info.samples_per_channel(), 2);
+
+    let packet = demuxer
+        .read_packet()
+        .expect("duplicate fmt WAV with short second fmt should yield a packet")
+        .expect("duplicate fmt WAV with short second fmt should produce one packet");
+    assert_eq!(packet.data().len(), 4);
+    assert_eq!(packet.duration(), 2);
     assert!(demuxer.read_packet().unwrap().is_none());
 }
 
@@ -183,6 +206,39 @@ fn wav_with_duplicate_fmt_chunks() -> Vec<u8> {
     body.extend_from_slice(&second_byte_rate.to_le_bytes());
     body.extend_from_slice(&second_block_align.to_le_bytes());
     body.extend_from_slice(&16_u16.to_le_bytes());
+
+    body.extend_from_slice(b"data");
+    body.extend_from_slice(&(u32::try_from(data.len()).unwrap()).to_le_bytes());
+    body.extend_from_slice(data);
+
+    let mut out = Vec::new();
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(u32::try_from(body.len() + 4).unwrap()).to_le_bytes());
+    out.extend_from_slice(b"WAVE");
+    out.extend_from_slice(&body);
+    out
+}
+
+fn wav_with_short_second_duplicate_fmt_chunk() -> Vec<u8> {
+    let first_channels: u16 = 1;
+    let first_sample_rate: u32 = 44_100;
+    let block_align = first_channels * 2u16;
+    let byte_rate = first_sample_rate * u32::from(block_align);
+    let data: &[u8] = &[0x00, 0x00, 0x01, 0x00];
+
+    let mut body = Vec::new();
+    body.extend_from_slice(b"fmt ");
+    body.extend_from_slice(&16_u32.to_le_bytes());
+    body.extend_from_slice(&1_u16.to_le_bytes());
+    body.extend_from_slice(&first_channels.to_le_bytes());
+    body.extend_from_slice(&first_sample_rate.to_le_bytes());
+    body.extend_from_slice(&byte_rate.to_le_bytes());
+    body.extend_from_slice(&block_align.to_le_bytes());
+    body.extend_from_slice(&16_u16.to_le_bytes());
+
+    body.extend_from_slice(b"fmt ");
+    body.extend_from_slice(&8_u32.to_le_bytes());
+    body.extend_from_slice(&[1, 0, 1, 0, 0, 0, 0, 0]);
 
     body.extend_from_slice(b"data");
     body.extend_from_slice(&(u32::try_from(data.len()).unwrap()).to_le_bytes());

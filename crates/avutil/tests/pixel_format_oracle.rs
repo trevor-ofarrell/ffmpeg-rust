@@ -140,6 +140,8 @@ fn libavutil_pixel_format_name_lookup_matches_bounded_model() {
         "gray8",
         "gray8a",
         "y400a",
+        "x2rgb10",
+        "x2bgr10",
         "rgb24",
         "RGB24",
         "y32le",
@@ -354,6 +356,8 @@ int main(void) {
     print_lookup("gray8");
     print_lookup("gray8a");
     print_lookup("y400a");
+    print_lookup("x2rgb10");
+    print_lookup("x2bgr10");
     print_lookup("rgb24");
     print_lookup("RGB24");
     print_lookup("y32le");

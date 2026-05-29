@@ -444,6 +444,21 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                     Some(AvErrorCode::EINVAL)
                 );
                 assert_eq!(empty_pairs_multi, sample_options());
+                let mut empty_pairs_embedded_equals = sample_options();
+                assert_eq!(
+                    empty_pairs_embedded_equals
+                        .set_avoptions_from_string("metadata=title=clip", &[], "=", "")
+                        .unwrap(),
+                    1
+                );
+                assert_eq!(
+                    empty_pairs_embedded_equals.get("metadata"),
+                    Some(&OptionValue::String("title=clip".to_owned()))
+                );
+                assert_eq!(
+                    empty_pairs_embedded_equals.get("threads"),
+                    Some(&OptionValue::Int(1))
+                );
                 let mut trailing_pair_separator = sample_options();
                 assert_eq!(
                     trailing_pair_separator.set_avoptions_from_string(

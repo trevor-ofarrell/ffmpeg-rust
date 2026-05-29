@@ -746,6 +746,19 @@ mod tests {
     }
 
     #[test]
+    fn sequence_rejects_padded_pattern_when_start_probe_range_is_exhausted() {
+        let err = Image2Demuxer::open(
+            "frame-%03d.ppm",
+            vec![entry("frame-006.ppm", b"six")],
+            1,
+            Rational::new(25, 1).unwrap(),
+        )
+        .unwrap_err();
+
+        assert_eq!(err.kind(), avutil::AvErrorKind::InvalidArgument);
+    }
+
+    #[test]
     fn rejects_unpadded_numeric_aliases_for_same_frame_number() {
         let err = Image2Demuxer::open(
             "frame-%d.png",

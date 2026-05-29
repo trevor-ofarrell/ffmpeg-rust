@@ -666,6 +666,24 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         state_fields(&string_empty_pairs_multi),
     );
 
+    let mut string_empty_pairs_embedded_equals = sample_options();
+    insert_row(
+        &mut rows,
+        "ret:set-from-string-empty-pairs-embedded-equals",
+        [ret_count(
+            string_empty_pairs_embedded_equals.set_avoptions_from_string(
+                "metadata=title=clip",
+                &[],
+                "=",
+                "",
+            ),
+        )],
+    );
+    rows.insert(
+        "state:set-from-string-empty-pairs-embedded-equals".to_string(),
+        state_fields(&string_empty_pairs_embedded_equals),
+    );
+
     let mut string_trailing_pair_sep = sample_options();
     insert_row(
         &mut rows,
@@ -5954,6 +5972,15 @@ static void print_set_from_string_rows(void) {
                                  NULL, "=", "");
     printf("ret:set-from-string-empty-pairs-multi|%d\n", ret);
     print_state("state:set-from-string-empty-pairs-multi", &ctx);
+    av_opt_free(&ctx);
+    av_opt_free(&ctx.child);
+
+    init_context(&ctx);
+    ret = av_opt_set_from_string(&ctx,
+                                 "metadata=title=clip",
+                                 NULL, "=", "");
+    printf("ret:set-from-string-empty-pairs-embedded-equals|%d\n", ret);
+    print_state("state:set-from-string-empty-pairs-embedded-equals", &ctx);
     av_opt_free(&ctx);
     av_opt_free(&ctx.child);
 

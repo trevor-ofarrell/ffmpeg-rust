@@ -301,6 +301,10 @@ fn assert_raw_channel_layout_retype_fixtures() {
         AvErrorKind::InvalidArgument
     );
     assert_eq!(
+        ChannelLayoutSpec::parse("ambisonic + 1"),
+        ChannelLayoutSpec::parse("ambisonic 0+FL")
+    );
+    assert_eq!(
         ChannelId::from_ffmpeg_string("AMBI0x1tail"),
         Some(ChannelId::Ambisonic(1))
     );

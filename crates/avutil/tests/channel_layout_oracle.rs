@@ -269,6 +269,10 @@ const PARSER_CASES: &[ParserCase] = &[
         input: "ambisonic 09",
     },
     ParserCase {
+        id: "ambisonic-plus-space",
+        input: "ambisonic + 1",
+    },
+    ParserCase {
         id: "invalid-lowercase-list",
         input: "fl+fr",
     },

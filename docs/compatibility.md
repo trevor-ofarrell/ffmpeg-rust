@@ -9,6 +9,13 @@
 
 ## Compatible Today
 
+- Latest orchestrated edge batch: xhigh fast/full-access worker lanes added
+  pinned oracle rows for `av_opt_set_from_string()` empty pair separators with
+  embedded `=`, `ambisonic + 1` channel-layout normalization, bare `x2rgb10`
+  and `x2bgr10` pixel-format aliases, image2 padded start-probe exhaustion,
+  and WAV first-valid-`fmt ` behavior when a later duplicate `fmt ` chunk is
+  truncated. These rows strengthen existing incomplete components; strict
+  complete count remains unchanged.
 - Latest orchestrated media evidence: xhigh worker lanes added pinned oracle
   rows for image2 nonzero `%3d` sequence width patterns, yuv4mpegpipe
   XCOLORRANGE FULL/LIMITED remux preservation, raw pcm_s16le multi-packet file

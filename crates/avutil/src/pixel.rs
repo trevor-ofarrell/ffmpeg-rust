@@ -685,9 +685,9 @@ impl PixelFormat {
             "rgb0" => Some(Self::Rgb0),
             "0bgr" => Some(Self::ZeroBgr),
             "bgr0" => Some(Self::Bgr0),
-            "x2rgb10le" => Some(Self::X2Rgb10Le),
+            "x2rgb10" | "x2rgb10le" => Some(Self::X2Rgb10Le),
             "x2rgb10be" => Some(Self::X2Rgb10Be),
-            "x2bgr10le" => Some(Self::X2Bgr10Le),
+            "x2bgr10" | "x2bgr10le" => Some(Self::X2Bgr10Le),
             "x2bgr10be" => Some(Self::X2Bgr10Be),
             "gbrp" => Some(Self::Gbrp),
             "gbrp9le" => Some(Self::Gbrp9Le),
@@ -5089,6 +5089,15 @@ mod tests {
             Some(PixelFormat::Ya8)
         );
         assert_eq!(PixelFormat::from_av_get_pix_fmt_name("y400a"), None);
+        assert_eq!(
+            PixelFormat::from_av_get_pix_fmt_name("x2rgb10"),
+            Some(PixelFormat::X2Rgb10Le)
+        );
+        assert_eq!(
+            PixelFormat::from_av_get_pix_fmt_name("x2bgr10"),
+            Some(PixelFormat::X2Bgr10Le)
+        );
+        assert_eq!(PixelFormat::from_av_get_pix_fmt_name("X2RGB10"), None);
         assert_eq!(PixelFormat::from_av_get_pix_fmt_name("RGB24"), None);
         assert_eq!(
             PixelFormat::from_av_get_pix_fmt_name("y32le"),
@@ -6748,6 +6757,7 @@ mod tests {
         ] {
             let descriptor = format.descriptor();
             assert_eq!(descriptor.name, name);
+            assert_eq!(PixelFormat::from_name(name), Some(format));
             assert_eq!(descriptor.class, PixelFormatClass::Rgb);
             assert_eq!(descriptor.component_count, 3);
             assert_eq!(descriptor.bits_per_component, 10);
@@ -6760,6 +6770,16 @@ mod tests {
             assert_eq!(format.log2_chroma(), (0, 0));
             assert!(!format.has_chroma_subsampling());
         }
+        assert_eq!(
+            PixelFormat::from_name("x2rgb10"),
+            Some(PixelFormat::X2Rgb10Le),
+            "x2rgb10 alias must map to the LE x2rgb variant"
+        );
+        assert_eq!(
+            PixelFormat::from_name("x2bgr10"),
+            Some(PixelFormat::X2Bgr10Le),
+            "x2bgr10 alias must map to the LE x2bgr variant"
+        );
         for (format, name, bits_per_component, bits_per_pixel, bytes_per_pixel) in [
             (PixelFormat::BayerBggr8, "bayer_bggr8", 8, bpp(8), 1),
             (PixelFormat::BayerRggb8, "bayer_rggb8", 8, bpp(8), 1),
