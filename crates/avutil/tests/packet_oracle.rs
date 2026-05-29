@@ -2108,6 +2108,38 @@ fn insert_packet_fifo_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         vec![fifo.can_read().to_string()],
     );
 
+    let unknown_flags = PacketFifoFlags::from_bits(0x8000_0000);
+    let mut unknown_src = packet_with_common_props();
+    fifo.write_with_flags(&mut unknown_src, unknown_flags)
+        .unwrap();
+    rows.insert(
+        "packet:fifo-write-unknown-flag-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:fifo-write-unknown-flag-src".to_string(),
+        packet_fields(&unknown_src),
+    );
+    rows.insert(
+        "packet:fifo-after-write-unknown-flag-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+    let mut unknown_dst = Packet::default();
+    fifo.read_with_flags(&mut unknown_dst, unknown_flags)
+        .unwrap();
+    rows.insert(
+        "packet:fifo-read-unknown-flag-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:fifo-read-unknown-flag-dst".to_string(),
+        packet_fields(&unknown_dst),
+    );
+    rows.insert(
+        "packet:fifo-after-read-unknown-flag-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+
     let mut all_drain_first = Packet::new(vec![1], 1);
     let mut all_drain_second = Packet::new(vec![2], 2);
     fifo.write_move(&mut all_drain_first).unwrap();
@@ -5847,6 +5879,25 @@ static void exercise_packet_fifo_api(void) {
            av_container_fifo_can_read(fifo));
     av_packet_free(&user_ref_dst);
     av_packet_free(&user_ref_src);
+
+    unsigned unknown_flags = 0x80000000u;
+    AVPacket *unknown_flags_src = packet_with_common_props();
+    ret = av_container_fifo_write(fifo, unknown_flags_src, unknown_flags);
+    printf("packet:fifo-write-unknown-flag-ret|%d\n", ret);
+    fail_if(ret < 0, "fifo write with unknown flags failed");
+    print_packet("packet:fifo-write-unknown-flag-src", unknown_flags_src);
+    printf("packet:fifo-after-write-unknown-flag-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+
+    AVPacket *unknown_flags_dst = new_packet();
+    ret = av_container_fifo_read(fifo, unknown_flags_dst, unknown_flags);
+    printf("packet:fifo-read-unknown-flag-ret|%d\n", ret);
+    fail_if(ret < 0, "fifo read with unknown flags failed");
+    print_packet("packet:fifo-read-unknown-flag-dst", unknown_flags_dst);
+    printf("packet:fifo-after-read-unknown-flag-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+    av_packet_free(&unknown_flags_dst);
+    av_packet_free(&unknown_flags_src);
 
     AVPacket *all_drain_first = new_packet();
     fail_if(av_new_packet(all_drain_first, 1) < 0,

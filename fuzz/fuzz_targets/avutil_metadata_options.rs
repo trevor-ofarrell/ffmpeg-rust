@@ -422,6 +422,16 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                     escaped_quote_options.get("metadata"),
                     Some(&OptionValue::String("\\x".to_owned()))
                 );
+                let mut empty_value_options = sample_options();
+                let mut expected = sample_options();
+                expected
+                    .set_avoptions_from_string("metadata=", &[], "=", ":")
+                    .unwrap();
+                assert_eq!(
+                    empty_value_options.set_avoptions_from_string("metadata=", &[], "=", ":"),
+                    Ok(1)
+                );
+                assert_eq!(empty_value_options, expected);
                 let mut empty_pairs_multi = sample_options();
                 let empty_pairs_multi_result = empty_pairs_multi.set_avoptions_from_string(
                     "threads=7:quality=0.25",

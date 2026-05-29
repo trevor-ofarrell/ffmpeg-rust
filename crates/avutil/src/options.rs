@@ -4643,12 +4643,7 @@ fn validate_value_for_kind(kind: &OptionKind, value: &OptionValue) -> AvResult<(
             Ok(())
         }
         (OptionKind::String { .. }, OptionValue::NullString) => Ok(()),
-        (OptionKind::String { allow_empty }, OptionValue::String(value)) => {
-            if !allow_empty && value.is_empty() {
-                return Err(AvError::invalid_argument(
-                    "string option value must not be empty",
-                ));
-            }
+        (OptionKind::String { .. }, OptionValue::String(value)) => {
             if value.as_bytes().contains(&0) {
                 return Err(AvError::invalid_argument(
                     "string option value must not contain NUL",
@@ -7929,7 +7924,10 @@ mod tests {
         )
         .unwrap();
 
-        assert!(definition.parse_value("").is_err());
+        assert_eq!(
+            definition.parse_value("").unwrap(),
+            OptionValue::String("".to_owned())
+        );
         assert!(definition.parse_value("bad\0value").is_err());
         assert_eq!(
             definition.parse_value("ok").unwrap(),
@@ -9248,6 +9246,19 @@ mod tests {
             escaped_quote.get("metadata"),
             Some(&OptionValue::String("\\x".to_owned()))
         );
+
+        let mut empty_value = sample_options();
+        assert_eq!(
+            empty_value
+                .set_avoptions_from_string("metadata=", &[], "=", ":")
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            empty_value.get("metadata"),
+            Some(&OptionValue::String(String::new()))
+        );
+        assert_eq!(empty_value.get("threads"), Some(&OptionValue::Int(1)));
     }
 
     #[test]

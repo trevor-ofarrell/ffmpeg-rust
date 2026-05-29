@@ -486,6 +486,49 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         frame_fields(&copy_data_too_small_destination),
     );
 
+    let copy_data_kind_mismatch_source = Frame::audio(
+        AudioFrame::new_with_channel_layout_and_aligned_line_sizes(
+            44_100,
+            ChannelLayout::stereo(),
+            SampleFormat::S16,
+            2,
+            vec![vec![1, 0, 2, 0, 3, 0, 4, 0]],
+            1,
+        )
+        .unwrap(),
+    );
+    let mut copy_data_kind_mismatch_destination = Frame::video(
+        VideoFrame::new_with_aligned_line_sizes(
+            3,
+            2,
+            PixelFormat::Gray8,
+            vec![vec![9, 9, 9, 8, 8, 8]],
+            1,
+        )
+        .unwrap(),
+    );
+    let copy_data_kind_mismatch_before = frame_fields(&copy_data_kind_mismatch_destination);
+    let copy_data_kind_mismatch_ret = copy_data_kind_mismatch_destination
+        .copy_data_from(&copy_data_kind_mismatch_source)
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:copy-data-kind-mismatch-ret".to_string(),
+        vec![copy_data_kind_mismatch_ret.to_string()],
+    );
+    rows.insert(
+        "frame:copy-data-kind-mismatch-before".to_string(),
+        copy_data_kind_mismatch_before,
+    );
+    rows.insert(
+        "frame:copy-data-kind-mismatch-src".to_string(),
+        frame_fields(&copy_data_kind_mismatch_source),
+    );
+    rows.insert(
+        "frame:copy-data-kind-mismatch-after".to_string(),
+        frame_fields(&copy_data_kind_mismatch_destination),
+    );
+
     let crop_payload = gray8_incrementing_payload(6, 4);
     let crop_storage = gray8_strided_storage(6, 4, 64, &crop_payload);
     let mut crop_aligned = Frame::video(
@@ -5460,6 +5503,45 @@ int main(void)
     print_frame("frame:copy-data-video-too-small-dst",
                 copy_data_too_small_dst);
 
+    AVFrame *copy_data_kind_mismatch_video = av_frame_alloc();
+    fail_if(!copy_data_kind_mismatch_video,
+            "copy_data_kind_mismatch_video allocation failed");
+    copy_data_kind_mismatch_video->format = AV_PIX_FMT_GRAY8;
+    copy_data_kind_mismatch_video->width = 3;
+    copy_data_kind_mismatch_video->height = 2;
+    fail_if(av_frame_get_buffer(copy_data_kind_mismatch_video, 1) < 0,
+            "copy_data_kind_mismatch_video get_buffer failed");
+    static const uint8_t copy_data_kind_mismatch_video_payload[] =
+        { 9, 9, 9, 8, 8, 8 };
+    fill_video_gray(copy_data_kind_mismatch_video,
+                    copy_data_kind_mismatch_video_payload);
+
+    AVFrame *copy_data_kind_mismatch_audio = av_frame_alloc();
+    fail_if(!copy_data_kind_mismatch_audio,
+            "copy_data_kind_mismatch_audio allocation failed");
+    copy_data_kind_mismatch_audio->format = AV_SAMPLE_FMT_S16;
+    copy_data_kind_mismatch_audio->sample_rate = 44100;
+    copy_data_kind_mismatch_audio->nb_samples = 2;
+    av_channel_layout_default(&copy_data_kind_mismatch_audio->ch_layout, 2);
+    fail_if(av_frame_get_buffer(copy_data_kind_mismatch_audio, 1) < 0,
+            "copy_data_kind_mismatch_audio get_buffer failed");
+    static const uint8_t copy_data_kind_mismatch_audio_payload[] =
+        { 1, 0, 2, 0, 3, 0, 4, 0 };
+    memcpy(copy_data_kind_mismatch_audio->data[0],
+           copy_data_kind_mismatch_audio_payload,
+           sizeof(copy_data_kind_mismatch_audio_payload));
+
+    print_frame("frame:copy-data-kind-mismatch-before",
+                copy_data_kind_mismatch_video);
+    int copy_data_kind_mismatch_ret =
+        av_frame_copy(copy_data_kind_mismatch_video, copy_data_kind_mismatch_audio);
+    printf("frame:copy-data-kind-mismatch-ret|%d\n",
+           copy_data_kind_mismatch_ret);
+    print_frame("frame:copy-data-kind-mismatch-src",
+                copy_data_kind_mismatch_audio);
+    print_frame("frame:copy-data-kind-mismatch-after",
+                copy_data_kind_mismatch_video);
+
     static const uint8_t crop_payload[] = {
         0,  1,  2,  3,  4,  5,
         16, 17, 18, 19, 20, 21,
@@ -6409,6 +6491,8 @@ int main(void)
     av_frame_free(&copy_data_audio_src);
     av_frame_free(&copy_data_video_dst);
     av_frame_free(&copy_data_video_src);
+    av_frame_free(&copy_data_kind_mismatch_audio);
+    av_frame_free(&copy_data_kind_mismatch_video);
     av_frame_free(&invalid_crop);
     av_frame_free(&crop_bgr24_unaligned);
     av_frame_free(&crop_bgr24_aligned);

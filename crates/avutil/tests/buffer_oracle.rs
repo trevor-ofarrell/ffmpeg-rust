@@ -1360,6 +1360,10 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     );
 
     rows.insert("buffer:unref-null".to_string(), vec!["1".to_string()]);
+    rows.insert(
+        "buffer:unref-null-repeat".to_string(),
+        vec!["1".to_string()],
+    );
 
     let mut null_pool = None;
     BufferPool::uninit(&mut null_pool);
@@ -4419,6 +4423,8 @@ int main(void) {
     fail_if(!buf, "av_buffer_allocz unref failed");
     av_buffer_unref(&buf);
     printf("buffer:unref-null|%d\n", buf == NULL);
+    av_buffer_unref(&buf);
+    printf("buffer:unref-null-repeat|%d\n", buf == NULL);
 
     AVBufferPool *pool_null = NULL;
     av_buffer_pool_uninit(&pool_null);

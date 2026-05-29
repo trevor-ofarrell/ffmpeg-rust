@@ -1162,6 +1162,13 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
     let (size1, _) = rust_format_line(LogLevel::Warning, "plain", LogFlags::PRINT_LEVEL, true, 1);
     rows.insert("format-line-size1-line", escape_row_text(size1.bytes()));
 
+    let (null_zero, _) =
+        rust_format_line(LogLevel::Warning, "plain", LogFlags::PRINT_LEVEL, true, 0);
+    rows.insert(
+        "format-line-nullzero-line",
+        escape_row_text(null_zero.bytes()),
+    );
+
     let (context_level, _) = rust_format_line_context(
         LogLevel::Warning,
         "ctxmsg",
@@ -1530,6 +1537,14 @@ fn add_format_line_int_rows(rows: &mut BTreeMap<&'static str, i32>) {
         rust_format_line(LogLevel::Warning, "plain", LogFlags::PRINT_LEVEL, true, 1);
     rows.insert("format-line-size1-prefix", bool_to_i32(size1_prefix));
     rows.insert("format-line-size1-len", usize_to_i32(size1.bytes().len()));
+
+    let (null_zero, null_zero_prefix) =
+        rust_format_line(LogLevel::Warning, "plain", LogFlags::PRINT_LEVEL, true, 0);
+    rows.insert("format-line-nullzero-prefix", bool_to_i32(null_zero_prefix));
+    rows.insert(
+        "format-line-nullzero-len",
+        usize_to_i32(null_zero.bytes().len()),
+    );
 
     let (_, context_level_prefix) = rust_format_line_context(
         LogLevel::Warning,
@@ -2739,6 +2754,14 @@ static void print_format_line_rows(void) {
     ROW("format-line-size1-prefix", print_prefix);
     ROW("format-line-size1-len", strlen(line));
     ROW_STR("format-line-size1-line", line);
+
+    memset(line, '\0', sizeof(line));
+    print_prefix = 1;
+    call_format_line(NULL, line, 0, &print_prefix,
+                     AV_LOG_WARNING, "%s", "plain");
+    ROW("format-line-nullzero-prefix", print_prefix);
+    ROW("format-line-nullzero-len", strlen(line));
+    ROW_STR("format-line-nullzero-line", line);
 
     TestLogContext ctx = { &test_log_class };
 

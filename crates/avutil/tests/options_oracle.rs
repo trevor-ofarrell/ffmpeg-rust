@@ -723,6 +723,22 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     );
     insert_row(
         &mut rows,
+        "ret:set-from-string-empty-value",
+        [ret_count(sample_options().set_avoptions_from_string(
+            "metadata=",
+            &[],
+            "=",
+            ":",
+        ))],
+    );
+    let mut string_empty_value = sample_options();
+    let _ = string_empty_value.set_avoptions_from_string("metadata=", &[], "=", ":");
+    rows.insert(
+        "state:set-from-string-empty-value".to_string(),
+        state_fields(&string_empty_value),
+    );
+    insert_row(
+        &mut rows,
         "ret:set-from-string-unclosed-quote",
         [ret_count(sample_options().set_avoptions_from_string(
             "metadata='title",
@@ -5788,6 +5804,7 @@ static void print_set_from_string_rows(void) {
     TestOptions ctx;
     int ret;
     int ret_empty_key;
+    int ret_empty_value;
     int ret_invalid_separator_1;
     int ret_invalid_separator_2;
     int ret_invalid_separator_3;
@@ -5900,6 +5917,17 @@ static void print_set_from_string_rows(void) {
     print_state("state:set-from-string-quote-escape", &ctx);
     ret_empty_key = av_opt_set_from_string(&ctx, "=7", NULL, "=", ":");
     printf("ret:set-from-string-empty-key|%d\n", ret_empty_key);
+
+    av_opt_free(&ctx);
+    av_opt_free(&ctx.child);
+    init_context(&ctx);
+    ret_empty_value = av_opt_set_from_string(&ctx,
+                                            "metadata=",
+                                            NULL,
+                                            "=",
+                                            ":");
+    printf("ret:set-from-string-empty-value|%d\n", ret_empty_value);
+    print_state("state:set-from-string-empty-value", &ctx);
     ret = av_opt_set_from_string(&ctx,
                                  "metadata='title",
                                  NULL, "=", ":");

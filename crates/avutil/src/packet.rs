@@ -12691,6 +12691,28 @@ mod tests {
     }
 
     #[test]
+    fn packet_fifo_unknown_flags_treat_as_move() {
+        let mut fifo = PacketFifo::new();
+        let mut source = Packet::from_data(vec![0x12, 0x34]).unwrap();
+        source.set_pts(Some(42));
+        source.set_duration(43).unwrap();
+        let source_payload = source.data_buffer().clone();
+
+        let unknown_flags = PacketFifoFlags::from_bits(0x8000_0000);
+        fifo.write_with_flags(&mut source, unknown_flags).unwrap();
+        assert!(source.is_empty());
+        assert_eq!(fifo.can_read(), 1);
+
+        let mut destination = Packet::new(vec![0x55], 1);
+        destination.set_opaque_ref(Some(BufferRef::from_vec(vec![0x77])));
+        fifo.read_with_flags(&mut destination, unknown_flags)
+            .unwrap();
+        assert_eq!(fifo.can_read(), 0);
+        assert_eq!(destination.data(), &[0x12, 0x34]);
+        assert!(destination.data_buffer().shares_storage(&source_payload));
+    }
+
+    #[test]
     fn packet_copy_props_preserves_destination_payload() {
         let mut src = Packet::new(vec![1, 2, 3], 4);
         src.set_pts(Some(12));

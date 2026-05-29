@@ -2636,6 +2636,18 @@ mod tests {
     }
 
     #[test]
+    fn av_log_format_line_null_size_zero_suppresses_output_and_print_prefix() {
+        let mut prefix = true;
+        let line = LogRecord::new(LogLevel::Warning, "decoder", "plain")
+            .format_av_log_line_null_context(LogFlags::PRINT_LEVEL, &mut prefix, 0)
+            .unwrap();
+        assert!(line.truncated());
+        assert_eq!(line.bytes(), b"");
+        assert_eq!(line.line_lossy(), "");
+        assert!(!prefix);
+    }
+
+    #[test]
     fn av_log_format_line_matches_bounded_wrapper_shape() {
         let context = AvLogContextPrefix::new("rustctx", "<ptr>");
 
