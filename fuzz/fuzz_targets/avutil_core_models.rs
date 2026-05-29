@@ -1478,6 +1478,75 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         vec![vec![0xcc; payload_len]]
     );
 
+    let replace_pool_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let replace_pool_frees = Arc::new(Mutex::new(0usize));
+    let replace_pool_release_capture = Arc::clone(&replace_pool_releases);
+    let replace_pool_free_capture = Arc::clone(&replace_pool_frees);
+    let replace_pool = BufferPool::with_callbacks(
+        payload_len,
+        padding_len,
+        BufferPoolCallbacks::with_allocation_callbacks(
+            move |allocated_len| {
+                Ok(BufferPoolAllocation::with_opaque(
+                    vec![0x58; allocated_len],
+                    allocated_len,
+                ))
+            },
+            move |allocation| {
+                let opaque = *allocation.opaque_ref::<usize>().unwrap();
+                replace_pool_release_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, allocation.into_vec()));
+            },
+        )
+        .with_pool_free(move || {
+            *replace_pool_free_capture.lock().unwrap() += 1;
+        }),
+    )
+    .unwrap();
+    let replace_pool_source = BufferRef::copy_from_slice(&payload);
+    let mut replace_pool_dst = Some(replace_pool.get().unwrap());
+    if let Some(first) = replace_pool_dst
+        .as_mut()
+        .unwrap()
+        .make_mut()
+        .first_mut()
+    {
+        *first = cursor.next().unwrap_or_default();
+    }
+    let replace_pool_expected = replace_pool_dst
+        .as_ref()
+        .unwrap()
+        .as_padded_slice()
+        .to_vec();
+    BufferRef::replace(&mut replace_pool_dst, Some(&replace_pool_source));
+    let replace_pool_replaced =
+        replace_pool_dst.expect("pool destination replacement keeps destination");
+    assert!(replace_pool_replaced.shares_storage(&replace_pool_source));
+    assert!(replace_pool_replaced.pool_opaque_ref::<usize>().is_none());
+    assert!(replace_pool_releases.lock().unwrap().is_empty());
+    assert_eq!(replace_pool.available_count().unwrap(), 1);
+    let replace_pool_reuse = replace_pool.get().unwrap();
+    assert_eq!(
+        replace_pool_reuse.as_padded_slice(),
+        replace_pool_expected.as_slice()
+    );
+    assert_eq!(
+        replace_pool_reuse.pool_opaque_ref::<usize>().copied(),
+        Some(payload_len + padding_len)
+    );
+    drop(replace_pool_replaced);
+    assert!(replace_pool_releases.lock().unwrap().is_empty());
+    drop(replace_pool_source);
+    drop(replace_pool_reuse);
+    drop(replace_pool);
+    assert_eq!(
+        *replace_pool_releases.lock().unwrap(),
+        vec![(payload_len + padding_len, replace_pool_expected)]
+    );
+    assert_eq!(*replace_pool_frees.lock().unwrap(), 1);
+
     let replace_same_source = BufferRef::copy_from_slice(&payload);
     let mut replace_same_dst = Some(BufferRef::ref_from(&replace_same_source));
     BufferRef::replace(&mut replace_same_dst, Some(&replace_same_source));
