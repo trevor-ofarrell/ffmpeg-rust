@@ -57,6 +57,7 @@ type PoolFreeCallback = Arc<dyn Fn() + Send + Sync + 'static>;
 pub struct BufferPoolAllocation {
     bytes: Vec<u8>,
     opaque: Option<Box<dyn Any + Send + Sync>>,
+    readonly: bool,
 }
 
 impl BufferPoolAllocation {
@@ -64,6 +65,7 @@ impl BufferPoolAllocation {
         Self {
             bytes,
             opaque: None,
+            readonly: false,
         }
     }
 
@@ -74,6 +76,26 @@ impl BufferPoolAllocation {
         Self {
             bytes,
             opaque: Some(Box::new(opaque)),
+            readonly: false,
+        }
+    }
+
+    pub fn readonly(bytes: Vec<u8>) -> Self {
+        Self {
+            bytes,
+            opaque: None,
+            readonly: true,
+        }
+    }
+
+    pub fn with_opaque_readonly<T>(bytes: Vec<u8>, opaque: T) -> Self
+    where
+        T: Any + Send + Sync + 'static,
+    {
+        Self {
+            bytes,
+            opaque: Some(Box::new(opaque)),
+            readonly: true,
         }
     }
 
@@ -87,6 +109,10 @@ impl BufferPoolAllocation {
 
     pub fn as_slice(&self) -> &[u8] {
         &self.bytes
+    }
+
+    pub fn is_readonly(&self) -> bool {
+        self.readonly
     }
 
     pub fn opaque_ref<T: 'static>(&self) -> Option<&T> {
@@ -103,6 +129,7 @@ impl std::fmt::Debug for BufferPoolAllocation {
         f.debug_struct("BufferPoolAllocation")
             .field("bytes", &self.bytes)
             .field("has_opaque", &self.opaque.is_some())
+            .field("readonly", &self.readonly)
             .finish()
     }
 }
@@ -948,7 +975,11 @@ impl BufferStorage {
     }
 
     fn with_pool(allocation: BufferPoolAllocation, pool: &Arc<BufferPoolInner>) -> Self {
-        let BufferPoolAllocation { bytes, opaque } = allocation;
+        let BufferPoolAllocation {
+            bytes,
+            opaque,
+            readonly,
+        } = allocation;
         Self {
             bytes: BufferBytes::owned(bytes),
             owner: Some(BufferOwner::Pool {
@@ -956,7 +987,7 @@ impl BufferStorage {
                 allocated_len: pool.allocated_len,
                 opaque,
             }),
-            readonly: false,
+            readonly,
             reallocatable: false,
         }
     }
@@ -1011,6 +1042,7 @@ impl BufferStorage {
         BufferPoolAllocation {
             bytes: self.bytes.take_vec(),
             opaque,
+            readonly: false,
         }
     }
 }
@@ -1133,6 +1165,7 @@ impl Drop for BufferStorage {
                 let allocation = BufferPoolAllocation {
                     bytes: storage,
                     opaque,
+                    readonly: false,
                 };
                 if storage_len != allocated_len {
                     pool.callbacks.release(allocation);
@@ -3261,6 +3294,76 @@ mod tests {
             vec![(41, vec![0xaa, 0xbb, 0xcc])]
         );
         assert_eq!(*pool_free_events.lock().unwrap(), vec!["pool-free"]);
+    }
+
+    #[test]
+    fn custom_buffer_pool_readonly_allocation_reuses_as_writable_storage() {
+        #[derive(Debug)]
+        struct PoolToken {
+            id: usize,
+        }
+
+        let releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let pool_free_events = std::sync::Arc::new(std::sync::Mutex::new(Vec::<usize>::new()));
+        let release_capture = std::sync::Arc::clone(&releases);
+        let pool_free_capture = std::sync::Arc::clone(&pool_free_events);
+        let pool = BufferPool::with_callbacks(
+            3,
+            0,
+            BufferPoolCallbacks::with_allocation_callbacks(
+                |allocated_len| {
+                    assert_eq!(allocated_len, 3);
+                    Ok(BufferPoolAllocation::with_opaque_readonly(
+                        vec![0x41, 0x42, 0x43],
+                        PoolToken { id: 77 },
+                    ))
+                },
+                move |allocation| {
+                    let id = allocation
+                        .opaque_ref::<PoolToken>()
+                        .map(|token| token.id)
+                        .unwrap_or_default();
+                    release_capture
+                        .lock()
+                        .unwrap()
+                        .push((id, allocation.into_vec()));
+                },
+            )
+            .with_pool_free(move || {
+                pool_free_capture.lock().unwrap().push(77);
+            }),
+        )
+        .unwrap();
+
+        let first = pool.get().unwrap();
+        assert!(first.is_readonly());
+        assert!(!first.is_writable());
+        assert_eq!(first.as_slice(), &[0x41, 0x42, 0x43]);
+        assert_eq!(
+            first.pool_opaque_ref::<PoolToken>().map(|token| token.id),
+            Some(77)
+        );
+        drop(first);
+        assert!(releases.lock().unwrap().is_empty());
+        assert!(pool_free_events.lock().unwrap().is_empty());
+
+        let mut reused = pool.get().unwrap();
+        assert!(!reused.is_readonly());
+        assert!(reused.is_writable());
+        assert_eq!(reused.as_slice(), &[0x41, 0x42, 0x43]);
+        assert_eq!(
+            reused.pool_opaque_ref::<PoolToken>().map(|token| token.id),
+            Some(77)
+        );
+        reused.make_mut()[0] = 0xaa;
+        drop(reused);
+        drop(pool);
+
+        assert_eq!(
+            *releases.lock().unwrap(),
+            vec![(77, vec![0xaa, 0x42, 0x43])]
+        );
+        assert_eq!(*pool_free_events.lock().unwrap(), vec![77]);
     }
 
     #[test]

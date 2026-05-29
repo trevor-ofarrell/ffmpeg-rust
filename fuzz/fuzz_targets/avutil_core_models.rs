@@ -2319,6 +2319,70 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     );
     assert_eq!(*custom_pool_frees.lock().unwrap(), 1);
 
+    let readonly_pool_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let readonly_pool_frees = Arc::new(Mutex::new(0usize));
+    let readonly_release_capture = Arc::clone(&readonly_pool_releases);
+    let readonly_pool_free_capture = Arc::clone(&readonly_pool_frees);
+    let readonly_pool = BufferPool::with_callbacks(
+        payload_len,
+        padding_len,
+        BufferPoolCallbacks::with_allocation_callbacks(
+            move |allocated_len| {
+                Ok(BufferPoolAllocation::with_opaque_readonly(
+                    vec![0xbb; allocated_len],
+                    allocated_len,
+                ))
+            },
+            move |allocation| {
+                let opaque = *allocation.opaque_ref::<usize>().unwrap();
+                readonly_release_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, allocation.into_vec()));
+            },
+        )
+        .with_pool_free(move || {
+            *readonly_pool_free_capture.lock().unwrap() += 1;
+        }),
+    )
+    .unwrap();
+    let readonly_first = readonly_pool.get().unwrap();
+    assert!(readonly_first.is_readonly());
+    assert!(!readonly_first.is_writable());
+    assert_eq!(
+        readonly_first.as_padded_slice(),
+        vec![0xbb; payload_len + padding_len].as_slice()
+    );
+    assert_eq!(
+        readonly_first.pool_opaque_ref::<usize>().copied(),
+        Some(payload_len + padding_len)
+    );
+    drop(readonly_first);
+    assert!(readonly_pool_releases.lock().unwrap().is_empty());
+    assert_eq!(*readonly_pool_frees.lock().unwrap(), 0);
+
+    let mut readonly_reuse = readonly_pool.get().unwrap();
+    assert!(!readonly_reuse.is_readonly());
+    assert!(readonly_reuse.is_writable());
+    assert_eq!(
+        readonly_reuse.pool_opaque_ref::<usize>().copied(),
+        Some(payload_len + padding_len)
+    );
+    if !readonly_reuse.is_empty() {
+        readonly_reuse.make_mut()[0] = 0xcc;
+    }
+    drop(readonly_reuse);
+    drop(readonly_pool);
+    let mut expected_readonly_release = vec![0xbb; payload_len + padding_len];
+    if payload_len > 0 {
+        expected_readonly_release[0] = 0xcc;
+    }
+    assert_eq!(
+        *readonly_pool_releases.lock().unwrap(),
+        vec![(payload_len + padding_len, expected_readonly_release)]
+    );
+    assert_eq!(*readonly_pool_frees.lock().unwrap(), 1);
+
     let bad_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
     let bad_release_capture = Arc::clone(&bad_releases);
     let bad_pool = BufferPool::with_callbacks(

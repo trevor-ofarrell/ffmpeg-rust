@@ -1536,6 +1536,94 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         vec![pool_frees.lock().unwrap().len().to_string()],
     );
 
+    let readonly_pool_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let readonly_pool_frees = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let readonly_pool_release_capture = Arc::clone(&readonly_pool_releases);
+    let readonly_pool_free_capture = Arc::clone(&readonly_pool_frees);
+    let readonly_pool = BufferPool::with_callbacks(
+        3,
+        0,
+        BufferPoolCallbacks::with_allocation_callbacks(
+            |allocated_len| {
+                Ok(BufferPoolAllocation::with_opaque_readonly(
+                    vec![0x41, 0x42, 0x43],
+                    PoolToken {
+                        id: 77,
+                        size: allocated_len,
+                    },
+                ))
+            },
+            move |allocation| {
+                let token = allocation
+                    .opaque_ref::<PoolToken>()
+                    .expect("readonly pool token should be preserved");
+                readonly_pool_release_capture
+                    .lock()
+                    .unwrap()
+                    .push((token.id, allocation.as_slice().to_vec()));
+            },
+        )
+        .with_pool_free(move || {
+            readonly_pool_free_capture.lock().unwrap().push(77);
+        }),
+    )
+    .unwrap();
+    let readonly_first = readonly_pool.get().unwrap();
+    rows.insert(
+        "pool-readonly:first".to_string(),
+        buffer_fields(&readonly_first),
+    );
+    let readonly_first_token = readonly_first
+        .pool_opaque_ref::<PoolToken>()
+        .expect("readonly first pool token");
+    rows.insert(
+        "pool-readonly:opaque-first".to_string(),
+        vec![
+            readonly_first_token.id.to_string(),
+            readonly_first_token.size.to_string(),
+        ],
+    );
+    drop(readonly_first);
+    rows.insert(
+        "pool-readonly:after-first-unref".to_string(),
+        vec![
+            readonly_pool_releases.lock().unwrap().len().to_string(),
+            readonly_pool_frees.lock().unwrap().len().to_string(),
+        ],
+    );
+    let mut readonly_reuse = readonly_pool.get().unwrap();
+    rows.insert(
+        "pool-readonly:reuse".to_string(),
+        buffer_fields(&readonly_reuse),
+    );
+    let readonly_reuse_token = readonly_reuse
+        .pool_opaque_ref::<PoolToken>()
+        .expect("readonly reuse pool token");
+    rows.insert(
+        "pool-readonly:opaque-reuse".to_string(),
+        vec![
+            readonly_reuse_token.id.to_string(),
+            readonly_reuse_token.size.to_string(),
+        ],
+    );
+    readonly_reuse.make_mut()[0] = 0xaa;
+    drop(readonly_reuse);
+    drop(readonly_pool);
+    let readonly_release_values = readonly_pool_releases.lock().unwrap();
+    let readonly_pool_free_values = readonly_pool_frees.lock().unwrap();
+    rows.insert(
+        "pool-readonly:uninit-release".to_string(),
+        vec![
+            readonly_release_values.len().to_string(),
+            readonly_release_values[0].0.to_string(),
+            hex(&readonly_release_values[0].1),
+            readonly_pool_free_values.len().to_string(),
+            readonly_pool_free_values[0].to_string(),
+        ],
+    );
+    drop(readonly_pool_free_values);
+    drop(readonly_release_values);
+
     let outstanding_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let outstanding_pool_frees = Arc::new(Mutex::new(Vec::<usize>::new()));
     let outstanding_release_capture = Arc::clone(&outstanding_releases);
@@ -1872,6 +1960,16 @@ static AVBufferRef *test_pool_alloc(void *opaque, size_t size) {
     for (size_t i = 0; i < size; i++)
         data[i] = (uint8_t)(i + 1);
     return av_buffer_create(data, size, test_pool_free, opaque, 0);
+}
+
+static AVBufferRef *test_pool_alloc_readonly(void *opaque, size_t size) {
+    uint8_t *data = av_malloc(size);
+    fail_if(!data, "av_malloc readonly pool data failed");
+    pool_alloc_count++;
+    for (size_t i = 0; i < size; i++)
+        data[i] = (uint8_t)(0x41 + i);
+    return av_buffer_create(data, size, test_pool_free, opaque,
+                            AV_BUFFER_FLAG_READONLY);
 }
 
 static AVBufferRef *test_pool_alloc_fail(void *opaque, size_t size) {
@@ -2951,6 +3049,40 @@ int main(void) {
     print_hex(last_pool_release, last_pool_release_size);
     printf("\n");
     printf("pool:uninit-pool-free|%d\n", pool_free_count);
+
+    reset_pool_counters();
+    PoolOpaque readonly_pool_opaque = { 77, 3 };
+    AVBufferPool *readonly_pool =
+        av_buffer_pool_init2(3, &readonly_pool_opaque,
+                             test_pool_alloc_readonly,
+                             test_pool_owner_free);
+    fail_if(!readonly_pool, "av_buffer_pool_init2 readonly failed");
+    AVBufferRef *readonly_first = av_buffer_pool_get(readonly_pool);
+    fail_if(!readonly_first, "av_buffer_pool_get readonly first failed");
+    print_buffer("pool-readonly:first", readonly_first);
+    PoolOpaque *readonly_first_opaque =
+        av_buffer_pool_buffer_get_opaque(readonly_first);
+    fail_if(!readonly_first_opaque, "pool readonly first opaque missing");
+    printf("pool-readonly:opaque-first|%" PRIuPTR "|%zu\n",
+           readonly_first_opaque->id, readonly_first_opaque->size);
+    av_buffer_unref(&readonly_first);
+    printf("pool-readonly:after-first-unref|%d|%d\n",
+           pool_release_count, pool_free_count);
+    AVBufferRef *readonly_reuse = av_buffer_pool_get(readonly_pool);
+    fail_if(!readonly_reuse, "av_buffer_pool_get readonly reuse failed");
+    print_buffer("pool-readonly:reuse", readonly_reuse);
+    PoolOpaque *readonly_reuse_opaque =
+        av_buffer_pool_buffer_get_opaque(readonly_reuse);
+    fail_if(!readonly_reuse_opaque, "pool readonly reuse opaque missing");
+    printf("pool-readonly:opaque-reuse|%" PRIuPTR "|%zu\n",
+           readonly_reuse_opaque->id, readonly_reuse_opaque->size);
+    readonly_reuse->data[0] = 0xaa;
+    av_buffer_unref(&readonly_reuse);
+    av_buffer_pool_uninit(&readonly_pool);
+    printf("pool-readonly:uninit-release|%d|%" PRIuPTR "|",
+           pool_release_count, last_pool_release_id);
+    print_hex(last_pool_release, last_pool_release_size);
+    printf("|%d|%" PRIuPTR "\n", pool_free_count, last_pool_free_id);
 
     reset_pool_counters();
     PoolOpaque outstanding_opaque = { 66, 2 };
