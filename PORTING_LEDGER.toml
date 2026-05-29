@@ -5,6 +5,20 @@ default_profile = "ffmpeg-8.1.1-default-native"
 # Latest orchestrated evidence: AVBufferPool offset-visible custom allocations
 # now pin unique writable `av_buffer_make_writable()` no-op behavior, visible
 # mutation, normalized spare reuse, and final full-allocation release bytes.
+# Latest orchestrated evidence: channel layout parser/compare rows now pin
+# quoted native channel identifiers such as `'FL'+'FR'` as equal to `stereo`.
+# Latest orchestrated evidence: AVOption set-from-string rows now pin numeric
+# expression constants, including `PI` truncating to integer storage as 3.
+# Latest orchestrated evidence: av_log_format_line2 context formatting now
+# pins the zero-sized output-buffer boundary with PRINT_LEVEL, including full
+# would-be length, empty written bytes, truncation, and prefix-state reset.
+# Latest orchestrated evidence: AVPacket FIFO rows now pin exact all-at-once
+# drain-to-empty behavior while Rust preserves state on invalid over-drain.
+# Latest orchestrated evidence: AVFrame hw_frames_ctx rows now pin clone
+# sharing after the original frame takes its hardware frames context.
+# Latest orchestrated evidence: pixel-format lookup rows now pin bounded
+# `av_get_pix_fmt()` names: accepting `gray8a`, `y32le`, `yf32le`, and
+# `vaapi` while rejecting legacy `y400a`, uppercase `RGB24`, and unknown names.
 # Latest orchestrated evidence: channel layout parser/retype/compare rows now
 # pin uppercase base-0 raw user tokens such as `USR0X2D`.
 # Latest orchestrated evidence: AVOption set-from-string rows now pin

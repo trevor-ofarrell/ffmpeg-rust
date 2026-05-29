@@ -157,6 +157,10 @@ const PARSER_CASES: &[ParserCase] = &[
         input: "'FL'+FR",
     },
     ParserCase {
+        id: "quoted-channel-id-both",
+        input: "'FL'+'FR'",
+    },
+    ParserCase {
         id: "quoted-custom-name",
         input: "FL@'Left Right'+FR",
     },
@@ -641,6 +645,11 @@ const COMPARE_CASES: &[CompareCase] = &[
         id: "native-different",
         left: "stereo",
         right: "mono",
+    },
+    CompareCase {
+        id: "quoted-ids-equal-native",
+        left: "'FL'+'FR'",
+        right: "stereo",
     },
     CompareCase {
         id: "sparse-native-same",

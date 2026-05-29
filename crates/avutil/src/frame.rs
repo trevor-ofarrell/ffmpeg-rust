@@ -32168,6 +32168,7 @@ mod tests {
         assert!(released.lock().unwrap().is_empty());
         let taken = frame.take_hw_frames_context().unwrap();
         assert!(frame.hw_frames_context().is_none());
+        assert!(cloned.hw_frames_context().unwrap().shares_storage(&taken));
         drop(frame);
         assert!(released.lock().unwrap().is_empty());
         drop(taken);

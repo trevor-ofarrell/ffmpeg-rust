@@ -926,6 +926,26 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         state_fields(&expression_options),
     );
 
+    let mut expression_constants = expression_options.clone();
+    insert_row(
+        &mut rows,
+        "ret:set-expression-constants",
+        [ret(
+            expression_constants.set_avoption_from_str("threads", "PI")
+        )],
+    );
+    insert_row(
+        &mut rows,
+        "get:set-expression-constants",
+        [ret_value(
+            expression_constants.get_avoption_string("threads"),
+        )],
+    );
+    rows.insert(
+        "state:set-expression-constants".to_string(),
+        state_fields(&expression_constants),
+    );
+
     let mut typed_options = sample_options();
     insert_row(
         &mut rows,
@@ -5903,6 +5923,7 @@ static void print_expression_rows(void) {
     int ret_quality;
     int ret_aspect;
     int ret_preset;
+    int ret_constant;
     int ret_range;
     int ret_parse;
 
@@ -5925,6 +5946,12 @@ static void print_expression_rows(void) {
     ret_parse = av_opt_set(&ctx, "quality", "2*", 0);
     printf("ret:set-expression-errors|%d|%d\n", ret_range, ret_parse);
     print_state("state:after-expression-errors", &ctx);
+    ret_constant = av_opt_set(&ctx, "threads", "PI", 0);
+    printf("ret:set-expression-constants|%d\n", ret_constant);
+    print_state("state:set-expression-constants", &ctx);
+    printf("get:set-expression-constants");
+    print_get_value(&ctx, "threads");
+    printf("\n");
     av_opt_free(&ctx);
     av_opt_free(&ctx.child);
 }

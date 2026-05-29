@@ -9,6 +9,27 @@
 
 ## Compatible Today
 
+- Latest orchestrated `avutil-channel-layout` evidence: pinned parser and
+  compare rows prove quoted native channel identifiers such as `'FL'+'FR'`
+  parse successfully and compare equal to `stereo`.
+- Latest orchestrated `avutil-pixel-format` evidence: pinned libavutil
+  `av_get_pix_fmt()` lookup rows prove the bounded Rust lookup accepts
+  `gray8a`, `gray`, `gray8`, `y32le`, `yf32le`, and `vaapi`, while rejecting
+  legacy alias `y400a`, uppercase `RGB24`, and unknown names.
+- Latest orchestrated `avutil-options` evidence: pinned libavutil
+  `av_opt_set_from_string()` rows prove numeric expression constants are
+  accepted for integer storage, with `PI` truncating to `threads=3`.
+- Latest orchestrated `avutil-logging` evidence: pinned
+  `av_log_format_line2()` rows prove a normalized AVClass context plus
+  `AV_LOG_PRINT_LEVEL` and `line_size=0` returns the full would-be length,
+  writes no bytes, reports truncation, and leaves `print_prefix` false.
+- Latest orchestrated `avutil-packet` evidence: pinned packet
+  `AVContainerFifo` rows prove draining exactly the queued packet count
+  succeeds and leaves the FIFO empty; Rust additionally rejects invalid
+  over-drain with `EINVAL` without mutating the queue.
+- Latest orchestrated `avutil-frame` evidence: pinned `hw_frames_ctx` clone
+  rows prove a cloned frame keeps the shared hardware frames context after the
+  original frame takes its own context reference.
 - Latest `avutil-buffer` offset-pool evidence: pinned libavutil rows prove a
   unique writable custom-pool ref with an offset visible range keeps that
   offset through `av_buffer_make_writable()`, returns the mutated backing

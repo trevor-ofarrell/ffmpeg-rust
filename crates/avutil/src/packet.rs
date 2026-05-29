@@ -12606,6 +12606,11 @@ mod tests {
         fifo.write_move(&mut first).unwrap();
         fifo.write_move(&mut second).unwrap();
         assert_eq!(fifo.can_read(), 2);
+        let overflow_err = fifo.drain(3).unwrap_err();
+        assert_eq!(overflow_err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(overflow_err.code(), Some(AvErrorCode::EINVAL));
+        assert_eq!(fifo.can_read(), 2);
+        assert_eq!(fifo.peek(0).unwrap().data(), &[1]);
         fifo.drain(0).unwrap();
         assert_eq!(fifo.can_read(), 2);
         assert_eq!(fifo.peek(0).unwrap().data(), &[1]);

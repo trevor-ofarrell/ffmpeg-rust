@@ -233,6 +233,11 @@ const PATH_RULES: &[PathRule] = &[
         id_prefixes: &[],
     },
     PathRule {
+        path: "crates/avutil/tests/frame_oracle.rs",
+        exact_ids: &["avutil-frame"],
+        id_prefixes: &[],
+    },
+    PathRule {
         path: "crates/avutil/src/logging.rs",
         exact_ids: &["avutil-logging"],
         id_prefixes: &[],
@@ -2110,6 +2115,17 @@ mod tests {
         assert_eq!(
             changed_components(&component_ids, &paths),
             vec!["avutil-packet".to_string()]
+        );
+    }
+
+    #[test]
+    fn changed_selection_maps_frame_oracle_test_to_component() {
+        let component_ids = component_ids_from_ledger(&ledger(&["avutil-frame"]));
+        let paths = vec!["crates/avutil/tests/frame_oracle.rs".to_string()];
+
+        assert_eq!(
+            changed_components(&component_ids, &paths),
+            vec!["avutil-frame".to_string()]
         );
     }
 

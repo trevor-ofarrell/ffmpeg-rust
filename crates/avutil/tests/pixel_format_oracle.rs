@@ -1,7 +1,7 @@
 use avutil::PixelFormat;
 use std::{
     collections::BTreeMap,
-    env,
+    env, fs,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -103,6 +103,58 @@ fn ffmpeg_pixel_format_inventory_contains_current_pixel_format_subset() {
             expected.is_paletted,
             "ffmpeg -pix_fmts paletted flag diverged for `{}`",
             expected.name
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 libavutil oracle under third_party/ffmpeg-oracle/wsl"]
+fn libavutil_pixel_format_name_lookup_matches_bounded_model() {
+    let repo_root = repo_root();
+    let oracle_root = oracle_root(&repo_root);
+    let include_dir = oracle_root.join("wsl/include");
+    let libavutil = oracle_root.join("wsl/lib/libavutil.a");
+
+    assert!(
+        include_dir.join("libavutil/pixdesc.h").is_file(),
+        "missing pinned FFmpeg libavutil pixel format headers under `{}`",
+        include_dir.display()
+    );
+    assert!(
+        libavutil.is_file(),
+        "missing pinned FFmpeg libavutil static library `{}`",
+        libavutil.display()
+    );
+
+    let work_dir = repo_root.join("target/oracle/avutil-pixel-format");
+    fs::create_dir_all(&work_dir).expect("create avutil-pixel-format oracle work dir");
+    let source = work_dir.join("pixel_format_oracle.c");
+    let executable = work_dir.join("pixel_format_oracle");
+    fs::write(&source, oracle_c_source()).expect("write pixel format oracle C source");
+
+    let stdout = compile_and_run_oracle(&include_dir, &libavutil, &source, &executable);
+    let rows = parse_oracle_output(&stdout);
+
+    for input in [
+        "gray",
+        "gray8",
+        "gray8a",
+        "y400a",
+        "rgb24",
+        "RGB24",
+        "y32le",
+        "yf32le",
+        "vaapi",
+        "not_a_pix_fmt",
+    ] {
+        let expected = PixelFormat::from_av_get_pix_fmt_name(input);
+        assert_eq!(
+            row_fields(&rows, &format!("lookup:{input}")),
+            &[
+                u8::from(expected.is_some()).to_string(),
+                expected.map(PixelFormat::name).unwrap_or("").to_string(),
+            ],
+            "av_get_pix_fmt lookup diverged for `{input}`"
         );
     }
 }
@@ -221,6 +273,98 @@ fn parse_pixel_format_inventory(text: &str) -> BTreeMap<String, PixelFormatRow> 
     rows
 }
 
+fn parse_oracle_output(stdout: &str) -> BTreeMap<String, Vec<String>> {
+    let mut rows = BTreeMap::new();
+    for line in stdout.lines() {
+        let mut parts = line.split('|');
+        let name = parts.next().expect("row name").to_string();
+        let fields = parts.map(str::to_string).collect::<Vec<_>>();
+        assert!(!fields.is_empty(), "oracle row `{line}` has no fields");
+        assert!(
+            rows.insert(name, fields).is_none(),
+            "duplicate oracle row `{line}`"
+        );
+    }
+    rows
+}
+
+fn row_fields<'a>(rows: &'a BTreeMap<String, Vec<String>>, name: &str) -> &'a [String] {
+    rows.get(name)
+        .unwrap_or_else(|| panic!("missing oracle row `{name}`"))
+}
+
+fn compile_and_run_oracle(
+    include_dir: &Path,
+    libavutil: &Path,
+    source: &Path,
+    executable: &Path,
+) -> String {
+    let output = if cfg!(windows) {
+        let script = format!(
+            "gcc -I {} {} {} -lm -pthread -ldl -o {} && {}",
+            shell_quote(&to_wsl_path(include_dir)),
+            shell_quote(&to_wsl_path(source)),
+            shell_quote(&to_wsl_path(libavutil)),
+            shell_quote(&to_wsl_path(executable)),
+            shell_quote(&to_wsl_path(executable))
+        );
+        Command::new("wsl")
+            .args(["-d", "Ubuntu", "--exec", "bash", "-lc", &script])
+            .output()
+            .expect("run WSL libavutil pixel format oracle")
+    } else {
+        Command::new("sh")
+            .arg("-c")
+            .arg(format!(
+                "gcc -I {} {} {} -lm -pthread -ldl -o {} && {}",
+                shell_quote(&include_dir.display().to_string()),
+                shell_quote(&source.display().to_string()),
+                shell_quote(&libavutil.display().to_string()),
+                shell_quote(&executable.display().to_string()),
+                shell_quote(&executable.display().to_string())
+            ))
+            .output()
+            .expect("run libavutil pixel format oracle")
+    };
+
+    assert!(
+        output.status.success(),
+        "libavutil pixel format oracle failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    String::from_utf8(output.stdout).expect("oracle stdout should be UTF-8")
+}
+
+fn oracle_c_source() -> &'static str {
+    r#"#include <stdio.h>
+#include <libavutil/pixdesc.h>
+#include <libavutil/pixfmt.h>
+
+static void print_lookup(const char *input) {
+    enum AVPixelFormat fmt = av_get_pix_fmt(input);
+    const char *name = av_get_pix_fmt_name(fmt);
+    printf("lookup:%s|%d|%s\n", input, fmt != AV_PIX_FMT_NONE, name ? name : "");
+}
+
+int main(void) {
+    print_lookup("gray");
+    print_lookup("gray8");
+    print_lookup("gray8a");
+    print_lookup("y400a");
+    print_lookup("rgb24");
+    print_lookup("RGB24");
+    print_lookup("y32le");
+    print_lookup("yf32le");
+    print_lookup("vaapi");
+    print_lookup("not_a_pix_fmt");
+    return 0;
+}
+"#
+}
+
 fn oracle_ffmpeg() -> PathBuf {
     let root = repo_root();
 
@@ -275,4 +419,74 @@ fn default_ffmpeg_candidates(root: &Path) -> Vec<PathBuf> {
             bin.join("ffmpeg.cmd"),
         ]
     }
+}
+
+fn oracle_root(repo_root: &Path) -> PathBuf {
+    let default_root = repo_root.join("third_party/ffmpeg-oracle");
+    if let Ok(ffmpeg) = env::var("FFMPEG_ORACLE") {
+        let ffmpeg = PathBuf::from(ffmpeg);
+        let ffmpeg = if ffmpeg.is_absolute() {
+            ffmpeg
+        } else {
+            repo_root.join(ffmpeg)
+        };
+        if let Some(root) = ffmpeg.ancestors().find(|ancestor| {
+            ancestor
+                .file_name()
+                .is_some_and(|name| name == "ffmpeg-oracle")
+        }) {
+            return root.to_path_buf();
+        }
+    }
+    default_root
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+#[cfg(windows)]
+fn to_wsl_path(path: &Path) -> String {
+    let absolute = absolute_path(path);
+    let mut text = absolute.to_string_lossy().replace('\\', "/");
+    if let Some(stripped) = text.strip_prefix("//?/") {
+        text = stripped.to_string();
+    }
+    let bytes = text.as_bytes();
+    if bytes.len() >= 3 && bytes[1] == b':' && bytes[2] == b'/' {
+        let drive = (bytes[0] as char).to_ascii_lowercase();
+        text.replace_range(0..3, &format!("/mnt/{drive}/"));
+    }
+    text
+}
+
+#[cfg(windows)]
+fn absolute_path(path: &Path) -> PathBuf {
+    if path.exists() {
+        return path.canonicalize().unwrap_or_else(|err| {
+            panic!(
+                "failed to canonicalize existing path `{}`: {err}",
+                path.display()
+            )
+        });
+    }
+    let parent = path
+        .parent()
+        .unwrap_or_else(|| panic!("path `{}` has no parent", path.display()))
+        .canonicalize()
+        .unwrap_or_else(|err| {
+            panic!(
+                "failed to canonicalize parent of `{}`: {err}",
+                path.display()
+            )
+        });
+    parent.join(
+        path.file_name()
+            .unwrap_or_else(|| panic!("path `{}` has no file name", path.display())),
+    )
+}
+
+#[cfg(not(windows))]
+fn to_wsl_path(path: &Path) -> String {
+    path.display().to_string()
 }

@@ -2226,6 +2226,10 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         hw_frames_context_share_fields(&replace_source, &replace_clone),
     );
     replace_clone.take_hw_frames_context();
+    rows.insert(
+        "frame:clone-ref-after-take-hw-context".to_string(),
+        frame_fields(&replace_clone),
+    );
     let rich_make_writable_ret = replace_clone
         .try_make_writable()
         .map(|_| 0)
@@ -6013,6 +6017,7 @@ int main(void)
                      replace_clone);
     print_hw_share("frame:clone-ref-hw-shares", replace_src, replace_clone);
     av_buffer_unref(&replace_clone->hw_frames_ctx);
+    print_frame("frame:clone-ref-after-take-hw-context", replace_clone);
     int rich_make_writable_ret = av_frame_make_writable(replace_clone);
     printf("frame:rich-make-writable-ret|%d\n", rich_make_writable_ret);
     fail_if(rich_make_writable_ret < 0,

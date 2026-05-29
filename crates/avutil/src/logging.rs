@@ -2618,6 +2618,15 @@ mod tests {
         assert!(!prefix);
 
         prefix = true;
+        let tiny = LogRecord::new(LogLevel::Warning, "decoder", "ctxmsg")
+            .format_av_log_line2_context(&size1_context, LogFlags::PRINT_LEVEL, &mut prefix, 0)
+            .unwrap();
+        assert_eq!(tiny.full_len(), 43);
+        assert_eq!(tiny.bytes(), b"");
+        assert!(tiny.truncated());
+        assert!(!prefix);
+
+        prefix = true;
         let time_ignored = LogRecord::new(LogLevel::Warning, "decoder", "ctxmsg")
             .format_av_log_line2_context(&context, LogFlags::PRINT_DATETIME, &mut prefix, 128)
             .unwrap();

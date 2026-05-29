@@ -589,6 +589,13 @@ impl PixelFormat {
         self.descriptor().name
     }
 
+    pub fn from_av_get_pix_fmt_name(name: &str) -> Option<Self> {
+        if name == "y400a" {
+            return None;
+        }
+        Self::from_name(name)
+    }
+
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
             "gray" | "gray8" => Some(Self::Gray8),
@@ -5077,6 +5084,20 @@ mod tests {
         assert_eq!(PixelFormat::from_name("ya8"), Some(PixelFormat::Ya8));
         assert_eq!(PixelFormat::from_name("gray8a"), Some(PixelFormat::Ya8));
         assert_eq!(PixelFormat::from_name("y400a"), Some(PixelFormat::Ya8));
+        assert_eq!(
+            PixelFormat::from_av_get_pix_fmt_name("gray8a"),
+            Some(PixelFormat::Ya8)
+        );
+        assert_eq!(PixelFormat::from_av_get_pix_fmt_name("y400a"), None);
+        assert_eq!(PixelFormat::from_av_get_pix_fmt_name("RGB24"), None);
+        assert_eq!(
+            PixelFormat::from_av_get_pix_fmt_name("y32le"),
+            Some(PixelFormat::Gray32Le)
+        );
+        assert_eq!(
+            PixelFormat::from_av_get_pix_fmt_name("yf32le"),
+            Some(PixelFormat::GrayF32Le)
+        );
         assert_eq!(PixelFormat::from_name("ya16le"), Some(PixelFormat::Ya16Le));
         assert_eq!(PixelFormat::from_name("ya16be"), Some(PixelFormat::Ya16Be));
         assert_eq!(

@@ -1382,6 +1382,22 @@ fn add_format_line2_int_rows(rows: &mut BTreeMap<&'static str, i32>) {
         "format-line2-context-size1-len",
         usize_to_i32(context_size1.bytes().len()),
     );
+    let (context_null_zero, context_null_zero_prefix) = rust_format_line2_context_with_context(
+        LogLevel::Warning,
+        "ctxmsg",
+        LogFlags::PRINT_LEVEL,
+        true,
+        0,
+        &size1_context,
+    );
+    rows.insert(
+        "format-line2-context-nullzero-ret",
+        usize_to_i32(context_null_zero.full_len()),
+    );
+    rows.insert(
+        "format-line2-context-nullzero-prefix",
+        bool_to_i32(context_null_zero_prefix),
+    );
 
     let (_, context_newline_prefix) =
         rust_format_line2_context(LogLevel::Info, "withnl\n", LogFlags::PRINT_LEVEL, true, 128);
@@ -2615,6 +2631,11 @@ static void print_format_line2_rows(void) {
     ROW_STR_NORMALIZED_CONTEXT("format-line2-context-noprefix-line", line);
 
     memset(small, 'X', sizeof(small));
+    print_prefix = 1;
+    ret = call_format_line2(&ctx, NULL, 0, &print_prefix, AV_LOG_WARNING, "%s", "ctxmsg");
+    ROW("format-line2-context-nullzero-ret", ret);
+    ROW("format-line2-context-nullzero-prefix", print_prefix);
+
     print_prefix = 1;
     ret = call_format_line2(&ctx, small, 1, &print_prefix, AV_LOG_WARNING, "%s", "ctxmsg");
     ROW("format-line2-context-size1-ret", ret);

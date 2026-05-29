@@ -157,7 +157,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
     let op_count = usize::from(cursor.next().unwrap_or_default()) % (MAX_OPS + 1);
 
     for _ in 0..op_count {
-        match cursor.next().unwrap_or_default() % 23 {
+        match cursor.next().unwrap_or_default() % 24 {
             0 => {
                 let before = options.clone();
                 let definition = generated_definition(cursor);
@@ -375,15 +375,18 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                     _ => "9:yes:15",
                 };
                 let before = options.clone();
-                let result = options.set_avoptions_from_string(opts, &shorthand, key_val_sep, pairs_sep);
+                let result =
+                    options.set_avoptions_from_string(opts, &shorthand, key_val_sep, pairs_sep);
                 let empty_key_result =
                     options.set_avoptions_from_string("=7", &shorthand, "=", ":");
                 let separators_invalid = key_val_sep.is_empty();
                 let shorthand_overflow_case =
                     opts == "9:yes:15" && key_val_sep == "=" && pairs_sep == ":";
-                if separators_invalid
-                {
-                    assert_eq!(result.err().and_then(|err| err.code()), Some(AvErrorCode::EINVAL));
+                if separators_invalid {
+                    assert_eq!(
+                        result.err().and_then(|err| err.code()),
+                        Some(AvErrorCode::EINVAL)
+                    );
                     assert_eq!(options, before);
                 } else if shorthand_overflow_case {
                     assert_eq!(
@@ -420,8 +423,12 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                     Some(&OptionValue::String("\\x".to_owned()))
                 );
                 let mut empty_pairs_multi = sample_options();
-                let empty_pairs_multi_result =
-                    empty_pairs_multi.set_avoptions_from_string("threads=7:quality=0.25", &[], "=", "");
+                let empty_pairs_multi_result = empty_pairs_multi.set_avoptions_from_string(
+                    "threads=7:quality=0.25",
+                    &[],
+                    "=",
+                    "",
+                );
                 assert_eq!(
                     empty_pairs_multi_result.err().and_then(|err| err.code()),
                     Some(AvErrorCode::EINVAL)
@@ -554,6 +561,15 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                 let _ = options.get_avoption_q_with_flags(&name, flags);
                 let _ = options.get_avoption_image_size_with_flags(&name, flags);
                 assert_eq!(options, before_get);
+            }
+            22 => {
+                let before = options.clone();
+                options.set_avoption_from_str("threads", "PI").unwrap();
+                assert_eq!(options.get("threads"), Some(&OptionValue::Int(3)));
+                assert_option_set_invariants(&options);
+                assert_eq!(options.len(), before.len());
+                assert_eq!(options.definitions().len(), before.definitions().len());
+                assert_eq!(options.constants().len(), before.constants().len());
             }
             _ => {
                 let before = options.clone();

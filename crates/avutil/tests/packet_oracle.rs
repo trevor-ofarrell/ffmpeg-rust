@@ -2108,6 +2108,29 @@ fn insert_packet_fifo_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         vec![fifo.can_read().to_string()],
     );
 
+    let mut all_drain_first = Packet::new(vec![1], 1);
+    let mut all_drain_second = Packet::new(vec![2], 2);
+    fifo.write_move(&mut all_drain_first).unwrap();
+    fifo.write_move(&mut all_drain_second).unwrap();
+    rows.insert(
+        "packet:fifo-drain-all-in-one-before".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+    fifo.drain(2).unwrap();
+    rows.insert(
+        "packet:fifo-drain-all-in-one-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:fifo-drain-all-in-one-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+    let err = fifo.peek(0).unwrap_err();
+    rows.insert(
+        "packet:fifo-drain-all-in-one-peek-ret".to_string(),
+        vec![err.code().unwrap().raw().to_string()],
+    );
+
     let mut first = Packet::new(vec![1], 1);
     let mut second = Packet::new(vec![2], 2);
     fifo.write_move(&mut first).unwrap();
@@ -5824,6 +5847,32 @@ static void exercise_packet_fifo_api(void) {
            av_container_fifo_can_read(fifo));
     av_packet_free(&user_ref_dst);
     av_packet_free(&user_ref_src);
+
+    AVPacket *all_drain_first = new_packet();
+    fail_if(av_new_packet(all_drain_first, 1) < 0,
+            "fifo all_drain_first seed failed");
+    all_drain_first->data[0] = 0x01;
+    all_drain_first->stream_index = 1;
+    AVPacket *all_drain_second = new_packet();
+    fail_if(av_new_packet(all_drain_second, 1) < 0,
+            "fifo all_drain_second seed failed");
+    all_drain_second->data[0] = 0x02;
+    all_drain_second->stream_index = 2;
+    fail_if(av_container_fifo_write(fifo, all_drain_first, 0) < 0,
+            "fifo all_drain_first write failed");
+    fail_if(av_container_fifo_write(fifo, all_drain_second, 0) < 0,
+            "fifo all_drain_second write failed");
+    printf("packet:fifo-drain-all-in-one-before|%zu\n",
+           av_container_fifo_can_read(fifo));
+    av_container_fifo_drain(fifo, 2);
+    printf("packet:fifo-drain-all-in-one-ret|%d\n", 0);
+    printf("packet:fifo-drain-all-in-one-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+    peek = NULL;
+    ret = av_container_fifo_peek(fifo, (void **)&peek, 0);
+    printf("packet:fifo-drain-all-in-one-peek-ret|%d\n", ret);
+    av_packet_free(&all_drain_first);
+    av_packet_free(&all_drain_second);
 
     AVPacket *first = new_packet();
     fail_if(av_new_packet(first, 1) < 0, "fifo first seed failed");

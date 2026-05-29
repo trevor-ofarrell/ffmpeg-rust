@@ -7645,6 +7645,16 @@ mod tests {
     }
 
     #[test]
+    fn set_avoption_from_str_parses_expression_constants() {
+        let mut options = sample_options();
+
+        options.set_avoption_from_str("threads", "PI").unwrap();
+
+        assert_eq!(options.get("threads"), Some(&OptionValue::Int(3)));
+        assert_eq!(options.get_avoption_string("threads").unwrap(), "3");
+    }
+
+    #[test]
     fn get_avoption_string_formats_values_like_bounded_ffmpeg_surface() {
         let mut options = sample_options();
 
