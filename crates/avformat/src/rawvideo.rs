@@ -1363,6 +1363,20 @@ mod tests {
     }
 
     #[test]
+    fn rejects_trailing_partial_frame_after_complete_subsampled_frame() {
+        let err = RawVideoDemuxer::open(
+            &[0; 23],
+            4,
+            2,
+            RawVideoPixelFormat::Yuv420p,
+            Rational::new(25, 1).unwrap(),
+        )
+        .unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+    }
+
+    #[test]
     fn rejects_invalid_geometry_frame_rate_and_truncated_frames() {
         assert!(RawVideoDemuxer::open(
             &[0; 4],
