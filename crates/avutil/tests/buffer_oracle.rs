@@ -783,6 +783,71 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         release_fields(&readonly_shared_realloc_released),
     );
 
+    let readonly_shared_shrink_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let readonly_shared_shrink_capture = Arc::clone(&readonly_shared_shrink_released);
+    let readonly_shared_shrink_src = BufferRef::from_vec_with_opaque_release_callback_readonly(
+        vec![83, 84, 85, 86],
+        1002usize,
+        move |opaque, bytes| {
+            readonly_shared_shrink_capture
+                .lock()
+                .unwrap()
+                .push((opaque, bytes));
+        },
+    );
+    let mut readonly_shared_shrink_dst = Some(BufferRef::ref_from(&readonly_shared_shrink_src));
+    BufferRef::realloc(&mut readonly_shared_shrink_dst, 2).unwrap();
+    let readonly_shared_shrink_dst =
+        readonly_shared_shrink_dst.expect("readonly shared shrink result");
+    rows.insert(
+        "buffer:readonly-shared-shrink-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:readonly-shared-shrink-src".to_string(),
+        buffer_fields_with_opaque(&readonly_shared_shrink_src),
+    );
+    rows.insert(
+        "buffer:readonly-shared-shrink-dst".to_string(),
+        buffer_prefix_fields(&readonly_shared_shrink_dst, 2),
+    );
+    rows.insert(
+        "buffer:readonly-shared-shrink-dst-opaque".to_string(),
+        vec![readonly_shared_shrink_dst
+            .opaque_ref::<usize>()
+            .copied()
+            .unwrap_or_default()
+            .to_string()],
+    );
+    rows.insert(
+        "buffer:readonly-shared-shrink-shares".to_string(),
+        vec![bool_field(
+            readonly_shared_shrink_src.shares_storage(&readonly_shared_shrink_dst),
+        )],
+    );
+    rows.insert(
+        "buffer:readonly-shared-shrink-release-before-src-drop".to_string(),
+        vec![readonly_shared_shrink_released
+            .lock()
+            .unwrap()
+            .len()
+            .to_string()],
+    );
+    drop(readonly_shared_shrink_dst);
+    rows.insert(
+        "buffer:readonly-shared-shrink-release-before-src-unref".to_string(),
+        vec![readonly_shared_shrink_released
+            .lock()
+            .unwrap()
+            .len()
+            .to_string()],
+    );
+    drop(readonly_shared_shrink_src);
+    rows.insert(
+        "buffer:readonly-shared-shrink-release".to_string(),
+        release_fields(&readonly_shared_shrink_released),
+    );
+
     let replace_src = BufferRef::from_vec(vec![3, 4, 5]);
     let replace_dst = replace_src.clone();
     rows.insert("buffer:replace-ret".to_string(), vec!["0".to_string()]);
@@ -2089,6 +2154,46 @@ int main(void) {
            create_release_count);
     av_buffer_unref(&readonly_shared_realloc_src);
     print_create_release("buffer:readonly-shared-realloc-release");
+
+    reset_create_release();
+    static const uint8_t readonly_shared_shrink_bytes[] = { 83, 84, 85, 86 };
+    uint8_t *readonly_shared_shrink_data =
+        av_malloc(sizeof(readonly_shared_shrink_bytes));
+    fail_if(!readonly_shared_shrink_data,
+            "av_malloc readonly_shared_shrink_data failed");
+    for (size_t i = 0; i < sizeof(readonly_shared_shrink_bytes); i++)
+        readonly_shared_shrink_data[i] = readonly_shared_shrink_bytes[i];
+    last_create_release_size = sizeof(readonly_shared_shrink_bytes);
+    AVBufferRef *readonly_shared_shrink_src =
+        av_buffer_create(readonly_shared_shrink_data,
+                         sizeof(readonly_shared_shrink_bytes),
+                         test_create_free, (void *)(uintptr_t)1002,
+                         AV_BUFFER_FLAG_READONLY);
+    fail_if(!readonly_shared_shrink_src,
+            "av_buffer_create readonly shared shrink failed");
+    AVBufferRef *readonly_shared_shrink_dst =
+        av_buffer_ref(readonly_shared_shrink_src);
+    fail_if(!readonly_shared_shrink_dst,
+            "av_buffer_ref readonly shared shrink failed");
+    ret = av_buffer_realloc(&readonly_shared_shrink_dst, 2);
+    printf("buffer:readonly-shared-shrink-ret|%d\n", ret);
+    print_buffer_opaque("buffer:readonly-shared-shrink-src",
+                        readonly_shared_shrink_src);
+    print_buffer_prefix("buffer:readonly-shared-shrink-dst",
+                        readonly_shared_shrink_dst, 2);
+    printf("buffer:readonly-shared-shrink-dst-opaque|%llu\n",
+           (unsigned long long)(uintptr_t)
+               av_buffer_get_opaque(readonly_shared_shrink_dst));
+    printf("buffer:readonly-shared-shrink-shares|%d\n",
+           readonly_shared_shrink_src->buffer ==
+               readonly_shared_shrink_dst->buffer);
+    printf("buffer:readonly-shared-shrink-release-before-src-drop|%d\n",
+           create_release_count);
+    av_buffer_unref(&readonly_shared_shrink_dst);
+    printf("buffer:readonly-shared-shrink-release-before-src-unref|%d\n",
+           create_release_count);
+    av_buffer_unref(&readonly_shared_shrink_src);
+    print_create_release("buffer:readonly-shared-shrink-release");
 
     static const uint8_t replace_src_bytes[] = { 3, 4, 5 };
     AVBufferRef *replace_src = av_buffer_allocz(3);
