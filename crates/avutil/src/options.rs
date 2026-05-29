@@ -9146,6 +9146,37 @@ mod tests {
             quoted.get("metadata"),
             Some(&OptionValue::String(" title : clip = one ".to_owned()))
         );
+
+        let mut empty_key = sample_options();
+        let err = empty_key
+            .set_avoptions_from_string("=7", &[], "=", ":")
+            .unwrap_err();
+        assert_eq!(err.code(), Some(AvErrorCode::OPTION_NOT_FOUND));
+        assert_eq!(empty_key, sample_options());
+
+        let mut unclosed_quote = sample_options();
+        assert_eq!(
+            unclosed_quote
+                .set_avoptions_from_string("metadata='title", &[], "=", ":")
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            unclosed_quote.get("metadata"),
+            Some(&OptionValue::String("title".to_owned()))
+        );
+
+        let mut escaped_quote = sample_options();
+        assert_eq!(
+            escaped_quote
+                .set_avoptions_from_string("metadata='\\''x'", &[], "=", ":")
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            escaped_quote.get("metadata"),
+            Some(&OptionValue::String("\\x".to_owned()))
+        );
     }
 
     #[test]

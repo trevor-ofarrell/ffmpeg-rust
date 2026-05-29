@@ -649,9 +649,47 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
             ":",
         ))],
     );
+    insert_row(
+        &mut rows,
+        "ret:set-from-string-empty-key",
+        [ret_count(sample_options().set_avoptions_from_string(
+            "=7",
+            &[],
+            "=",
+            ":",
+        ))],
+    );
+    insert_row(
+        &mut rows,
+        "ret:set-from-string-unclosed-quote",
+        [ret_count(sample_options().set_avoptions_from_string(
+            "metadata='title",
+            &[],
+            "=",
+            ":",
+        ))],
+    );
+    insert_row(
+        &mut rows,
+        "ret:set-from-string-quote-escape",
+        [ret_count(sample_options().set_avoptions_from_string(
+            "metadata='\\''x'",
+            &[],
+            "=",
+            ":",
+        ))],
+    );
     rows.insert(
         "state:set-from-string-quoted".to_string(),
         state_fields(&string_quoted),
+    );
+    let mut string_quoted_escape = string_quoted.clone();
+    assert!(string_quoted_escape
+        .set_avoptions_from_string("metadata='\\''x'", &[], "=", ":")
+        .is_ok());
+    rows.insert(
+        "state:set-from-string-quote-escape".to_string(),
+        state_fields(&string_quoted_escape),
     );
 
     let serialize_defaults = sample_options();
@@ -5640,6 +5678,7 @@ static void print_set_from_string_rows(void) {
     static const char * const shorthand[] = { "threads", "bitexact", NULL };
     TestOptions ctx;
     int ret;
+    int ret_empty_key;
 
     init_context(&ctx);
     ret = av_opt_set_from_string(&ctx,
@@ -5708,6 +5747,17 @@ static void print_set_from_string_rows(void) {
                                  NULL, "=", ":");
     printf("ret:set-from-string-quoted|%d\n", ret);
     print_state("state:set-from-string-quoted", &ctx);
+    ret = av_opt_set_from_string(&ctx,
+                                 "metadata='\\''x'",
+                                 NULL, "=", ":");
+    printf("ret:set-from-string-quote-escape|%d\n", ret);
+    print_state("state:set-from-string-quote-escape", &ctx);
+    ret_empty_key = av_opt_set_from_string(&ctx, "=7", NULL, "=", ":");
+    printf("ret:set-from-string-empty-key|%d\n", ret_empty_key);
+    ret = av_opt_set_from_string(&ctx,
+                                 "metadata='title",
+                                 NULL, "=", ":");
+    printf("ret:set-from-string-unclosed-quote|%d\n", ret);
     av_opt_free(&ctx);
     av_opt_free(&ctx.child);
 }

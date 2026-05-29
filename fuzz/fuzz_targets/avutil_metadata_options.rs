@@ -352,9 +352,34 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                     _ => "12",
                 };
                 let result = options.set_avoptions_from_string(opts, &shorthand, "=", ":");
+                let empty_key_result =
+                    options.set_avoptions_from_string("=7", &shorthand, "=", ":");
                 if let Ok(count) = result {
                     assert!(count <= 3);
                 }
+                assert!(empty_key_result.is_err());
+                let mut unclosed_quote_options = sample_options();
+                assert_eq!(
+                    unclosed_quote_options
+                        .set_avoptions_from_string("metadata='title", &[], "=", ":")
+                        .unwrap(),
+                    1
+                );
+                assert_eq!(
+                    unclosed_quote_options.get("metadata"),
+                    Some(&OptionValue::String("title".to_owned()))
+                );
+                let mut escaped_quote_options = sample_options();
+                assert_eq!(
+                    escaped_quote_options
+                        .set_avoptions_from_string("metadata='\\''x'", &[], "=", ":")
+                        .unwrap(),
+                    1
+                );
+                assert_eq!(
+                    escaped_quote_options.get("metadata"),
+                    Some(&OptionValue::String("\\x".to_owned()))
+                );
                 assert_option_set_invariants(&options);
             }
             18 => {
