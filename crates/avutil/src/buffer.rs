@@ -327,6 +327,30 @@ impl BufferRef {
         }
     }
 
+    pub fn from_vec_with_opaque<T>(data: Vec<u8>, opaque: T) -> Self
+    where
+        T: Any + Send + Sync + 'static,
+    {
+        let len = data.len();
+        Self {
+            data: Arc::new(BufferStorage::with_opaque(data, opaque, false)),
+            offset: 0,
+            len,
+        }
+    }
+
+    pub fn from_vec_with_opaque_readonly<T>(data: Vec<u8>, opaque: T) -> Self
+    where
+        T: Any + Send + Sync + 'static,
+    {
+        let len = data.len();
+        Self {
+            data: Arc::new(BufferStorage::with_opaque(data, opaque, true)),
+            offset: 0,
+            len,
+        }
+    }
+
     pub fn from_vec_with_opaque_release_callback<T, F>(
         data: Vec<u8>,
         opaque: T,
@@ -883,6 +907,21 @@ impl BufferStorage {
                 on_release,
             }))),
             readonly: true,
+            reallocatable: false,
+        }
+    }
+
+    fn with_opaque<T>(bytes: Vec<u8>, opaque: T, readonly: bool) -> Self
+    where
+        T: Any + Send + Sync + 'static,
+    {
+        Self {
+            bytes: BufferBytes::owned(bytes),
+            owner: Some(BufferOwner::Opaque(Box::new(TypedOpaqueOwner {
+                opaque,
+                on_release: |_opaque| {},
+            }))),
+            readonly,
             reallocatable: false,
         }
     }
@@ -1912,6 +1951,57 @@ mod tests {
         assert!(shared_released.lock().unwrap().is_empty());
         drop(source);
         assert_eq!(*shared_released.lock().unwrap(), vec![(23, vec![4, 5, 6])]);
+    }
+
+    #[test]
+    fn default_free_opaque_data_buffers_preserve_opaque_until_detach() {
+        let mut unique = BufferRef::from_vec_with_opaque(vec![1, 2, 3], 17usize);
+        assert!(unique.is_writable());
+        assert!(!unique.is_readonly());
+        assert_eq!(unique.opaque_ref::<usize>(), Some(&17));
+        unique.make_mut()[1] = 9;
+        assert_eq!(unique.as_slice(), &[1, 9, 3]);
+        assert_eq!(unique.opaque_ref::<usize>(), Some(&17));
+
+        let source = BufferRef::from_vec_with_opaque(vec![4, 5, 6], 23usize);
+        let mut detached = BufferRef::ref_from(&source);
+        assert_eq!(source.opaque_ref::<usize>(), Some(&23));
+        assert_eq!(detached.opaque_ref::<usize>(), Some(&23));
+        assert!(detached.shares_storage(&source));
+        assert_eq!(source.strong_count(), 2);
+        assert!(!source.is_writable());
+        assert!(!detached.is_writable());
+
+        detached.make_mut()[0] = 8;
+
+        assert_eq!(source.as_slice(), &[4, 5, 6]);
+        assert_eq!(source.opaque_ref::<usize>(), Some(&23));
+        assert_eq!(detached.as_slice(), &[8, 5, 6]);
+        assert!(detached.opaque_ref::<usize>().is_none());
+        assert!(!detached.shares_storage(&source));
+        assert_eq!(source.strong_count(), 1);
+        assert!(source.is_writable());
+
+        let mut readonly = BufferRef::from_vec_with_opaque_readonly(vec![7, 8, 9], 31usize);
+        assert!(readonly.is_readonly());
+        assert!(!readonly.is_writable());
+        assert_eq!(readonly.opaque_ref::<usize>(), Some(&31));
+        readonly.make_mut()[2] = 10;
+        assert_eq!(readonly.as_slice(), &[7, 8, 10]);
+        assert!(!readonly.is_readonly());
+        assert!(readonly.is_writable());
+        assert!(readonly.opaque_ref::<usize>().is_none());
+
+        let mut realloc = Some(BufferRef::from_vec_with_opaque(vec![10, 11, 12], 41usize));
+        let before = realloc.as_ref().unwrap().as_ptr();
+        BufferRef::realloc(&mut realloc, 5).unwrap();
+        let realloc = realloc.expect("realloc keeps destination");
+        assert_eq!(realloc.len(), 5);
+        assert_eq!(&realloc.as_slice()[..3], &[10, 11, 12]);
+        assert_eq!(&realloc.as_slice()[3..], &[0, 0]);
+        assert!(realloc.is_writable());
+        assert!(realloc.opaque_ref::<usize>().is_none());
+        assert!(!std::ptr::eq(before, realloc.as_ptr()));
     }
 
     #[test]

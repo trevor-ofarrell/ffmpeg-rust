@@ -1386,6 +1386,68 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         vec![(payload_len, payload.clone())]
     );
 
+    let mut default_opaque = BufferRef::from_vec_with_opaque(payload.clone(), payload_len);
+    assert_eq!(default_opaque.opaque_ref::<usize>(), Some(&payload_len));
+    assert!(default_opaque.is_writable());
+    if !default_opaque.is_empty() {
+        let replacement = default_opaque.as_slice()[0].wrapping_add(1);
+        default_opaque.make_mut()[0] = replacement;
+        assert_eq!(default_opaque.as_slice()[0], replacement);
+    } else {
+        assert_eq!(default_opaque.make_mut(), &mut []);
+    }
+    assert_eq!(default_opaque.opaque_ref::<usize>(), Some(&payload_len));
+
+    let default_shared_source = BufferRef::from_vec_with_opaque(payload.clone(), payload_len);
+    let mut default_shared_detached = BufferRef::ref_from(&default_shared_source);
+    assert_eq!(
+        default_shared_source.opaque_ref::<usize>(),
+        Some(&payload_len)
+    );
+    assert_eq!(
+        default_shared_detached.opaque_ref::<usize>(),
+        Some(&payload_len)
+    );
+    assert!(default_shared_source.shares_storage(&default_shared_detached));
+    default_shared_detached.make_mut();
+    assert_eq!(default_shared_source.as_slice(), payload.as_slice());
+    assert_eq!(
+        default_shared_source.opaque_ref::<usize>(),
+        Some(&payload_len)
+    );
+    assert!(default_shared_detached.opaque_ref::<usize>().is_none());
+    assert!(!default_shared_source.shares_storage(&default_shared_detached));
+    assert!(default_shared_detached.is_writable());
+
+    let mut default_readonly =
+        BufferRef::from_vec_with_opaque_readonly(payload.clone(), payload_len);
+    assert!(default_readonly.is_readonly());
+    assert_eq!(default_readonly.opaque_ref::<usize>(), Some(&payload_len));
+    default_readonly.make_mut();
+    assert_eq!(default_readonly.as_slice(), payload.as_slice());
+    assert!(!default_readonly.is_readonly());
+    assert!(default_readonly.is_writable());
+    assert!(default_readonly.opaque_ref::<usize>().is_none());
+
+    let default_realloc_len = payload_len.saturating_add(1);
+    let mut default_realloc = Some(BufferRef::from_vec_with_opaque(
+        payload.clone(),
+        payload_len,
+    ));
+    BufferRef::realloc(&mut default_realloc, default_realloc_len).unwrap();
+    let default_realloc = default_realloc.expect("default opaque realloc stays present");
+    assert_eq!(default_realloc.len(), default_realloc_len);
+    let default_realloc_prefix = payload_len.min(default_realloc_len);
+    assert_eq!(
+        &default_realloc.as_slice()[..default_realloc_prefix],
+        &payload[..default_realloc_prefix]
+    );
+    assert!(default_realloc.as_slice()[default_realloc_prefix..]
+        .iter()
+        .all(|byte| *byte == 0));
+    assert!(default_realloc.is_writable());
+    assert!(default_realloc.opaque_ref::<usize>().is_none());
+
     let replace_source = BufferRef::copy_from_slice(&payload);
     let mut replace_empty_dst = None;
     BufferRef::replace(&mut replace_empty_dst, Some(&replace_source));

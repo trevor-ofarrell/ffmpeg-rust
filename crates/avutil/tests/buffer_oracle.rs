@@ -220,6 +220,84 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         release_fields(&create_zero_released),
     );
 
+    let mut create_default_opaque = BufferRef::from_vec_with_opaque(vec![34, 35, 36], 322usize);
+    rows.insert(
+        "buffer:create-default-opaque".to_string(),
+        buffer_fields_with_opaque(&create_default_opaque),
+    );
+    create_default_opaque.make_mut();
+    rows.insert(
+        "buffer:create-default-opaque-make-writable-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:create-default-opaque-make-writable".to_string(),
+        buffer_fields_with_opaque(&create_default_opaque),
+    );
+
+    let create_default_shared_src = BufferRef::from_vec_with_opaque(vec![37, 38, 39], 323usize);
+    let mut create_default_shared_dst = BufferRef::ref_from(&create_default_shared_src);
+    create_default_shared_dst.make_mut();
+    rows.insert(
+        "buffer:create-default-opaque-shared-make-writable-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:create-default-opaque-shared-src".to_string(),
+        buffer_fields_with_opaque(&create_default_shared_src),
+    );
+    rows.insert(
+        "buffer:create-default-opaque-shared-dst".to_string(),
+        buffer_fields_with_opaque(&create_default_shared_dst),
+    );
+    rows.insert(
+        "buffer:create-default-opaque-shared-shares".to_string(),
+        vec![bool_field(
+            create_default_shared_src.shares_storage(&create_default_shared_dst),
+        )],
+    );
+
+    let mut create_default_readonly =
+        BufferRef::from_vec_with_opaque_readonly(vec![40, 41, 42], 324usize);
+    create_default_readonly.make_mut();
+    rows.insert(
+        "buffer:create-default-opaque-readonly-make-writable-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:create-default-opaque-readonly-after".to_string(),
+        buffer_fields_with_opaque(&create_default_readonly),
+    );
+
+    let mut create_default_realloc =
+        Some(BufferRef::from_vec_with_opaque(vec![43, 44, 45], 325usize));
+    let create_default_realloc_before = create_default_realloc.as_ref().unwrap().as_ptr();
+    BufferRef::realloc(&mut create_default_realloc, 5).unwrap();
+    let create_default_realloc = create_default_realloc.expect("realloc keeps destination");
+    rows.insert(
+        "buffer:create-default-opaque-realloc-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:create-default-opaque-realloc".to_string(),
+        buffer_prefix_fields(&create_default_realloc, 3),
+    );
+    rows.insert(
+        "buffer:create-default-opaque-realloc-opaque".to_string(),
+        vec![create_default_realloc
+            .opaque_ref::<usize>()
+            .copied()
+            .unwrap_or_default()
+            .to_string()],
+    );
+    rows.insert(
+        "buffer:create-default-opaque-realloc-replaced".to_string(),
+        vec![bool_field(!std::ptr::eq(
+            create_default_realloc_before,
+            create_default_realloc.as_ptr(),
+        ))],
+    );
+
     let create_zero_readonly_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let create_zero_readonly_capture = Arc::clone(&create_zero_readonly_released);
     let mut create_zero_readonly = BufferRef::from_vec_with_opaque_release_callback_readonly(
@@ -1994,6 +2072,102 @@ int main(void) {
     print_buffer_opaque("buffer:create-zero", create_zero);
     av_buffer_unref(&create_zero);
     print_create_release("buffer:create-zero-release");
+
+    static const uint8_t create_default_opaque_bytes[] = { 34, 35, 36 };
+    uint8_t *create_default_opaque_data =
+        av_malloc(sizeof(create_default_opaque_bytes));
+    fail_if(!create_default_opaque_data,
+            "av_malloc create_default_opaque_data failed");
+    for (size_t i = 0; i < sizeof(create_default_opaque_bytes); i++)
+        create_default_opaque_data[i] = create_default_opaque_bytes[i];
+    AVBufferRef *create_default_opaque =
+        av_buffer_create(create_default_opaque_data,
+                         sizeof(create_default_opaque_bytes),
+                         NULL, (void *)(uintptr_t)322, 0);
+    fail_if(!create_default_opaque,
+            "av_buffer_create default opaque failed");
+    print_buffer_opaque("buffer:create-default-opaque",
+                        create_default_opaque);
+    ret = av_buffer_make_writable(&create_default_opaque);
+    printf("buffer:create-default-opaque-make-writable-ret|%d\n", ret);
+    print_buffer_opaque("buffer:create-default-opaque-make-writable",
+                        create_default_opaque);
+    av_buffer_unref(&create_default_opaque);
+
+    static const uint8_t create_default_shared_bytes[] = { 37, 38, 39 };
+    uint8_t *create_default_shared_data =
+        av_malloc(sizeof(create_default_shared_bytes));
+    fail_if(!create_default_shared_data,
+            "av_malloc create_default_shared_data failed");
+    for (size_t i = 0; i < sizeof(create_default_shared_bytes); i++)
+        create_default_shared_data[i] = create_default_shared_bytes[i];
+    AVBufferRef *create_default_shared_src =
+        av_buffer_create(create_default_shared_data,
+                         sizeof(create_default_shared_bytes),
+                         NULL, (void *)(uintptr_t)323, 0);
+    fail_if(!create_default_shared_src,
+            "av_buffer_create default opaque shared src failed");
+    AVBufferRef *create_default_shared_dst =
+        av_buffer_ref(create_default_shared_src);
+    fail_if(!create_default_shared_dst,
+            "av_buffer_ref default opaque shared failed");
+    ret = av_buffer_make_writable(&create_default_shared_dst);
+    printf("buffer:create-default-opaque-shared-make-writable-ret|%d\n",
+           ret);
+    print_buffer_opaque("buffer:create-default-opaque-shared-src",
+                        create_default_shared_src);
+    print_buffer_opaque("buffer:create-default-opaque-shared-dst",
+                        create_default_shared_dst);
+    printf("buffer:create-default-opaque-shared-shares|%d\n",
+           create_default_shared_src->data == create_default_shared_dst->data);
+    av_buffer_unref(&create_default_shared_dst);
+    av_buffer_unref(&create_default_shared_src);
+
+    static const uint8_t create_default_readonly_bytes[] = { 40, 41, 42 };
+    uint8_t *create_default_readonly_data =
+        av_malloc(sizeof(create_default_readonly_bytes));
+    fail_if(!create_default_readonly_data,
+            "av_malloc create_default_readonly_data failed");
+    for (size_t i = 0; i < sizeof(create_default_readonly_bytes); i++)
+        create_default_readonly_data[i] = create_default_readonly_bytes[i];
+    AVBufferRef *create_default_readonly =
+        av_buffer_create(create_default_readonly_data,
+                         sizeof(create_default_readonly_bytes),
+                         NULL, (void *)(uintptr_t)324,
+                         AV_BUFFER_FLAG_READONLY);
+    fail_if(!create_default_readonly,
+            "av_buffer_create default opaque readonly failed");
+    ret = av_buffer_make_writable(&create_default_readonly);
+    printf("buffer:create-default-opaque-readonly-make-writable-ret|%d\n",
+           ret);
+    print_buffer_opaque("buffer:create-default-opaque-readonly-after",
+                        create_default_readonly);
+    av_buffer_unref(&create_default_readonly);
+
+    static const uint8_t create_default_realloc_bytes[] = { 43, 44, 45 };
+    uint8_t *create_default_realloc_data =
+        av_malloc(sizeof(create_default_realloc_bytes));
+    fail_if(!create_default_realloc_data,
+            "av_malloc create_default_realloc_data failed");
+    for (size_t i = 0; i < sizeof(create_default_realloc_bytes); i++)
+        create_default_realloc_data[i] = create_default_realloc_bytes[i];
+    AVBufferRef *create_default_realloc =
+        av_buffer_create(create_default_realloc_data,
+                         sizeof(create_default_realloc_bytes),
+                         NULL, (void *)(uintptr_t)325, 0);
+    fail_if(!create_default_realloc,
+            "av_buffer_create default opaque realloc failed");
+    uint8_t *create_default_realloc_before = create_default_realloc->data;
+    ret = av_buffer_realloc(&create_default_realloc, 5);
+    printf("buffer:create-default-opaque-realloc-ret|%d\n", ret);
+    print_buffer_prefix("buffer:create-default-opaque-realloc",
+                        create_default_realloc, 3);
+    printf("buffer:create-default-opaque-realloc-opaque|%llu\n",
+           (unsigned long long)(uintptr_t)
+               av_buffer_get_opaque(create_default_realloc));
+    printf("buffer:create-default-opaque-realloc-replaced|%d\n",
+           create_default_realloc_before != create_default_realloc->data);
+    av_buffer_unref(&create_default_realloc);
 
     reset_create_release();
     uint8_t *create_zero_readonly_data = av_malloc(1);
