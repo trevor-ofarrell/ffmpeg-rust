@@ -1,3 +1,4 @@
+use crate::option_parser::parse_log_level_directive;
 use crate::{
     build_io_plan, buildconf_banner, parse_ffmpeg_args, version_banner, CliOption, Endpoint,
     IoPlan, PlannedFile,
@@ -305,10 +306,14 @@ impl InputFormat {
 }
 
 pub fn run_ffmpeg_tool(args: &[String]) -> i32 {
+    let trailing_loglevel = version_request_trailing_loglevel_warning(args);
     match ffmpeg_output(args) {
         Ok(output) => {
             print!("{}", output.stdout());
             eprint!("{}", output.stderr());
+            if let Some(message) = trailing_loglevel {
+                eprintln!("{message}");
+            }
             0
         }
         Err(err) => {
@@ -322,6 +327,30 @@ pub fn run_ffmpeg_tool(args: &[String]) -> i32 {
             err.exit_code()
         }
     }
+}
+
+fn version_request_trailing_loglevel_warning(args: &[String]) -> Option<String> {
+    let request_index = args
+        .iter()
+        .position(|arg| arg == "-version" || arg == "-buildconf")?;
+    trailing_loglevel_warning(&args[request_index + 1..])
+}
+
+fn trailing_loglevel_warning(args: &[String]) -> Option<String> {
+    let mut index = 0;
+    while index < args.len() {
+        if args[index] == "-loglevel" || args[index] == "-v" {
+            let value = args.get(index + 1)?;
+            if parse_log_level_directive(value).is_none() {
+                return Some(format!("Invalid loglevel \"{value}\""));
+            }
+            index += 2;
+            continue;
+        }
+
+        index += 1;
+    }
+    None
 }
 
 pub fn ffmpeg_output(args: &[String]) -> Result<FfmpegOutput, FfmpegError> {
@@ -5611,7 +5640,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_image2_sequence_missing_frame() {
+    fn image2_sequence_stops_at_first_missing_frame() {
         let (pattern, paths) = write_temp_image2_sequence(
             "image2-sequence-gap",
             "png",
@@ -5619,7 +5648,7 @@ mod tests {
         );
         let pattern_arg = pattern.to_string_lossy().into_owned();
 
-        let err = ffmpeg_output(&strings(&[
+        let output = ffmpeg_output(&strings(&[
             "-f",
             "image2",
             "-framerate",
@@ -5630,11 +5659,17 @@ mod tests {
             "framecrc",
             "-",
         ]))
-        .expect_err("image2 sequence input should reject missing frames");
+        .expect("image2 sequence input should stop at the first missing frame");
 
         remove_temp_files(&paths);
 
-        assert!(err.message().contains("missing frame number 1"));
+        assert_eq!(output.output_format(), Some("framecrc"));
+        assert_eq!(output.packet_count(), 1);
+        assert_eq!(output.byte_count(), 4);
+        assert!(output
+            .stdout()
+            .contains("0,          0,          0,        1,        4"));
+        assert!(output.stderr().is_empty());
     }
 
     #[test]

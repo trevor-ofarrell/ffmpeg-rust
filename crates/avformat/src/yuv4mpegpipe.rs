@@ -723,6 +723,22 @@ mod tests {
     }
 
     #[test]
+    fn muxer_formats_non_default_sample_aspect_in_header() {
+        let muxer = Yuv4MpegMuxer::new(
+            2,
+            2,
+            Rational::new(24, 1).unwrap(),
+            Some(Rational::new(4, 3).unwrap()),
+        )
+        .unwrap();
+
+        assert_eq!(
+            muxer.header(),
+            "YUV4MPEG2 W2 H2 F24:1 Ip A4:3 C420jpeg XYSCSS=420JPEG\n"
+        );
+    }
+
+    #[test]
     fn muxer_rejects_invalid_parameters_streams_and_packet_sizes() {
         assert!(Yuv4MpegMuxer::new(0, 2, Rational::new(25, 1).unwrap(), None).is_err());
         assert_eq!(

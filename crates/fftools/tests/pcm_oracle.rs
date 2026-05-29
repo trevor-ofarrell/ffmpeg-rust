@@ -62,6 +62,12 @@ fn pcm_s16le_wav_file_output_matches_ffmpeg_oracle() {
     compare_pcm_s16le_wav_file_output("48000", "2", &payload);
 }
 
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn pcm_s16le_odd_payload_wav_file_output_matches_ffmpeg_oracle() {
+    compare_pcm_s16le_wav_file_output("48000", "1", &[0, 0, 1]);
+}
+
 fn compare_pcm_s16le_framecrc_records(sample_rate: &str, channels: &str, payload: &[u8]) {
     let oracle = oracle_ffmpeg();
     let input_path = write_temp_bytes("pcm-s16le-framecrc-input", "raw", payload);

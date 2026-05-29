@@ -96,6 +96,15 @@ fn version_requests_ignore_later_unknown_options() {
 
 #[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn version_requests_warn_for_later_invalid_loglevel_but_still_succeed() {
+    compare_trailing_invalid_loglevel_warning("ffmpeg", "-version", "warn");
+    compare_trailing_invalid_loglevel_warning("ffprobe", "-version", "warn");
+    compare_trailing_invalid_loglevel_warning("ffmpeg", "-buildconf", "foo");
+    compare_trailing_invalid_loglevel_warning("ffprobe", "-buildconf", "foo");
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
 fn ffmpeg_repeated_diagnostics_match_default_repeat_summary_shape() {
     let input_pattern = invalid_jpeg_sequence_pattern();
     let input_pattern = input_pattern.to_string_lossy().into_owned();
@@ -355,6 +364,43 @@ fn compare_version_unknown_order(tool_name: &str) {
         &version_banner(tool_name),
         "version request with preceding unknown option",
     );
+}
+
+fn compare_trailing_invalid_loglevel_warning(tool_name: &str, request: &str, value: &str) {
+    let oracle = oracle_tool(tool_name);
+    let oracle_output = run_oracle(&oracle, tool_name, &[request, "-loglevel", value]);
+    assert!(
+        oracle_output.status_success,
+        "oracle `{}` should keep {request} successful despite trailing invalid loglevel, stdout:\n{}\nstderr:\n{}",
+        oracle.display(),
+        oracle_output.stdout,
+        oracle_output.stderr
+    );
+    assert!(
+        oracle_output.stderr.contains("Invalid loglevel"),
+        "oracle `{}` should report invalid trailing loglevel, stderr:\n{}",
+        oracle.display(),
+        oracle_output.stderr
+    );
+
+    let rust = run_rust_tool(tool_name, &[request, "-loglevel", value]);
+    assert!(
+        rust.status_success,
+        "Rust {tool_name}-rs should keep {request} successful despite trailing invalid loglevel, stdout:\n{}\nstderr:\n{}",
+        rust.stdout,
+        rust.stderr
+    );
+    assert!(
+        rust.stderr
+            .contains(&format!("Invalid loglevel \"{value}\"")),
+        "Rust {tool_name}-rs should report invalid trailing loglevel, stderr:\n{}",
+        rust.stderr
+    );
+    if request == "-version" {
+        assert!(rust.stdout.starts_with(&format!("{tool_name} version")));
+    } else {
+        assert!(rust.stdout.starts_with("  configuration:\n"));
+    }
 }
 
 fn assert_version_request_case(
@@ -686,6 +732,45 @@ fn run_oracle(path: &Path, tool_name: &str, args: &[&str]) -> OracleOutput {
         status_success: output.status.success(),
         stdout,
         stderr,
+    }
+}
+
+fn run_rust_tool(tool_name: &str, args: &[&str]) -> OracleOutput {
+    let bin_name = match tool_name {
+        "ffmpeg" => "ffmpeg-rs",
+        "ffprobe" => "ffprobe-rs",
+        other => panic!("unsupported Rust tool `{other}`"),
+    };
+    let env_name = format!("CARGO_BIN_EXE_{bin_name}");
+    let path = env::var_os(&env_name)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| panic!("Cargo should set {env_name} for integration tests"));
+    let output = Command::new(&path)
+        .args(args)
+        .output()
+        .unwrap_or_else(|err| {
+            panic!(
+                "failed to run Rust {tool_name} `{}` with args {:?}: {err}",
+                path.display(),
+                args
+            )
+        });
+    OracleOutput {
+        status_success: output.status.success(),
+        stdout: String::from_utf8(output.stdout).unwrap_or_else(|err| {
+            panic!(
+                "Rust {tool_name} `{}` stdout must be UTF-8 for args {:?}: {err}",
+                path.display(),
+                args
+            )
+        }),
+        stderr: String::from_utf8(output.stderr).unwrap_or_else(|err| {
+            panic!(
+                "Rust {tool_name} `{}` stderr must be UTF-8 for args {:?}: {err}",
+                path.display(),
+                args
+            )
+        }),
     }
 }
 

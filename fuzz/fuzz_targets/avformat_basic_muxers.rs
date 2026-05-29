@@ -79,15 +79,15 @@ fn exercise_wav_muxer(cursor: &mut Cursor<'_>) {
         return;
     };
 
-    let block_align = usize::from(muxer.info().block_align());
-    let packets = audio_packets_from(cursor, block_align);
+    let packet_size = usize::from(muxer.info().block_align());
+    let packets = audio_packets_from(cursor, packet_size);
     let mut expected = Vec::new();
     let mut expected_packets = 0_u64;
 
     for packet in &packets {
         let before = wav_state(&muxer);
         let result = muxer.write_packet(packet);
-        if packet.stream_index() == 0 && packet.data().len().is_multiple_of(block_align) {
+        if packet.stream_index() == 0 {
             result.unwrap();
             expected.extend_from_slice(packet.data());
             expected_packets += 1;
@@ -106,7 +106,7 @@ fn exercise_wav_muxer(cursor: &mut Cursor<'_>) {
     assert!(muxer.is_finished());
     assert_eq!(finished, rendered);
     let err = muxer
-        .write_packet(&Packet::new(vec![0; block_align], 0))
+        .write_packet(&Packet::new(vec![0; packet_size], 0))
         .unwrap_err();
     assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
     assert_eq!(muxer.render().unwrap(), rendered);

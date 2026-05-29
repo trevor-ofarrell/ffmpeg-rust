@@ -225,12 +225,6 @@ impl WavMuxer {
                 packet.stream_index()
             )));
         }
-        if packet.data().len() % usize::from(self.info.block_align) != 0 {
-            return Err(AvError::invalid_data(
-                "WAV packet does not contain whole sample frames",
-            ));
-        }
-
         let new_len = self
             .data
             .len()
@@ -249,9 +243,13 @@ impl WavMuxer {
 
     pub fn render(&self) -> AvResult<Vec<u8>> {
         validate_data_len(self.data.len())?;
-        let riff_size = u32::try_from(36 + WAV_INFO_LIST_TOTAL_SIZE + self.data.len())
+        let data_size = self.data.len();
+        let padded_data_size = data_size
+            .checked_add(data_size & 1)
+            .ok_or_else(|| AvError::invalid_argument("WAV data size overflow"))?;
+        let riff_size = u32::try_from(36 + WAV_INFO_LIST_TOTAL_SIZE + padded_data_size)
             .map_err(|_| AvError::invalid_argument("WAV RIFF size does not fit u32"))?;
-        let data_size = u32::try_from(self.data.len())
+        let data_size = u32::try_from(data_size)
             .map_err(|_| AvError::invalid_argument("WAV data size does not fit u32"))?;
 
         let mut writer = ByteWriter::with_capacity(WAV_HEADER_SIZE + self.data.len());
@@ -270,6 +268,9 @@ impl WavMuxer {
         writer.write_all(b"data");
         writer.write_u32_le(data_size);
         writer.write_all(&self.data);
+        if data_size % 2 == 1 {
+            writer.write_u8(0);
+        }
         Ok(writer.into_inner())
     }
 
@@ -365,12 +366,6 @@ fn validate_pcm_s16le(info: &WavInfo) -> AvResult<()> {
         )));
     }
 
-    info.audio.sample_frames_in_bytes(
-        info.data_size,
-        AvErrorKind::InvalidData,
-        "WAV data chunk does not contain whole sample frames",
-    )?;
-
     Ok(())
 }
 
@@ -391,7 +386,10 @@ fn byte_rate_for_audio(
 }
 
 fn validate_data_len(data_len: usize) -> AvResult<()> {
-    if data_len > MAX_RIFF_DATA_SIZE {
+    let padded_data_len = data_len
+        .checked_add(data_len & 1)
+        .ok_or_else(|| AvError::invalid_argument("WAV data size overflow"))?;
+    if padded_data_len > MAX_RIFF_DATA_SIZE {
         return Err(AvError::invalid_argument(
             "WAV data is too large for classic RIFF",
         ));
@@ -550,7 +548,19 @@ mod tests {
         assert!(WavDemuxer::open(&wav_with_bits_per_sample(24)).is_err());
         assert!(WavDemuxer::open(&wav_with_bad_block_align()).is_err());
         assert!(WavDemuxer::open(&wav_with_bad_byte_rate()).is_err());
-        assert!(WavDemuxer::open(&wav_bytes(2, 48_000, &[0, 1, 2])).is_err());
+        assert!(WavDemuxer::open(&wav_bytes(1, 48_000, &[0, 1, 2])).is_ok());
+    }
+
+    #[test]
+    fn parses_partial_wav_data_without_rejecting_truncated_sample_frames() {
+        let bytes = wav_bytes(1, 44_100, &[0, 0, 1]);
+        let mut demuxer = WavDemuxer::open(&bytes).unwrap();
+
+        assert_eq!(demuxer.info().samples_per_channel(), 1);
+        let packet = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(packet.data(), &[0, 0, 1]);
+        assert_eq!(packet.duration(), 1);
+        assert!(demuxer.read_packet().unwrap().is_none());
     }
 
     #[test]
@@ -610,6 +620,27 @@ mod tests {
     }
 
     #[test]
+    fn muxer_accepts_partial_sample_frames_and_emits_odd_wav_data_padding() {
+        let mut muxer = WavMuxer::new_pcm_s16le(1, 44_100).unwrap();
+        muxer.write_packet(&Packet::new(vec![0, 0, 1], 0)).unwrap();
+
+        assert_eq!(muxer.info().data_size(), 3);
+        let bytes = muxer.finish().unwrap();
+
+        assert_eq!(muxer.packets(), 1);
+        assert_eq!(bytes.len(), 82);
+        assert_eq!(u32::from_le_bytes(bytes[74..78].try_into().unwrap()), 3);
+        assert_eq!(bytes[81], 0);
+
+        let mut demuxer = WavDemuxer::open(&bytes).unwrap();
+        assert_eq!(demuxer.info().channels(), 1);
+        assert_eq!(demuxer.info().sample_rate(), 44_100);
+        let packet = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(packet.data(), &[0, 0, 1]);
+        assert_eq!(packet.duration(), 1);
+    }
+
+    #[test]
     fn muxer_output_round_trips_through_demuxer() {
         let mut muxer = WavMuxer::new_pcm_s16le(1, 44_100).unwrap();
         muxer
@@ -638,9 +669,9 @@ mod tests {
 
         let mut muxer = WavMuxer::new_pcm_s16le(2, 48_000).unwrap();
         assert!(muxer.write_packet(&Packet::new(vec![0, 0], 1)).is_err());
-        assert!(muxer.write_packet(&Packet::new(vec![0, 0, 1], 0)).is_err());
-        assert_eq!(muxer.data_len(), 0);
-        assert_eq!(muxer.packets(), 0);
+        muxer.write_packet(&Packet::new(vec![0, 0, 1], 0)).unwrap();
+        assert_eq!(muxer.data_len(), 3);
+        assert_eq!(muxer.packets(), 1);
     }
 
     #[test]

@@ -442,9 +442,13 @@ impl fmt::Display for FfprobeError {
 impl std::error::Error for FfprobeError {}
 
 pub fn run_ffprobe_tool(args: &[String]) -> i32 {
+    let trailing_loglevel = version_request_trailing_loglevel_warning(args);
     match ffprobe_output(args) {
         Ok(output) => {
             print!("{output}");
+            if let Some(message) = trailing_loglevel {
+                eprintln!("{message}");
+            }
             0
         }
         Err(err) => {
@@ -458,6 +462,30 @@ pub fn run_ffprobe_tool(args: &[String]) -> i32 {
             err.exit_code()
         }
     }
+}
+
+fn version_request_trailing_loglevel_warning(args: &[String]) -> Option<String> {
+    let request_index = args
+        .iter()
+        .position(|arg| arg == "-version" || arg == "-buildconf")?;
+    trailing_loglevel_warning(&args[request_index + 1..])
+}
+
+fn trailing_loglevel_warning(args: &[String]) -> Option<String> {
+    let mut index = 0;
+    while index < args.len() {
+        if args[index] == "-loglevel" || args[index] == "-v" {
+            let value = args.get(index + 1)?;
+            if crate::option_parser::parse_log_level_directive(value).is_none() {
+                return Some(format!("Invalid loglevel \"{value}\""));
+            }
+            index += 2;
+            continue;
+        }
+
+        index += 1;
+    }
+    None
 }
 
 pub fn ffprobe_output(args: &[String]) -> Result<String, FfprobeError> {

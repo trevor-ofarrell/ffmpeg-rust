@@ -466,11 +466,6 @@ fn build_frames(
                 pattern.raw()
             )));
         };
-        if number < start_number {
-            return Err(AvError::invalid_data(format!(
-                "image2 frame number {number} is before start number {start_number}"
-            )));
-        }
         if by_number.insert(number, entry).is_some() {
             return Err(AvError::invalid_data(format!(
                 "duplicate image2 frame number {number}"
@@ -478,22 +473,48 @@ fn build_frames(
         }
     }
 
-    let mut expected = start_number;
-    let mut frames = Vec::with_capacity(by_number.len());
-    for (number, entry) in by_number {
+    let Some(start) = by_number
+        .iter()
+        .find(|(number, _)| **number >= start_number)
+        .map(|(number, _)| *number)
+    else {
+        return Err(AvError::invalid_data(format!(
+            "image2 sequence is missing frame number {start_number}"
+        )));
+    };
+    let max_start_probe = start_number.saturating_add(4);
+    if start > max_start_probe {
+        return Err(AvError::invalid_argument(
+            "image2 start number probe range is exhausted",
+        ));
+    }
+
+    let mut expected = start;
+    let mut frames = Vec::new();
+    for (number, entry) in by_number
+        .into_iter()
+        .skip_while(|(number, _)| *number < start)
+    {
         if number != expected {
-            return Err(AvError::invalid_data(format!(
-                "image2 sequence is missing frame number {expected}"
-            )));
+            break;
         }
         frames.push(Image2Frame {
             number,
             path: entry.path,
             data: entry.data,
         });
+        if expected == i64::MAX {
+            break;
+        }
         expected = expected
             .checked_add(1)
             .ok_or_else(|| AvError::invalid_data("image2 frame number overflow"))?;
+    }
+
+    if frames.is_empty() {
+        return Err(AvError::invalid_data(format!(
+            "image2 sequence is missing frame number {start_number}"
+        )));
     }
 
     Ok(frames)
@@ -667,10 +688,50 @@ mod tests {
             Rational::new(1, 1).unwrap(),
         )
         .is_err());
+    }
+
+    #[test]
+    fn sequence_stops_on_first_gap_or_skips_until_first_available_frame() {
+        let mut from_zero = Image2Demuxer::open(
+            "frame-%d.png",
+            vec![entry("frame-0.png", b"zero"), entry("frame-2.png", b"two")],
+            0,
+            Rational::new(1, 1).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(from_zero.info().frame_count(), 1);
+        assert_eq!(from_zero.read_packet().unwrap().unwrap().data(), b"zero");
+        assert!(from_zero.read_packet().unwrap().is_none());
+
+        let mut from_one = Image2Demuxer::open(
+            "frame-%d.png",
+            vec![entry("frame-0.png", b"zero"), entry("frame-2.png", b"two")],
+            1,
+            Rational::new(1, 1).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(from_one.info().frame_count(), 1);
+        assert_eq!(from_one.read_packet().unwrap().unwrap().data(), b"two");
+        assert!(from_one.read_packet().unwrap().is_none());
+
+        let mut at_probe_boundary = Image2Demuxer::open(
+            "frame-%d.png",
+            vec![entry("frame-5.png", b"five")],
+            1,
+            Rational::new(1, 1).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(at_probe_boundary.info().frame_count(), 1);
+        assert_eq!(
+            at_probe_boundary.read_packet().unwrap().unwrap().data(),
+            b"five"
+        );
+        assert!(at_probe_boundary.read_packet().unwrap().is_none());
+
         assert!(Image2Demuxer::open(
             "frame-%d.png",
-            vec![entry("frame-0.png", b"x"), entry("frame-2.png", b"z")],
-            0,
+            vec![entry("frame-10.png", b"x")],
+            1,
             Rational::new(1, 1).unwrap(),
         )
         .is_err());

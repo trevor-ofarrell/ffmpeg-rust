@@ -56,6 +56,42 @@ fn image2_ppm_wide_zero_padded_sequence_framecrc_records_match_ffmpeg_oracle() {
     );
 }
 
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn image2_ppm_sequence_with_gap_stops_at_first_missing_frame() {
+    compare_image2_sequence_framecrc_records_from_sparse_indices(
+        "ppm",
+        "25",
+        0,
+        3,
+        &[(0u64, PPM_1X1_RED), (2u64, PPM_1X1_GREEN)],
+    );
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn image2_ppm_sequence_with_start_number_skips_until_first_available() {
+    compare_image2_sequence_framecrc_records_from_sparse_indices(
+        "ppm",
+        "25",
+        1,
+        3,
+        &[(0u64, PPM_1X1_RED), (2u64, PPM_1X1_GREEN)],
+    );
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn image2_ppm_sequence_with_start_number_accepts_probe_window_upper_boundary() {
+    compare_image2_sequence_framecrc_records_from_sparse_indices(
+        "ppm",
+        "25",
+        1,
+        3,
+        &[(5u64, PPM_1X1_RED)],
+    );
+}
+
 fn compare_image2_file_output(extension: &str, frame_rate: &str, payload: &[u8]) {
     let oracle = oracle_ffmpeg();
     let input_path = write_temp_bytes("image2-single-input", extension, payload);
@@ -398,6 +434,95 @@ fn compare_image2_sequence_framecrc_records_from_start_with_width(
     assert_eq!(
         normalize_framecrc_records(rust.stdout()),
         normalize_framecrc_records(&oracle_stdout)
+    );
+}
+
+fn compare_image2_sequence_framecrc_records_from_sparse_indices(
+    extension: &str,
+    frame_rate: &str,
+    start_number: u64,
+    frame_width: usize,
+    payloads: &[(u64, &[u8])],
+) {
+    let oracle = oracle_ffmpeg();
+    let input_dir = unique_temp_dir("image2-sequence-framecrc-input-sparse");
+
+    fs::create_dir(&input_dir).expect("temp image2 framecrc sparse input dir should be creatable");
+
+    for (frame_number, payload) in payloads.iter().copied() {
+        fs::write(
+            input_dir.join(sequence_file_name_with_width(
+                "in",
+                frame_number,
+                frame_width,
+                extension,
+            )),
+            payload,
+        )
+        .expect("temp image2 sparse framecrc input should be writable");
+    }
+
+    let input_pattern = input_dir
+        .join(format!("in-%0{frame_width}d.{extension}"))
+        .to_string_lossy()
+        .into_owned();
+
+    let rust = ffmpeg_output(&strings(&[
+        "-f",
+        "image2",
+        "-framerate",
+        frame_rate,
+        "-start_number",
+        &start_number.to_string(),
+        "-i",
+        input_pattern.as_str(),
+        "-f",
+        "framecrc",
+        "-",
+    ]))
+    .expect("Rust image2 sparse framecrc path should execute");
+
+    let oracle_output = Command::new(&oracle)
+        .args([
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "image2",
+            "-framerate",
+            frame_rate,
+            "-start_number",
+            &start_number.to_string(),
+            "-i",
+            input_pattern.as_str(),
+            "-c:v",
+            "copy",
+            "-f",
+            "framecrc",
+            "-",
+        ])
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", oracle.display()));
+
+    remove_temp_dirs(&[input_dir]);
+
+    assert!(
+        oracle_output.status.success(),
+        "oracle image2 sparse framecrc failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        oracle_output.status.code(),
+        String::from_utf8_lossy(&oracle_output.stdout),
+        String::from_utf8_lossy(&oracle_output.stderr)
+    );
+
+    assert_eq!(rust.output_format(), Some("framecrc"));
+    assert!(rust.stderr().is_empty());
+    assert_eq!(
+        normalize_framecrc_records(rust.stdout()),
+        normalize_framecrc_records(
+            &String::from_utf8(oracle_output.stdout)
+                .expect("oracle sparse framecrc output should be UTF-8")
+        )
     );
 }
 

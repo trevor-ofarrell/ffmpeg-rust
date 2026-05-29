@@ -170,6 +170,18 @@ fn exercise_fixtures() {
         Rational::ONE,
     );
     exercise_demux(
+        "frame-%d.png",
+        vec![entry("frame-0.png", b"zero"), entry("frame-2.png", b"two")],
+        1,
+        Rational::ONE,
+    );
+    exercise_demux(
+        "frame-%d.png",
+        vec![entry("frame-5.png", b"five")],
+        1,
+        Rational::ONE,
+    );
+    exercise_demux(
         "frame-%03d.ppm",
         vec![
             entry("frame-999.ppm", b"nine_nine_nine"),

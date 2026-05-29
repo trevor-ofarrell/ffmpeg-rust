@@ -1,4 +1,4 @@
-use avformat::Yuv4MpegDemuxer;
+use avformat::{Yuv4MpegDemuxer, Yuv4MpegMuxer};
 use avutil::{FrameColorRange, Rational};
 use fftools::ffmpeg_output;
 use std::{
@@ -89,6 +89,17 @@ fn yuv4mpegpipe_invalid_first_frame_marker_is_clean_eof() {
     compare_yuv4mpegpipe_framecrc_records(input, 0, 0);
 }
 
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn yuv4mpegpipe_sample_aspect_ratio_header_matches_ffmpeg_oracle() {
+    compare_rawvideo_yuv4mpegpipe_file_output_with_aspect(
+        "2x2",
+        "25",
+        Some("4:3"),
+        Some(Rational::new(4, 3).unwrap()),
+    );
+}
+
 fn compare_rawvideo_yuv4mpegpipe_file_output(size: &str, rate: &str, payload: &[u8]) {
     let oracle = oracle_ffmpeg();
     let input_path = write_temp_bytes("yuv420p-y4m-input", "raw", payload);
@@ -172,6 +183,177 @@ fn compare_rawvideo_yuv4mpegpipe_file_output(size: &str, rate: &str, payload: &[
     assert_eq!(first.data(), &payload[..6]);
     assert_eq!(second.data(), &payload[6..]);
     assert!(demuxer.read_packet().unwrap().is_none());
+}
+
+fn compare_rawvideo_yuv4mpegpipe_file_output_with_aspect(
+    size: &str,
+    rate: &str,
+    sample_aspect_ratio: Option<&str>,
+    expected_sample_aspect_ratio: Option<Rational>,
+) {
+    let first = [0, 1, 2, 3, 4, 5];
+    let second = [6, 7, 8, 9, 10, 11];
+    let payload = [first.as_slice(), second.as_slice()].concat();
+    let oracle = oracle_ffmpeg();
+    let rust_output_path = unique_temp_path("yuv420p-rust-aspect-output", "y4m");
+    let oracle_output_path = unique_temp_path("yuv420p-oracle-aspect-output", "y4m");
+    let rust_output_arg = rust_output_path.to_string_lossy().into_owned();
+    let oracle_output_arg = oracle_output_path.to_string_lossy().into_owned();
+
+    let input_path = if let Some(sample_aspect_ratio) = sample_aspect_ratio {
+        let extra_header_fields = format!("A{sample_aspect_ratio}");
+        let rate_for_y4m = if rate.contains(':') {
+            rate.to_owned()
+        } else {
+            format!("{rate}:1")
+        };
+        let (width, height) = size
+            .split_once('x')
+            .and_then(|(width, height)| (width.parse::<u32>().ok()).zip(height.parse::<u32>().ok()))
+            .expect("yuv4mpegpipe aspect test should use WxH size");
+        let input = y4m_file_bytes_with_extra_header_fields(
+            width,
+            height,
+            &rate_for_y4m,
+            &extra_header_fields,
+            &[first.as_slice(), second.as_slice()],
+        );
+        write_temp_bytes("yuv420p-y4m-aspect-input", "y4m", &input)
+    } else {
+        write_temp_bytes("yuv420p-y4m-aspect-input", "raw", &payload)
+    };
+
+    let input_arg = input_path.to_string_lossy().into_owned();
+
+    let (rust_bytes, rust_packet_count, rust_byte_count) = if sample_aspect_ratio.is_some() {
+        let input_bytes = fs::read(&input_path).expect("YUV4MPEG2 input should be readable");
+        let mut demuxer =
+            Yuv4MpegDemuxer::open(&input_bytes).expect("YUV4MPEG2 input should parse");
+        let info = demuxer.info().clone();
+        let mut muxer = Yuv4MpegMuxer::new(
+            info.width(),
+            info.height(),
+            info.frame_rate(),
+            info.sample_aspect_ratio(),
+        )
+        .expect("YUV4MPEG2 muxer should accept demuxed stream parameters");
+        while let Some(packet) = demuxer
+            .read_packet()
+            .expect("YUV4MPEG2 packets should demux")
+        {
+            muxer
+                .write_packet(&packet)
+                .expect("YUV4MPEG2 packets should remux");
+        }
+        let packet_count = u64::try_from(muxer.frame_count()).unwrap();
+        let bytes = muxer.finish();
+        let byte_count = u64::try_from(bytes.len()).unwrap();
+        (bytes, packet_count, byte_count)
+    } else {
+        let rust_args = strings(&[
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "yuv420p",
+            "-s",
+            size,
+            "-r",
+            rate,
+            "-i",
+            input_arg.as_str(),
+            "-f",
+            "yuv4mpegpipe",
+            rust_output_arg.as_str(),
+        ]);
+        let rust =
+            ffmpeg_output(&rust_args).expect("Rust yuv4mpegpipe file-output path should execute");
+        let rust_bytes = fs::read(&rust_output_path).expect("Rust output should be readable");
+        assert_eq!(rust.output_format(), Some("yuv4mpegpipe"));
+        assert!(rust.stdout().is_empty());
+        assert!(rust.stderr().is_empty());
+        (rust_bytes, rust.packet_count(), rust.byte_count())
+    };
+
+    let oracle_args = if sample_aspect_ratio.is_some() {
+        strings(&[
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "yuv4mpegpipe",
+            "-i",
+            input_arg.as_str(),
+            "-c:v",
+            "copy",
+            "-f",
+            "yuv4mpegpipe",
+            oracle_output_arg.as_str(),
+        ])
+    } else {
+        strings(&[
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "yuv420p",
+            "-s",
+            size,
+            "-r",
+            rate,
+            "-i",
+            input_arg.as_str(),
+            "-c:v",
+            "copy",
+            "-f",
+            "yuv4mpegpipe",
+            oracle_output_arg.as_str(),
+        ])
+    };
+
+    let oracle_output = Command::new(&oracle)
+        .args(&oracle_args)
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", oracle.display()));
+
+    let oracle_bytes = fs::read(&oracle_output_path).expect("oracle output should be readable");
+    remove_temp_files(&[input_path, rust_output_path, oracle_output_path]);
+
+    assert!(
+        oracle_output.status.success(),
+        "oracle yuv4mpegpipe file output failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        oracle_output.status.code(),
+        String::from_utf8_lossy(&oracle_output.stdout),
+        String::from_utf8_lossy(&oracle_output.stderr)
+    );
+    assert_eq!(rust_packet_count, 2);
+    assert_eq!(rust_byte_count, u64::try_from(rust_bytes.len()).unwrap());
+    assert_eq!(header_line(&rust_bytes), header_line(&oracle_bytes));
+    assert_eq!(rust_bytes, oracle_bytes);
+
+    let demuxer =
+        Yuv4MpegDemuxer::open(&rust_bytes).expect("Rust yuv4mpegpipe output should parse");
+    assert_eq!(
+        demuxer.info().sample_aspect_ratio(),
+        expected_sample_aspect_ratio
+    );
+    let demuxer =
+        Yuv4MpegDemuxer::open(&oracle_bytes).expect("oracle yuv4mpegpipe output should parse");
+    assert_eq!(
+        demuxer.info().sample_aspect_ratio(),
+        expected_sample_aspect_ratio
+    );
+}
+
+fn header_line(bytes: &[u8]) -> String {
+    let end = bytes
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .expect("YUV4MPEG2 output should include a header line");
+    String::from_utf8(bytes[..end].to_vec()).expect("YUV4MPEG2 header should be UTF-8")
 }
 
 fn compare_yuv4mpegpipe_framecrc_records(y4m: &[u8], packet_count: u64, payload_len: usize) {
