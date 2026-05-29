@@ -6,6 +6,7 @@ use libfuzzer_sys::fuzz_target;
 
 const VALID_STEREO: &[u8] = &[0, 0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0];
 const PARTIAL_THREE_CHANNEL: &[u8] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+const ODD_STEREO_PACKET: &[u8] = &[0, 1, 2, 3, 4];
 
 fuzz_target!(|data: &[u8]| {
     let sample_rate = data
@@ -21,6 +22,10 @@ fuzz_target!(|data: &[u8]| {
     exercise_pcm(VALID_STEREO, 48_000, 2, 2);
     exercise_pcm(PARTIAL_THREE_CHANNEL, 48_000, 3, 1024);
     exercise_pcm(&[], 48_000, 2, 1024);
+    exercise_pcm_s16le_muxer(VALID_STEREO);
+    exercise_pcm_s16le_muxer(PARTIAL_THREE_CHANNEL);
+    exercise_pcm_s16le_muxer(ODD_STEREO_PACKET);
+    exercise_pcm_s16le_muxer(&[]);
 });
 
 fn exercise_pcm(input: &[u8], sample_rate: u32, channels: u16, packet_samples: usize) {
@@ -86,6 +91,27 @@ fn sample_rate_from(byte: u8) -> u32 {
         5 => 192_000,
         _ => u32::MAX,
     }
+}
+
+fn exercise_pcm_s16le_muxer(payload: &[u8]) {
+    let Ok(mut muxer) = avformat::PcmS16leMuxer::new(48_000, 2) else {
+        return;
+    };
+    let payload_len = payload.len();
+    let bytes_per_sample_frame = muxer.info().bytes_per_sample_frame();
+    let expected_samples_per_channel = payload_len / bytes_per_sample_frame;
+
+    muxer.write_packet(&avutil::Packet::new(payload.to_vec(), 0)).unwrap();
+
+    assert!(muxer.packets() == 1);
+    assert_eq!(muxer.data_len(), payload_len);
+    assert_eq!(muxer.render(), payload);
+    assert_eq!(muxer.info().samples_per_channel(), expected_samples_per_channel);
+
+    muxer.write_packet(&avutil::Packet::new(payload.to_vec(), 0)).unwrap();
+    assert_eq!(muxer.packets(), 2);
+    assert_eq!(muxer.data_len(), payload_len * 2);
+    assert_eq!(muxer.info().samples_per_channel(), expected_samples_per_channel * 2);
 }
 
 fn channels_from(byte: u8) -> u16 {

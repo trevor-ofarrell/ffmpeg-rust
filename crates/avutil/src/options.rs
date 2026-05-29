@@ -6860,6 +6860,19 @@ mod tests {
             "artist=rust:comment=a\\:b"
         );
 
+        options
+            .set_avoption_from_str("dict", "artist=rust:ARTIST=override")
+            .unwrap();
+        let duplicate = options.get_avoption_dictionary("dict").unwrap();
+        assert_eq!(duplicate.len(), 1);
+        assert_eq!(duplicate.get("artist"), Some("override"));
+        assert_eq!(duplicate.entries()[0].key(), "ARTIST");
+        assert_eq!(duplicate.entries()[0].value(), "override");
+        assert_eq!(
+            options.get_avoption_string("dict").unwrap(),
+            "ARTIST=override"
+        );
+
         options.set_avoption_from_str("dict", "").unwrap();
         assert!(options.get_avoption_dictionary("dict").unwrap().is_empty());
         assert_eq!(options.get_avoption_string("dict").unwrap(), "");

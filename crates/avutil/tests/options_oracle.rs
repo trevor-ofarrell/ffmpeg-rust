@@ -1706,6 +1706,20 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         [ret_value(dictionary_set.get_avoption_string("dict"))],
     );
 
+    let ret_duplicate =
+        ret(dictionary_set.set_avoption_from_str("dict", "artist=rust:ARTIST=override"));
+    let after_duplicate = dictionary_value(&dictionary_set, "dict");
+    insert_row(&mut rows, "ret:set-dictionary-duplicate", [ret_duplicate]);
+    rows.insert(
+        "state:set-dictionary-duplicate".to_string(),
+        dictionary_sequence_fields([&after_duplicate]),
+    );
+    insert_row(
+        &mut rows,
+        "get:set-dictionary-duplicate",
+        [ret_value(dictionary_set.get_avoption_string("dict"))],
+    );
+
     let before_dictionary_errors = dictionary_value(&dictionary_set, "dict");
     let ret_missing_separator = ret(dictionary_set.set_avoption_from_str("dict", "missing"));
     let ret_empty_value = ret(dictionary_set.set_avoption_from_str("dict", "key="));
@@ -5156,12 +5170,14 @@ static void print_dictionary_rows(void) {
     AVDictionary *after_escaped = NULL;
     AVDictionary *after_empty = NULL;
     AVDictionary *after_quoted = NULL;
+    AVDictionary *after_duplicate = NULL;
     AVDictionary *before_errors = NULL;
     AVDictionary *after_typed = NULL;
     AVDictionary *after_typed_empty = NULL;
     int ret_escaped;
     int ret_empty;
     int ret_quoted;
+    int ret_duplicate;
     int ret_missing_separator;
     int ret_empty_value;
     int ret_typed;
@@ -5200,6 +5216,16 @@ static void print_dictionary_rows(void) {
     print_dictionary_sequence(after_quoted);
     printf("\n");
     printf("get:set-dictionary-strings");
+    print_get_value(&ctx, "dict");
+    printf("\n");
+
+    ret_duplicate = av_opt_set(&ctx, "dict", "artist=rust:ARTIST=override", 0);
+    av_dict_copy(&after_duplicate, ctx.dict, 0);
+    printf("ret:set-dictionary-duplicate|%d\n", ret_duplicate);
+    printf("state:set-dictionary-duplicate");
+    print_dictionary_sequence(after_duplicate);
+    printf("\n");
+    printf("get:set-dictionary-duplicate");
     print_get_value(&ctx, "dict");
     printf("\n");
 
@@ -5250,6 +5276,7 @@ static void print_dictionary_rows(void) {
     av_dict_free(&after_escaped);
     av_dict_free(&after_empty);
     av_dict_free(&after_quoted);
+    av_dict_free(&after_duplicate);
     av_dict_free(&before_errors);
     av_dict_free(&after_typed);
     av_dict_free(&after_typed_empty);

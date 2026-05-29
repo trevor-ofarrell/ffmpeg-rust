@@ -3140,7 +3140,7 @@ fn separator_set_from(cursor: &mut Cursor<'_>) -> String {
 fn dictionary_pairs_string_from(cursor: &mut Cursor<'_>) -> String {
     match cursor.next().unwrap_or_default() % 10 {
         0 => "artist=Alice;title=Clip".to_owned(),
-        1 => "artist=old;artist=new".to_owned(),
+        1 => "artist=old;ARTIST=new".to_owned(),
         2 => "a\\=b=v\\;x".to_owned(),
         3 => "ok=value;bad".to_owned(),
         4 => "dangling=escape\\".to_owned(),

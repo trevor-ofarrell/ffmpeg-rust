@@ -458,6 +458,30 @@ mod tests {
     }
 
     #[test]
+    fn uses_last_data_chunk_when_multiple_data_chunks_are_present() {
+        let first_payload = [0, 0, 1, 0, 2, 0, 3, 0];
+        let second_payload = [0xAA, 0x00, 0xBB, 0x00];
+        let bytes =
+            wav_bytes_with_duplicate_data_chunks(2, 44_100, &first_payload, &second_payload);
+        let mut demuxer = WavDemuxer::open(&bytes).unwrap();
+
+        let packet = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(packet.data(), &second_payload);
+        assert_eq!(packet.duration(), 1);
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
+    fn uses_last_empty_data_chunk_when_multiple_data_chunks_are_present() {
+        let first_payload = [0, 0, 1, 0, 2, 0, 3, 0];
+        let bytes = wav_bytes_with_duplicate_data_chunks(2, 44_100, &first_payload, &[]);
+        let mut demuxer = WavDemuxer::open(&bytes).unwrap();
+
+        assert_eq!(demuxer.info().data_size(), 0);
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
     fn rejects_missing_or_invalid_required_chunks() {
         assert_eq!(
             WavDemuxer::open(b"not a wav").unwrap_err().kind(),
@@ -613,6 +637,30 @@ mod tests {
 
     fn wav_bytes_with_unknown_chunk(channels: u16, sample_rate: u32, data: &[u8]) -> Vec<u8> {
         wav_bytes_inner(channels, sample_rate, 1, 16, data, b"JUNK\x03\0\0\0abc\0")
+    }
+
+    fn wav_bytes_with_duplicate_data_chunks(
+        channels: u16,
+        sample_rate: u32,
+        first_data: &[u8],
+        second_data: &[u8],
+    ) -> Vec<u8> {
+        let mut body = fmt_chunk(1, channels, sample_rate, 16);
+        body.extend_from_slice(b"data");
+        body.extend_from_slice(&(u32::try_from(first_data.len()).unwrap()).to_le_bytes());
+        body.extend_from_slice(first_data);
+        if first_data.len() % 2 == 1 {
+            body.push(0);
+        }
+
+        body.extend_from_slice(b"data");
+        body.extend_from_slice(&(u32::try_from(second_data.len()).unwrap()).to_le_bytes());
+        body.extend_from_slice(second_data);
+        if second_data.len() % 2 == 1 {
+            body.push(0);
+        }
+
+        wav_bytes_with_body(body)
     }
 
     fn wav_without_data_chunk() -> Vec<u8> {

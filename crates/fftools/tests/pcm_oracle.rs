@@ -29,6 +29,13 @@ fn pcm_s16le_partial_framecrc_records_match_ffmpeg_oracle() {
 
 #[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn pcm_s16le_odd_packet_framecrc_records_match_ffmpeg_oracle() {
+    let payload = vec![0_u8, 1, 2, 3, 4];
+    compare_pcm_s16le_framecrc_records("48000", "2", &payload);
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
 fn pcm_s16le_three_channel_partial_framecrc_records_match_ffmpeg_oracle() {
     let payload = (0_u8..14).collect::<Vec<_>>();
     compare_pcm_s16le_framecrc_records("48000", "3", &payload);
@@ -38,6 +45,13 @@ fn pcm_s16le_three_channel_partial_framecrc_records_match_ffmpeg_oracle() {
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
 fn pcm_s16le_file_output_matches_ffmpeg_oracle() {
     let payload = (0_u8..16).collect::<Vec<_>>();
+    compare_pcm_s16le_file_output("48000", "2", &payload);
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn pcm_s16le_odd_packet_file_output_matches_ffmpeg_oracle() {
+    let payload = vec![0_u8, 1, 2, 3, 4];
     compare_pcm_s16le_file_output("48000", "2", &payload);
 }
 

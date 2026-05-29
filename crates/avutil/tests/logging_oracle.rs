@@ -297,6 +297,13 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
         escape_row_text(quiet_level.bytes()),
     );
 
+    let (quiet_no_prefix, _) =
+        rust_format_line2(LogLevel::Quiet, "quiet", LogFlags::PRINT_LEVEL, false, 128);
+    rows.insert(
+        "format-line2-quiet-noprefix-line",
+        escape_row_text(quiet_no_prefix.bytes()),
+    );
+
     let (no_prefix, _) =
         rust_format_line2(LogLevel::Error, "after", LogFlags::PRINT_LEVEL, false, 128);
     rows.insert(
@@ -1222,6 +1229,21 @@ fn add_format_line2_int_rows(rows: &mut BTreeMap<&'static str, i32>) {
     rows.insert(
         "format-line2-quiet-level-len",
         usize_to_i32(quiet_level.bytes().len()),
+    );
+
+    let (quiet_no_prefix, quiet_no_prefix_state) =
+        rust_format_line2(LogLevel::Quiet, "quiet", LogFlags::PRINT_LEVEL, false, 128);
+    rows.insert(
+        "format-line2-quiet-noprefix-ret",
+        usize_to_i32(quiet_no_prefix.full_len()),
+    );
+    rows.insert(
+        "format-line2-quiet-noprefix-prefix",
+        bool_to_i32(quiet_no_prefix_state),
+    );
+    rows.insert(
+        "format-line2-quiet-noprefix-len",
+        usize_to_i32(quiet_no_prefix.bytes().len()),
     );
 
     let (no_prefix, no_prefix_state) =
@@ -2405,6 +2427,15 @@ static void print_format_line2_rows(void) {
     ROW("format-line2-quiet-level-prefix", print_prefix);
     ROW("format-line2-quiet-level-len", strlen(line));
     ROW_STR("format-line2-quiet-level-line", line);
+
+    memset(line, 'X', sizeof(line));
+    print_prefix = 0;
+    ret = call_format_line2(NULL, line, sizeof(line), &print_prefix,
+                            AV_LOG_QUIET, "%s", "quiet");
+    ROW("format-line2-quiet-noprefix-ret", ret);
+    ROW("format-line2-quiet-noprefix-prefix", print_prefix);
+    ROW("format-line2-quiet-noprefix-len", strlen(line));
+    ROW_STR("format-line2-quiet-noprefix-line", line);
 
     memset(line, 'X', sizeof(line));
     print_prefix = 0;

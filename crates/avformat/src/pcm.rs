@@ -1,5 +1,5 @@
 use crate::AudioStreamParameters;
-use avutil::{AvError, AvErrorKind, AvResult, ChannelLayout, Packet, SampleFormat, SideData};
+use avutil::{AvError, AvResult, ChannelLayout, Packet, SampleFormat, SideData};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PcmS16leInfo {
@@ -221,11 +221,10 @@ impl PcmS16leMuxer {
                 packet.stream_index()
             )));
         }
-        let packet_samples = self.info.audio.sample_frames_in_bytes(
+        let packet_samples = complete_sample_frames_in_bytes(
             packet.data().len(),
-            AvErrorKind::InvalidData,
-            "pcm_s16le packet does not contain whole sample frames",
-        )?;
+            self.info.audio.bytes_per_sample_frame(),
+        );
 
         let new_len = self
             .data
@@ -262,6 +261,7 @@ impl PcmS16leMuxer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use avutil::AvErrorKind;
 
     #[test]
     fn slices_interleaved_stereo_packets_with_sample_timing() {
@@ -431,11 +431,36 @@ mod tests {
             wrong_stream.unwrap_err().kind(),
             AvErrorKind::InvalidArgument
         );
-        let partial_frame = muxer.write_packet(&Packet::new(vec![0, 0], 0));
-        assert_eq!(partial_frame.unwrap_err().kind(), AvErrorKind::InvalidData);
+        let mut wrong_index_muxer = PcmS16leMuxer::new(48_000, 2).unwrap();
+        assert!(wrong_index_muxer
+            .write_packet(&Packet::new(vec![0, 0, 1, 0], 1))
+            .is_err());
+        let mut partial_frame_muxer = PcmS16leMuxer::new(48_000, 2).unwrap();
+        partial_frame_muxer
+            .write_packet(&Packet::new(vec![0, 0], 0))
+            .unwrap();
+
         assert_eq!(muxer.packets(), 0);
         assert_eq!(muxer.data_len(), 0);
         assert_eq!(muxer.info().samples_per_channel(), 0);
+    }
+
+    #[test]
+    fn muxer_accepts_partial_sample_frame_packets_without_padding() {
+        let mut muxer = PcmS16leMuxer::new(48_000, 2).unwrap();
+
+        let packet = Packet::new(vec![0, 0, 1, 0, 2], 0);
+        muxer.write_packet(&packet).unwrap();
+
+        assert_eq!(muxer.info().sample_rate(), 48_000);
+        assert_eq!(muxer.info().channels(), 2);
+        assert_eq!(muxer.info().bytes_per_sample_frame(), 4);
+        assert_eq!(muxer.packets(), 1);
+        assert_eq!(muxer.info().samples_per_channel(), 1);
+        assert_eq!(muxer.data_len(), 5);
+        assert_eq!(muxer.render(), packet.data().to_vec());
+        assert!(!muxer.render().is_empty());
+        assert_eq!(muxer.render().len() % 4, 1);
     }
 
     #[test]

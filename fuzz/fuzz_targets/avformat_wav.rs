@@ -12,6 +12,7 @@ fuzz_target!(|data: &[u8]| {
     exercise_wav(VALID_WAV);
     exercise_wav(TOO_SMALL_RIFF_WAV);
     exercise_wav(&wave_format_extensible_pcm_wav());
+    exercise_wav(&wav_with_duplicate_data_chunks());
 });
 
 fn exercise_wav(input: &[u8]) {
@@ -84,5 +85,39 @@ fn wave_format_extensible_pcm_wav() -> Vec<u8> {
     out.extend_from_slice(&(u32::try_from(data.len()).unwrap()).to_le_bytes());
     out.extend_from_slice(data);
 
+    out
+}
+
+fn wav_with_duplicate_data_chunks() -> Vec<u8> {
+    let channels: u16 = 2;
+    let sample_rate: u32 = 44_100;
+    let block_align = channels * 2u16;
+    let byte_rate = sample_rate * u32::from(block_align);
+    let first_payload: &[u8] = b"\x00\x00\x01\x00\x02\x00\x03\x00";
+    let second_payload: &[u8] = b"\xAA\x00\xBB\x00";
+
+    let mut body = Vec::new();
+    body.extend_from_slice(b"fmt ");
+    body.extend_from_slice(&16_u32.to_le_bytes());
+    body.extend_from_slice(&1_u16.to_le_bytes());
+    body.extend_from_slice(&channels.to_le_bytes());
+    body.extend_from_slice(&sample_rate.to_le_bytes());
+    body.extend_from_slice(&byte_rate.to_le_bytes());
+    body.extend_from_slice(&block_align.to_le_bytes());
+    body.extend_from_slice(&16_u16.to_le_bytes());
+
+    body.extend_from_slice(b"data");
+    body.extend_from_slice(&(u32::try_from(first_payload.len()).unwrap()).to_le_bytes());
+    body.extend_from_slice(first_payload);
+
+    body.extend_from_slice(b"data");
+    body.extend_from_slice(&(u32::try_from(second_payload.len()).unwrap()).to_le_bytes());
+    body.extend_from_slice(second_payload);
+
+    let mut out = Vec::new();
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(u32::try_from(body.len() + 4).unwrap()).to_le_bytes());
+    out.extend_from_slice(b"WAVE");
+    out.extend_from_slice(&body);
     out
 }

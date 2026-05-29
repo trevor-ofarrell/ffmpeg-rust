@@ -3981,6 +3981,15 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     assert!(!quiet_line2.truncated());
     assert!(!line2_prefix);
 
+    line2_prefix = false;
+    let quiet_line2_no_prefix = LogRecord::new(LogLevel::Quiet, "decoder", "quiet")
+        .format_av_log_line2_null_context(LogFlags::PRINT_LEVEL, &mut line2_prefix, 128)
+        .unwrap();
+    assert_eq!(quiet_line2_no_prefix.bytes(), b"quiet");
+    assert_eq!(quiet_line2_no_prefix.full_len(), 5);
+    assert!(!quiet_line2_no_prefix.truncated());
+    assert!(!line2_prefix);
+
     line2_prefix = true;
     let quiet_context_line2 = LogRecord::new(LogLevel::Quiet, "decoder", "quiet")
         .format_av_log_line2_context(

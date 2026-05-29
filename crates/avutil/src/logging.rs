@@ -2471,6 +2471,15 @@ mod tests {
         assert!(!prefix);
 
         prefix = false;
+        let quiet_no_prefix = LogRecord::new(LogLevel::Quiet, "decoder", "quiet")
+            .format_av_log_line2_null_context(LogFlags::PRINT_LEVEL, &mut prefix, 128)
+            .unwrap();
+        assert_eq!(quiet_no_prefix.full_len(), 5);
+        assert_eq!(quiet_no_prefix.bytes(), b"quiet");
+        assert!(!quiet_no_prefix.truncated());
+        assert!(!prefix);
+
+        prefix = false;
         let no_prefix = LogRecord::new(LogLevel::Error, "demuxer", "after")
             .format_av_log_line2_null_context(LogFlags::PRINT_LEVEL, &mut prefix, 128)
             .unwrap();
