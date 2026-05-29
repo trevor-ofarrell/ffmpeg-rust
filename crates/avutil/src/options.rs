@@ -8760,6 +8760,21 @@ mod tests {
                 .unwrap(),
             )
             .unwrap();
+        child_options
+            .define(
+                OptionDefinition::new_with_flags(
+                    "child_size",
+                    OptionKind::ImageSize,
+                    OptionValue::ImageSize {
+                        width: 320,
+                        height: 240,
+                    },
+                    "child image size",
+                    OptionFlags::DECODING_PARAM,
+                )
+                .unwrap(),
+            )
+            .unwrap();
         options
             .define_child(OptionChild::new("decoder", child_options, "").unwrap())
             .unwrap();
@@ -8789,6 +8804,19 @@ mod tests {
                 .unwrap_err()
                 .code(),
             Some(AvErrorCode::OPTION_NOT_FOUND)
+        );
+        assert_eq!(
+            options
+                .get_avoption_image_size_with_flags("child_size", OptionSearchFlags::empty())
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::OPTION_NOT_FOUND)
+        );
+        assert_eq!(
+            options
+                .get_avoption_image_size_with_flags("child_size", OptionSearchFlags::CHILDREN)
+                .unwrap(),
+            (320, 240)
         );
 
         assert_eq!(
@@ -8822,6 +8850,21 @@ mod tests {
                 .code(),
             Some(AvErrorCode::OPTION_NOT_FOUND)
         );
+        options
+            .set_avoption_image_size_with_flags("child_size", 800, 600, OptionSearchFlags::CHILDREN)
+            .unwrap();
+        assert_eq!(
+            options
+                .set_avoption_image_size_with_flags(
+                    "child_size",
+                    1024,
+                    768,
+                    OptionSearchFlags::FAKE_OBJ,
+                )
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::OPTION_NOT_FOUND)
+        );
 
         assert_eq!(options.get_avoption_string("threads").unwrap(), "1");
         assert_eq!(
@@ -8837,6 +8880,13 @@ mod tests {
                 .get_child_option("decoder", "child_readonly")
                 .unwrap(),
             &OptionValue::Int(0)
+        );
+        assert_eq!(
+            options.get_child_option("decoder", "child_size").unwrap(),
+            &OptionValue::ImageSize {
+                width: 800,
+                height: 600
+            }
         );
     }
 

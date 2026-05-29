@@ -1093,6 +1093,68 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         ],
     );
 
+    let mut image_child_options = image_size_parent_with_child_options();
+    insert_row(
+        &mut rows,
+        "get:image-size-children",
+        [
+            ret_image_size(
+                image_child_options
+                    .get_avoption_image_size_with_flags("child_size", OptionSearchFlags::empty()),
+            ),
+            ret_image_size(
+                image_child_options
+                    .get_avoption_image_size_with_flags("child_size", OptionSearchFlags::CHILDREN),
+            ),
+            ret_value(
+                image_child_options
+                    .get_avoption_string_with_flags("child_size", OptionSearchFlags::CHILDREN),
+            ),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "ret:set-image-size-children",
+        [
+            ret(image_child_options.set_avoption_image_size_with_flags(
+                "child_size",
+                800,
+                600,
+                OptionSearchFlags::empty(),
+            )),
+            ret(image_child_options.set_avoption_image_size_with_flags(
+                "child_size",
+                800,
+                600,
+                OptionSearchFlags::CHILDREN,
+            )),
+            ret(image_child_options.set_avoption_image_size_with_flags(
+                "child_size",
+                1024,
+                768,
+                OptionSearchFlags::FAKE_OBJ,
+            )),
+        ],
+    );
+    rows.insert(
+        "state:image-size-children".to_string(),
+        image_size_child_state_fields(&image_child_options),
+    );
+    insert_row(
+        &mut rows,
+        "get:set-image-size-children",
+        [
+            ret_image_size(
+                image_child_options
+                    .get_avoption_image_size_with_flags("child_size", OptionSearchFlags::CHILDREN),
+            ),
+            ret_value(
+                image_child_options
+                    .get_avoption_string_with_flags("child_size", OptionSearchFlags::CHILDREN),
+            ),
+        ],
+    );
+
     let pixel_defaults = pixel_format_options();
     insert_row(
         &mut rows,
@@ -2434,6 +2496,30 @@ fn image_size_options() -> OptionSet {
     options
 }
 
+fn image_size_parent_with_child_options() -> OptionSet {
+    let mut parent = OptionSet::new();
+    let mut child = OptionSet::new();
+    child
+        .define(
+            OptionDefinition::new_with_flags(
+                "child_size",
+                OptionKind::ImageSize,
+                OptionValue::ImageSize {
+                    width: 320,
+                    height: 240,
+                },
+                "child image size",
+                OptionFlags::DECODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    parent
+        .define_child(OptionChild::new("decoder", child, "decoder options").unwrap())
+        .unwrap();
+    parent
+}
+
 fn pixel_format_options() -> OptionSet {
     let mut options = OptionSet::new();
     options
@@ -2777,6 +2863,18 @@ fn image_size_state_fields(options: &OptionSet) -> [String; 3] {
         height.to_string(),
         int_value(options, "scalar").to_string(),
     ]
+}
+
+fn image_size_child_state_fields(options: &OptionSet) -> Vec<String> {
+    match options
+        .child("decoder")
+        .and_then(|child| child.options().get("child_size"))
+    {
+        Some(OptionValue::ImageSize { width, height }) => {
+            vec![width.to_string(), height.to_string()]
+        }
+        _ => panic!("missing decoder child_size option"),
+    }
 }
 
 fn pixel_format_state_fields(options: &OptionSet) -> [String; 2] {
@@ -3528,6 +3626,16 @@ typedef struct ImageSizeOptions {
     int64_t scalar;
 } ImageSizeOptions;
 
+typedef struct ImageSizeChildOptions {
+    const AVClass *av_class;
+    int child_size[2];
+} ImageSizeChildOptions;
+
+typedef struct ImageSizeParentOptions {
+    const AVClass *av_class;
+    ImageSizeChildOptions child;
+} ImageSizeParentOptions;
+
 typedef struct PixelFormatOptions {
     const AVClass *av_class;
     enum AVPixelFormat pix_fmt;
@@ -3663,6 +3771,24 @@ static const AVOption image_size_options[] = {
     { NULL }
 };
 
+static const AVOption image_size_child_options[] = {
+    { "child_size", "child image size", offsetof(ImageSizeChildOptions, child_size),
+      AV_OPT_TYPE_IMAGE_SIZE, { .str = "320x240" }, 0, 0, AV_OPT_FLAG_DECODING_PARAM },
+    { NULL }
+};
+
+static const AVOption image_size_parent_options[] = {
+    { NULL }
+};
+
+static void *image_size_parent_child_next(void *obj, void *prev) {
+    ImageSizeParentOptions *ctx = (ImageSizeParentOptions *)obj;
+
+    if (prev)
+        return NULL;
+    return &ctx->child;
+}
+
 static const AVOption pixel_format_options[] = {
     { "pix_fmt", "pixel format", offsetof(PixelFormatOptions, pix_fmt),
       AV_OPT_TYPE_PIXEL_FMT, { .i64 = AV_PIX_FMT_YUV420P }, AV_PIX_FMT_NONE, AV_PIX_FMT_NB - 1, AV_OPT_FLAG_ENCODING_PARAM },
@@ -3745,6 +3871,21 @@ static const AVClass image_size_class = {
     .item_name = av_default_item_name,
     .option = image_size_options,
     .version = LIBAVUTIL_VERSION_INT,
+};
+
+static const AVClass image_size_child_class = {
+    .class_name = "rust-options-oracle-image-size-child",
+    .item_name = av_default_item_name,
+    .option = image_size_child_options,
+    .version = LIBAVUTIL_VERSION_INT,
+};
+
+static const AVClass image_size_parent_class = {
+    .class_name = "rust-options-oracle-image-size-parent",
+    .item_name = av_default_item_name,
+    .option = image_size_parent_options,
+    .version = LIBAVUTIL_VERSION_INT,
+    .child_next = image_size_parent_child_next,
 };
 
 static const AVClass pixel_format_class = {
@@ -3837,6 +3978,14 @@ static void init_image_size_context(ImageSizeOptions *ctx) {
     memset(ctx, 0, sizeof(*ctx));
     ctx->av_class = &image_size_class;
     av_opt_set_defaults(ctx);
+}
+
+static void init_image_size_parent_context(ImageSizeParentOptions *ctx) {
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->av_class = &image_size_parent_class;
+    ctx->child.av_class = &image_size_child_class;
+    av_opt_set_defaults(ctx);
+    av_opt_set_defaults(&ctx->child);
 }
 
 static void init_pixel_format_context(PixelFormatOptions *ctx) {
@@ -4557,6 +4706,34 @@ static void print_image_size_rows(void) {
     printf("query-ranges:image-size");
     print_query_range_value(&ctx, "size");
     print_query_range_value(&ctx, "missing");
+    printf("\n");
+}
+
+static void print_image_size_child_rows(void) {
+    ImageSizeParentOptions ctx;
+    int ret_no_flags;
+    int ret_child;
+    int ret_fake;
+
+    init_image_size_parent_context(&ctx);
+    printf("get:image-size-children");
+    print_get_image_size_value(&ctx, "child_size", 0);
+    print_get_image_size_value(&ctx, "child_size", AV_OPT_SEARCH_CHILDREN);
+    print_get_value_flags(&ctx, "child_size", AV_OPT_SEARCH_CHILDREN);
+    printf("\n");
+
+    ret_no_flags = av_opt_set_image_size(&ctx, "child_size", 800, 600, 0);
+    ret_child = av_opt_set_image_size(&ctx, "child_size", 800, 600,
+                                      AV_OPT_SEARCH_CHILDREN);
+    ret_fake = av_opt_set_image_size(&ctx, "child_size", 1024, 768,
+                                     AV_OPT_SEARCH_FAKE_OBJ);
+    printf("ret:set-image-size-children|%d|%d|%d\n",
+           ret_no_flags, ret_child, ret_fake);
+    printf("state:image-size-children|%d|%d\n",
+           ctx.child.child_size[0], ctx.child.child_size[1]);
+    printf("get:set-image-size-children");
+    print_get_image_size_value(&ctx, "child_size", AV_OPT_SEARCH_CHILDREN);
+    print_get_value_flags(&ctx, "child_size", AV_OPT_SEARCH_CHILDREN);
     printf("\n");
 }
 
@@ -5666,6 +5843,7 @@ int main(void) {
     print_typed_get_set_rows();
     print_duration_rows();
     print_image_size_rows();
+    print_image_size_child_rows();
     print_pixel_format_rows();
     print_sample_format_rows();
     print_channel_layout_rows();

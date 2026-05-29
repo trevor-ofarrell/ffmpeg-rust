@@ -1463,6 +1463,64 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     );
     drop(init2_default_pool_free_values);
 
+    let legacy_allocations = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let legacy_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let legacy_allocate_capture = Arc::clone(&legacy_allocations);
+    let legacy_release_capture = Arc::clone(&legacy_releases);
+    let legacy_pool = BufferPool::with_callbacks(
+        3,
+        0,
+        BufferPoolCallbacks::new(
+            move |allocated_len| {
+                legacy_allocate_capture.lock().unwrap().push(allocated_len);
+                Ok(vec![0x51, 0x52, 0x53][..allocated_len].to_vec())
+            },
+            move |storage| {
+                legacy_release_capture.lock().unwrap().push(storage);
+            },
+        ),
+    )
+    .unwrap();
+    let mut legacy_first = legacy_pool.get().unwrap();
+    rows.insert(
+        "pool-legacy-custom:first".to_string(),
+        buffer_fields(&legacy_first),
+    );
+    rows.insert(
+        "pool-legacy-custom:first-opaque".to_string(),
+        vec![bool_field(
+            legacy_first.pool_opaque_ref::<usize>().is_none(),
+        )],
+    );
+    legacy_first.make_mut().copy_from_slice(&[0xa1, 0xa2, 0xa3]);
+    drop(legacy_first);
+    let legacy_reuse = legacy_pool.get().unwrap();
+    rows.insert(
+        "pool-legacy-custom:reuse".to_string(),
+        buffer_fields(&legacy_reuse),
+    );
+    rows.insert(
+        "pool-legacy-custom:reuse-opaque".to_string(),
+        vec![bool_field(
+            legacy_reuse.pool_opaque_ref::<usize>().is_none(),
+        )],
+    );
+    rows.insert(
+        "pool-legacy-custom:reuse-allocs".to_string(),
+        vec![legacy_allocations.lock().unwrap().len().to_string()],
+    );
+    drop(legacy_reuse);
+    drop(legacy_pool);
+    let legacy_release_values = legacy_releases.lock().unwrap();
+    rows.insert(
+        "pool-legacy-custom:uninit-release".to_string(),
+        vec![
+            legacy_release_values.len().to_string(),
+            hex(&legacy_release_values[0]),
+        ],
+    );
+    drop(legacy_release_values);
+
     struct PoolToken {
         id: usize,
         size: usize,
@@ -3014,6 +3072,25 @@ static AVBufferRef *test_pool_alloc(void *opaque, size_t size) {
     return av_buffer_create(data, size, test_pool_free, opaque, 0);
 }
 
+static void test_pool_free_legacy(void *opaque, uint8_t *data) {
+    (void)opaque;
+    pool_release_count++;
+    last_pool_release_id = 0;
+    last_pool_release_size = 3;
+    for (size_t i = 0; i < last_pool_release_size; i++)
+        last_pool_release[i] = data[i];
+    av_free(data);
+}
+
+static AVBufferRef *test_pool_alloc_legacy(size_t size) {
+    uint8_t *data = av_malloc(size);
+    fail_if(!data, "av_malloc legacy pool data failed");
+    pool_alloc_count++;
+    for (size_t i = 0; i < size; i++)
+        data[i] = (uint8_t)(0x51 + i);
+    return av_buffer_create(data, size, test_pool_free_legacy, NULL, 0);
+}
+
 static AVBufferRef *test_pool_alloc_offset(void *opaque, size_t size) {
     uint8_t *data = av_malloc(size + 1);
     AVBufferRef *ret;
@@ -4109,6 +4186,31 @@ int main(void) {
     av_buffer_pool_uninit(&init2_default_pool);
     printf("pool-init2-default:pool-free|%d|%" PRIuPTR "\n",
            pool_free_count, last_pool_free_id);
+
+    reset_pool_counters();
+    AVBufferPool *legacy_pool =
+        av_buffer_pool_init(3, test_pool_alloc_legacy);
+    fail_if(!legacy_pool, "av_buffer_pool_init legacy failed");
+    AVBufferRef *legacy_first = av_buffer_pool_get(legacy_pool);
+    fail_if(!legacy_first, "av_buffer_pool_get legacy first failed");
+    print_buffer("pool-legacy-custom:first", legacy_first);
+    printf("pool-legacy-custom:first-opaque|%d\n",
+           av_buffer_pool_buffer_get_opaque(legacy_first) == NULL);
+    static const uint8_t legacy_mutated[] = { 0xa1, 0xa2, 0xa3 };
+    fill_bytes(legacy_first, legacy_mutated, sizeof(legacy_mutated));
+    av_buffer_unref(&legacy_first);
+    AVBufferRef *legacy_reuse = av_buffer_pool_get(legacy_pool);
+    fail_if(!legacy_reuse, "av_buffer_pool_get legacy reuse failed");
+    print_buffer("pool-legacy-custom:reuse", legacy_reuse);
+    printf("pool-legacy-custom:reuse-opaque|%d\n",
+           av_buffer_pool_buffer_get_opaque(legacy_reuse) == NULL);
+    printf("pool-legacy-custom:reuse-allocs|%d\n", pool_alloc_count);
+    av_buffer_unref(&legacy_reuse);
+    av_buffer_pool_uninit(&legacy_pool);
+    printf("pool-legacy-custom:uninit-release|%d|",
+           pool_release_count);
+    print_hex(last_pool_release, last_pool_release_size);
+    printf("\n");
 
     reset_pool_counters();
     PoolOpaque pool_opaque = { 55, 3 };

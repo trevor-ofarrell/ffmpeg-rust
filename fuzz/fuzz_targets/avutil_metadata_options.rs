@@ -1822,6 +1822,20 @@ fn exercise_fixtures() {
             .unwrap(),
         )
         .unwrap();
+    child_options
+        .define(
+            OptionDefinition::new(
+                "child_size",
+                OptionKind::ImageSize,
+                OptionValue::ImageSize {
+                    width: 320,
+                    height: 240,
+                },
+                "child image size",
+            )
+            .unwrap(),
+        )
+        .unwrap();
     options
         .define_child(OptionChild::new("encoder", child_options, "encoder options").unwrap())
         .unwrap();
@@ -1863,6 +1877,41 @@ fn exercise_fixtures() {
     assert_eq!(
         options
             .get_avoption_string_with_flags("threads", OptionSearchFlags::FAKE_OBJ)
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::OPTION_NOT_FOUND)
+    );
+    assert_eq!(
+        options
+            .get_avoption_image_size_with_flags("child_size", OptionSearchFlags::empty())
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::OPTION_NOT_FOUND)
+    );
+    assert_eq!(
+        options
+            .get_avoption_image_size_with_flags("child_size", OptionSearchFlags::CHILDREN)
+            .unwrap(),
+        (320, 240)
+    );
+    options
+        .set_avoption_image_size_with_flags("child_size", 800, 600, OptionSearchFlags::CHILDREN)
+        .unwrap();
+    assert_eq!(
+        options.get_child_option("encoder", "child_size").unwrap(),
+        &OptionValue::ImageSize {
+            width: 800,
+            height: 600
+        }
+    );
+    assert_eq!(
+        options
+            .set_avoption_image_size_with_flags(
+                "child_size",
+                1024,
+                768,
+                OptionSearchFlags::FAKE_OBJ,
+            )
             .unwrap_err()
             .code(),
         Some(AvErrorCode::OPTION_NOT_FOUND)

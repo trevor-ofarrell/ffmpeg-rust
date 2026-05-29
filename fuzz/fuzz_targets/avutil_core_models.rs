@@ -2627,6 +2627,53 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     assert!(!readonly_callback.is_readonly());
     assert!(readonly_callback.is_writable());
 
+    let legacy_allocations = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let legacy_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let legacy_allocate_capture = Arc::clone(&legacy_allocations);
+    let legacy_release_capture = Arc::clone(&legacy_releases);
+    let legacy_pool = BufferPool::with_callbacks(
+        payload_len,
+        padding_len,
+        BufferPoolCallbacks::new(
+            move |allocated_len| {
+                legacy_allocate_capture.lock().unwrap().push(allocated_len);
+                Ok(vec![0x51; allocated_len])
+            },
+            move |storage| {
+                legacy_release_capture.lock().unwrap().push(storage);
+            },
+        ),
+    )
+    .unwrap();
+    let mut legacy_first = legacy_pool.get().unwrap();
+    assert_eq!(
+        *legacy_allocations.lock().unwrap(),
+        vec![payload_len + padding_len]
+    );
+    assert!(legacy_first.pool_opaque_ref::<usize>().is_none());
+    assert!(legacy_first.is_writable());
+    let legacy_mutation = vec![0xa1; payload_len];
+    legacy_first.make_mut().copy_from_slice(&legacy_mutation);
+    drop(legacy_first);
+    assert!(legacy_releases.lock().unwrap().is_empty());
+    assert_eq!(legacy_pool.available_count().unwrap(), 1);
+    let legacy_reuse = legacy_pool.get().unwrap();
+    assert_eq!(
+        *legacy_allocations.lock().unwrap(),
+        vec![payload_len + padding_len]
+    );
+    assert_eq!(legacy_reuse.as_slice(), legacy_mutation.as_slice());
+    assert_eq!(&legacy_reuse.as_padded_slice()[payload_len..], vec![0x51; padding_len]);
+    assert!(legacy_reuse.pool_opaque_ref::<usize>().is_none());
+    drop(legacy_reuse);
+    drop(legacy_pool);
+    let mut legacy_expected_release = legacy_mutation;
+    legacy_expected_release.extend(std::iter::repeat_n(0x51, padding_len));
+    assert_eq!(
+        *legacy_releases.lock().unwrap(),
+        vec![legacy_expected_release]
+    );
+
     let custom_allocations = Arc::new(Mutex::new(Vec::<usize>::new()));
     let custom_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let custom_pool_frees = Arc::new(Mutex::new(0usize));

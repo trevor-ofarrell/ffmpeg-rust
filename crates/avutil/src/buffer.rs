@@ -3380,6 +3380,48 @@ mod tests {
     }
 
     #[test]
+    fn legacy_custom_buffer_pool_has_no_pool_opaque_or_owner_free() {
+        let allocations = std::sync::Arc::new(std::sync::Mutex::new(Vec::<usize>::new()));
+        let releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+        let allocate_capture = std::sync::Arc::clone(&allocations);
+        let release_capture = std::sync::Arc::clone(&releases);
+        let pool = BufferPool::with_callbacks(
+            3,
+            0,
+            BufferPoolCallbacks::new(
+                move |allocated_len| {
+                    allocate_capture.lock().unwrap().push(allocated_len);
+                    Ok(vec![0x51, 0x52, 0x53][..allocated_len].to_vec())
+                },
+                move |storage| {
+                    release_capture.lock().unwrap().push(storage);
+                },
+            ),
+        )
+        .unwrap();
+
+        let mut first = pool.get().unwrap();
+        assert_eq!(*allocations.lock().unwrap(), vec![3]);
+        assert_eq!(first.as_slice(), &[0x51, 0x52, 0x53]);
+        assert!(first.is_writable());
+        assert!(first.pool_opaque_ref::<usize>().is_none());
+        first.make_mut().copy_from_slice(&[0xa1, 0xa2, 0xa3]);
+        drop(first);
+        assert_eq!(pool.available_count().unwrap(), 1);
+        assert!(releases.lock().unwrap().is_empty());
+
+        let reuse = pool.get().unwrap();
+        assert_eq!(*allocations.lock().unwrap(), vec![3]);
+        assert_eq!(reuse.as_slice(), &[0xa1, 0xa2, 0xa3]);
+        assert!(reuse.is_writable());
+        assert!(reuse.pool_opaque_ref::<usize>().is_none());
+        drop(reuse);
+        drop(pool);
+
+        assert_eq!(*releases.lock().unwrap(), vec![vec![0xa1, 0xa2, 0xa3]]);
+    }
+
+    #[test]
     fn custom_buffer_pool_preserves_buffer_opaque_and_runs_pool_free_last() {
         #[derive(Debug)]
         struct PoolToken {
