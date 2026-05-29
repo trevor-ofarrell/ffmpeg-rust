@@ -188,6 +188,12 @@ fn exercise_fixtures() {
         Rational::ONE,
     );
     exercise_demux(
+        "cover%%final.png",
+        vec![entry("cover%final.png", b"cover")],
+        7,
+        Rational::ONE,
+    );
+    exercise_demux(
         "frame-%d.png",
         vec![entry("frame-0.png", b"zero"), entry("frame-2.png", b"two")],
         1,

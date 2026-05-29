@@ -113,6 +113,14 @@ const PARSER_CASES: &[ParserCase] = &[
         input: "+2C",
     },
     ParserCase {
+        id: "leading-zero-unspecified-upper",
+        input: "09C",
+    },
+    ParserCase {
+        id: "leading-zero-unspecified-lower",
+        input: "09c",
+    },
+    ParserCase {
         id: "described-native",
         input: "2 channels (FL+FR)",
     },
@@ -283,6 +291,14 @@ const PARSER_CASES: &[ParserCase] = &[
     ParserCase {
         id: "invalid-trailing-count",
         input: "2C ",
+    },
+    ParserCase {
+        id: "invalid-leading-space-layout-name",
+        input: " stereo",
+    },
+    ParserCase {
+        id: "invalid-leading-space-ambisonic",
+        input: " ambisonic 0",
     },
     ParserCase {
         id: "invalid-trailing-channels",
@@ -759,6 +775,11 @@ const COMPARE_CASES: &[CompareCase] = &[
         id: "raw-mask-uppercase-token-equivalent",
         left: "USR0X2D+USR056",
         right: "USR0x2d+USR056",
+    },
+    CompareCase {
+        id: "leading-zero-count-normalizes-to-channels",
+        left: "09C",
+        right: "9 channels",
     },
     CompareCase {
         id: "named-raw-ambisonic-extra-same",

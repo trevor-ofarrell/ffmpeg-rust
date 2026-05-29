@@ -142,8 +142,18 @@ fn libavutil_pixel_format_name_lookup_matches_bounded_model() {
         "y400a",
         "x2rgb10",
         "x2bgr10",
+        "x2rgb10be",
+        "x2bgr10be",
+        "x2rgb10le",
+        "x2bgr10le",
         "rgb24",
         "RGB24",
+        "X2RGB10BE",
+        "rgb24 ",
+        " rgb24",
+        " ",
+        "",
+        "\t",
         "y32le",
         "yf32le",
         "vaapi",
@@ -358,6 +368,16 @@ int main(void) {
     print_lookup("y400a");
     print_lookup("x2rgb10");
     print_lookup("x2bgr10");
+    print_lookup("x2rgb10be");
+    print_lookup("x2bgr10be");
+    print_lookup("x2rgb10le");
+    print_lookup("x2bgr10le");
+    print_lookup("X2RGB10BE");
+    print_lookup("rgb24 ");
+    print_lookup(" rgb24");
+    print_lookup(" ");
+    print_lookup("");
+    print_lookup("\t");
     print_lookup("rgb24");
     print_lookup("RGB24");
     print_lookup("y32le");

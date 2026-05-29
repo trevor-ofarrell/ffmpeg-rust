@@ -5641,6 +5641,39 @@ mod tests {
     }
 
     #[test]
+    fn layout_spec_parser_handles_native_name_and_count_edge_cases() {
+        assert_eq!(
+            ChannelLayoutSpec::parse("09C").unwrap(),
+            ChannelLayoutSpec::unspecified(9).unwrap()
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse("09C").unwrap().describe(),
+            "9 channels"
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse("+09C").unwrap(),
+            ChannelLayoutSpec::unspecified(9).unwrap()
+        );
+        let err = ChannelLayoutSpec::parse("09c").unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+
+        let err = ChannelLayoutSpec::parse(" stereo").unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        let err = ChannelLayoutSpec::parse(" stereo ").unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        let err = ChannelLayoutSpec::parse("STEREO").unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+
+        let unsorted_raw_users = ChannelLayoutSpec::parse("USR46+USR45").unwrap();
+        let unsorted_raw_users_clone = unsorted_raw_users.clone();
+        let err = unsorted_raw_users
+            .retype_to_native_order(false)
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::Unsupported);
+        assert_eq!(unsorted_raw_users, unsorted_raw_users_clone);
+    }
+
+    #[test]
     fn layout_spec_parser_returns_custom_channel_maps() {
         let named_custom = CustomChannelLayout::parse_channel_list("FL@Left+FR@Right").unwrap();
         let spec = ChannelLayoutSpec::parse("FL@Left+FR@Right").unwrap();

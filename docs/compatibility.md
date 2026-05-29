@@ -10,6 +10,15 @@
 ## Compatible Today
 
 - Latest orchestrated parallel evidence: xhigh worker lanes plus main-thread
+  review added pinned oracle rows for channel-layout leading-zero count parsing
+  and strict whitespace/case rejection, `av_get_pix_fmt()` explicit-endian
+  X2RGB10/X2BGR10 names plus whitespace/empty rejection, image2 single-file
+  nonzero `-start_number` framecrc timing, and local option-parser coverage for
+  dash-prefixed values and repeated output option grouping. The `fate-runner`
+  utility also now filters mapping reports by exact repeated `--component`
+  values. These rows strengthen existing incomplete components; strict complete
+  count remains unchanged.
+- Latest orchestrated parallel evidence: xhigh worker lanes plus main-thread
   review added pinned oracle rows for `av_buffer_replace(&buf, buf)`,
   `av_frame_ref()` destination lifetime after source unref, malformed and
   duplicate YUV4MPEG2 `A` sample-aspect fields, raw `pcm_s16le` zero

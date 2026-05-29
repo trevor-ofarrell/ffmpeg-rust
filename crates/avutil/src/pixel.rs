@@ -5970,6 +5970,40 @@ mod tests {
     }
 
     #[test]
+    fn pixel_formats_from_av_get_pix_fmt_name_handles_invalid_and_extended_inputs() {
+        assert_eq!(
+            PixelFormat::from_av_get_pix_fmt_name("x2rgb10be"),
+            Some(PixelFormat::X2Rgb10Be)
+        );
+        assert_eq!(
+            PixelFormat::from_av_get_pix_fmt_name("x2bgr10be"),
+            Some(PixelFormat::X2Bgr10Be)
+        );
+        assert_eq!(
+            PixelFormat::from_av_get_pix_fmt_name("x2rgb10le"),
+            Some(PixelFormat::X2Rgb10Le)
+        );
+        assert_eq!(
+            PixelFormat::from_av_get_pix_fmt_name("x2bgr10le"),
+            Some(PixelFormat::X2Bgr10Le)
+        );
+
+        assert_eq!(PixelFormat::from_av_get_pix_fmt_name("X2RGB10BE"), None);
+        assert_eq!(PixelFormat::from_av_get_pix_fmt_name("rgb24 "), None);
+        assert_eq!(PixelFormat::from_av_get_pix_fmt_name(" rgb24"), None);
+        assert_eq!(PixelFormat::from_av_get_pix_fmt_name(""), None);
+        assert_eq!(PixelFormat::from_av_get_pix_fmt_name("\t"), None);
+        assert_eq!(PixelFormat::from_av_get_pix_fmt_name("not_a_pix_fmt"), None);
+
+        assert_eq!(PixelFormat::from_name(""), None);
+        assert_eq!(
+            PixelFormat::from_name("x2rgb10be"),
+            Some(PixelFormat::X2Rgb10Be)
+        );
+        assert_eq!(PixelFormat::from_name("\t"), None);
+    }
+
+    #[test]
     fn pixel_formats_report_descriptor_metadata() {
         let gray = PixelFormat::Gray8.descriptor();
         assert_eq!(gray.format, PixelFormat::Gray8);

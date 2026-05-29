@@ -48,6 +48,7 @@ struct RunOptions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct MappingOptions {
     mappings_path: String,
+    component_filters: Vec<String>,
     target_filters: Vec<String>,
     context: FateContext,
     check_prerequisites: bool,
@@ -740,10 +741,12 @@ fn list_components() -> Result<(), String> {
 fn list_mappings(args: Vec<String>) -> Result<(), String> {
     let options = parse_mapping_options(&args)?;
     let component_ids = load_component_ids()?;
-    let mappings = filter_mappings_by_targets(
+    validate_component_filters(&options.component_filters, &component_ids)?;
+    let mappings = filter_mappings_by_components(
         load_fate_mappings(&options.mappings_path, &component_ids)?,
-        &options.target_filters,
+        &options.component_filters,
     );
+    let mappings = filter_mappings_by_targets(mappings, &options.target_filters);
     let lines =
         fate_mapping_report_lines(&mappings, &options.context, options.check_prerequisites)?;
 
@@ -760,6 +763,7 @@ fn list_mappings(args: Vec<String>) -> Result<(), String> {
 
 fn parse_mapping_options(args: &[String]) -> Result<MappingOptions, String> {
     let mut mappings_path = DEFAULT_FATE_MAPPINGS_PATH.to_string();
+    let mut component_filters = Vec::new();
     let mut target_filters = Vec::new();
     let mut context = FateContext::default();
     let mut check_prerequisites = false;
@@ -779,6 +783,12 @@ fn parse_mapping_options(args: &[String]) -> Result<MappingOptions, String> {
                     .next()
                     .ok_or_else(|| "missing value for --target".to_string())?;
                 add_target_filter(&mut target_filters, target.clone())?;
+            }
+            "--component" => {
+                let component = iter
+                    .next()
+                    .ok_or_else(|| "missing value for --component".to_string())?;
+                add_component_filter(&mut component_filters, component.clone())?;
             }
             "--samples" => {
                 context.samples_root = Some(
@@ -800,6 +810,7 @@ fn parse_mapping_options(args: &[String]) -> Result<MappingOptions, String> {
 
     Ok(MappingOptions {
         mappings_path,
+        component_filters,
         target_filters,
         context,
         check_prerequisites,
@@ -902,6 +913,34 @@ fn add_target_filter(target_filters: &mut Vec<String>, target: String) -> Result
     }
     if !target_filters.iter().any(|existing| existing == &target) {
         target_filters.push(target);
+    }
+    Ok(())
+}
+
+fn add_component_filter(
+    component_filters: &mut Vec<String>,
+    component: String,
+) -> Result<(), String> {
+    if component.trim().is_empty() {
+        return Err("component filter must not be empty".to_string());
+    }
+    if !component_filters
+        .iter()
+        .any(|existing| existing == &component)
+    {
+        component_filters.push(component);
+    }
+    Ok(())
+}
+
+fn validate_component_filters(
+    component_filters: &[String],
+    component_ids: &[String],
+) -> Result<(), String> {
+    for component in component_filters {
+        if !component_ids.iter().any(|id| id == component) {
+            return Err(format!("unknown ledger component `{component}`"));
+        }
     }
     Ok(())
 }
@@ -1016,6 +1055,24 @@ fn filter_mappings_by_targets(
             target_filters
                 .iter()
                 .any(|target| target == &mapping.target)
+        })
+        .collect()
+}
+
+fn filter_mappings_by_components(
+    mappings: Vec<FateMapping>,
+    component_filters: &[String],
+) -> Vec<FateMapping> {
+    if component_filters.is_empty() {
+        return mappings;
+    }
+
+    mappings
+        .into_iter()
+        .filter(|mapping| {
+            component_filters
+                .iter()
+                .any(|component| component == &mapping.component_id)
         })
         .collect()
 }
@@ -1669,7 +1726,7 @@ fn normalize_path(path: &str) -> String {
 
 fn print_help() {
     eprintln!(
-        "usage: fate-runner list | mappings [--check-prereqs] [--mappings <path>] [--target <name> ...] [--samples <path>] [--oracle-ffmpeg <path>] | run [--dry-run] [--mappings <path>] [--target <name> ...] [--samples <path>] [--oracle-ffmpeg <path>] --component <id> [--component <id> ...] | run [--dry-run] [--mappings <path>] [--target <name> ...] [--samples <path>] [--oracle-ffmpeg <path>] --changed"
+        "usage: fate-runner list | mappings [--check-prereqs] [--mappings <path>] [--component <id> ...] [--target <name> ...] [--samples <path>] [--oracle-ffmpeg <path>] | run [--dry-run] [--mappings <path>] [--target <name> ...] [--samples <path>] [--oracle-ffmpeg <path>] --component <id> [--component <id> ...] | run [--dry-run] [--mappings <path>] [--target <name> ...] [--samples <path>] [--oracle-ffmpeg <path>] --changed"
     );
 }
 
@@ -2685,6 +2742,7 @@ mod tests {
             parse_mapping_options(&[]).unwrap(),
             MappingOptions {
                 mappings_path: DEFAULT_FATE_MAPPINGS_PATH.to_string(),
+                component_filters: vec![],
                 target_filters: vec![],
                 context: FateContext::default(),
                 check_prerequisites: false,
@@ -2696,6 +2754,10 @@ mod tests {
                 "--check-prereqs".to_string(),
                 "--mappings".to_string(),
                 "custom.map".to_string(),
+                "--component".to_string(),
+                "fate-runner".to_string(),
+                "--component".to_string(),
+                "fate-runner".to_string(),
                 "--target".to_string(),
                 "local-unit".to_string(),
                 "--target".to_string(),
@@ -2708,6 +2770,7 @@ mod tests {
             .unwrap(),
             MappingOptions {
                 mappings_path: "custom.map".to_string(),
+                component_filters: vec!["fate-runner".to_string()],
                 target_filters: vec!["local-unit".to_string()],
                 context: FateContext {
                     samples_root: Some("tests/fate".to_string()),
@@ -2737,8 +2800,16 @@ mod tests {
             "missing value for --target"
         );
         assert_eq!(
+            parse_mapping_options(&["--component".to_string()]).unwrap_err(),
+            "missing value for --component"
+        );
+        assert_eq!(
             parse_mapping_options(&["--target".to_string(), "".to_string()]).unwrap_err(),
             "target filter must not be empty"
+        );
+        assert_eq!(
+            parse_mapping_options(&["--component".to_string(), "".to_string()]).unwrap_err(),
+            "component filter must not be empty"
         );
         assert_eq!(
             parse_mapping_options(&["--changed".to_string()]).unwrap_err(),
@@ -3177,6 +3248,67 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
         );
         assert_eq!(filter_mappings_by_targets(mappings.clone(), &[]), mappings);
         assert!(filter_mappings_by_targets(mappings, &["missing-target".to_string()]).is_empty());
+    }
+
+    #[test]
+    fn component_filters_keep_exact_mapping_components_and_preserve_order() {
+        let mappings = vec![
+            FateMapping {
+                component_id: "fate-runner".to_string(),
+                target: "local-self-test".to_string(),
+                workdir: ".".to_string(),
+                program: "cargo".to_string(),
+                env: vec![],
+                args: vec![
+                    "test".to_string(),
+                    "-p".to_string(),
+                    "fate-runner".to_string(),
+                ],
+            },
+            FateMapping {
+                component_id: "avutil-error".to_string(),
+                target: "local-error-unit".to_string(),
+                workdir: ".".to_string(),
+                program: "cargo".to_string(),
+                env: vec![],
+                args: vec!["test".to_string(), "-p".to_string(), "avutil".to_string()],
+            },
+            FateMapping {
+                component_id: "fate-runner".to_string(),
+                target: "local-dry-run".to_string(),
+                workdir: ".".to_string(),
+                program: "cargo".to_string(),
+                env: vec![],
+                args: vec![
+                    "run".to_string(),
+                    "-p".to_string(),
+                    "fate-runner".to_string(),
+                ],
+            },
+        ];
+
+        assert_eq!(
+            filter_mappings_by_components(mappings.clone(), &["fate-runner".to_string()]),
+            vec![mappings[0].clone(), mappings[2].clone()]
+        );
+        assert_eq!(
+            filter_mappings_by_components(mappings.clone(), &[]),
+            mappings
+        );
+        assert!(
+            filter_mappings_by_components(mappings, &["missing-component".to_string()]).is_empty()
+        );
+    }
+
+    #[test]
+    fn component_filters_validate_against_ledger_ids() {
+        let component_ids = vec!["fate-runner".to_string(), "avutil-error".to_string()];
+
+        assert!(validate_component_filters(&["fate-runner".to_string()], &component_ids).is_ok());
+        assert_eq!(
+            validate_component_filters(&["missing".to_string()], &component_ids).unwrap_err(),
+            "unknown ledger component `missing`"
+        );
     }
 
     #[test]

@@ -726,6 +726,71 @@ mod tests {
     }
 
     #[test]
+    fn consumes_dash_prefixed_values_for_file_scoped_options() {
+        let args = strings(&[
+            "-i", "in.wav", "-c:a", "-ac3", "-ac", "-2", "-ar", "-44100", "-f", "null", "-",
+        ]);
+
+        let parsed = parse_ffmpeg_args(&args).unwrap();
+        let output = &parsed.outputs()[0];
+
+        assert_eq!(output.options()[0].name(), "c:a");
+        assert_eq!(output.options()[0].value_ref(), Some("-ac3"));
+        assert_eq!(output.options()[1].name(), "ac");
+        assert_eq!(output.options()[1].value_ref(), Some("-2"));
+        assert_eq!(output.options()[2].name(), "ar");
+        assert_eq!(output.options()[2].value_ref(), Some("-44100"));
+        assert_eq!(output.options()[3].name(), "f");
+        assert_eq!(output.options()[3].value_ref(), Some("null"));
+        assert_eq!(output.url(), "-");
+    }
+
+    #[test]
+    fn preserves_file_option_order_across_repeated_outputs() {
+        let args = strings(&[
+            "-f",
+            "s16le",
+            "-i",
+            "in.wav",
+            "-c:a",
+            "pcm_s16le",
+            "out-1.wav",
+            "-ar",
+            "48000",
+            "-c:a",
+            "pcm_f32le",
+            "out-2.wav",
+        ]);
+
+        let parsed = parse_ffmpeg_args(&args).unwrap();
+
+        assert_eq!(parsed.inputs()[0].options()[0].name(), "f");
+        assert_eq!(parsed.outputs()[0].url(), "out-1.wav");
+        assert_eq!(parsed.outputs()[0].options()[0].name(), "c:a");
+        assert_eq!(
+            parsed.outputs()[0].options()[0].value_ref(),
+            Some("pcm_s16le")
+        );
+        assert_eq!(parsed.outputs()[1].url(), "out-2.wav");
+        assert_eq!(parsed.outputs()[1].options()[0].name(), "ar");
+        assert_eq!(parsed.outputs()[1].options()[0].value_ref(), Some("48000"));
+        assert_eq!(parsed.outputs()[1].options()[1].name(), "c:a");
+        assert_eq!(
+            parsed.outputs()[1].options()[1].value_ref(),
+            Some("pcm_f32le")
+        );
+    }
+
+    #[test]
+    fn missing_value_errors_include_full_option_token() {
+        let err = parse_ffmpeg_args(&strings(&["-f"])).unwrap_err();
+        assert_eq!(err.message(), "missing value for option `-f`");
+
+        let err = parse_ffmpeg_args(&strings(&["-v"])).unwrap_err();
+        assert_eq!(err.message(), "missing value for option `-v`");
+    }
+
+    #[test]
     fn rejects_invalid_loglevel_values() {
         let err = parse_ffmpeg_args(&strings(&["-loglevel", "warn", "-i", "in.wav", "out.wav"]))
             .unwrap_err();

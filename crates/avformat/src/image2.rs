@@ -605,6 +605,29 @@ mod tests {
     }
 
     #[test]
+    fn single_image_mode_ignores_start_number_for_packet_timestamps() {
+        let mut demuxer = Image2Demuxer::open(
+            "cover.png",
+            vec![entry("cover.png", b"png bytes")],
+            7,
+            Rational::new(1, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(demuxer.info().start_number(), 7);
+        assert!(!demuxer.info().pattern().is_sequence());
+
+        let packet = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(packet.pts(), Some(0));
+        assert_eq!(packet.dts(), Some(0));
+        assert_eq!(packet.duration(), 1);
+        assert_eq!(packet.data(), b"png bytes");
+
+        assert!(packet.side_data()[0].data() == b"cover.png");
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
     fn validates_patterns_and_frame_rate() {
         assert!(Image2Pattern::parse("").is_err());
         assert!(Image2Pattern::parse("frame-%x.png").is_err());

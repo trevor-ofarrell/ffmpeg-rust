@@ -23,6 +23,12 @@ fn image2_ppm_single_framecrc_records_match_ffmpeg_oracle() {
 
 #[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn image2_ppm_single_framecrc_records_ignores_nonzero_start_number_like_rust() {
+    compare_image2_single_framecrc_records_with_start_number("ppm", "1", "7", PPM_1X1_RED);
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
 fn image2_ppm_numbered_sequence_file_output_matches_ffmpeg_oracle() {
     compare_image2_sequence_file_output("ppm", "1", &[PPM_1X1_RED, PPM_1X1_GREEN]);
 }
@@ -218,6 +224,79 @@ fn compare_image2_single_framecrc_records(extension: &str, frame_rate: &str, pay
             "framecrc",
             "-",
         ])
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", oracle.display()));
+
+    remove_temp_files(&[input_path]);
+
+    assert!(
+        oracle_output.status.success(),
+        "oracle image2 single framecrc failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        oracle_output.status.code(),
+        String::from_utf8_lossy(&oracle_output.stdout),
+        String::from_utf8_lossy(&oracle_output.stderr)
+    );
+
+    let oracle_stdout =
+        String::from_utf8(oracle_output.stdout).expect("oracle framecrc output should be UTF-8");
+
+    assert_eq!(rust.output_format(), Some("framecrc"));
+    assert_eq!(rust.packet_count(), 1);
+    assert_eq!(rust.byte_count(), u64::try_from(payload.len()).unwrap());
+    assert!(rust.stderr().is_empty());
+    assert_eq!(
+        normalize_framecrc_records(rust.stdout()),
+        normalize_framecrc_records(&oracle_stdout)
+    );
+}
+
+fn compare_image2_single_framecrc_records_with_start_number(
+    extension: &str,
+    frame_rate: &str,
+    start_number: &str,
+    payload: &[u8],
+) {
+    let oracle = oracle_ffmpeg();
+    let input_path = write_temp_bytes("image2-single-framecrc-start-input", extension, payload);
+    let input_arg = input_path.to_string_lossy().into_owned();
+
+    let rust_args = vec![
+        "-f",
+        "image2",
+        "-framerate",
+        frame_rate,
+        "-start_number",
+        start_number,
+        "-i",
+        input_arg.as_str(),
+        "-f",
+        "framecrc",
+        "-",
+    ];
+    let rust = ffmpeg_output(&strings(&rust_args))
+        .expect("Rust image2 single framecrc path should execute");
+
+    let oracle_args = vec![
+        "-nostdin",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "image2",
+        "-framerate",
+        frame_rate,
+        "-start_number",
+        start_number,
+        "-i",
+        input_arg.as_str(),
+        "-c:v",
+        "copy",
+        "-f",
+        "framecrc",
+        "-",
+    ];
+    let oracle_output = Command::new(&oracle)
+        .args(oracle_args)
         .output()
         .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", oracle.display()));
 

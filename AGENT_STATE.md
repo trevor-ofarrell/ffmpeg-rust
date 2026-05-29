@@ -3,48 +3,55 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active. The current
-xhigh fast/full-access worker batch was reviewed, corrected where needed, and
-integrated with the main-thread `avutil-buffer` self-replacement oracle slice.
-Workers completed and are ready to close: Darwin (`avformat-yuv4mpegpipe-demuxer`
-sample-aspect fields), Newton (`avformat-pcm-s16le-demuxer` invalid zero sample
-rate/channel parameters), Huygens (`fftools-version` invalid loglevel prefix
-before `-version`/`-buildconf`), and Lorentz (`avutil-frame` ref destination
-after source unref). No approval prompts were used.
+xhigh fast/full-access worker batch has been reviewed and integrated with the
+main-thread `fate-runner` component-filter slice. Workers completed and are
+ready to close: Laplace (`avutil-channel-layout` leading-zero count and strict
+whitespace/case parsing), Kant (`avutil-pixel-format` explicit-endian
+X2RGB10/X2BGR10 lookups plus invalid inputs), Aquinas
+(`avformat-image2-demuxer` single-image nonzero `-start_number` framecrc
+timing), and Carson (`fftools-option-parser` dash-prefixed value consumption
+and repeated output option grouping). No approval prompts were used.
 
-This batch added bounded strict-parity evidence for `avutil-buffer`
-(`av_buffer_replace(&buf, buf)` self-replacement), `avutil-frame`
-(destination frame ref survives source unref), `avformat-yuv4mpegpipe-demuxer`
-(malformed, duplicate, signed, and zero sample-aspect fields), `avformat-pcm-s16le-demuxer`
-(FFmpeg-shaped rejection of zero sample rate/channel parameters), and
-`fftools-version` (invalid `-v`/`-loglevel` before special version/buildconf
-requests fails without attaching the usual banner). No component was promoted to
-`complete`; strict completion remains 11/96 components, about 11.5%.
+This batch added bounded strict-parity evidence for `avutil-channel-layout`,
+`avutil-pixel-format`, `avformat-image2-demuxer`, `avformat-framecrc-muxer`,
+`avutil-packet`, `fftools-ffmpeg-image2-single-framecrc-null`, and
+`fftools-ffmpeg-image2-start-number`. It also advanced `fate-runner` from
+`scaffolded` to `implemented` by adding `mappings --component <id>` listing and
+prerequisite-audit filters. No component was promoted to `complete`; strict
+completion remains 11/96 components, about 11.5%.
 
-Latest committed slice: `Pin parallel edge parity`. Pending coherent slice:
-`Pin orchestrated edge parity`, integrating and validating the current xhigh
-worker evidence batch across code, oracle tests, differential mappings, ledger,
-docs, fuzz target checks, and state.
+Latest committed slice: `d4475374 Pin orchestrated edge parity`. Pending
+coherent slice: `Pin mapped parser and image2 edge parity`, integrating and
+validating the current xhigh worker evidence batch across code, oracle tests,
+differential mappings, ledger, docs, and state.
 
 Latest validation commands for the current xhigh worker evidence batch passed:
-focused local tests for avformat sample-aspect parsing, PCM invalid parameters,
-avutil frame ref/unref, fftools invalid-loglevel version/buildconf behavior, and
-avutil buffer self-replacement; ignored pinned oracle rows for buffer, frame,
-yuv4mpegpipe, PCM, and version/buildconf invalid-loglevel prefix behavior;
-`cargo check` and clippy for `fuzz` target `avformat_yuv4mpegpipe`; core clippy
-for `avutil`, `avformat`, `fftools`, and `fate-runner`; `cargo test -p
-fate-runner current_ledger`; `cargo run -p xtask -- guard-runtime`; `cargo run
--p xtask -- oracle-doctor`; a differential mapping run for the new yuv4mpegpipe,
-PCM, and fftools-version targets; `cargo run -p fate-runner -- run --changed`;
-WSL `cargo fuzz run avformat_yuv4mpegpipe -- -runs=1`; `cargo fmt --all -- --check`;
-and `git diff --check` with expected CRLF normalization warnings only.
+focused local tests for `avutil` channel-layout and pixel-format filters,
+`avformat image2`, `fftools option_parser`, and full `fate-runner`; ignored
+pinned oracle rows for channel-layout, pixel-format, and the new image2
+single-file nonzero start-number framecrc behavior; `cargo check` for fuzz
+target `avformat_image2`; `cargo fmt --all -- --check`; `cargo test -p
+fate-runner current_ledger`; `cargo run -p fate-runner -- mappings --mappings
+tests/differential/mappings.txt --component avformat-image2-demuxer --target
+oracle-image2-single-start-number-framecrc-records --check-prereqs
+--oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd`; `cargo
+clippy --manifest-path fuzz/Cargo.toml --bin avformat_image2 -- -D warnings`;
+core clippy for `avutil`, `avformat`, `fftools`, and `fate-runner`; a
+differential mapping run for the new image2 start-number row across
+`avformat-image2-demuxer`, `avformat-framecrc-muxer`, `avutil-packet`,
+`fftools-ffmpeg-image2-single-framecrc-null`, and
+`fftools-ffmpeg-image2-start-number`; `cargo run -p fate-runner -- run
+--changed`; `cargo run -p xtask -- guard-runtime`; `cargo run -p xtask --
+oracle-doctor`; and WSL `cargo fuzz run avformat_image2 -- -runs=1`.
+Worker-side narrow tests also passed for their owned lanes before integration.
 
-Latest failing commands for the current xhigh worker evidence batch: the first
-PCM unit assertion expected the wrong local error message and was corrected to
-the actual zero-sample wording; the first PCM oracle assertion expected the
-wrong FFmpeg wording and was corrected to check Rust `channel count` and FFmpeg
-`ch_layout` separately; the first core clippy run found `clippy::map_identity`
-in yuv4mpegpipe sample-aspect parsing and was fixed. No current validation
-failures remain.
+Latest failing commands for the current xhigh worker evidence batch: one
+combined avutil command used invalid Cargo filter syntax before running and was
+rerun as separate channel-layout and pixel-format tests; an earlier combined
+fate-runner parser-test command also used invalid Cargo filter syntax and was
+rerun with individual filters. `cargo fmt --all -- --check` failed while
+workers were still active due unformatted integrated changes; `cargo fmt --all`
+was then applied. No current validation failures remain.
 
 Current goal directive: continue from the completed 10% strict-parity milestone toward 100% FFmpeg 8.1.1 default-native compatibility using the orchestrator workflow. The main Codex thread is the merge captain and may use up to 10 subagents when tasks have disjoint ownership, independent validation, and low merge risk; default to 3-5 active agents when that is sufficient.
 
