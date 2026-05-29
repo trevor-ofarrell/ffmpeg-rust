@@ -1544,6 +1544,106 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         vec![pool_frees.lock().unwrap().len().to_string()],
     );
 
+    let pool_cow_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let pool_cow_frees = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let pool_cow_release_capture = Arc::clone(&pool_cow_releases);
+    let pool_cow_free_capture = Arc::clone(&pool_cow_frees);
+    let pool_cow = BufferPool::with_callbacks(
+        3,
+        0,
+        BufferPoolCallbacks::with_allocation_callbacks(
+            |allocated_len| {
+                assert_eq!(allocated_len, 3);
+                Ok(BufferPoolAllocation::with_opaque(
+                    vec![1, 2, 3],
+                    PoolToken {
+                        id: 56,
+                        size: allocated_len,
+                    },
+                ))
+            },
+            move |allocation| {
+                let token = allocation
+                    .opaque_ref::<PoolToken>()
+                    .expect("pool COW token should be preserved");
+                pool_cow_release_capture
+                    .lock()
+                    .unwrap()
+                    .push((token.id, allocation.as_slice().to_vec()));
+            },
+        )
+        .with_pool_free(move || {
+            pool_cow_free_capture.lock().unwrap().push(56);
+        }),
+    )
+    .unwrap();
+    let pool_cow_src = pool_cow.get().unwrap();
+    let mut pool_cow_dst = BufferRef::ref_from(&pool_cow_src);
+    pool_cow_dst.make_mut();
+    rows.insert(
+        "pool-cow:make-writable-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert("pool-cow:src".to_string(), buffer_fields(&pool_cow_src));
+    rows.insert("pool-cow:dst".to_string(), buffer_fields(&pool_cow_dst));
+    rows.insert(
+        "pool-cow:dst-opaque-null".to_string(),
+        vec![bool_field(pool_cow_dst.opaque_ref::<PoolToken>().is_none())],
+    );
+    rows.insert(
+        "pool-cow:shares".to_string(),
+        vec![bool_field(pool_cow_src.shares_storage(&pool_cow_dst))],
+    );
+    pool_cow_dst.make_mut().copy_from_slice(&[0xab, 0xbc, 0xcd]);
+    rows.insert(
+        "pool-cow:dst-mutated".to_string(),
+        buffer_fields(&pool_cow_dst),
+    );
+    drop(pool_cow_dst);
+    rows.insert(
+        "pool-cow:after-dst-unref".to_string(),
+        vec![
+            pool_cow_releases.lock().unwrap().len().to_string(),
+            pool_cow_frees.lock().unwrap().len().to_string(),
+        ],
+    );
+    drop(pool_cow_src);
+    rows.insert(
+        "pool-cow:after-src-unref".to_string(),
+        vec![
+            pool_cow_releases.lock().unwrap().len().to_string(),
+            pool_cow_frees.lock().unwrap().len().to_string(),
+        ],
+    );
+    let pool_cow_reuse = pool_cow.get().unwrap();
+    rows.insert("pool-cow:reuse".to_string(), buffer_fields(&pool_cow_reuse));
+    let pool_cow_reuse_token = pool_cow_reuse
+        .pool_opaque_ref::<PoolToken>()
+        .expect("pool COW reuse token");
+    rows.insert(
+        "pool-cow:opaque-reuse".to_string(),
+        vec![
+            pool_cow_reuse_token.id.to_string(),
+            pool_cow_reuse_token.size.to_string(),
+        ],
+    );
+    drop(pool_cow_reuse);
+    drop(pool_cow);
+    let pool_cow_release_values = pool_cow_releases.lock().unwrap();
+    let pool_cow_free_values = pool_cow_frees.lock().unwrap();
+    rows.insert(
+        "pool-cow:uninit-release".to_string(),
+        vec![
+            pool_cow_release_values.len().to_string(),
+            pool_cow_release_values[0].0.to_string(),
+            hex(&pool_cow_release_values[0].1),
+            pool_cow_free_values.len().to_string(),
+            pool_cow_free_values[0].to_string(),
+        ],
+    );
+    drop(pool_cow_free_values);
+    drop(pool_cow_release_values);
+
     let offset_pool_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let offset_pool_release_capture = Arc::clone(&offset_pool_releases);
     let offset_pool = BufferPool::with_callbacks(
@@ -3296,6 +3396,48 @@ int main(void) {
     print_hex(last_pool_release, last_pool_release_size);
     printf("\n");
     printf("pool:uninit-pool-free|%d\n", pool_free_count);
+
+    reset_pool_counters();
+    PoolOpaque pool_cow_opaque = { 56, 3 };
+    AVBufferPool *pool_cow =
+        av_buffer_pool_init2(3, &pool_cow_opaque, test_pool_alloc,
+                             test_pool_owner_free);
+    fail_if(!pool_cow, "av_buffer_pool_init2 cow failed");
+    AVBufferRef *pool_cow_src = av_buffer_pool_get(pool_cow);
+    fail_if(!pool_cow_src, "av_buffer_pool_get cow source failed");
+    AVBufferRef *pool_cow_dst = av_buffer_ref(pool_cow_src);
+    fail_if(!pool_cow_dst, "av_buffer_ref cow destination failed");
+    ret = av_buffer_make_writable(&pool_cow_dst);
+    printf("pool-cow:make-writable-ret|%d\n", ret);
+    fail_if(ret < 0, "av_buffer_make_writable pool cow failed");
+    print_buffer("pool-cow:src", pool_cow_src);
+    print_buffer("pool-cow:dst", pool_cow_dst);
+    printf("pool-cow:dst-opaque-null|%d\n",
+           av_buffer_get_opaque(pool_cow_dst) == NULL);
+    printf("pool-cow:shares|%d\n", pool_cow_src->data == pool_cow_dst->data);
+    static const uint8_t pool_cow_mutated[] = { 0xab, 0xbc, 0xcd };
+    fill_bytes(pool_cow_dst, pool_cow_mutated, sizeof(pool_cow_mutated));
+    print_buffer("pool-cow:dst-mutated", pool_cow_dst);
+    av_buffer_unref(&pool_cow_dst);
+    printf("pool-cow:after-dst-unref|%d|%d\n",
+           pool_release_count, pool_free_count);
+    av_buffer_unref(&pool_cow_src);
+    printf("pool-cow:after-src-unref|%d|%d\n",
+           pool_release_count, pool_free_count);
+    AVBufferRef *pool_cow_reuse = av_buffer_pool_get(pool_cow);
+    fail_if(!pool_cow_reuse, "av_buffer_pool_get cow reuse failed");
+    print_buffer("pool-cow:reuse", pool_cow_reuse);
+    PoolOpaque *pool_cow_reuse_opaque =
+        av_buffer_pool_buffer_get_opaque(pool_cow_reuse);
+    fail_if(!pool_cow_reuse_opaque, "pool cow reuse opaque missing");
+    printf("pool-cow:opaque-reuse|%" PRIuPTR "|%zu\n",
+           pool_cow_reuse_opaque->id, pool_cow_reuse_opaque->size);
+    av_buffer_unref(&pool_cow_reuse);
+    av_buffer_pool_uninit(&pool_cow);
+    printf("pool-cow:uninit-release|%d|%" PRIuPTR "|",
+           pool_release_count, last_pool_release_id);
+    print_hex(last_pool_release, last_pool_release_size);
+    printf("|%d|%" PRIuPTR "\n", pool_free_count, last_pool_free_id);
 
     reset_pool_counters();
     PoolOpaque offset_pool_opaque = { 88, 4 };

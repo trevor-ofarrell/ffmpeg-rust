@@ -2322,6 +2322,70 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     );
     assert_eq!(*custom_pool_frees.lock().unwrap(), 1);
 
+    let custom_cow_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let custom_cow_frees = Arc::new(Mutex::new(0usize));
+    let custom_cow_release_capture = Arc::clone(&custom_cow_releases);
+    let custom_cow_free_capture = Arc::clone(&custom_cow_frees);
+    let custom_cow_pool = BufferPool::with_callbacks(
+        payload_len,
+        padding_len,
+        BufferPoolCallbacks::with_allocation_callbacks(
+            move |allocated_len| {
+                Ok(BufferPoolAllocation::with_opaque(
+                    vec![0x56; allocated_len],
+                    allocated_len,
+                ))
+            },
+            move |allocation| {
+                let opaque = *allocation.opaque_ref::<usize>().unwrap();
+                custom_cow_release_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, allocation.into_vec()));
+            },
+        )
+        .with_pool_free(move || {
+            *custom_cow_free_capture.lock().unwrap() += 1;
+        }),
+    )
+    .unwrap();
+    let custom_cow_source = custom_cow_pool.get().unwrap();
+    let mut custom_cow_detached = BufferRef::ref_from(&custom_cow_source);
+    custom_cow_detached.make_mut();
+    assert!(!custom_cow_detached.shares_storage(&custom_cow_source));
+    assert_eq!(
+        custom_cow_source.pool_opaque_ref::<usize>().copied(),
+        Some(payload_len + padding_len)
+    );
+    assert!(custom_cow_detached.pool_opaque_ref::<usize>().is_none());
+    if !custom_cow_detached.is_empty() {
+        custom_cow_detached.make_mut()[0] = cursor.next().unwrap_or_default();
+    }
+    drop(custom_cow_detached);
+    assert!(custom_cow_releases.lock().unwrap().is_empty());
+    assert_eq!(custom_cow_pool.available_count().unwrap(), 0);
+    drop(custom_cow_source);
+    assert_eq!(custom_cow_pool.available_count().unwrap(), 1);
+    let custom_cow_reuse = custom_cow_pool.get().unwrap();
+    assert_eq!(
+        custom_cow_reuse.as_padded_slice(),
+        vec![0x56; payload_len + padding_len].as_slice()
+    );
+    assert_eq!(
+        custom_cow_reuse.pool_opaque_ref::<usize>().copied(),
+        Some(payload_len + padding_len)
+    );
+    drop(custom_cow_reuse);
+    drop(custom_cow_pool);
+    assert_eq!(
+        *custom_cow_releases.lock().unwrap(),
+        vec![(
+            payload_len + padding_len,
+            vec![0x56; payload_len + padding_len]
+        )]
+    );
+    assert_eq!(*custom_cow_frees.lock().unwrap(), 1);
+
     let offset_pool_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let offset_release_capture = Arc::clone(&offset_pool_releases);
     let offset_pool = BufferPool::with_callbacks(
