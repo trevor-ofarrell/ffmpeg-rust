@@ -130,6 +130,29 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         vec![bool_field(shared_src.shares_storage(&shared_dst))],
     );
 
+    let zero_shared_src = BufferRef::zeroed(0).unwrap();
+    let mut zero_shared_dst = BufferRef::ref_from(&zero_shared_src);
+    zero_shared_dst.make_mut();
+    rows.insert(
+        "buffer:make-writable-zero-shared-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:make-writable-zero-shared-src".to_string(),
+        buffer_fields(&zero_shared_src),
+    );
+    rows.insert(
+        "buffer:make-writable-zero-shared-dst".to_string(),
+        buffer_fields(&zero_shared_dst),
+    );
+    rows.insert(
+        "buffer:make-writable-zero-shared-shares".to_string(),
+        vec![
+            bool_field(zero_shared_src.shares_storage(&zero_shared_dst)),
+            zero_shared_src.strong_count().to_string(),
+        ],
+    );
+
     let released = Arc::new(Mutex::new(Vec::<usize>::new()));
     let capture = Arc::clone(&released);
     let mut readonly = BufferRef::from_external_slice_with_opaque_readonly(
@@ -1482,6 +1505,20 @@ int main(void) {
            shared_src->data == shared_dst->data);
     av_buffer_unref(&shared_dst);
     av_buffer_unref(&shared_src);
+
+    AVBufferRef *zero_shared_src = av_buffer_allocz(0);
+    fail_if(!zero_shared_src, "av_buffer_allocz zero_shared_src failed");
+    AVBufferRef *zero_shared_dst = av_buffer_ref(zero_shared_src);
+    fail_if(!zero_shared_dst, "av_buffer_ref zero_shared failed");
+    ret = av_buffer_make_writable(&zero_shared_dst);
+    printf("buffer:make-writable-zero-shared-ret|%d\n", ret);
+    print_buffer("buffer:make-writable-zero-shared-src", zero_shared_src);
+    print_buffer("buffer:make-writable-zero-shared-dst", zero_shared_dst);
+    printf("buffer:make-writable-zero-shared-shares|%d|%d\n",
+           zero_shared_src->buffer == zero_shared_dst->buffer,
+           av_buffer_get_ref_count(zero_shared_src));
+    av_buffer_unref(&zero_shared_dst);
+    av_buffer_unref(&zero_shared_src);
 
     uint8_t *readonly_data = av_malloc(3);
     fail_if(!readonly_data, "av_malloc readonly failed");

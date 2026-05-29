@@ -2,6 +2,16 @@
 
 ## Current Status
 
+Latest `avutil-buffer` zero-length shared make-writable slice: pinned FFmpeg 8.1.1 libavutil `av_buffer_make_writable()` rows now prove a shared `av_buffer_allocz(0)` destination detaches to a separate writable empty ref, while the source drops back to refcount 1 and is writable again with zero visible bytes. Rust unit coverage and `avutil_core_models` fuzz invariants mirror that shape. `avutil-buffer` remains `differential_pass`, not complete, because broader AVBuffer/AVBufferRef ABI/lifetime closure, hardware/device ownership integration, and final completion evidence remain pending. Strict completion remains 11/96 components, about 11.5%.
+
+Latest validation commands for the zero-length shared make-writable slice passed: `cargo fmt --all`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib zero_length_shared_make_mut_detaches_to_writable_empty_ref -- --nocapture`; `$env:CARGO_TARGET_DIR='target-codex'; cargo check --manifest-path fuzz\\Cargo.toml --bin avutil_core_models`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --test buffer_oracle libavutil_buffer_refs_match_current_model -- --ignored --nocapture`; `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy -p avutil --all-targets --all-features -- -D warnings`; `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --manifest-path fuzz\\Cargo.toml --bin avutil_core_models -- -D warnings`; and WSL `RUST_MIN_STACK=33554432 CXXFLAGS='-O1' HOST_CXXFLAGS='-O1' CARGO_TARGET_DIR=target-wsl-buffer-zero-shared-writable-fuzz-o1 cargo fuzz run avutil_core_models -- -runs=1`.
+
+Final repository gates for the zero-length shared make-writable slice also passed: `cargo fmt --all -- --check`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib buffer -- --nocapture`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p fate-runner current_ledger -- --nocapture`; `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-buffer`; `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-buffer --target oracle-libavutil-buffer --oracle-ffmpeg .\\third_party\\ffmpeg-oracle\\build\\bin\\ffmpeg.cmd`; `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- guard-runtime`; `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- oracle-doctor`; `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --workspace --all-targets --all-features -- -D warnings`; `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed`; and `git diff --check` with CRLF conversion warnings only.
+
+Latest failing commands for the zero-length shared make-writable slice: none.
+
+Latest change summary: `Pin zero-length AVBuffer make-writable`.
+
 Latest `avutil-buffer` zero-size pool slice: pinned FFmpeg 8.1.1 libavutil `av_buffer_pool_init(0, NULL)` plus two `av_buffer_pool_get()` rows now prove the default allocator returns writable zero-length refs with NULL per-buffer pool opaque data, returns those empty refs to the pool after unref, and can reuse them. Rust unit coverage and `avutil_core_models` fuzz invariants mirror that shape. `avutil-buffer` remains `differential_pass`, not complete, because broader AVBuffer/AVBufferRef ABI/lifetime closure, hardware/device ownership integration, and final completion evidence remain pending. Strict completion remains 11/96 components, about 11.5%.
 
 Latest validation commands for the zero-size pool slice passed: `cargo fmt --all`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib buffer_pool_zero_size_default_allocator_reuses_empty_buffers -- --nocapture`; `$env:CARGO_TARGET_DIR='target-codex'; cargo check --manifest-path fuzz\\Cargo.toml --bin avutil_core_models`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --test buffer_oracle libavutil_buffer_refs_match_current_model -- --ignored --nocapture`; `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy -p avutil --all-targets --all-features -- -D warnings`; `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --manifest-path fuzz\\Cargo.toml --bin avutil_core_models -- -D warnings`; and WSL `RUST_MIN_STACK=33554432 CXXFLAGS='-O1' HOST_CXXFLAGS='-O1' CARGO_TARGET_DIR=target-wsl-buffer-zero-pool-fuzz-o1 cargo fuzz run avutil_core_models -- -runs=1`.
@@ -1479,6 +1489,25 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-buffer` zero-length shared make-writable slice:
+  - `cargo fmt --all`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib zero_length_shared_make_mut_detaches_to_writable_empty_ref -- --nocapture`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo check --manifest-path fuzz\\Cargo.toml --bin avutil_core_models`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --test buffer_oracle libavutil_buffer_refs_match_current_model -- --ignored --nocapture`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy -p avutil --all-targets --all-features -- -D warnings`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --manifest-path fuzz\\Cargo.toml --bin avutil_core_models -- -D warnings`
+  - WSL `RUST_MIN_STACK=33554432 CXXFLAGS='-O1' HOST_CXXFLAGS='-O1' CARGO_TARGET_DIR=target-wsl-buffer-zero-shared-writable-fuzz-o1 cargo fuzz run avutil_core_models -- -runs=1`
+  - `cargo fmt --all -- --check`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib buffer -- --nocapture`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p fate-runner current_ledger -- --nocapture`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-buffer`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-buffer --target oracle-libavutil-buffer --oracle-ffmpeg .\\third_party\\ffmpeg-oracle\\build\\bin\\ffmpeg.cmd`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- guard-runtime`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- oracle-doctor`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --workspace --all-targets --all-features -- -D warnings`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed`
+  - `git diff --check` (passed with CRLF warnings only)
 
 - Current `avutil-buffer` zero-size pool slice:
   - `cargo fmt --all`
@@ -7586,6 +7615,9 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-buffer` zero-length shared make-writable slice:
+  - None. The WSL fuzz command rebuilt sanitizer artifacts for the new target dir before passing the one-run corpus smoke.
+
 - Current `avutil-buffer` zero-size pool slice:
   - None. The WSL fuzz command rebuilt sanitizer artifacts for the new target dir before passing the one-run corpus smoke.
 
@@ -8296,6 +8328,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-buffer` is the current focus. The latest coherent slice pins zero-length shared make-writable behavior against FFmpeg 8.1.1: `av_buffer_make_writable()` on one shared `av_buffer_allocz(0)` ref detaches the destination to a separate writable empty ref, while the source returns to refcount 1 and writable status. The component remains `differential_pass`, not complete, because remaining AVBuffer/AVBufferRef ABI/lifetime edges, hardware/device ownership integration, and final completion evidence still need closure.
+
 `avutil-buffer` is the current focus. The latest coherent slice pins zero-size default-pool behavior against FFmpeg 8.1.1: `av_buffer_pool_init(0, NULL)` returns writable zero-length refs with NULL per-buffer pool opaque data, and the pool can accept and reuse those empty refs after unref. The component remains `differential_pass`, not complete, because remaining AVBuffer/AVBufferRef ABI/lifetime edges, hardware/device ownership integration, and final completion evidence still need closure.
 
 `avutil-buffer` is the current focus. The latest coherent slice pins shared-readonly `av_buffer_realloc()` lifetime behavior against FFmpeg 8.1.1: one detached destination becomes writable and loses opaque owner state while the readonly source keeps the original opaque owner until the final original reference is released. The component remains `differential_pass`, not complete, because remaining AVBuffer/AVBufferRef ABI/lifetime edges, hardware/device ownership integration, and final completion evidence still need closure.
@@ -8798,6 +8832,7 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Known Blockers
 
+- `avutil-buffer` now has pinned zero-length shared make-writable evidence: `av_buffer_make_writable()` on one shared `av_buffer_allocz(0)` ref detaches the destination to separate writable empty storage and leaves the source writable with refcount 1. It remains below strict completion because broader AVBuffer/AVBufferRef ABI/lifetime closure, hardware/device ownership integration, and final limitation-zero documentation are still incomplete.
 - `avutil-buffer` now has pinned zero-size default-pool evidence: `av_buffer_pool_init(0, NULL)` plus repeated `av_buffer_pool_get()` rows prove reusable writable empty refs with NULL per-buffer pool opaque data. It remains below strict completion because broader AVBuffer/AVBufferRef ABI/lifetime closure, hardware/device ownership integration, and final limitation-zero documentation are still incomplete.
 - `avutil-buffer` now has pinned shared-readonly `av_buffer_realloc()` evidence: reallocating one ref detaches the destination, copies the prefix, clears destination opaque data, preserves the readonly source owner, and releases the original owner only after the final original reference drops. It remains below strict completion because broader AVBuffer/AVBufferRef ABI/lifetime closure, hardware/device ownership integration, and final limitation-zero documentation are still incomplete.
 - `avutil-logging` now has expanded pinned custom-callback evidence for raw delivered levels `-1`, `23`, and `57`, multi-argument `va_list` formatting, repeated NULL/context delivery under `AV_LOG_SKIP_REPEATED`, and AVClass-context `AV_LOG_QUIET` delivery. It remains below strict completion because the exported C callback ABI/function-pointer surface, broader default-callback stderr behavior, broader terminal/color policy, real-timezone/DST behavior, media-progress stderr, and sustained fuzz evidence are still incomplete.

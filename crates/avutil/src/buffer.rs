@@ -2001,6 +2001,29 @@ mod tests {
     }
 
     #[test]
+    fn zero_length_shared_make_mut_detaches_to_writable_empty_ref() {
+        let source = BufferRef::zeroed(0).unwrap();
+        let mut detached = BufferRef::ref_from(&source);
+
+        assert_eq!(source.len(), 0);
+        assert_eq!(detached.len(), 0);
+        assert!(source.shares_storage(&detached));
+        assert_eq!(source.strong_count(), 2);
+        assert!(!source.is_writable());
+        assert!(!detached.is_writable());
+
+        detached.make_mut();
+
+        assert_eq!(source.len(), 0);
+        assert_eq!(detached.len(), 0);
+        assert!(!source.shares_storage(&detached));
+        assert_eq!(source.strong_count(), 1);
+        assert_eq!(detached.strong_count(), 1);
+        assert!(source.is_writable());
+        assert!(detached.is_writable());
+    }
+
+    #[test]
     fn buffer_slices_are_checked_views_over_shared_storage() {
         let buffer = BufferRef::from_vec(vec![10, 11, 12, 13]);
         let middle = buffer.slice(1, 2).unwrap();

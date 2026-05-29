@@ -1309,6 +1309,21 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     let realloc_zero_empty = realloc_zero_empty.expect("nullable zero realloc allocates");
     assert_eq!(realloc_zero_empty.len(), 0);
     assert!(realloc_zero_empty.is_writable());
+
+    let zero_shared_source = BufferRef::zeroed(0).unwrap();
+    let mut zero_shared_detached = BufferRef::ref_from(&zero_shared_source);
+    assert!(zero_shared_source.shares_storage(&zero_shared_detached));
+    assert_eq!(zero_shared_source.strong_count(), 2);
+    assert!(!zero_shared_source.is_writable());
+    zero_shared_detached.make_mut();
+    assert_eq!(zero_shared_source.len(), 0);
+    assert_eq!(zero_shared_detached.len(), 0);
+    assert!(!zero_shared_source.shares_storage(&zero_shared_detached));
+    assert_eq!(zero_shared_source.strong_count(), 1);
+    assert_eq!(zero_shared_detached.strong_count(), 1);
+    assert!(zero_shared_source.is_writable());
+    assert!(zero_shared_detached.is_writable());
+
     let mut realloc_existing = Some(BufferRef::copy_from_slice(&payload));
     BufferRef::realloc(&mut realloc_existing, resize_len).unwrap();
     let realloc_existing = realloc_existing.expect("existing realloc stays present");
