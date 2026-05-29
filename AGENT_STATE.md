@@ -2,6 +2,55 @@
 
 ## Current Status
 
+Current authoritative turn status: orchestrator workflow is active. The latest
+xhigh fast/full-access worker batch has been reviewed and integrated with a
+main-thread `fate-runner status`/changed-selection slice. Workers completed and
+were closed after integration: Leibniz (`avformat-wav-demuxer` missing padding
+after an odd unknown chunk), Arendt (`avformat-yuv4mpegpipe-demuxer` unknown
+`X*` extension and XCOLORRANGE precedence), Mill (`avutil-options`
+explicit-assignment then shorthand-token failure), and Ptolemy
+(`fftools-version` trailing `-hide_banner` for `-version`/`-buildconf`). No
+approval prompts were used.
+
+This batch added bounded strict-parity evidence for `avformat-wav-demuxer`,
+`avformat-yuv4mpegpipe-demuxer`, `avformat-framecrc-muxer`, `avutil-packet`,
+`avutil-options`, `fftools-version`, and
+`fftools-ffmpeg-yuv4mpegpipe-framecrc-null`. It also added
+`fate-runner status --next <count>` plus changed-path selection for selected
+fuzz corpus directories. No component was promoted to `complete`; strict
+completion remains 11/96 components, about 11.5%.
+
+Latest committed slice: `3620f164 Pin mapped parser and image2 edge parity`.
+Pending coherent slice: `Pin orchestrated status and parser edge parity`,
+integrating worker evidence, differential mappings, ledger, docs, state, and
+runner status reporting.
+
+Latest validation commands for the current orchestrated evidence batch passed:
+`cargo test -p avformat wav -- --nocapture`, `cargo test -p avformat
+yuv4mpegpipe -- --nocapture`, `cargo test -p avutil --lib
+set_avoptions_from_string_matches_bounded_ffmpeg_shape -- --nocapture`, `cargo
+test -p fftools version -- --nocapture`, full `cargo test -p fate-runner --
+--nocapture`, `cargo run -p fate-runner -- status --next 5`, `cargo check
+--manifest-path fuzz/Cargo.toml --bin avformat_wav --bin
+avformat_yuv4mpegpipe --bin avutil_metadata_options`, ignored pinned oracle
+tests for the new WAV, YUV4MPEG2, AVOption, and version/buildconf rows,
+`cargo fmt --all -- --check`, core clippy for `avutil`, `avformat`,
+`fftools`, and `fate-runner`, fuzz clippy for the three changed fuzz targets,
+differential mapping runs for the new WAV missing-padding row, YUV4MPEG2
+unknown-extension row, version/buildconf trailing-hide-banner row, and the
+existing libavutil-options row, `cargo run -p xtask -- guard-runtime`, `cargo
+run -p xtask -- oracle-doctor`, `cargo run -p fate-runner -- run --changed`,
+WSL `cargo fuzz run avformat_wav -- -runs=1`, WSL `cargo fuzz run
+avformat_yuv4mpegpipe -- -runs=1`, WSL `cargo fuzz run
+avutil_metadata_options -- -runs=1`, and `git diff --check` with CRLF
+conversion warnings only.
+
+Latest failing commands for the current orchestrated evidence batch: one
+combined `cargo test -p fate-runner status fuzz_corpora current_ledger` command
+used invalid Cargo filter syntax before running tests; it was rerun as full
+`cargo test -p fate-runner -- --nocapture`. No current validation failures
+remain.
+
 Current authoritative turn status: orchestrator workflow is active. The current
 xhigh fast/full-access worker batch has been reviewed and integrated with the
 main-thread `fate-runner` component-filter slice. Workers completed and are

@@ -574,6 +574,24 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         state_fields(&string_after_named_error),
     );
 
+    let mut string_after_explicit_shorthand_error = sample_options();
+    insert_row(
+        &mut rows,
+        "ret:set-from-string-after-explicit-shorthand-error",
+        [ret_count(
+            string_after_explicit_shorthand_error.set_avoptions_from_string(
+                "threads=10:yes:quality=0.75",
+                &["threads", "bitexact"],
+                "=",
+                ":",
+            ),
+        )],
+    );
+    rows.insert(
+        "state:set-from-string-after-explicit-shorthand-error".to_string(),
+        state_fields(&string_after_explicit_shorthand_error),
+    );
+
     let mut string_set_error = sample_options();
     insert_row(
         &mut rows,
@@ -5864,6 +5882,15 @@ static void print_set_from_string_rows(void) {
                                  shorthand, "=", ":");
     printf("ret:set-from-string-after-named-error|%d\n", ret);
     print_state("state:set-from-string-after-named-error", &ctx);
+    av_opt_free(&ctx);
+    av_opt_free(&ctx.child);
+
+    init_context(&ctx);
+    ret = av_opt_set_from_string(&ctx,
+                                 "threads=10:yes:quality=0.75",
+                                 shorthand, "=", ":");
+    printf("ret:set-from-string-after-explicit-shorthand-error|%d\n", ret);
+    print_state("state:set-from-string-after-explicit-shorthand-error", &ctx);
     av_opt_free(&ctx);
     av_opt_free(&ctx.child);
 

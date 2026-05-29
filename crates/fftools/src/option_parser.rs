@@ -832,6 +832,26 @@ mod tests {
     }
 
     #[test]
+    fn finds_version_request_with_trailing_hide_banner_options() {
+        assert_eq!(
+            find_version_or_buildconf_request_index(&strings(&["-version", "-hide_banner"])),
+            Some(0)
+        );
+        assert_eq!(
+            find_version_or_buildconf_request_index(&strings(&["-buildconf", "-hide_banner"])),
+            Some(0)
+        );
+        assert_eq!(
+            find_version_or_buildconf_request_index(&strings(&["-hide_banner", "-version"])),
+            Some(1)
+        );
+        assert_eq!(
+            find_version_or_buildconf_request_index(&strings(&["-hide_banner", "-buildconf"])),
+            Some(1)
+        );
+    }
+
+    #[test]
     fn treats_single_dash_as_output_url() {
         let args = strings(&["-f", "null", "-"]);
 

@@ -148,6 +148,13 @@ fn dash_prefixed_values_are_consumed_before_special_requests() {
 
 #[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn version_and_buildconf_trailing_hide_banner_is_ignored() {
+    compare_version_buildconf_trailing_hide_banner("ffmpeg");
+    compare_version_buildconf_trailing_hide_banner("ffprobe");
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
 fn ffmpeg_repeated_diagnostics_match_default_repeat_summary_shape() {
     let input_pattern = invalid_jpeg_sequence_pattern();
     let input_pattern = input_pattern.to_string_lossy().into_owned();
@@ -468,6 +475,126 @@ fn compare_version_buildconf_ignores_value_option_tail(tool_name: &str) {
             let rust_buildconf = ffprobe_output(&strings(&["-buildconf", "-f"]))
                 .expect("Rust ffprobe buildconf should ignore trailing -f");
             assert_buildconf_shape(tool_name, &rust_buildconf, "Rust");
+        }
+        other => panic!("unsupported tool `{other}`"),
+    }
+}
+
+fn compare_version_buildconf_trailing_hide_banner(tool_name: &str) {
+    let oracle = oracle_tool(tool_name);
+
+    let oracle_version_plain = run_oracle(&oracle, tool_name, &["-version"]);
+    assert!(
+        oracle_version_plain.status_success,
+        "oracle `{}` should accept -version for trailing hide_banner comparison, got stdout:\n{}\nstderr:\n{}",
+        oracle.display(),
+        oracle_version_plain.stdout,
+        oracle_version_plain.stderr
+    );
+    let oracle_version_tail_hide = run_oracle(&oracle, tool_name, &["-version", "-hide_banner"]);
+    assert!(
+        oracle_version_tail_hide.status_success,
+        "oracle `{}` should accept -version -hide_banner, got stdout:\n{}\nstderr:\n{}",
+        oracle.display(),
+        oracle_version_tail_hide.stdout,
+        oracle_version_tail_hide.stderr
+    );
+    assert!(
+        oracle_version_plain.stdout == oracle_version_tail_hide.stdout,
+        "oracle `{}` should print the same -version output with trailing -hide_banner, got plain:\n{}\nwith tail hide_banner:\n{}",
+        oracle.display(),
+        oracle_version_plain.stdout,
+        oracle_version_tail_hide.stdout
+    );
+    assert!(
+        oracle_version_plain.stderr == oracle_version_tail_hide.stderr,
+        "oracle `{}` should keep trailing -hide_banner from mutating version stderr, got plain:\n{}\nwith tail hide_banner:\n{}",
+        oracle.display(),
+        oracle_version_plain.stderr,
+        oracle_version_tail_hide.stderr
+    );
+
+    let oracle_buildconf_plain = run_oracle(&oracle, tool_name, &["-buildconf"]);
+    assert!(
+        oracle_buildconf_plain.status_success,
+        "oracle `{}` should accept -buildconf for trailing hide_banner comparison, got stdout:\n{}\nstderr:\n{}",
+        oracle.display(),
+        oracle_buildconf_plain.stdout,
+        oracle_buildconf_plain.stderr
+    );
+    let oracle_buildconf_tail_hide =
+        run_oracle(&oracle, tool_name, &["-buildconf", "-hide_banner"]);
+    assert!(
+        oracle_buildconf_tail_hide.status_success,
+        "oracle `{}` should accept -buildconf -hide_banner, got stdout:\n{}\nstderr:\n{}",
+        oracle.display(),
+        oracle_buildconf_tail_hide.stdout,
+        oracle_buildconf_tail_hide.stderr
+    );
+    assert!(
+        normalized_buildconf_output(
+            tool_name,
+            &format!("{}{}", oracle_buildconf_plain.stdout, oracle_buildconf_plain.stderr),
+        ) == normalized_buildconf_output(
+            tool_name,
+            &format!("{}{}", oracle_buildconf_tail_hide.stdout, oracle_buildconf_tail_hide.stderr),
+        ),
+        "oracle `{}` should print the same buildconf output with trailing -hide_banner, got plain:\n{}\nwith tail hide_banner:\n{}",
+        oracle.display(),
+        oracle_buildconf_plain.stdout,
+        oracle_buildconf_tail_hide.stdout
+    );
+
+    match tool_name {
+        "ffmpeg" => {
+            let rust_version = ffmpeg_output(&strings(&["-version"]))
+                .expect("ffmpeg version request should succeed");
+            let rust_version_tail_hide = ffmpeg_output(&strings(&["-version", "-hide_banner"]))
+                .expect("ffmpeg should keep trailing -hide_banner after -version");
+            assert_eq!(rust_version_tail_hide.stdout(), rust_version.stdout());
+            assert_eq!(rust_version_tail_hide.stderr(), rust_version.stderr());
+            assert_eq!(rust_version.output_format(), None);
+
+            let rust_buildconf = ffmpeg_output(&strings(&["-buildconf"]))
+                .expect("ffmpeg buildconf request should succeed");
+            let rust_buildconf_tail_hide = ffmpeg_output(&strings(&["-buildconf", "-hide_banner"]))
+                .expect("ffmpeg should keep trailing -hide_banner after -buildconf");
+            assert_eq!(rust_buildconf.output_format(), None);
+            assert_eq!(rust_buildconf_tail_hide.output_format(), None);
+            let rust_buildconf_output =
+                format!("{}{}", rust_buildconf.stdout(), rust_buildconf.stderr());
+            let rust_buildconf_tail_output = format!(
+                "{}{}",
+                rust_buildconf_tail_hide.stdout(),
+                rust_buildconf_tail_hide.stderr()
+            );
+            assert_buildconf_shape(
+                tool_name,
+                normalized_buildconf_output(tool_name, &rust_buildconf_output),
+                "Rust",
+            );
+            assert_eq!(
+                normalized_buildconf_output(tool_name, &rust_buildconf_output),
+                normalized_buildconf_output(tool_name, &rust_buildconf_tail_output)
+            );
+        }
+        "ffprobe" => {
+            let rust_version = ffprobe_output(&strings(&["-version"]))
+                .expect("ffprobe version request should succeed");
+            let rust_version_tail_hide = ffprobe_output(&strings(&["-version", "-hide_banner"]))
+                .expect("ffprobe should keep trailing -hide_banner after -version");
+            assert_eq!(rust_version_tail_hide, rust_version);
+
+            let rust_buildconf = ffprobe_output(&strings(&["-buildconf"]))
+                .expect("ffprobe buildconf request should succeed");
+            let rust_buildconf_tail_hide =
+                ffprobe_output(&strings(&["-buildconf", "-hide_banner"]))
+                    .expect("ffprobe should keep trailing -hide_banner after -buildconf");
+            assert_buildconf_shape(tool_name, &rust_buildconf, "Rust");
+            assert_eq!(
+                normalized_buildconf_output(tool_name, &rust_buildconf),
+                normalized_buildconf_output(tool_name, &rust_buildconf_tail_hide)
+            );
         }
         other => panic!("unsupported tool `{other}`"),
     }

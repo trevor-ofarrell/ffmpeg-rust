@@ -24,6 +24,7 @@ fuzz_target!(|data: &[u8]| {
     let empty_generated_wav = empty_generated_wav();
     exercise_wav(&empty_generated_wav);
     assert!(WavDemuxer::open(SHORT_PCM_FMT_WAV).is_err());
+    assert_rejects_wav(&wave_with_missing_padding_after_odd_unknown_chunk());
 });
 
 fn exercise_wav(input: &[u8]) {
@@ -66,6 +67,10 @@ fn exercise_wav(input: &[u8]) {
     assert_eq!(seen, info.data_size());
 }
 
+fn assert_rejects_wav(input: &[u8]) {
+    assert!(WavDemuxer::open(input).is_err());
+}
+
 fn exercise_duplicate_fmt_wav(input: &[u8]) {
     let mut demuxer = WavDemuxer::open(input).expect("duplicate fmt WAV should open");
     let info = demuxer.info().clone();
@@ -86,8 +91,8 @@ fn exercise_duplicate_fmt_wav(input: &[u8]) {
 }
 
 fn exercise_short_second_duplicate_fmt_wav(input: &[u8]) {
-    let mut demuxer = WavDemuxer::open(input)
-        .expect("duplicate fmt WAV with short second fmt should open");
+    let mut demuxer =
+        WavDemuxer::open(input).expect("duplicate fmt WAV with short second fmt should open");
     let info = demuxer.info().clone();
 
     assert_eq!(info.channels(), 1);
@@ -103,6 +108,26 @@ fn exercise_short_second_duplicate_fmt_wav(input: &[u8]) {
     assert_eq!(packet.data().len(), 4);
     assert_eq!(packet.duration(), 2);
     assert!(demuxer.read_packet().unwrap().is_none());
+}
+
+fn wave_with_missing_padding_after_odd_unknown_chunk() -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&0_u32.to_le_bytes());
+    out.extend_from_slice(b"WAVE");
+    out.extend_from_slice(b"fmt ");
+    out.extend_from_slice(&16_u32.to_le_bytes());
+    out.extend_from_slice(&[1, 0, 1, 0, 0x44, 0xAC, 0x00, 0x00]);
+    out.extend_from_slice(&[0x88, 0x58, 0x01, 0x00, 2, 0, 16, 0]);
+    out.extend_from_slice(b"JUNK");
+    out.extend_from_slice(&3_u32.to_le_bytes());
+    out.extend_from_slice(&[0xAA, 0xBB, 0xCC]);
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&4_u32.to_le_bytes());
+    out.extend_from_slice(&[0x00, 0x00, 0x01, 0x00]);
+    let riff_size = out.len() - 8;
+    out[4..8].copy_from_slice(&u32::try_from(riff_size).unwrap().to_le_bytes());
+    out
 }
 
 fn empty_generated_wav() -> Vec<u8> {

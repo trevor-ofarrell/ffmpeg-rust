@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::path::Path;
@@ -52,6 +53,19 @@ struct MappingOptions {
     target_filters: Vec<String>,
     context: FateContext,
     check_prerequisites: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StatusOptions {
+    next_limit: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LedgerComponent {
+    id: String,
+    kind: String,
+    status: String,
+    priority: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -607,6 +621,11 @@ const PATH_RULES: &[PathRule] = &[
         id_prefixes: &[],
     },
     PathRule {
+        path: "fuzz/corpus/avutil_metadata_options/",
+        exact_ids: &["avutil-dict", "avutil-options"],
+        id_prefixes: &[],
+    },
+    PathRule {
         path: "fuzz/fuzz_targets/avutil_core_models.rs",
         exact_ids: &[
             "avutil-error",
@@ -635,7 +654,17 @@ const PATH_RULES: &[PathRule] = &[
         id_prefixes: &[],
     },
     PathRule {
+        path: "fuzz/corpus/avformat_wav/",
+        exact_ids: &["avformat-wav-demuxer"],
+        id_prefixes: &[],
+    },
+    PathRule {
         path: "fuzz/fuzz_targets/avformat_yuv4mpegpipe.rs",
+        exact_ids: &["avformat-yuv4mpegpipe-demuxer"],
+        id_prefixes: &[],
+    },
+    PathRule {
+        path: "fuzz/corpus/avformat_yuv4mpegpipe/",
         exact_ids: &["avformat-yuv4mpegpipe-demuxer"],
         id_prefixes: &[],
     },
@@ -711,6 +740,7 @@ fn real_main() -> Result<(), String> {
     let mut args = env::args().skip(1);
     match args.next().as_deref() {
         Some("list") => list_components(),
+        Some("status") => status_components(args.collect()),
         Some("mappings") => list_mappings(args.collect()),
         Some("run") => run_component(args.collect()),
         Some("help") | Some("--help") | Some("-h") => {
@@ -736,6 +766,42 @@ fn list_components() -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+fn status_components(args: Vec<String>) -> Result<(), String> {
+    let options = parse_status_options(&args)?;
+    let components = load_ledger_components()?;
+    let lines = ledger_status_report_lines(&components, options.next_limit);
+
+    for line in lines {
+        println!("{line}");
+    }
+
+    Ok(())
+}
+
+fn parse_status_options(args: &[String]) -> Result<StatusOptions, String> {
+    let mut next_limit = 10;
+    let mut iter = args.iter();
+
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--next" => {
+                let value = iter
+                    .next()
+                    .ok_or_else(|| "missing value for --next".to_string())?;
+                next_limit = value
+                    .parse::<usize>()
+                    .map_err(|_| format!("invalid --next value `{value}`"))?;
+                if next_limit == 0 {
+                    return Err("--next must be greater than zero".to_string());
+                }
+            }
+            other => return Err(format!("unsupported status argument `{other}`")),
+        }
+    }
+
+    Ok(StatusOptions { next_limit })
 }
 
 fn list_mappings(args: Vec<String>) -> Result<(), String> {
@@ -1604,6 +1670,12 @@ fn load_component_ids() -> Result<Vec<String>, String> {
     Ok(component_ids_from_ledger(&ledger))
 }
 
+fn load_ledger_components() -> Result<Vec<LedgerComponent>, String> {
+    let ledger = fs::read_to_string("PORTING_LEDGER.toml")
+        .map_err(|err| format!("failed to read PORTING_LEDGER.toml: {err}"))?;
+    ledger_components_from_ledger(&ledger)
+}
+
 fn component_ids_from_ledger(ledger: &str) -> Vec<String> {
     ledger
         .lines()
@@ -1616,6 +1688,141 @@ fn component_ids_from_ledger(ledger: &str) -> Vec<String> {
                 .map(str::to_string)
         })
         .collect()
+}
+
+fn ledger_components_from_ledger(ledger: &str) -> Result<Vec<LedgerComponent>, String> {
+    #[derive(Default)]
+    struct PendingComponent {
+        id: Option<String>,
+        kind: Option<String>,
+        status: Option<String>,
+        priority: Option<u32>,
+    }
+
+    fn finish(
+        components: &mut Vec<LedgerComponent>,
+        pending: PendingComponent,
+    ) -> Result<(), String> {
+        let has_fields = pending.id.is_some()
+            || pending.kind.is_some()
+            || pending.status.is_some()
+            || pending.priority.is_some();
+        if !has_fields {
+            return Ok(());
+        }
+
+        components.push(LedgerComponent {
+            id: pending
+                .id
+                .ok_or_else(|| "ledger component is missing id".to_string())?,
+            kind: pending
+                .kind
+                .ok_or_else(|| "ledger component is missing kind".to_string())?,
+            status: pending
+                .status
+                .ok_or_else(|| "ledger component is missing status".to_string())?,
+            priority: pending
+                .priority
+                .ok_or_else(|| "ledger component is missing priority".to_string())?,
+        });
+        Ok(())
+    }
+
+    let mut components = Vec::new();
+    let mut pending = PendingComponent::default();
+    let mut in_component = false;
+
+    for (line_index, line) in ledger.lines().enumerate() {
+        let line_number = line_index + 1;
+        let trimmed = line.trim();
+        if trimmed == "[[component]]" {
+            finish(&mut components, pending)?;
+            pending = PendingComponent::default();
+            in_component = true;
+            continue;
+        }
+        if !in_component || trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        let Some((key, value)) = trimmed.split_once('=') else {
+            continue;
+        };
+        let key = key.trim();
+        let value = value.split('#').next().unwrap_or_default().trim();
+
+        match key {
+            "id" => pending.id = Some(parse_ledger_string(value, line_number, key)?),
+            "kind" => pending.kind = Some(parse_ledger_string(value, line_number, key)?),
+            "status" => pending.status = Some(parse_ledger_string(value, line_number, key)?),
+            "priority" => {
+                pending.priority = Some(value.parse::<u32>().map_err(|_| {
+                    format!("invalid integer value for priority at line {line_number}: `{value}`")
+                })?);
+            }
+            _ => {}
+        }
+    }
+
+    finish(&mut components, pending)?;
+    Ok(components)
+}
+
+fn parse_ledger_string(value: &str, line_number: usize, key: &str) -> Result<String, String> {
+    value
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .map(str::to_string)
+        .ok_or_else(|| format!("invalid string value for {key} at line {line_number}: `{value}`"))
+}
+
+fn ledger_status_report_lines(components: &[LedgerComponent], next_limit: usize) -> Vec<String> {
+    let total = components.len();
+    let complete = components
+        .iter()
+        .filter(|component| component.status == "complete")
+        .count();
+    let strict_percent = if total == 0 {
+        0.0
+    } else {
+        complete as f64 * 100.0 / total as f64
+    };
+
+    let mut lines = vec![
+        format!("components: {total}"),
+        format!("strict_complete: {complete}"),
+        format!("strict_percent: {strict_percent:.1}"),
+        "status_counts:".to_string(),
+    ];
+
+    let mut counts = BTreeMap::new();
+    for component in components {
+        *counts.entry(component.status.as_str()).or_insert(0usize) += 1;
+    }
+    for (status, count) in counts {
+        lines.push(format!("  {status}: {count}"));
+    }
+
+    let mut incomplete: Vec<_> = components
+        .iter()
+        .enumerate()
+        .filter(|(_, component)| component.status != "complete")
+        .collect();
+    incomplete.sort_by(|(left_index, left), (right_index, right)| {
+        left.priority
+            .cmp(&right.priority)
+            .then_with(|| left_index.cmp(right_index))
+    });
+
+    lines.push(format!("next_incomplete_limit: {next_limit}"));
+    for (_, component) in incomplete.into_iter().take(next_limit) {
+        lines.push(format!(
+            "  {}|priority={}|status={}|kind={}",
+            component.id, component.priority, component.status, component.kind
+        ));
+    }
+
+    lines
 }
 
 fn git_changed_paths() -> Result<Vec<String>, String> {
@@ -1707,6 +1914,7 @@ fn is_relevant_implementation_path(path: &str) -> bool {
         || path.starts_with("tests/fate/")
         || path.starts_with("tests/differential/")
         || path.starts_with("fuzz/fuzz_targets/")
+        || path.starts_with("fuzz/corpus/")
 }
 
 fn path_matches_rule(path: &str, rule: &PathRule) -> bool {
@@ -1726,7 +1934,7 @@ fn normalize_path(path: &str) -> String {
 
 fn print_help() {
     eprintln!(
-        "usage: fate-runner list | mappings [--check-prereqs] [--mappings <path>] [--component <id> ...] [--target <name> ...] [--samples <path>] [--oracle-ffmpeg <path>] | run [--dry-run] [--mappings <path>] [--target <name> ...] [--samples <path>] [--oracle-ffmpeg <path>] --component <id> [--component <id> ...] | run [--dry-run] [--mappings <path>] [--target <name> ...] [--samples <path>] [--oracle-ffmpeg <path>] --changed"
+        "usage: fate-runner list | status [--next <count>] | mappings [--check-prereqs] [--mappings <path>] [--component <id> ...] [--target <name> ...] [--samples <path>] [--oracle-ffmpeg <path>] | run [--dry-run] [--mappings <path>] [--target <name> ...] [--samples <path>] [--oracle-ffmpeg <path>] --component <id> [--component <id> ...] | run [--dry-run] [--mappings <path>] [--target <name> ...] [--samples <path>] [--oracle-ffmpeg <path>] --changed"
     );
 }
 
@@ -1757,6 +1965,107 @@ mod tests {
         assert_eq!(
             component_ids_from_ledger(&ledger),
             vec!["avutil-error".to_string(), "fate-runner".to_string()]
+        );
+    }
+
+    #[test]
+    fn parses_ledger_components_for_status_reporting() {
+        let components = ledger_components_from_ledger(
+            r#"
+target_version = "8.1.1"
+
+[[component]]
+id = "avutil-error"
+kind = "utility"
+status = "complete"
+priority = 1
+notes = "ignored by the status parser"
+
+[[component]]
+id = "fate-runner"
+kind = "utility"
+status = "implemented"
+priority = 2
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            components,
+            vec![
+                LedgerComponent {
+                    id: "avutil-error".to_string(),
+                    kind: "utility".to_string(),
+                    status: "complete".to_string(),
+                    priority: 1,
+                },
+                LedgerComponent {
+                    id: "fate-runner".to_string(),
+                    kind: "utility".to_string(),
+                    status: "implemented".to_string(),
+                    priority: 2,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn status_report_counts_strict_completion_and_next_components() {
+        let components = vec![
+            LedgerComponent {
+                id: "done".to_string(),
+                kind: "utility".to_string(),
+                status: "complete".to_string(),
+                priority: 1,
+            },
+            LedgerComponent {
+                id: "later".to_string(),
+                kind: "muxer".to_string(),
+                status: "implemented".to_string(),
+                priority: 3,
+            },
+            LedgerComponent {
+                id: "next".to_string(),
+                kind: "utility".to_string(),
+                status: "fate_pass".to_string(),
+                priority: 1,
+            },
+        ];
+
+        assert_eq!(
+            ledger_status_report_lines(&components, 2),
+            vec![
+                "components: 3".to_string(),
+                "strict_complete: 1".to_string(),
+                "strict_percent: 33.3".to_string(),
+                "status_counts:".to_string(),
+                "  complete: 1".to_string(),
+                "  fate_pass: 1".to_string(),
+                "  implemented: 1".to_string(),
+                "next_incomplete_limit: 2".to_string(),
+                "  next|priority=1|status=fate_pass|kind=utility".to_string(),
+                "  later|priority=3|status=implemented|kind=muxer".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_status_options() {
+        assert_eq!(
+            parse_status_options(&[]).unwrap(),
+            StatusOptions { next_limit: 10 }
+        );
+        assert_eq!(
+            parse_status_options(&["--next".to_string(), "3".to_string()]).unwrap(),
+            StatusOptions { next_limit: 3 }
+        );
+        assert_eq!(
+            parse_status_options(&["--next".to_string()]).unwrap_err(),
+            "missing value for --next"
+        );
+        assert_eq!(
+            parse_status_options(&["--next".to_string(), "0".to_string()]).unwrap_err(),
+            "--next must be greater than zero"
         );
     }
 
@@ -2333,6 +2642,10 @@ mod tests {
             "oracle-yuv4mpegpipe-framecrc-records"
         )));
         assert!(pairs.contains(&(
+            "avformat-yuv4mpegpipe-demuxer",
+            "oracle-yuv4mpegpipe-unknown-x-extension-fields"
+        )));
+        assert!(pairs.contains(&(
             "avformat-framecrc-muxer",
             "oracle-yuv4mpegpipe-framecrc-records"
         )));
@@ -2378,6 +2691,10 @@ mod tests {
         assert!(pairs.contains(&("avutil-channel-layout", "oracle-ffmpeg-layouts")));
         assert!(pairs.contains(&("avformat-wav-demuxer", "oracle-wav-generated-md5")));
         assert!(pairs.contains(&(
+            "avformat-wav-demuxer",
+            "oracle-wav-missing-padding-after-odd-unknown-chunk-rejection"
+        )));
+        assert!(pairs.contains(&(
             "fftools-ffmpeg-wav-framecrc-null",
             "oracle-wav-generated-framecrc-records"
         )));
@@ -2394,6 +2711,10 @@ mod tests {
         assert!(pairs.contains(&("avutil-pixel-format", "oracle-ffmpeg-pix-fmts-subset")));
         assert!(pairs.contains(&("avutil-color", "oracle-ffmpeg-colors")));
         assert!(pairs.contains(&("avutil-hash", "oracle-libavutil-hash")));
+        assert!(pairs.contains(&(
+            "fftools-version",
+            "oracle-version-buildconf-trailing-hide-banner"
+        )));
     }
 
     #[test]
@@ -2566,6 +2887,32 @@ mod tests {
     }
 
     #[test]
+    fn changed_selection_maps_fuzz_corpora_to_covered_components() {
+        let component_ids = component_ids_from_ledger(&ledger(&[
+            "avformat-wav-demuxer",
+            "avformat-yuv4mpegpipe-demuxer",
+            "avutil-dict",
+            "avutil-options",
+        ]));
+        let paths = vec![
+            "fuzz/corpus/avformat_wav/odd-junk-padding".to_string(),
+            "fuzz\\corpus\\avformat_yuv4mpegpipe\\unknown_x_extension".to_string(),
+            "fuzz/corpus/avutil_metadata_options/set_from_string_explicit_shorthand_error"
+                .to_string(),
+        ];
+
+        assert_eq!(
+            changed_components(&component_ids, &paths),
+            vec![
+                "avformat-wav-demuxer".to_string(),
+                "avformat-yuv4mpegpipe-demuxer".to_string(),
+                "avutil-dict".to_string(),
+                "avutil-options".to_string(),
+            ]
+        );
+    }
+
+    #[test]
     fn unmapped_relevant_paths_report_crate_files_but_ignore_docs() {
         let paths = vec![
             "docs/architecture.md".to_string(),
@@ -2576,6 +2923,7 @@ mod tests {
             "fuzz/Cargo.toml".to_string(),
             "xtask/Cargo.toml".to_string(),
             "fuzz/fuzz_targets/new_target.rs".to_string(),
+            "fuzz/corpus/new_target/seed".to_string(),
         ];
 
         assert_eq!(
@@ -2583,6 +2931,7 @@ mod tests {
             vec![
                 "crates/swscale/src/lib.rs".to_string(),
                 "fuzz/fuzz_targets/new_target.rs".to_string(),
+                "fuzz/corpus/new_target/seed".to_string(),
             ]
         );
     }

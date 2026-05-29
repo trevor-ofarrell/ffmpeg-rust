@@ -9108,6 +9108,29 @@ mod tests {
             Some(&OptionValue::Bool(false))
         );
 
+        let mut explicit_then_shorthand_error = sample_options();
+        let err = explicit_then_shorthand_error
+            .set_avoptions_from_string(
+                "threads=10:yes:quality=0.75",
+                &["threads", "bitexact"],
+                "=",
+                ":",
+            )
+            .unwrap_err();
+        assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
+        assert_eq!(
+            explicit_then_shorthand_error.get("threads"),
+            Some(&OptionValue::Int(10))
+        );
+        assert_eq!(
+            explicit_then_shorthand_error.get("bitexact"),
+            Some(&OptionValue::Bool(false))
+        );
+        assert_eq!(
+            explicit_then_shorthand_error.get("quality"),
+            Some(&OptionValue::Float(0.5))
+        );
+
         let mut set_error = sample_options();
         let err = set_error
             .set_avoptions_from_string("threads=11:bitexact=maybe", &[], "=", ":")

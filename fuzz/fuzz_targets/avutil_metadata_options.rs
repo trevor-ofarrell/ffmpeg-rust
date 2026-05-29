@@ -363,7 +363,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                     5 => "",
                     _ => ":",
                 };
-                let opts = match cursor.next().unwrap_or_default() % 9 {
+                let opts = match cursor.next().unwrap_or_default() % 10 {
                     0 => "threads=7:quality=0.25:metadata=from-string",
                     1 => " 9 : yes : metadata = shorthand ",
                     2 => "10:quality=0.75:no",
@@ -372,6 +372,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                     5 => "metadata=title\\:clip\\=one\\\\two:threads=14:preset_level=slow",
                     6 => "metadata=' title : clip = one ':threads=15",
                     7 => "12",
+                    8 => "threads=10:yes:quality=0.75",
                     _ => "9:yes:15",
                 };
                 let before = options.clone();
@@ -382,6 +383,8 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                 let separators_invalid = key_val_sep.is_empty();
                 let shorthand_overflow_case =
                     opts == "9:yes:15" && key_val_sep == "=" && pairs_sep == ":";
+                let explicit_shorthand_error_case =
+                    opts == "threads=10:yes:quality=0.75" && key_val_sep == "=" && pairs_sep == ":";
                 if separators_invalid {
                     assert_eq!(
                         result.err().and_then(|err| err.code()),
@@ -395,6 +398,14 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                     );
                     assert_eq!(options.get("threads"), Some(&OptionValue::Int(9)));
                     assert_eq!(options.get("bitexact"), Some(&OptionValue::Bool(true)));
+                } else if explicit_shorthand_error_case {
+                    assert_eq!(
+                        result.err().and_then(|err| err.code()),
+                        Some(AvErrorCode::EINVAL),
+                    );
+                    assert_eq!(options.get("threads"), Some(&OptionValue::Int(10)));
+                    assert_eq!(options.get("bitexact"), Some(&OptionValue::Bool(false)));
+                    assert_eq!(options.get("quality"), Some(&OptionValue::Float(0.5)));
                 } else if let Ok(count) = result {
                     assert!(count <= 3);
                     assert_option_set_invariants(&options);

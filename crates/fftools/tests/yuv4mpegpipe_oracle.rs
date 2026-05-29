@@ -61,6 +61,45 @@ fn yuv4mpegpipe_xcolorrange_metadata_matches_ffprobe_oracle() {
 }
 
 #[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn yuv4mpegpipe_unknown_x_extension_fields_match_ffmpeg_oracle() {
+    let payload = [0, 1, 2, 3, 4, 5];
+
+    for (extra_header_fields, expected_color_range, expected_oracle_color_range) in [
+        ("XFOO=bar XBAR=1", FrameColorRange::Unspecified, "unknown"),
+        (
+            "XFOO=bar XCOLORRANGE=FULL XBAR=1",
+            FrameColorRange::Jpeg,
+            "pc",
+        ),
+        ("XCOLORRANGE=LIMITED XBAZ=2", FrameColorRange::Mpeg, "tv"),
+        (
+            "XFOO=bar XCOLORRANGE=LIMITED XBAR=1 XCOLORRANGE=FULL",
+            FrameColorRange::Jpeg,
+            "pc",
+        ),
+    ] {
+        let input =
+            y4m_file_bytes_with_extra_header_fields(2, 2, "25:1", extra_header_fields, &[&payload]);
+
+        let mut demuxer = Yuv4MpegDemuxer::open(&input).unwrap();
+        assert_eq!(demuxer.info().color_range(), expected_color_range);
+        assert_eq!(
+            demuxer.read_packet().unwrap().unwrap().data(),
+            payload.as_slice()
+        );
+
+        compare_yuv4mpegpipe_framecrc_records(&input, 1, payload.len());
+        compare_yuv4mpegpipe_color_range_metadata(
+            extra_header_fields,
+            &payload,
+            expected_color_range,
+            expected_oracle_color_range,
+        );
+    }
+}
+
+#[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE/FFPROBE_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg|ffprobe"]
 fn yuv4mpegpipe_xcolorrange_remux_preserves_color_range_oracle() {
     let payload = [0, 1, 2, 3, 4, 5];

@@ -10,6 +10,15 @@
 ## Compatible Today
 
 - Latest orchestrated parallel evidence: xhigh worker lanes plus main-thread
+  review added pinned oracle rows for WAV missing padding after an odd-sized
+  unknown chunk, YUV4MPEG2 unknown `X*` extensions mixed with duplicate
+  XCOLORRANGE fields, AVOption explicit-assignment then shorthand-token
+  failure preservation, and ffmpeg/ffprobe version/buildconf trailing
+  `-hide_banner` equivalence. `fate-runner status --next <count>` now reports
+  strict completion totals and the next priority-sorted incomplete ledger rows.
+  These rows strengthen existing incomplete components; strict complete count
+  remains unchanged.
+- Latest orchestrated parallel evidence: xhigh worker lanes plus main-thread
   review added pinned oracle rows for channel-layout leading-zero count parsing
   and strict whitespace/case rejection, `av_get_pix_fmt()` explicit-endian
   X2RGB10/X2BGR10 names plus whitespace/empty rejection, image2 single-file

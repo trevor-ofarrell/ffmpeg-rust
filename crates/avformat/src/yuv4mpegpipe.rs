@@ -572,6 +572,31 @@ mod tests {
     }
 
     #[test]
+    fn ignores_unknown_x_extension_tokens_and_keeps_colorrange_when_present() {
+        for (header_fields, expected_color_range) in [
+            (
+                "W2 H2 F25:1 Ip C420jpeg XFOO=bar XBAR=1 XCOLORRANGE=FULL",
+                FrameColorRange::Jpeg,
+            ),
+            (
+                "W2 H2 F25:1 Ip C420jpeg XCOLORRANGE=LIMITED XBAZ=2",
+                FrameColorRange::Mpeg,
+            ),
+            (
+                "W2 H2 F25:1 Ip C420jpeg XFOO=bar XBAR=1",
+                FrameColorRange::Unspecified,
+            ),
+        ] {
+            let input = format!("{Y4M_MAGIC} {header_fields}\nFRAME\nabcdef");
+            let mut demuxer = Yuv4MpegDemuxer::open(input.as_bytes()).unwrap();
+
+            assert_eq!(demuxer.info().color_range(), expected_color_range);
+            assert_eq!(demuxer.read_packet().unwrap().unwrap().data(), b"abcdef");
+            assert!(demuxer.read_packet().unwrap().is_none());
+        }
+    }
+
+    #[test]
     fn parses_last_xcolorrange_extension() {
         let input = b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg XCOLORRANGE=FULL XCOLORRANGE=LIMITED\nFRAME\nabcdef";
         let demuxer = Yuv4MpegDemuxer::open(input).unwrap();
