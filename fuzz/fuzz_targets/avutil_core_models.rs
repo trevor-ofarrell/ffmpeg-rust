@@ -1670,6 +1670,58 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         vec![(payload_len, payload.clone())]
     );
 
+    let shared_custom_shrink_payload = if payload.is_empty() {
+        vec![0]
+    } else {
+        payload.clone()
+    };
+    let shared_custom_shrink_len = shared_custom_shrink_payload.len() - 1;
+    let shared_custom_shrink_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let shared_custom_shrink_capture = Arc::clone(&shared_custom_shrink_released);
+    let shared_custom_shrink_source = BufferRef::from_vec_with_opaque_release_callback(
+        shared_custom_shrink_payload.clone(),
+        shared_custom_shrink_payload.len(),
+        move |opaque, bytes| {
+            shared_custom_shrink_capture
+                .lock()
+                .unwrap()
+                .push((opaque, bytes));
+        },
+    );
+    let mut shared_custom_shrink = Some(BufferRef::ref_from(&shared_custom_shrink_source));
+    BufferRef::realloc(&mut shared_custom_shrink, shared_custom_shrink_len).unwrap();
+    let shared_custom_shrink =
+        shared_custom_shrink.expect("shared custom shrink realloc stays present");
+    assert_eq!(
+        shared_custom_shrink_source.as_slice(),
+        shared_custom_shrink_payload.as_slice()
+    );
+    assert_eq!(shared_custom_shrink_source.strong_count(), 1);
+    assert!(shared_custom_shrink_source.is_writable());
+    assert_eq!(
+        shared_custom_shrink_source.opaque_ref::<usize>(),
+        Some(&shared_custom_shrink_payload.len())
+    );
+    assert_eq!(shared_custom_shrink.len(), shared_custom_shrink_len);
+    assert_eq!(
+        shared_custom_shrink.as_slice(),
+        &shared_custom_shrink_payload[..shared_custom_shrink_len]
+    );
+    assert!(shared_custom_shrink.is_writable());
+    assert!(shared_custom_shrink.opaque_ref::<usize>().is_none());
+    assert!(!shared_custom_shrink.shares_storage(&shared_custom_shrink_source));
+    assert!(shared_custom_shrink_released.lock().unwrap().is_empty());
+    drop(shared_custom_shrink);
+    assert!(shared_custom_shrink_released.lock().unwrap().is_empty());
+    drop(shared_custom_shrink_source);
+    assert_eq!(
+        *shared_custom_shrink_released.lock().unwrap(),
+        vec![(
+            shared_custom_shrink_payload.len(),
+            shared_custom_shrink_payload
+        )]
+    );
+
     let custom_realloc_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let custom_realloc_capture = Arc::clone(&custom_realloc_released);
     let mut custom_realloc = Some(BufferRef::from_vec_with_opaque_release_callback(

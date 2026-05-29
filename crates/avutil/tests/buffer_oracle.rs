@@ -410,6 +410,70 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         release_fields(&create_shared_realloc_released),
     );
 
+    let create_shared_shrink_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_shared_shrink_capture = Arc::clone(&create_shared_shrink_released);
+    let create_shared_shrink_src = BufferRef::from_vec_with_opaque_release_callback(
+        vec![47, 48, 49, 50],
+        568usize,
+        move |opaque, bytes| {
+            create_shared_shrink_capture
+                .lock()
+                .unwrap()
+                .push((opaque, bytes));
+        },
+    );
+    let mut create_shared_shrink_dst = Some(BufferRef::ref_from(&create_shared_shrink_src));
+    BufferRef::realloc(&mut create_shared_shrink_dst, 2).unwrap();
+    let create_shared_shrink_dst = create_shared_shrink_dst.expect("create shared shrink result");
+    rows.insert(
+        "buffer:create-shared-shrink-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:create-shared-shrink-src".to_string(),
+        buffer_fields_with_opaque(&create_shared_shrink_src),
+    );
+    rows.insert(
+        "buffer:create-shared-shrink-dst".to_string(),
+        buffer_prefix_fields(&create_shared_shrink_dst, 2),
+    );
+    rows.insert(
+        "buffer:create-shared-shrink-dst-opaque".to_string(),
+        vec![create_shared_shrink_dst
+            .opaque_ref::<usize>()
+            .copied()
+            .unwrap_or_default()
+            .to_string()],
+    );
+    rows.insert(
+        "buffer:create-shared-shrink-shares".to_string(),
+        vec![bool_field(
+            create_shared_shrink_src.shares_storage(&create_shared_shrink_dst),
+        )],
+    );
+    rows.insert(
+        "buffer:create-shared-shrink-release-before-src-drop".to_string(),
+        vec![create_shared_shrink_released
+            .lock()
+            .unwrap()
+            .len()
+            .to_string()],
+    );
+    drop(create_shared_shrink_dst);
+    rows.insert(
+        "buffer:create-shared-shrink-release-before-src-unref".to_string(),
+        vec![create_shared_shrink_released
+            .lock()
+            .unwrap()
+            .len()
+            .to_string()],
+    );
+    drop(create_shared_shrink_src);
+    rows.insert(
+        "buffer:create-shared-shrink-release".to_string(),
+        release_fields(&create_shared_shrink_released),
+    );
+
     let create_realloc_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let create_realloc_capture = Arc::clone(&create_realloc_released);
     let mut create_realloc = Some(BufferRef::from_vec_with_opaque_release_callback(
@@ -1926,6 +1990,45 @@ int main(void) {
            create_release_count);
     av_buffer_unref(&create_shared_realloc_src);
     print_create_release("buffer:create-shared-realloc-release");
+
+    reset_create_release();
+    static const uint8_t create_shared_shrink_bytes[] = { 47, 48, 49, 50 };
+    uint8_t *create_shared_shrink_data =
+        av_malloc(sizeof(create_shared_shrink_bytes));
+    fail_if(!create_shared_shrink_data,
+            "av_malloc create_shared_shrink_data failed");
+    for (size_t i = 0; i < sizeof(create_shared_shrink_bytes); i++)
+        create_shared_shrink_data[i] = create_shared_shrink_bytes[i];
+    last_create_release_size = sizeof(create_shared_shrink_bytes);
+    AVBufferRef *create_shared_shrink_src =
+        av_buffer_create(create_shared_shrink_data,
+                         sizeof(create_shared_shrink_bytes),
+                         test_create_free, (void *)(uintptr_t)568, 0);
+    fail_if(!create_shared_shrink_src,
+            "av_buffer_create shared shrink src failed");
+    AVBufferRef *create_shared_shrink_dst =
+        av_buffer_ref(create_shared_shrink_src);
+    fail_if(!create_shared_shrink_dst,
+            "av_buffer_ref create_shared_shrink failed");
+    ret = av_buffer_realloc(&create_shared_shrink_dst, 2);
+    printf("buffer:create-shared-shrink-ret|%d\n", ret);
+    print_buffer_opaque("buffer:create-shared-shrink-src",
+                        create_shared_shrink_src);
+    print_buffer_prefix("buffer:create-shared-shrink-dst",
+                        create_shared_shrink_dst, 2);
+    printf("buffer:create-shared-shrink-dst-opaque|%llu\n",
+           (unsigned long long)(uintptr_t)
+               av_buffer_get_opaque(create_shared_shrink_dst));
+    printf("buffer:create-shared-shrink-shares|%d\n",
+           create_shared_shrink_src->buffer ==
+               create_shared_shrink_dst->buffer);
+    printf("buffer:create-shared-shrink-release-before-src-drop|%d\n",
+           create_release_count);
+    av_buffer_unref(&create_shared_shrink_dst);
+    printf("buffer:create-shared-shrink-release-before-src-unref|%d\n",
+           create_release_count);
+    av_buffer_unref(&create_shared_shrink_src);
+    print_create_release("buffer:create-shared-shrink-release");
 
     reset_create_release();
     static const uint8_t create_realloc_bytes[] = { 50, 51, 52 };
