@@ -812,6 +812,7 @@ unit_tests = [
   "buffer::tests::buffer_resize_detaches_pool_owned_storage_back_to_pool",
   "buffer::tests::buffer_realloc_detaches_pool_owned_storage_back_to_pool",
   "buffer::tests::buffer_replace_returns_pool_owned_destination_storage_to_pool",
+  "buffer::tests::buffer_replace_shares_pool_owned_source_until_destination_unref",
   "buffer::tests::custom_buffer_pool_callbacks_allocate_reuse_and_release_storage",
   "buffer::tests::custom_buffer_pool_preserves_buffer_opaque_and_runs_pool_free_last",
   "buffer::tests::custom_buffer_pool_readonly_allocation_reuses_as_writable_storage",
@@ -835,6 +836,12 @@ fate_tests = [
   "not_applicable: upstream FFmpeg FATE has no standalone AVBufferRef/AVBufferPool API target; covered by unit tests plus pinned libavutil differential oracle",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest pool-owned source replace slice: pinned libavutil oracle coverage now
+# validates `av_buffer_replace()` when an ordinary destination is replaced by a
+# pool-owned custom source. The destination shares the source pool storage and
+# pool opaque data, unreffing the original source alone does not return storage
+# to the pool, unreffing the replacement returns it for reuse, and final pool
+# uninit releases the original source storage plus pool owner.
 # Latest custom-pool replace slice: pinned libavutil oracle coverage now
 # validates `av_buffer_replace()` when the destination is a pool-owned custom
 # allocation. Replacing it with an ordinary source ref returns the original

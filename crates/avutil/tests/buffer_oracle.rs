@@ -1855,6 +1855,137 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     drop(pool_replace_free_values);
     drop(pool_replace_release_values);
 
+    let pool_source_replace_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let pool_source_replace_frees = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let pool_source_replace_release_capture = Arc::clone(&pool_source_replace_releases);
+    let pool_source_replace_free_capture = Arc::clone(&pool_source_replace_frees);
+    let pool_source_replace_pool = BufferPool::with_callbacks(
+        3,
+        0,
+        BufferPoolCallbacks::with_allocation_callbacks(
+            |allocated_len| {
+                assert_eq!(allocated_len, 3);
+                Ok(BufferPoolAllocation::with_opaque(
+                    vec![1, 2, 3],
+                    PoolToken {
+                        id: 59,
+                        size: allocated_len,
+                    },
+                ))
+            },
+            move |allocation| {
+                let token = allocation
+                    .opaque_ref::<PoolToken>()
+                    .expect("pool source replace token should be preserved");
+                pool_source_replace_release_capture
+                    .lock()
+                    .unwrap()
+                    .push((token.id, allocation.as_slice().to_vec()));
+            },
+        )
+        .with_pool_free(move || {
+            pool_source_replace_free_capture.lock().unwrap().push(59);
+        }),
+    )
+    .unwrap();
+    let mut pool_source_replace_source = pool_source_replace_pool.get().unwrap();
+    pool_source_replace_source
+        .make_mut()
+        .copy_from_slice(&[0x41, 0x42, 0x43]);
+    let mut pool_source_replace_dst = Some(BufferRef::from_vec(vec![0x66, 0x67]));
+    BufferRef::replace(
+        &mut pool_source_replace_dst,
+        Some(&pool_source_replace_source),
+    );
+    let pool_source_replace_dst = pool_source_replace_dst.expect("pool source replace destination");
+    rows.insert("pool-source-replace:ret".to_string(), vec!["0".to_string()]);
+    rows.insert(
+        "pool-source-replace:dst".to_string(),
+        buffer_fields(&pool_source_replace_dst),
+    );
+    let pool_source_replace_dst_token = pool_source_replace_dst
+        .pool_opaque_ref::<PoolToken>()
+        .expect("pool source replace destination token");
+    rows.insert(
+        "pool-source-replace:dst-opaque".to_string(),
+        vec![
+            pool_source_replace_dst_token.id.to_string(),
+            pool_source_replace_dst_token.size.to_string(),
+        ],
+    );
+    rows.insert(
+        "pool-source-replace:shares".to_string(),
+        vec![bool_field(
+            pool_source_replace_dst.shares_storage(&pool_source_replace_source),
+        )],
+    );
+    rows.insert(
+        "pool-source-replace:after-replace".to_string(),
+        vec![
+            pool_source_replace_releases
+                .lock()
+                .unwrap()
+                .len()
+                .to_string(),
+            pool_source_replace_frees.lock().unwrap().len().to_string(),
+        ],
+    );
+    drop(pool_source_replace_source);
+    rows.insert(
+        "pool-source-replace:after-src-unref".to_string(),
+        vec![
+            pool_source_replace_releases
+                .lock()
+                .unwrap()
+                .len()
+                .to_string(),
+            pool_source_replace_frees.lock().unwrap().len().to_string(),
+        ],
+    );
+    drop(pool_source_replace_dst);
+    rows.insert(
+        "pool-source-replace:after-dst-unref".to_string(),
+        vec![
+            pool_source_replace_releases
+                .lock()
+                .unwrap()
+                .len()
+                .to_string(),
+            pool_source_replace_frees.lock().unwrap().len().to_string(),
+        ],
+    );
+    let pool_source_replace_reuse = pool_source_replace_pool.get().unwrap();
+    rows.insert(
+        "pool-source-replace:reuse".to_string(),
+        buffer_fields(&pool_source_replace_reuse),
+    );
+    let pool_source_replace_reuse_token = pool_source_replace_reuse
+        .pool_opaque_ref::<PoolToken>()
+        .expect("pool source replace reuse token");
+    rows.insert(
+        "pool-source-replace:opaque-reuse".to_string(),
+        vec![
+            pool_source_replace_reuse_token.id.to_string(),
+            pool_source_replace_reuse_token.size.to_string(),
+        ],
+    );
+    drop(pool_source_replace_reuse);
+    drop(pool_source_replace_pool);
+    let pool_source_replace_release_values = pool_source_replace_releases.lock().unwrap();
+    let pool_source_replace_free_values = pool_source_replace_frees.lock().unwrap();
+    rows.insert(
+        "pool-source-replace:uninit-release".to_string(),
+        vec![
+            pool_source_replace_release_values.len().to_string(),
+            pool_source_replace_release_values[0].0.to_string(),
+            hex(&pool_source_replace_release_values[0].1),
+            pool_source_replace_free_values.len().to_string(),
+            pool_source_replace_free_values[0].to_string(),
+        ],
+    );
+    drop(pool_source_replace_free_values);
+    drop(pool_source_replace_release_values);
+
     let offset_pool_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let offset_pool_release_capture = Arc::clone(&offset_pool_releases);
     let offset_pool = BufferPool::with_callbacks(
@@ -3731,6 +3862,65 @@ int main(void) {
     av_buffer_unref(&pool_replace_reuse);
     av_buffer_pool_uninit(&pool_replace_pool);
     printf("pool-replace:uninit-release|%d|%" PRIuPTR "|",
+           pool_release_count, last_pool_release_id);
+    print_hex(last_pool_release, last_pool_release_size);
+    printf("|%d|%" PRIuPTR "\n", pool_free_count, last_pool_free_id);
+
+    reset_pool_counters();
+    PoolOpaque pool_source_replace_opaque = { 59, 3 };
+    AVBufferPool *pool_source_replace_pool =
+        av_buffer_pool_init2(3, &pool_source_replace_opaque,
+                             test_pool_alloc, test_pool_owner_free);
+    fail_if(!pool_source_replace_pool,
+            "av_buffer_pool_init2 source replace failed");
+    AVBufferRef *pool_source_replace_source =
+        av_buffer_pool_get(pool_source_replace_pool);
+    AVBufferRef *pool_source_replace_dst = av_buffer_allocz(2);
+    fail_if(!pool_source_replace_source || !pool_source_replace_dst,
+            "av_buffer_pool_get source replace failed");
+    static const uint8_t pool_source_replace_bytes[] = { 0x41, 0x42, 0x43 };
+    static const uint8_t pool_source_replace_dst_bytes[] = { 0x66, 0x67 };
+    fill_bytes(pool_source_replace_source, pool_source_replace_bytes,
+               sizeof(pool_source_replace_bytes));
+    fill_bytes(pool_source_replace_dst, pool_source_replace_dst_bytes,
+               sizeof(pool_source_replace_dst_bytes));
+    ret = av_buffer_replace(&pool_source_replace_dst,
+                            pool_source_replace_source);
+    printf("pool-source-replace:ret|%d\n", ret);
+    fail_if(ret < 0, "av_buffer_replace pool source failed");
+    print_buffer("pool-source-replace:dst", pool_source_replace_dst);
+    PoolOpaque *pool_source_replace_dst_opaque =
+        av_buffer_pool_buffer_get_opaque(pool_source_replace_dst);
+    fail_if(!pool_source_replace_dst_opaque,
+            "pool source replace destination opaque missing");
+    printf("pool-source-replace:dst-opaque|%" PRIuPTR "|%zu\n",
+           pool_source_replace_dst_opaque->id,
+           pool_source_replace_dst_opaque->size);
+    printf("pool-source-replace:shares|%d\n",
+           pool_source_replace_dst->data == pool_source_replace_source->data);
+    printf("pool-source-replace:after-replace|%d|%d\n",
+           pool_release_count, pool_free_count);
+    av_buffer_unref(&pool_source_replace_source);
+    printf("pool-source-replace:after-src-unref|%d|%d\n",
+           pool_release_count, pool_free_count);
+    av_buffer_unref(&pool_source_replace_dst);
+    printf("pool-source-replace:after-dst-unref|%d|%d\n",
+           pool_release_count, pool_free_count);
+    AVBufferRef *pool_source_replace_reuse =
+        av_buffer_pool_get(pool_source_replace_pool);
+    fail_if(!pool_source_replace_reuse,
+            "av_buffer_pool_get source replace reuse failed");
+    print_buffer("pool-source-replace:reuse", pool_source_replace_reuse);
+    PoolOpaque *pool_source_replace_reuse_opaque =
+        av_buffer_pool_buffer_get_opaque(pool_source_replace_reuse);
+    fail_if(!pool_source_replace_reuse_opaque,
+            "pool source replace reuse opaque missing");
+    printf("pool-source-replace:opaque-reuse|%" PRIuPTR "|%zu\n",
+           pool_source_replace_reuse_opaque->id,
+           pool_source_replace_reuse_opaque->size);
+    av_buffer_unref(&pool_source_replace_reuse);
+    av_buffer_pool_uninit(&pool_source_replace_pool);
+    printf("pool-source-replace:uninit-release|%d|%" PRIuPTR "|",
            pool_release_count, last_pool_release_id);
     print_hex(last_pool_release, last_pool_release_size);
     printf("|%d|%" PRIuPTR "\n", pool_free_count, last_pool_free_id);
