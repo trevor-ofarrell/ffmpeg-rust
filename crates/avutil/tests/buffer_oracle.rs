@@ -1544,6 +1544,124 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         vec![pool_frees.lock().unwrap().len().to_string()],
     );
 
+    let pool_unique_writable_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let pool_unique_writable_frees = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let pool_unique_writable_release_capture = Arc::clone(&pool_unique_writable_releases);
+    let pool_unique_writable_free_capture = Arc::clone(&pool_unique_writable_frees);
+    let pool_unique_writable = BufferPool::with_callbacks(
+        3,
+        0,
+        BufferPoolCallbacks::with_allocation_callbacks(
+            |allocated_len| {
+                assert_eq!(allocated_len, 3);
+                Ok(BufferPoolAllocation::with_opaque(
+                    vec![1, 2, 3],
+                    PoolToken {
+                        id: 62,
+                        size: allocated_len,
+                    },
+                ))
+            },
+            move |allocation| {
+                let token = allocation
+                    .opaque_ref::<PoolToken>()
+                    .expect("pool unique writable token should be preserved");
+                pool_unique_writable_release_capture
+                    .lock()
+                    .unwrap()
+                    .push((token.id, allocation.as_slice().to_vec()));
+            },
+        )
+        .with_pool_free(move || {
+            pool_unique_writable_free_capture.lock().unwrap().push(62);
+        }),
+    )
+    .unwrap();
+    let mut pool_unique_writable_ref = pool_unique_writable.get().unwrap();
+    pool_unique_writable_ref
+        .make_mut()
+        .copy_from_slice(&[0x62, 0x63, 0x64]);
+    let pool_unique_writable_ptr = pool_unique_writable_ref.as_ptr();
+    pool_unique_writable_ref.make_mut();
+    rows.insert(
+        "pool-unique-writable:ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "pool-unique-writable:after".to_string(),
+        buffer_fields(&pool_unique_writable_ref),
+    );
+    let pool_unique_writable_token = pool_unique_writable_ref
+        .pool_opaque_ref::<PoolToken>()
+        .expect("pool unique writable token");
+    rows.insert(
+        "pool-unique-writable:opaque".to_string(),
+        vec![
+            pool_unique_writable_token.id.to_string(),
+            pool_unique_writable_token.size.to_string(),
+        ],
+    );
+    rows.insert(
+        "pool-unique-writable:same-data".to_string(),
+        vec![bool_field(
+            pool_unique_writable_ref.as_ptr() == pool_unique_writable_ptr,
+        )],
+    );
+    rows.insert(
+        "pool-unique-writable:after-make-writable".to_string(),
+        vec![
+            pool_unique_writable_releases
+                .lock()
+                .unwrap()
+                .len()
+                .to_string(),
+            pool_unique_writable_frees.lock().unwrap().len().to_string(),
+        ],
+    );
+    drop(pool_unique_writable_ref);
+    rows.insert(
+        "pool-unique-writable:after-unref".to_string(),
+        vec![
+            pool_unique_writable_releases
+                .lock()
+                .unwrap()
+                .len()
+                .to_string(),
+            pool_unique_writable_frees.lock().unwrap().len().to_string(),
+        ],
+    );
+    let pool_unique_writable_reuse = pool_unique_writable.get().unwrap();
+    rows.insert(
+        "pool-unique-writable:reuse".to_string(),
+        buffer_fields(&pool_unique_writable_reuse),
+    );
+    let pool_unique_writable_reuse_token = pool_unique_writable_reuse
+        .pool_opaque_ref::<PoolToken>()
+        .expect("pool unique writable reuse token");
+    rows.insert(
+        "pool-unique-writable:opaque-reuse".to_string(),
+        vec![
+            pool_unique_writable_reuse_token.id.to_string(),
+            pool_unique_writable_reuse_token.size.to_string(),
+        ],
+    );
+    drop(pool_unique_writable_reuse);
+    drop(pool_unique_writable);
+    let pool_unique_writable_release_values = pool_unique_writable_releases.lock().unwrap();
+    let pool_unique_writable_free_values = pool_unique_writable_frees.lock().unwrap();
+    rows.insert(
+        "pool-unique-writable:uninit-release".to_string(),
+        vec![
+            pool_unique_writable_release_values.len().to_string(),
+            pool_unique_writable_release_values[0].0.to_string(),
+            hex(&pool_unique_writable_release_values[0].1),
+            pool_unique_writable_free_values.len().to_string(),
+            pool_unique_writable_free_values[0].to_string(),
+        ],
+    );
+    drop(pool_unique_writable_free_values);
+    drop(pool_unique_writable_release_values);
+
     let pool_cow_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let pool_cow_frees = Arc::new(Mutex::new(Vec::<usize>::new()));
     let pool_cow_release_capture = Arc::clone(&pool_cow_releases);
@@ -3938,6 +4056,58 @@ int main(void) {
     print_hex(last_pool_release, last_pool_release_size);
     printf("\n");
     printf("pool:uninit-pool-free|%d\n", pool_free_count);
+
+    reset_pool_counters();
+    PoolOpaque pool_unique_writable_opaque = { 62, 3 };
+    AVBufferPool *pool_unique_writable =
+        av_buffer_pool_init2(3, &pool_unique_writable_opaque,
+                             test_pool_alloc, test_pool_owner_free);
+    fail_if(!pool_unique_writable,
+            "av_buffer_pool_init2 unique writable failed");
+    AVBufferRef *pool_unique_writable_ref =
+        av_buffer_pool_get(pool_unique_writable);
+    fail_if(!pool_unique_writable_ref,
+            "av_buffer_pool_get unique writable failed");
+    static const uint8_t pool_unique_writable_bytes[] = { 0x62, 0x63, 0x64 };
+    fill_bytes(pool_unique_writable_ref, pool_unique_writable_bytes,
+               sizeof(pool_unique_writable_bytes));
+    uint8_t *pool_unique_writable_data = pool_unique_writable_ref->data;
+    ret = av_buffer_make_writable(&pool_unique_writable_ref);
+    printf("pool-unique-writable:ret|%d\n", ret);
+    fail_if(ret < 0, "av_buffer_make_writable unique pool failed");
+    print_buffer("pool-unique-writable:after", pool_unique_writable_ref);
+    PoolOpaque *pool_unique_writable_ref_opaque =
+        av_buffer_pool_buffer_get_opaque(pool_unique_writable_ref);
+    fail_if(!pool_unique_writable_ref_opaque,
+            "pool unique writable opaque missing");
+    printf("pool-unique-writable:opaque|%" PRIuPTR "|%zu\n",
+           pool_unique_writable_ref_opaque->id,
+           pool_unique_writable_ref_opaque->size);
+    printf("pool-unique-writable:same-data|%d\n",
+           pool_unique_writable_ref->data == pool_unique_writable_data);
+    printf("pool-unique-writable:after-make-writable|%d|%d\n",
+           pool_release_count, pool_free_count);
+    av_buffer_unref(&pool_unique_writable_ref);
+    printf("pool-unique-writable:after-unref|%d|%d\n",
+           pool_release_count, pool_free_count);
+    AVBufferRef *pool_unique_writable_reuse =
+        av_buffer_pool_get(pool_unique_writable);
+    fail_if(!pool_unique_writable_reuse,
+            "av_buffer_pool_get unique writable reuse failed");
+    print_buffer("pool-unique-writable:reuse", pool_unique_writable_reuse);
+    PoolOpaque *pool_unique_writable_reuse_opaque =
+        av_buffer_pool_buffer_get_opaque(pool_unique_writable_reuse);
+    fail_if(!pool_unique_writable_reuse_opaque,
+            "pool unique writable reuse opaque missing");
+    printf("pool-unique-writable:opaque-reuse|%" PRIuPTR "|%zu\n",
+           pool_unique_writable_reuse_opaque->id,
+           pool_unique_writable_reuse_opaque->size);
+    av_buffer_unref(&pool_unique_writable_reuse);
+    av_buffer_pool_uninit(&pool_unique_writable);
+    printf("pool-unique-writable:uninit-release|%d|%" PRIuPTR "|",
+           pool_release_count, last_pool_release_id);
+    print_hex(last_pool_release, last_pool_release_size);
+    printf("|%d|%" PRIuPTR "\n", pool_free_count, last_pool_free_id);
 
     reset_pool_counters();
     PoolOpaque pool_cow_opaque = { 56, 3 };

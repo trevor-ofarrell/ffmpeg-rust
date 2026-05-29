@@ -2617,6 +2617,74 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     );
     assert_eq!(*custom_pool_frees.lock().unwrap(), 1);
 
+    let unique_writable_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let unique_writable_frees = Arc::new(Mutex::new(0usize));
+    let unique_writable_release_capture = Arc::clone(&unique_writable_releases);
+    let unique_writable_free_capture = Arc::clone(&unique_writable_frees);
+    let unique_writable_opaque = payload_len + padding_len + 62;
+    let unique_writable_pool = BufferPool::with_callbacks(
+        payload_len,
+        padding_len,
+        BufferPoolCallbacks::with_allocation_callbacks(
+            move |allocated_len| {
+                Ok(BufferPoolAllocation::with_opaque(
+                    vec![0x62; allocated_len],
+                    unique_writable_opaque,
+                ))
+            },
+            move |allocation| {
+                let opaque = *allocation.opaque_ref::<usize>().unwrap();
+                unique_writable_release_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, allocation.into_vec()));
+            },
+        )
+        .with_pool_free(move || {
+            *unique_writable_free_capture.lock().unwrap() += 1;
+        }),
+    )
+    .unwrap();
+    let mut unique_writable = unique_writable_pool.get().unwrap();
+    if let Some(first) = unique_writable.make_mut().first_mut() {
+        *first = cursor.next().unwrap_or_default();
+    }
+    let unique_writable_expected = unique_writable.as_padded_slice().to_vec();
+    let unique_writable_ptr = unique_writable.as_padded_ptr();
+    unique_writable.make_mut();
+    assert_eq!(unique_writable.as_padded_ptr(), unique_writable_ptr);
+    assert_eq!(
+        unique_writable.as_padded_slice(),
+        unique_writable_expected.as_slice()
+    );
+    assert_eq!(
+        unique_writable.pool_opaque_ref::<usize>().copied(),
+        Some(unique_writable_opaque)
+    );
+    assert!(unique_writable_releases.lock().unwrap().is_empty());
+    assert_eq!(*unique_writable_frees.lock().unwrap(), 0);
+    assert_eq!(unique_writable_pool.available_count().unwrap(), 0);
+    drop(unique_writable);
+    assert!(unique_writable_releases.lock().unwrap().is_empty());
+    assert_eq!(*unique_writable_frees.lock().unwrap(), 0);
+    assert_eq!(unique_writable_pool.available_count().unwrap(), 1);
+    let unique_writable_reuse = unique_writable_pool.get().unwrap();
+    assert_eq!(
+        unique_writable_reuse.as_padded_slice(),
+        unique_writable_expected.as_slice()
+    );
+    assert_eq!(
+        unique_writable_reuse.pool_opaque_ref::<usize>().copied(),
+        Some(unique_writable_opaque)
+    );
+    drop(unique_writable_reuse);
+    drop(unique_writable_pool);
+    assert_eq!(
+        *unique_writable_releases.lock().unwrap(),
+        vec![(unique_writable_opaque, unique_writable_expected)]
+    );
+    assert_eq!(*unique_writable_frees.lock().unwrap(), 1);
+
     let custom_cow_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let custom_cow_frees = Arc::new(Mutex::new(0usize));
     let custom_cow_release_capture = Arc::clone(&custom_cow_releases);
