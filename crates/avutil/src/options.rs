@@ -9179,6 +9179,22 @@ mod tests {
         assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
         assert_eq!(empty_pairs_multi, sample_options());
 
+        let mut trailing_pair_separator = sample_options();
+        assert_eq!(
+            trailing_pair_separator
+                .set_avoptions_from_string("threads=7:", &[], "=", ":")
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            trailing_pair_separator.get("threads"),
+            Some(&OptionValue::Int(7))
+        );
+        assert_eq!(
+            trailing_pair_separator.get("quality"),
+            Some(&OptionValue::Float(0.5))
+        );
+
         let mut escaped = sample_options();
         assert_eq!(
             escaped

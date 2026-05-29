@@ -112,6 +112,15 @@ fn wav_pcm_s16le_duplicate_fmt_chunk_first_fmt_used_for_framecrc() {
 
 #[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn wav_short_pcm_fmt_chunk_is_rejected_by_ffmpeg() {
+    let path = write_generated_short_pcm_fmt_chunk_wav("generated-short-pcm-fmt-chunk");
+
+    assert_oracle_rejects_wav_for_null_output(&path);
+    remove_temp_file(&path);
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
 fn wav_pcm_s16le_empty_file_output_matches_ffmpeg_oracle() {
     let path = unique_temp_path("empty-pcm-s16le-file-output", "raw");
     fs::write(&path, []).expect("empty raw PCM fixture should be writable");
@@ -322,6 +331,34 @@ fn compare_wav_file_output(sample_path: &Path) {
     assert!(demuxer.read_packet().unwrap().is_none());
 }
 
+fn assert_oracle_rejects_wav_for_null_output(sample_path: &Path) {
+    let oracle = oracle_ffmpeg();
+    let sample_arg = sample_path.to_string_lossy().into_owned();
+
+    let oracle_output = Command::new(&oracle)
+        .args([
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            sample_arg.as_str(),
+            "-f",
+            "null",
+            "-",
+        ])
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", oracle.display()));
+
+    assert!(
+        !oracle_output.status.success(),
+        "oracle unexpectedly succeeded for invalid WAV input `{}`\nstdout:\n{}\nstderr:\n{}",
+        sample_path.display(),
+        String::from_utf8_lossy(&oracle_output.stdout),
+        String::from_utf8_lossy(&oracle_output.stderr)
+    );
+}
+
 fn normalize_framecrc_records(output: &str) -> Vec<String> {
     output
         .lines()
@@ -496,6 +533,13 @@ fn write_generated_wav_with_duplicate_fmt_chunks(
     path
 }
 
+fn write_generated_short_pcm_fmt_chunk_wav(label: &str) -> PathBuf {
+    let path = unique_temp_path(label, "wav");
+    fs::write(&path, wav_short_pcm_fmt_chunk_bytes())
+        .expect("generated short PCM fmt WAV fixture should be writable");
+    path
+}
+
 fn write_generated_extensible_wav(
     label: &str,
     channels: u16,
@@ -540,6 +584,20 @@ fn wav_extensible_bytes(channels: u16, sample_rate: u32, payload: &[u8]) -> Vec<
     out.extend_from_slice(&(u32::try_from(body.len() + 4).unwrap()).to_le_bytes());
     out.extend_from_slice(b"WAVE");
     out.extend_from_slice(&body);
+    out
+}
+
+fn wav_short_pcm_fmt_chunk_bytes() -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&20_u32.to_le_bytes());
+    out.extend_from_slice(b"WAVE");
+    out.extend_from_slice(b"fmt ");
+    out.extend_from_slice(&8_u32.to_le_bytes());
+    out.extend_from_slice(&1_u16.to_le_bytes());
+    out.extend_from_slice(&1_u16.to_le_bytes());
+    out.extend_from_slice(&0_u16.to_le_bytes());
+    out.extend_from_slice(&0_u16.to_le_bytes());
     out
 }
 

@@ -388,6 +388,37 @@ mod tests {
     }
 
     #[test]
+    fn packetizes_multiple_packets_and_tracks_timestamps_with_odd_tail() {
+        let input = vec![0_u8; 8_193];
+        let mut demuxer = PcmS16leDemuxer::open(&input, 48_000, 2, 1024).unwrap();
+
+        assert_eq!(demuxer.info().packet_samples(), 1024);
+        assert_eq!(demuxer.info().packet_size(), 4_096);
+        assert_eq!(demuxer.info().total_samples_per_channel(), 2_048);
+
+        let first = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(first.data().len(), 4_096);
+        assert_eq!(first.duration(), 1_024);
+        assert_eq!(first.pts(), Some(0));
+        assert_eq!(first.dts(), Some(0));
+
+        let second = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(second.data().len(), 4_096);
+        assert_eq!(second.duration(), 1_024);
+        assert_eq!(second.pts(), Some(1_024));
+        assert_eq!(second.dts(), Some(1_024));
+
+        let third = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(third.data().len(), 1);
+        assert_eq!(third.duration(), 0);
+        assert_eq!(third.pts(), Some(2_048));
+        assert_eq!(third.dts(), Some(2_048));
+        assert!(third.side_data()[1].data().eq(b"2"));
+
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
     fn muxer_concatenates_stream_zero_packets_and_tracks_samples() {
         let mut muxer = PcmS16leMuxer::new(48_000, 2).unwrap();
         let first = Packet::new(vec![0, 0, 1, 0, 2, 0, 3, 0], 0);

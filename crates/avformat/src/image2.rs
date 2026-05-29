@@ -42,8 +42,7 @@ impl Image2Pattern {
 
             let mut spec_end = after_percent;
             let mut width = None;
-            if raw.as_bytes()[spec_end] == b'0' {
-                spec_end += 1;
+            if raw.as_bytes()[spec_end].is_ascii_digit() {
                 let width_start = spec_end;
                 while raw
                     .as_bytes()
@@ -51,11 +50,6 @@ impl Image2Pattern {
                     .is_some_and(|byte| byte.is_ascii_digit())
                 {
                     spec_end += 1;
-                }
-                if spec_end == width_start {
-                    return Err(AvError::invalid_argument(
-                        "image2 zero-padded pattern is missing width",
-                    ));
                 }
                 let parsed_width = raw[width_start..spec_end]
                     .parse::<usize>()
@@ -615,10 +609,24 @@ mod tests {
         assert!(Image2Pattern::parse("").is_err());
         assert!(Image2Pattern::parse("frame-%x.png").is_err());
         assert!(Image2Pattern::parse("frame-%d-%d.png").is_err());
-        assert!(Image2Pattern::parse("frame-%0d.png").is_err());
         assert!(Image2Pattern::parse("frame-%.png").is_err());
+        assert!(Image2Pattern::parse("frame-%0d.png").is_err());
         assert!(Image2Pattern::parse("frame-%%-%d.png").is_ok());
         let padded = Image2Pattern::parse("frame-%03d.png").unwrap();
+        let non_padded_width = Image2Pattern::parse("frame-%3d.png").unwrap();
+        assert_eq!(
+            non_padded_width.path_for_frame_number(12).unwrap(),
+            "frame-012.png"
+        );
+        assert_eq!(
+            non_padded_width.frame_number_for_path("frame-012.png"),
+            Some(12)
+        );
+        assert_eq!(non_padded_width.frame_number_for_path("frame-12.png"), None);
+        assert_eq!(
+            non_padded_width.frame_number_for_path("frame-0012.png"),
+            Some(12)
+        );
         assert_eq!(padded.frame_number_for_path("frame-1.png"), None);
         assert_eq!(padded.frame_number_for_path("frame-10.png"), None);
         assert_eq!(padded.frame_number_for_path("frame-100.png"), Some(100));

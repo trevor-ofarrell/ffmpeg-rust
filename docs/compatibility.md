@@ -9,6 +9,13 @@
 
 ## Compatible Today
 
+- Latest orchestrated media evidence: xhigh worker lanes added pinned oracle
+  rows for image2 nonzero `%3d` sequence width patterns, yuv4mpegpipe
+  XCOLORRANGE FULL/LIMITED remux preservation, raw pcm_s16le multi-packet file
+  output with an odd tail, short WAV PCM `fmt ` chunk rejection, and
+  `ffmpeg`/`ffprobe` version/buildconf preemption before late value-taking
+  options. These rows strengthen existing `differential_pass`/`fate_pass`
+  components; they do not increase strict complete count.
 - Latest orchestrated `avutil-color` evidence: pinned libavutil
   `av_parse_color()` rows prove deterministic named colors, case-insensitive
   names, bare/hash/0x hex forms, embedded-alpha override, decimal and hex alpha

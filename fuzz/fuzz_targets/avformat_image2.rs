@@ -164,6 +164,15 @@ fn exercise_fixtures() {
         rate_25,
     );
     exercise_demux(
+        "frame-%3d.png",
+        vec![
+            entry("frame-000.png", b"zero"),
+            entry("frame-001.png", b"one"),
+        ],
+        0,
+        Rational::ONE,
+    );
+    exercise_demux(
         "cover%%final.png",
         vec![entry("cover%final.png", b"cover")],
         0,
@@ -275,7 +284,7 @@ fn packets_from_bytes(cursor: &mut Cursor<'_>) -> Vec<Packet> {
 }
 
 fn pattern_from(cursor: &mut Cursor<'_>) -> String {
-    match cursor.next().unwrap_or_default() % 14 {
+    match cursor.next().unwrap_or_default() % 15 {
         0 => "cover.png".to_owned(),
         1 => "frame-%d.png".to_owned(),
         2 => "frame-%03d.png".to_owned(),
@@ -289,6 +298,7 @@ fn pattern_from(cursor: &mut Cursor<'_>) -> String {
         10 => format!("{}-%d.dat", literal_from_bytes(cursor)),
         11 => format!("{}-%03d", literal_from_bytes(cursor)),
         12 => literal_from_bytes(cursor),
+        13 => "frame-%3d.png".to_owned(),
         _ => format!(
             "{}%%{}",
             literal_from_bytes(cursor),

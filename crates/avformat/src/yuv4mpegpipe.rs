@@ -192,6 +192,10 @@ impl Yuv4MpegMuxer {
         self.finished
     }
 
+    pub fn set_color_range(&mut self, color_range: FrameColorRange) {
+        self.info.color_range = color_range;
+    }
+
     pub fn header(&self) -> String {
         let mut header = format!(
             "{Y4M_MAGIC} W{} H{} F{}:{} I{}",
@@ -211,7 +215,13 @@ impl Yuv4MpegMuxer {
             }
             None => header.push_str(" A0:0"),
         }
-        header.push_str(&format!(" C{} XYSCSS=420JPEG\n", self.info.chroma.name()));
+        header.push_str(&format!(" C{} XYSCSS=420JPEG", self.info.chroma.name()));
+        match self.info.color_range {
+            FrameColorRange::Jpeg => header.push_str(" XCOLORRANGE=FULL"),
+            FrameColorRange::Mpeg => header.push_str(" XCOLORRANGE=LIMITED"),
+            FrameColorRange::Unspecified => {}
+        }
+        header.push('\n');
         header
     }
 
@@ -735,6 +745,64 @@ mod tests {
         assert_eq!(
             muxer.header(),
             "YUV4MPEG2 W2 H2 F24:1 Ip A4:3 C420jpeg XYSCSS=420JPEG\n"
+        );
+    }
+
+    #[test]
+    fn muxer_emits_xcolorrange_extension_for_known_ranges() {
+        let mut muxer = Yuv4MpegMuxer::new(2, 2, Rational::new(25, 1).unwrap(), None).unwrap();
+
+        muxer.set_color_range(FrameColorRange::Jpeg);
+        muxer
+            .write_packet(&Packet::new(frame_bytes(6, 0x10), 0))
+            .unwrap();
+        let jpeg_output = muxer.finish();
+        muxer = Yuv4MpegMuxer::new(2, 2, Rational::new(25, 1).unwrap(), None).unwrap();
+        muxer.set_color_range(FrameColorRange::Mpeg);
+        muxer
+            .write_packet(&Packet::new(frame_bytes(6, 0x20), 0))
+            .unwrap();
+        let mpeg_output = muxer.finish();
+
+        assert!(std::str::from_utf8(&jpeg_output)
+            .unwrap()
+            .contains("XCOLORRANGE=FULL"));
+        assert!(std::str::from_utf8(&mpeg_output)
+            .unwrap()
+            .contains("XCOLORRANGE=LIMITED"));
+
+        assert_eq!(
+            Yuv4MpegDemuxer::open(&jpeg_output)
+                .unwrap()
+                .info()
+                .color_range(),
+            FrameColorRange::Jpeg
+        );
+        assert_eq!(
+            Yuv4MpegDemuxer::open(&mpeg_output)
+                .unwrap()
+                .info()
+                .color_range(),
+            FrameColorRange::Mpeg
+        );
+    }
+
+    #[test]
+    fn muxer_does_not_emit_xcolorrange_extension_when_unspecified() {
+        let mut muxer = Yuv4MpegMuxer::new(2, 2, Rational::new(25, 1).unwrap(), None).unwrap();
+        muxer
+            .write_packet(&Packet::new(frame_bytes(6, 0x30), 0))
+            .unwrap();
+        let output = muxer.finish();
+
+        let header = String::from_utf8(output).unwrap();
+        assert!(!header.contains("XCOLORRANGE="));
+        assert_eq!(
+            Yuv4MpegDemuxer::open(header.as_bytes())
+                .unwrap()
+                .info()
+                .color_range(),
+            FrameColorRange::Unspecified
         );
     }
 

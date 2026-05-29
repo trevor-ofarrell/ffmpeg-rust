@@ -22,10 +22,13 @@ fuzz_target!(|data: &[u8]| {
     exercise_pcm(VALID_STEREO, 48_000, 2, 2);
     exercise_pcm(PARTIAL_THREE_CHANNEL, 48_000, 3, 1024);
     exercise_pcm(&[], 48_000, 2, 1024);
+    let odd_payload = vec![0_u8; 4_105];
+    exercise_pcm(&odd_payload, 48_000, 2, 1024);
     exercise_pcm_s16le_muxer(VALID_STEREO);
     exercise_pcm_s16le_muxer(PARTIAL_THREE_CHANNEL);
     exercise_pcm_s16le_muxer(ODD_STEREO_PACKET);
     exercise_pcm_s16le_muxer(&[]);
+    exercise_pcm_s16le_muxer(&odd_payload);
 });
 
 fn exercise_pcm(input: &[u8], sample_rate: u32, channels: u16, packet_samples: usize) {
@@ -52,12 +55,19 @@ fn exercise_pcm(input: &[u8], sample_rate: u32, channels: u16, packet_samples: u
     assert!(input.len().saturating_sub(accounted_bytes) < info.bytes_per_sample_frame());
 
     let mut expected_pts = 0_i64;
+    let mut total_duration = 0_i64;
     for _ in 0..32 {
         match demuxer.read_packet() {
             Ok(Some(packet)) => {
                 assert_eq!(packet.stream_index(), 0);
-                assert_eq!(packet.pts(), Some(expected_pts));
-                assert_eq!(packet.dts(), Some(expected_pts));
+                let pts = packet.pts().expect("pcm packet pts must be set");
+                let dts = packet.dts().expect("pcm packet dts must be set");
+                assert_eq!(pts, expected_pts);
+                assert_eq!(dts, expected_pts);
+                assert!(
+                    packet.duration() <= i64::try_from(info.packet_samples()).unwrap(),
+                    "pcm packet duration should not exceed configured packet samples"
+                );
                 assert!(packet.duration() >= 0);
                 assert!(packet.data().len() <= info.packet_size());
                 let packet_accounted_bytes =
@@ -67,6 +77,7 @@ fn exercise_pcm(input: &[u8], sample_rate: u32, channels: u16, packet_samples: u
                     packet.data().len().saturating_sub(packet_accounted_bytes)
                         < info.bytes_per_sample_frame()
                 );
+                total_duration += packet.duration();
                 assert_eq!(packet.side_data()[0].kind(), "pcm_sample_fmt");
                 assert_eq!(packet.side_data()[0].data(), b"s16");
                 assert_eq!(packet.side_data()[1].kind(), "pcm_channels");
@@ -79,6 +90,10 @@ fn exercise_pcm(input: &[u8], sample_rate: u32, channels: u16, packet_samples: u
             Ok(None) | Err(_) => break,
         }
     }
+    assert!(
+        total_duration <= i64::try_from(info.total_samples_per_channel()).unwrap(),
+        "pcm demuxer durations should match complete sample frames in input"
+    );
 }
 
 fn sample_rate_from(byte: u8) -> u32 {

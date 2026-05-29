@@ -524,6 +524,12 @@ mod tests {
         assert!(WavDemuxer::open(&wav_with_short_extensible_fmt_chunk()).is_err());
         assert!(WavDemuxer::open(&wav_with_small_extensible_cb_size()).is_err());
         assert!(WavDemuxer::open(&wav_with_extensible_non_pcm_subformat()).is_err());
+        assert_eq!(
+            WavDemuxer::open(&wav_with_short_pcm_fmt_chunk())
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::EndOfFile
+        );
     }
 
     #[test]
@@ -813,6 +819,20 @@ mod tests {
         let mut out = Vec::new();
         out.extend_from_slice(b"RIFF");
         out.extend_from_slice(&0_u32.to_le_bytes());
+        out
+    }
+
+    fn wav_with_short_pcm_fmt_chunk() -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(b"RIFF");
+        out.extend_from_slice(&20_u32.to_le_bytes());
+        out.extend_from_slice(b"WAVE");
+        out.extend_from_slice(b"fmt ");
+        out.extend_from_slice(&8_u32.to_le_bytes());
+        out.extend_from_slice(&1_u16.to_le_bytes());
+        out.extend_from_slice(&1_u16.to_le_bytes());
+        out.extend_from_slice(&0_u16.to_le_bytes());
+        out.extend_from_slice(&0_u16.to_le_bytes());
         out
     }
 

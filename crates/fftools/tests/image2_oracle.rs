@@ -35,6 +35,17 @@ fn image2_ppm_numbered_sequence_framecrc_records_match_ffmpeg_oracle() {
 
 #[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn image2_ppm_nonzero_width_pattern_framecrc_records_match_ffmpeg_oracle() {
+    compare_image2_sequence_framecrc_records_with_pattern(
+        "ppm",
+        "1",
+        0,
+        &[PPM_1X1_RED, PPM_1X1_GREEN],
+    );
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
 fn image2_ppm_padded_width_growth_framecrc_records_match_ffmpeg_oracle() {
     compare_image2_sequence_framecrc_records_from_start(
         "ppm",
@@ -415,6 +426,96 @@ fn compare_image2_sequence_framecrc_records_from_start_with_width(
     assert!(
         oracle_output.status.success(),
         "oracle image2 sequence framecrc failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        oracle_output.status.code(),
+        String::from_utf8_lossy(&oracle_output.stdout),
+        String::from_utf8_lossy(&oracle_output.stderr)
+    );
+
+    let oracle_stdout =
+        String::from_utf8(oracle_output.stdout).expect("oracle framecrc output should be UTF-8");
+    let expected_byte_count: usize = payloads.iter().map(|payload| payload.len()).sum();
+
+    assert_eq!(rust.output_format(), Some("framecrc"));
+    assert_eq!(rust.packet_count(), u64::try_from(payloads.len()).unwrap());
+    assert_eq!(
+        rust.byte_count(),
+        u64::try_from(expected_byte_count).unwrap()
+    );
+    assert!(rust.stderr().is_empty());
+    assert_eq!(
+        normalize_framecrc_records(rust.stdout()),
+        normalize_framecrc_records(&oracle_stdout)
+    );
+}
+
+fn compare_image2_sequence_framecrc_records_with_pattern(
+    extension: &str,
+    frame_rate: &str,
+    start_number: u64,
+    payloads: &[&[u8]],
+) {
+    let oracle = oracle_ffmpeg();
+    let input_dir = unique_temp_dir("image2-sequence-framecrc-input");
+
+    fs::create_dir(&input_dir).expect("temp image2 framecrc input should be creatable");
+
+    for (index, payload) in payloads.iter().enumerate() {
+        let frame_number = start_number + u64::try_from(index).expect("test index should fit u64");
+        fs::write(
+            input_dir.join(format!("in-{frame_number:03}.{extension}")),
+            payload,
+        )
+        .expect("temp image2 framecrc input should be writable");
+    }
+
+    let input_pattern = input_dir
+        .join(format!("in-%3d.{extension}"))
+        .to_string_lossy()
+        .into_owned();
+
+    let rust = ffmpeg_output(&strings(&[
+        "-f",
+        "image2",
+        "-framerate",
+        frame_rate,
+        "-start_number",
+        &start_number.to_string(),
+        "-i",
+        input_pattern.as_str(),
+        "-f",
+        "framecrc",
+        "-",
+    ]))
+    .expect("Rust image2 sequence framecrc path should execute");
+
+    let oracle_output = Command::new(&oracle)
+        .args([
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "image2",
+            "-framerate",
+            frame_rate,
+            "-start_number",
+            &start_number.to_string(),
+            "-i",
+            input_pattern.as_str(),
+            "-c:v",
+            "copy",
+            "-f",
+            "framecrc",
+            "-",
+        ])
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", oracle.display()));
+
+    remove_temp_dirs(&[input_dir]);
+
+    assert!(
+        oracle_output.status.success(),
+        "oracle image2 framecrc with nonzero width pattern failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
         oracle_output.status.code(),
         String::from_utf8_lossy(&oracle_output.stdout),
         String::from_utf8_lossy(&oracle_output.stderr)

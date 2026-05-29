@@ -61,6 +61,90 @@ fn yuv4mpegpipe_xcolorrange_metadata_matches_ffprobe_oracle() {
 }
 
 #[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE/FFPROBE_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg|ffprobe"]
+fn yuv4mpegpipe_xcolorrange_remux_preserves_color_range_oracle() {
+    let payload = [0, 1, 2, 3, 4, 5];
+
+    for (extra_header_fields, expected_oracle_color_range) in [
+        ("X", "unknown"),
+        ("XCOLORRANGE=FULL", "pc"),
+        ("XCOLORRANGE=LIMITED", "tv"),
+        ("XCOLORRANGE=BOGUS", "unknown"),
+    ] {
+        let oracle = oracle_ffmpeg();
+        let oracle_probe = oracle_ffprobe();
+        let input =
+            y4m_file_bytes_with_extra_header_fields(2, 2, "25:1", extra_header_fields, &[&payload]);
+        let input_path = write_temp_bytes("yuv420p-y4m-color-range-remux", "y4m", &input);
+        let input_arg = input_path.to_string_lossy().into_owned();
+
+        let mut demuxer =
+            Yuv4MpegDemuxer::open(&input).expect("Rust yuv4mpegpipe input should parse");
+        let info = demuxer.info().clone();
+        let mut muxer = Yuv4MpegMuxer::new(
+            info.width(),
+            info.height(),
+            info.frame_rate(),
+            info.sample_aspect_ratio(),
+        )
+        .expect("Rust yuv4mpegpipe muxer should accept demuxed stream parameters");
+        muxer.set_color_range(info.color_range());
+        while let Some(packet) = demuxer
+            .read_packet()
+            .expect("Rust yuv4mpegpipe input packets should parse")
+        {
+            muxer
+                .write_packet(&packet)
+                .expect("Rust yuv4mpegpipe packet should write");
+        }
+        let rust_output_path = unique_temp_path("yuv420p-rust-oracle-color-range-output", "y4m");
+        let rust_output_arg = rust_output_path.to_string_lossy().into_owned();
+        let rust_bytes = muxer.finish();
+        fs::write(&rust_output_path, &rust_bytes).expect("Rust remux output should be writable");
+
+        let oracle_output_path = unique_temp_path("yuv420p-oracle-color-range-output", "y4m");
+        let oracle_output_arg = oracle_output_path.to_string_lossy().into_owned();
+        let oracle_remux = Command::new(&oracle)
+            .args([
+                "-nostdin",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "yuv4mpegpipe",
+                "-i",
+                input_arg.as_str(),
+                "-c:v",
+                "copy",
+                "-f",
+                "yuv4mpegpipe",
+                oracle_output_arg.as_str(),
+            ])
+            .output()
+            .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", oracle.display()));
+        assert!(
+            oracle_remux.status.success(),
+            "oracle yuv4mpegpipe remux failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+            oracle_remux.status.code(),
+            String::from_utf8_lossy(&oracle_remux.stdout),
+            String::from_utf8_lossy(&oracle_remux.stderr)
+        );
+
+        let rust_color_range = ffprobe_color_range(&oracle_probe, rust_output_arg.as_str());
+        assert_eq!(rust_color_range.trim(), expected_oracle_color_range);
+
+        let oracle_color_range = ffprobe_color_range(&oracle_probe, oracle_output_arg.as_str());
+        assert_eq!(oracle_color_range.trim(), expected_oracle_color_range);
+
+        assert_eq!(
+            header_line(&rust_bytes),
+            header_line(&fs::read(&oracle_output_path).expect("Oracle output should be readable"))
+        );
+        remove_temp_files(&[input_path, rust_output_path, oracle_output_path]);
+    }
+}
+
+#[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
 fn yuv4mpegpipe_flexible_frame_header_variants_match_ffmpeg_oracle() {
     let payload = [0, 1, 2, 3, 4, 5];
@@ -463,6 +547,32 @@ fn compare_yuv4mpegpipe_color_range_metadata(
     let oracle_color_range =
         String::from_utf8(oracle_output.stdout).expect("oracle color range should be UTF-8");
     assert_eq!(oracle_color_range.trim(), expected_oracle_color_range);
+}
+
+fn ffprobe_color_range(oracle: &Path, input: &str) -> String {
+    let output = Command::new(oracle)
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=color_range",
+            "-of",
+            "default=nw=1:nk=1",
+            input,
+        ])
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run ffprobe `{}`: {err}", oracle.display()));
+
+    assert!(
+        output.status.success(),
+        "ffprobe color-range query failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).expect("oracle color range output should be UTF-8")
 }
 
 fn oracle_ffmpeg() -> PathBuf {

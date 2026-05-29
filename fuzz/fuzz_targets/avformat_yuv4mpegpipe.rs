@@ -1,6 +1,6 @@
 #![no_main]
 
-use avformat::Yuv4MpegDemuxer;
+use avformat::{Yuv4MpegDemuxer, Yuv4MpegMuxer};
 use avutil::{FrameColorRange, PixelFormat};
 use libfuzzer_sys::fuzz_target;
 
@@ -24,6 +24,7 @@ const VALID_FRAME_VARIANTS: &[&[u8]] = &[
 fuzz_target!(|data: &[u8]| {
     exercise_y4m(data);
     exercise_xcolorrange_y4m();
+    exercise_xcolorrange_roundtrip();
     exercise_truncated_tail_frame_header();
     exercise_frame_variants();
     exercise_y4m(VALID_Y4M);
@@ -94,10 +95,49 @@ fn exercise_xcolorrange_y4m() {
     }
 }
 
+fn exercise_xcolorrange_roundtrip() {
+    let cases = [
+        (VALID_Y4M_X_FIELD, None),
+        (VALID_Y4M_XCOLORRANGE_FULL, Some(FrameColorRange::Jpeg)),
+        (VALID_Y4M_XCOLORRANGE_LIMITED, Some(FrameColorRange::Mpeg)),
+        (VALID_Y4M_XCOLORRANGE_BOGUS, None),
+    ];
+
+    for (input, expected_color_range) in cases {
+        let mut demuxer = Yuv4MpegDemuxer::open(input).expect("xcolorrange seed should parse");
+        let info = demuxer.info().clone();
+        let mut muxer = Yuv4MpegMuxer::new(
+            info.width(),
+            info.height(),
+            info.frame_rate(),
+            info.sample_aspect_ratio(),
+        )
+        .expect("valid yuv4mpegpipe muxer should be constructible");
+        muxer.set_color_range(info.color_range());
+        let packet = demuxer
+            .read_packet()
+            .expect("xcolorrange seed should yield a packet")
+            .expect("xcolorrange seed should contain a frame");
+        muxer.write_packet(&packet).unwrap();
+
+        let bytes = muxer.finish();
+        let mut roundtripped =
+            Yuv4MpegDemuxer::open(&bytes).expect("yuv4mpegpipe roundtrip should parse after remux");
+        let expected_color_range = expected_color_range.unwrap_or(FrameColorRange::Unspecified);
+        assert_eq!(roundtripped.info().color_range(), expected_color_range);
+        assert_eq!(
+            roundtripped.read_packet().unwrap().unwrap().data(),
+            b"abcdef",
+            "roundtrip packet payload should preserve data"
+        );
+        assert!(roundtripped.read_packet().unwrap().is_none());
+    }
+}
+
 fn exercise_frame_variants() {
     for input in VALID_FRAME_VARIANTS {
-        let mut demuxer =
-            Yuv4MpegDemuxer::open(input).expect("valid yuv4mpegpipe frame-variant seed should parse");
+        let mut demuxer = Yuv4MpegDemuxer::open(input)
+            .expect("valid yuv4mpegpipe frame-variant seed should parse");
         let packet = demuxer
             .read_packet()
             .expect("valid yuv4mpegpipe frame-variant seed should yield a packet")

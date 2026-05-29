@@ -6,6 +6,7 @@ use libfuzzer_sys::fuzz_target;
 
 const VALID_WAV: &[u8] = b"RIFF,\0\0\0WAVEfmt \x10\0\0\0\x01\0\x02\0\x80\xbb\0\0\0\xee\x02\0\x04\0\x10\0data\x08\0\0\0\0\0\x01\0\x02\0\x03\0";
 const TOO_SMALL_RIFF_WAV: &[u8] = b"RIFF\0\0\0\0";
+const SHORT_PCM_FMT_WAV: &[u8] = b"RIFF\x14\0\0\0WAVEfmt \x08\0\0\0\x01\0\x01\0\0\0\0\0";
 
 fuzz_target!(|data: &[u8]| {
     exercise_wav(data);
@@ -19,6 +20,7 @@ fuzz_target!(|data: &[u8]| {
     exercise_duplicate_fmt_wav(&duplicate_fmt);
     let empty_generated_wav = empty_generated_wav();
     exercise_wav(&empty_generated_wav);
+    assert!(WavDemuxer::open(SHORT_PCM_FMT_WAV).is_err());
 });
 
 fn exercise_wav(input: &[u8]) {

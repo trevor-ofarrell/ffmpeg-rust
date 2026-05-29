@@ -50,6 +50,13 @@ fn pcm_s16le_file_output_matches_ffmpeg_oracle() {
 
 #[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn pcm_s16le_packetized_file_output_matches_ffmpeg_oracle() {
+    let payload = vec![0_u8; 4_105];
+    compare_pcm_s16le_file_output("48000", "2", &payload);
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
 fn pcm_s16le_odd_packet_file_output_matches_ffmpeg_oracle() {
     let payload = vec![0_u8, 1, 2, 3, 4];
     compare_pcm_s16le_file_output("48000", "2", &payload);
@@ -125,7 +132,10 @@ fn compare_pcm_s16le_framecrc_records(sample_rate: &str, channels: &str, payload
         String::from_utf8(oracle_output.stdout).expect("oracle framecrc output should be UTF-8");
 
     assert_eq!(rust.output_format(), Some("framecrc"));
-    assert_eq!(rust.packet_count(), u64::from(!payload.is_empty()));
+    assert_eq!(
+        rust.packet_count(),
+        expected_pcm_packet_count(payload.len(), channels)
+    );
     assert_eq!(rust.byte_count(), u64::try_from(payload.len()).unwrap());
     assert!(rust.stderr().is_empty());
     assert_eq!(
@@ -196,7 +206,10 @@ fn compare_pcm_s16le_file_output(sample_rate: &str, channels: &str, payload: &[u
     remove_temp_files(&[input_path, rust_output_path, oracle_output_path]);
 
     assert_eq!(rust.output_format(), Some("s16le"));
-    assert_eq!(rust.packet_count(), 1);
+    assert_eq!(
+        rust.packet_count(),
+        expected_pcm_packet_count(payload.len(), channels)
+    );
     assert_eq!(rust.byte_count(), u64::try_from(payload.len()).unwrap());
     assert!(rust.stdout().is_empty());
     assert!(rust.stderr().is_empty());
@@ -265,7 +278,10 @@ fn compare_pcm_s16le_wav_file_output(sample_rate: &str, channels: &str, payload:
     remove_temp_files(&[input_path, rust_output_path, oracle_output_path]);
 
     assert_eq!(rust.output_format(), Some("wav"));
-    assert_eq!(rust.packet_count(), 1);
+    assert_eq!(
+        rust.packet_count(),
+        expected_pcm_packet_count(payload.len(), channels)
+    );
     assert_eq!(rust.byte_count(), u64::try_from(rust_bytes.len()).unwrap());
     assert!(rust.stdout().is_empty());
     assert!(rust.stderr().is_empty());
@@ -285,6 +301,26 @@ fn compare_pcm_s16le_wav_file_output(sample_rate: &str, channels: &str, payload:
     let packet = demuxer.read_packet().unwrap().unwrap();
     assert_eq!(packet.data(), payload);
     assert!(demuxer.read_packet().unwrap().is_none());
+}
+
+fn expected_pcm_packet_count(payload_len: usize, channels: &str) -> u64 {
+    if payload_len == 0 {
+        return 0;
+    }
+
+    const PACKET_SAMPLES: usize = 1024;
+    const BYTES_PER_SAMPLE: usize = 2;
+
+    let channels: usize = channels
+        .parse()
+        .expect("PCM channel count must be a valid decimal");
+    let bytes_per_frame = channels.saturating_mul(BYTES_PER_SAMPLE);
+    let bytes_per_packet = bytes_per_frame.saturating_mul(PACKET_SAMPLES);
+    if bytes_per_packet == 0 {
+        return 0;
+    }
+
+    u64::try_from((payload_len - 1) / bytes_per_packet + 1).unwrap()
 }
 
 fn normalize_framecrc_records(output: &str) -> Vec<String> {

@@ -96,6 +96,13 @@ fn version_requests_ignore_later_unknown_options() {
 
 #[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn version_and_buildconf_preempt_late_value_options() {
+    compare_version_buildconf_ignores_value_option_tail("ffmpeg");
+    compare_version_buildconf_ignores_value_option_tail("ffprobe");
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
 fn version_requests_warn_for_later_invalid_loglevel_but_still_succeed() {
     compare_trailing_invalid_loglevel_warning("ffmpeg", "-version", "warn");
     compare_trailing_invalid_loglevel_warning("ffprobe", "-version", "warn");
@@ -393,6 +400,70 @@ fn compare_version_unknown_order(tool_name: &str) {
         &version_banner(tool_name),
         "version request with preceding unknown option",
     );
+}
+
+fn compare_version_buildconf_ignores_value_option_tail(tool_name: &str) {
+    let oracle = oracle_tool(tool_name);
+
+    let oracle_version = run_oracle(&oracle, tool_name, &["-version", "-f"]);
+    assert!(
+        oracle_version.status_success,
+        "oracle `{}` should accept -version with trailing value-taking option, got stdout:\n{}\nstderr:\n{}",
+        oracle.display(),
+        oracle_version.stdout,
+        oracle_version.stderr
+    );
+    assert!(
+        oracle_version
+            .stdout
+            .contains(&format!("{tool_name} version {TARGET_FFMPEG_VERSION}")),
+        "oracle `{}` -version -f should still emit version surface, got:\n{}",
+        oracle.display(),
+        oracle_version.stdout
+    );
+
+    let oracle_buildconf = run_oracle(&oracle, tool_name, &["-buildconf", "-f"]);
+    assert!(
+        oracle_buildconf.status_success,
+        "oracle `{}` should accept -buildconf with trailing value-taking option, got stdout:\n{}\nstderr:\n{}",
+        oracle.display(),
+        oracle_buildconf.stdout,
+        oracle_buildconf.stderr
+    );
+    assert_buildconf_shape(
+        tool_name,
+        normalized_buildconf_output(tool_name, &oracle_buildconf.stdout),
+        "oracle",
+    );
+
+    match tool_name {
+        "ffmpeg" => {
+            let rust_version = ffmpeg_output(&strings(&["-version", "-f"]))
+                .expect("Rust ffmpeg should treat -version as first token");
+            assert!(rust_version
+                .stdout()
+                .starts_with(&format!("{tool_name} version {TARGET_FFMPEG_VERSION}")));
+            assert!(rust_version.stderr().is_empty());
+            assert_eq!(rust_version.output_format(), None);
+
+            let rust_buildconf = ffmpeg_output(&strings(&["-buildconf", "-f"]))
+                .expect("Rust ffmpeg buildconf should ignore trailing -f");
+            assert_buildconf_shape(tool_name, rust_buildconf.stdout(), "Rust");
+            assert!(rust_buildconf.stderr().is_empty());
+            assert_eq!(rust_buildconf.output_format(), None);
+        }
+        "ffprobe" => {
+            let rust_version = ffprobe_output(&strings(&["-version", "-f"]))
+                .expect("Rust ffprobe should treat -version as first token");
+            assert!(
+                rust_version.starts_with(&format!("{tool_name} version {TARGET_FFMPEG_VERSION}"))
+            );
+            let rust_buildconf = ffprobe_output(&strings(&["-buildconf", "-f"]))
+                .expect("Rust ffprobe buildconf should ignore trailing -f");
+            assert_buildconf_shape(tool_name, &rust_buildconf, "Rust");
+        }
+        other => panic!("unsupported tool `{other}`"),
+    }
 }
 
 fn compare_trailing_invalid_loglevel_warning(tool_name: &str, request: &str, value: &str) {
