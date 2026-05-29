@@ -1915,6 +1915,31 @@ mod tests {
     }
 
     #[test]
+    fn zero_length_opaque_data_buffer_preserves_owner_until_release() {
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let capture = std::sync::Arc::clone(&released);
+        let zero = BufferRef::from_vec_with_opaque_release_callback(
+            Vec::new(),
+            321usize,
+            move |opaque, bytes| {
+                capture.lock().unwrap().push((opaque, bytes));
+            },
+        );
+
+        assert_eq!(zero.len(), 0);
+        assert!(zero.as_slice().is_empty());
+        assert_eq!(zero.allocated_len(), 0);
+        assert!(zero.is_writable());
+        assert!(!zero.is_readonly());
+        assert_eq!(zero.strong_count(), 1);
+        assert_eq!(zero.opaque_ref::<usize>(), Some(&321));
+        assert!(released.lock().unwrap().is_empty());
+
+        drop(zero);
+        assert_eq!(*released.lock().unwrap(), vec![(321, Vec::new())]);
+    }
+
+    #[test]
     fn readonly_opaque_data_buffers_release_original_bytes_on_detach() {
         let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
         let capture = std::sync::Arc::clone(&released);

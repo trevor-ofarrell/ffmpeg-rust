@@ -201,6 +201,25 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         release_fields(&create_released),
     );
 
+    let create_zero_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_zero_capture = Arc::clone(&create_zero_released);
+    let create_zero = BufferRef::from_vec_with_opaque_release_callback(
+        Vec::new(),
+        321usize,
+        move |opaque, bytes| {
+            create_zero_capture.lock().unwrap().push((opaque, bytes));
+        },
+    );
+    rows.insert(
+        "buffer:create-zero".to_string(),
+        buffer_fields_with_opaque(&create_zero),
+    );
+    drop(create_zero);
+    rows.insert(
+        "buffer:create-zero-release".to_string(),
+        release_fields(&create_zero_released),
+    );
+
     let create_shared_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let create_shared_capture = Arc::clone(&create_shared_released);
     let create_shared_src = BufferRef::from_vec_with_opaque_release_callback(
@@ -1550,6 +1569,19 @@ int main(void) {
     print_buffer_opaque("buffer:create-writable", create);
     av_buffer_unref(&create);
     print_create_release("buffer:create-writable-release");
+
+    reset_create_release();
+    uint8_t *create_zero_data = av_malloc(1);
+    fail_if(!create_zero_data, "av_malloc create_zero_data failed");
+    create_zero_data[0] = 0xab;
+    last_create_release_size = 0;
+    AVBufferRef *create_zero = av_buffer_create(create_zero_data, 0,
+                                                test_create_free,
+                                                (void *)(uintptr_t)321, 0);
+    fail_if(!create_zero, "av_buffer_create zero failed");
+    print_buffer_opaque("buffer:create-zero", create_zero);
+    av_buffer_unref(&create_zero);
+    print_create_release("buffer:create-zero-release");
 
     reset_create_release();
     static const uint8_t create_shared_bytes[] = { 40, 41, 42 };
