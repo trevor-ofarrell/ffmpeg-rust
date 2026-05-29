@@ -2254,6 +2254,42 @@ mod tests {
             vec![(543, vec![51, 52, 53])]
         );
 
+        let shared_readonly_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let shared_readonly_capture = std::sync::Arc::clone(&shared_readonly_released);
+        let shared_readonly_source = BufferRef::from_vec_with_opaque_release_callback_readonly(
+            vec![61, 62, 63],
+            654usize,
+            move |opaque, storage| {
+                shared_readonly_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, storage));
+            },
+        );
+        let mut shared_readonly_realloc = Some(BufferRef::ref_from(&shared_readonly_source));
+        BufferRef::realloc(&mut shared_readonly_realloc, 5).unwrap();
+        let shared_readonly_realloc =
+            shared_readonly_realloc.expect("shared readonly realloc result");
+        assert_eq!(shared_readonly_source.as_slice(), &[61, 62, 63]);
+        assert_eq!(shared_readonly_source.strong_count(), 1);
+        assert!(shared_readonly_source.is_readonly());
+        assert_eq!(shared_readonly_source.opaque_ref::<usize>(), Some(&654));
+        assert_eq!(shared_readonly_realloc.len(), 5);
+        assert_eq!(&shared_readonly_realloc.as_slice()[..3], &[61, 62, 63]);
+        assert!(shared_readonly_realloc.is_writable());
+        assert!(!shared_readonly_realloc.is_readonly());
+        assert!(shared_readonly_realloc.opaque_ref::<usize>().is_none());
+        assert!(!shared_readonly_realloc.shares_storage(&shared_readonly_source));
+        assert!(shared_readonly_released.lock().unwrap().is_empty());
+        drop(shared_readonly_realloc);
+        assert!(shared_readonly_released.lock().unwrap().is_empty());
+        drop(shared_readonly_source);
+        assert_eq!(
+            *shared_readonly_released.lock().unwrap(),
+            vec![(654, vec![61, 62, 63])]
+        );
+
         let shared_source = BufferRef::from_vec(vec![7, 8, 9]);
         let mut shared_realloc = Some(shared_source.clone());
         BufferRef::realloc(&mut shared_realloc, 4).unwrap();

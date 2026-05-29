@@ -2,6 +2,16 @@
 
 ## Current Status
 
+Latest `avutil-buffer` shared-readonly realloc slice: pinned FFmpeg 8.1.1 libavutil `av_buffer_realloc()` rows now prove that reallocating one reference of a shared readonly `av_buffer_create` owner detaches the destination to writable reallocatable storage, copies the stable prefix, clears destination opaque data, preserves the readonly source and its opaque owner, and delays the original release callback until the final original reference is unreffed. Rust unit coverage and `avutil_core_models` fuzz invariants mirror that lifetime shape. `avutil-buffer` remains `differential_pass`, not complete, because broader AVBuffer/AVBufferRef lifetime and ABI closure, hardware/device ownership integration, and final completion evidence remain pending. Strict completion remains 11/96 components, about 11.5%.
+
+Latest validation commands for the shared-readonly realloc slice passed: `cargo fmt --all`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib buffer_ref_realloc_handles_nullable_c_api_shape -- --nocapture`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --test buffer_oracle libavutil_buffer_refs_match_current_model -- --ignored --nocapture`; `$env:CARGO_TARGET_DIR='target-codex'; cargo check --manifest-path fuzz\\Cargo.toml --bin avutil_core_models`; `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy -p avutil --all-targets --all-features -- -D warnings`; `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --manifest-path fuzz\\Cargo.toml --bin avutil_core_models -- -D warnings`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib buffer -- --nocapture`; and WSL `RUST_MIN_STACK=33554432 CXXFLAGS='-O1' HOST_CXXFLAGS='-O1' CARGO_TARGET_DIR=target-wsl-buffer-readonly-realloc-fuzz-o1 cargo fuzz run avutil_core_models -- -runs=1`.
+
+Final repository gates for the shared-readonly realloc slice also passed: `cargo fmt --all -- --check`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p fate-runner current_ledger -- --nocapture`; `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-buffer`; `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-buffer --target oracle-libavutil-buffer --oracle-ffmpeg .\\third_party\\ffmpeg-oracle\\build\\bin\\ffmpeg.cmd`; `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- guard-runtime`; `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- oracle-doctor`; `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --workspace --all-targets --all-features -- -D warnings`; and `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed`.
+
+Latest failing commands for the shared-readonly realloc slice: none.
+
+Latest change summary: `Pin shared readonly AVBuffer realloc`.
+
 Latest `avutil-buffer` oversized-realloc slice: pinned FFmpeg 8.1.1 libavutil `av_buffer_realloc(&buf, SIZE_MAX)` and `av_buffer_realloc(&NULL, SIZE_MAX)` rows now prove ENOMEM/no-mutation behavior for existing and NULL destinations. Rust allocation failures from `BufferRef::realloc` now carry `AvErrorCode::ENOMEM`, with unit and fuzz coverage for both C-API destination shapes. `avutil-buffer` remains `differential_pass`, not complete, because broader AVBuffer/AVBufferRef lifetime and ABI closure, hardware/device ownership integration, and final completion evidence remain pending. Strict completion remains 11/96 components, about 11.5%.
 
 Latest validation commands for the oversized-realloc slice passed: `cargo fmt --all`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib buffer_ref_realloc_handles_nullable_c_api_shape -- --nocapture`; `$env:CARGO_TARGET_DIR='target-codex'; cargo check --manifest-path fuzz\\Cargo.toml --bin avutil_core_models`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --test buffer_oracle libavutil_buffer_refs_match_current_model -- --ignored --nocapture`; `cargo fmt --all -- --check`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib buffer -- --nocapture`; `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy -p avutil --all-targets --all-features -- -D warnings`; `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --manifest-path fuzz\\Cargo.toml --bin avutil_core_models -- -D warnings`; `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-buffer`; `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-buffer --target oracle-libavutil-buffer --oracle-ffmpeg .\\third_party\\ffmpeg-oracle\\build\\bin\\ffmpeg.cmd`; and WSL `RUST_MIN_STACK=33554432 CXXFLAGS='-O1' HOST_CXXFLAGS='-O1' CARGO_TARGET_DIR=target-wsl-buffer-realloc-enomem-fuzz-o1 cargo fuzz run avutil_core_models -- -runs=1`.
@@ -1449,6 +1459,24 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-buffer` shared-readonly realloc slice:
+  - `cargo fmt --all`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib buffer_ref_realloc_handles_nullable_c_api_shape -- --nocapture`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --test buffer_oracle libavutil_buffer_refs_match_current_model -- --ignored --nocapture`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo check --manifest-path fuzz\\Cargo.toml --bin avutil_core_models`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy -p avutil --all-targets --all-features -- -D warnings`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --manifest-path fuzz\\Cargo.toml --bin avutil_core_models -- -D warnings`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib buffer -- --nocapture`
+  - WSL `RUST_MIN_STACK=33554432 CXXFLAGS='-O1' HOST_CXXFLAGS='-O1' CARGO_TARGET_DIR=target-wsl-buffer-readonly-realloc-fuzz-o1 cargo fuzz run avutil_core_models -- -runs=1`
+  - `cargo fmt --all -- --check`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p fate-runner current_ledger -- --nocapture`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-buffer`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-buffer --target oracle-libavutil-buffer --oracle-ffmpeg .\\third_party\\ffmpeg-oracle\\build\\bin\\ffmpeg.cmd`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- guard-runtime`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- oracle-doctor`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --workspace --all-targets --all-features -- -D warnings`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed`
 
 - Current `avutil-logging` custom-callback raw/quiet slice:
   - `cargo fmt --all`
@@ -7500,6 +7528,9 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-buffer` shared-readonly realloc slice:
+  - None.
+
 - Current `avutil-logging` custom-callback raw/quiet slice:
   - None. The WSL fuzz command rebuilt sanitizer artifacts for the new target dir before passing the one-run corpus smoke.
 
@@ -8201,6 +8232,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-buffer` is the current focus. The latest coherent slice pins shared-readonly `av_buffer_realloc()` lifetime behavior against FFmpeg 8.1.1: one detached destination becomes writable and loses opaque owner state while the readonly source keeps the original opaque owner until the final original reference is released. The component remains `differential_pass`, not complete, because remaining AVBuffer/AVBufferRef ABI/lifetime edges, hardware/device ownership integration, and final completion evidence still need closure.
+
 `avutil-logging` remains the current focus. The latest coherent slice expands bounded POSIX DST evidence to wrapped southern-hemisphere intervals by matching pinned libavutil `TZ=AEST-10AEDT,M10.1.0,M4.1.0/3` default-callback rows around October and April transitions. The component remains `fate_pass`, not complete, because full exported C callback ABI/function-pointer integration, broader platform localtime/timezone behavior, byte-identical default-callback stderr/color policy, full media-progress stderr parity, and sustained fuzz evidence remain pending.
 
 `avutil-logging` remains the current focus. The latest coherent slice expands deterministic local-time evidence from fixed offsets to bounded POSIX DST rules by matching pinned libavutil `TZ=PST8PDT,M3.2.0,M11.1.0` default-callback rows around spring-forward and fall-back boundaries. The component remains `fate_pass`, not complete, because full exported C callback ABI/function-pointer integration, broader platform localtime/timezone behavior, byte-identical default-callback stderr/color policy, full media-progress stderr parity, and sustained fuzz evidence remain pending.
@@ -8693,12 +8726,13 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Next 3 Concrete Actions
 
-1. Continue `avutil-logging` closure with broader default-callback stderr/color/platform-timezone rows or exported C callback ABI/function-pointer rows, without treating the bounded fixed-offset, POSIX DST, raw-level, raw-flag, quiet-threshold, repeat, color, carriage-return, force-env presence, TERM palette, and custom-callback raw/quiet rows as full parity.
-2. Add bounded oracle rows for media-progress stderr or callback ABI behavior before changing any completion status.
-3. Strengthen fuzz evidence with saved-crash replays or longer WSL campaigns, but do not mark `avutil-logging` complete until all strict completion rules are met.
+1. Continue `avutil-buffer` closure with remaining AVBuffer/AVBufferRef ABI and lifetime rows, especially edge cases not yet covered by the current realloc, replace, unref, offset, readonly, custom-owner, and pool evidence.
+2. Tie the buffer model into the next hardware/device ownership surface without claiming hardware parity before oracle-backed tests exist.
+3. Keep `avutil-buffer` at `differential_pass` until the ledger lists final unit, differential, FATE-disposition, fuzz, invalid-input, and limitation-zero evidence.
 
 ## Known Blockers
 
+- `avutil-buffer` now has pinned shared-readonly `av_buffer_realloc()` evidence: reallocating one ref detaches the destination, copies the prefix, clears destination opaque data, preserves the readonly source owner, and releases the original owner only after the final original reference drops. It remains below strict completion because broader AVBuffer/AVBufferRef ABI/lifetime closure, hardware/device ownership integration, and final limitation-zero documentation are still incomplete.
 - `avutil-logging` now has expanded pinned custom-callback evidence for raw delivered levels `-1`, `23`, and `57`, multi-argument `va_list` formatting, repeated NULL/context delivery under `AV_LOG_SKIP_REPEATED`, and AVClass-context `AV_LOG_QUIET` delivery. It remains below strict completion because the exported C callback ABI/function-pointer surface, broader default-callback stderr behavior, broader terminal/color policy, real-timezone/DST behavior, media-progress stderr, and sustained fuzz evidence are still incomplete.
 - `avutil-logging` now has pinned fixed-offset and POSIX DST local-time evidence for default-callback timestamps, including UTC+2, UTC+5:30, UTC-8 date-crossing, `TZ=PST8PDT,M3.2.0,M11.1.0` spring/fall transition rows, and `TZ=AEST-10AEDT,M10.1.0,M4.1.0/3` wrapped southern-hemisphere transition rows. It remains below strict completion because this is bounded deterministic TZ evidence rather than full platform localtime/timezone policy, and exported C callback ABI/function-pointer surface, broader default-callback stderr behavior, broader terminal/color policy, media-progress stderr, and sustained fuzz evidence are still incomplete.
 - `avutil-logging` now has expanded pinned no-force pseudo-terminal `TERM=xterm-256color` severity evidence for context, warning, error, fatal, panic, and info rows. It remains below strict completion because that is still bounded color evidence; broader terminal/default-callback color policy, byte-identical stderr closure, C callback ABI/`va_list`, real-timezone/DST behavior, media-progress stderr, and sustained fuzz evidence remain incomplete.

@@ -1377,6 +1377,47 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         vec![(payload_len, payload.clone())]
     );
 
+    let shared_readonly_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let shared_readonly_capture = Arc::clone(&shared_readonly_released);
+    let shared_readonly_source = BufferRef::from_vec_with_opaque_release_callback_readonly(
+        payload.clone(),
+        payload_len,
+        move |opaque, bytes| {
+            shared_readonly_capture
+                .lock()
+                .unwrap()
+                .push((opaque, bytes));
+        },
+    );
+    let mut shared_readonly_realloc = Some(BufferRef::ref_from(&shared_readonly_source));
+    BufferRef::realloc(&mut shared_readonly_realloc, payload_len + 1).unwrap();
+    let shared_readonly_realloc =
+        shared_readonly_realloc.expect("shared readonly realloc stays present");
+    assert_eq!(shared_readonly_source.as_slice(), payload.as_slice());
+    assert_eq!(shared_readonly_source.strong_count(), 1);
+    assert!(shared_readonly_source.is_readonly());
+    assert_eq!(
+        shared_readonly_source.opaque_ref::<usize>(),
+        Some(&payload_len)
+    );
+    assert_eq!(shared_readonly_realloc.len(), payload_len + 1);
+    assert_eq!(
+        &shared_readonly_realloc.as_slice()[..payload_len],
+        payload.as_slice()
+    );
+    assert!(shared_readonly_realloc.is_writable());
+    assert!(!shared_readonly_realloc.is_readonly());
+    assert!(shared_readonly_realloc.opaque_ref::<usize>().is_none());
+    assert!(!shared_readonly_realloc.shares_storage(&shared_readonly_source));
+    assert!(shared_readonly_released.lock().unwrap().is_empty());
+    drop(shared_readonly_realloc);
+    assert!(shared_readonly_released.lock().unwrap().is_empty());
+    drop(shared_readonly_source);
+    assert_eq!(
+        *shared_readonly_released.lock().unwrap(),
+        vec![(payload_len, payload.clone())]
+    );
+
     let custom_realloc_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let custom_realloc_capture = Arc::clone(&custom_realloc_released);
     let mut custom_realloc = Some(BufferRef::from_vec_with_opaque_release_callback(

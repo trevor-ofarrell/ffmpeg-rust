@@ -440,6 +440,71 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         release_fields(&readonly_realloc_same_released),
     );
 
+    let readonly_shared_realloc_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let readonly_shared_realloc_capture = Arc::clone(&readonly_shared_realloc_released);
+    let readonly_shared_realloc_src = BufferRef::from_vec_with_opaque_release_callback_readonly(
+        vec![80, 81, 82],
+        998usize,
+        move |opaque, bytes| {
+            readonly_shared_realloc_capture
+                .lock()
+                .unwrap()
+                .push((opaque, bytes));
+        },
+    );
+    let mut readonly_shared_realloc_dst = Some(BufferRef::ref_from(&readonly_shared_realloc_src));
+    BufferRef::realloc(&mut readonly_shared_realloc_dst, 5).unwrap();
+    let readonly_shared_realloc_dst =
+        readonly_shared_realloc_dst.expect("readonly shared realloc result");
+    rows.insert(
+        "buffer:readonly-shared-realloc-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:readonly-shared-realloc-src".to_string(),
+        buffer_fields_with_opaque(&readonly_shared_realloc_src),
+    );
+    rows.insert(
+        "buffer:readonly-shared-realloc-dst".to_string(),
+        buffer_prefix_fields(&readonly_shared_realloc_dst, 3),
+    );
+    rows.insert(
+        "buffer:readonly-shared-realloc-dst-opaque".to_string(),
+        vec![readonly_shared_realloc_dst
+            .opaque_ref::<usize>()
+            .copied()
+            .unwrap_or_default()
+            .to_string()],
+    );
+    rows.insert(
+        "buffer:readonly-shared-realloc-shares".to_string(),
+        vec![bool_field(
+            readonly_shared_realloc_src.shares_storage(&readonly_shared_realloc_dst),
+        )],
+    );
+    rows.insert(
+        "buffer:readonly-shared-realloc-release-before-src-drop".to_string(),
+        vec![readonly_shared_realloc_released
+            .lock()
+            .unwrap()
+            .len()
+            .to_string()],
+    );
+    drop(readonly_shared_realloc_dst);
+    rows.insert(
+        "buffer:readonly-shared-realloc-release-before-src-unref".to_string(),
+        vec![readonly_shared_realloc_released
+            .lock()
+            .unwrap()
+            .len()
+            .to_string()],
+    );
+    drop(readonly_shared_realloc_src);
+    rows.insert(
+        "buffer:readonly-shared-realloc-release".to_string(),
+        release_fields(&readonly_shared_realloc_released),
+    );
+
     let replace_src = BufferRef::from_vec(vec![3, 4, 5]);
     let replace_dst = replace_src.clone();
     rows.insert("buffer:replace-ret".to_string(), vec!["0".to_string()]);
@@ -1527,6 +1592,46 @@ int main(void) {
            create_release_count);
     av_buffer_unref(&readonly_realloc_same);
     print_create_release("buffer:readonly-realloc-same-release");
+
+    reset_create_release();
+    static const uint8_t readonly_shared_realloc_bytes[] = { 80, 81, 82 };
+    uint8_t *readonly_shared_realloc_data =
+        av_malloc(sizeof(readonly_shared_realloc_bytes));
+    fail_if(!readonly_shared_realloc_data,
+            "av_malloc readonly_shared_realloc_data failed");
+    for (size_t i = 0; i < sizeof(readonly_shared_realloc_bytes); i++)
+        readonly_shared_realloc_data[i] = readonly_shared_realloc_bytes[i];
+    last_create_release_size = sizeof(readonly_shared_realloc_bytes);
+    AVBufferRef *readonly_shared_realloc_src =
+        av_buffer_create(readonly_shared_realloc_data,
+                         sizeof(readonly_shared_realloc_bytes),
+                         test_create_free, (void *)(uintptr_t)998,
+                         AV_BUFFER_FLAG_READONLY);
+    fail_if(!readonly_shared_realloc_src,
+            "av_buffer_create readonly shared realloc failed");
+    AVBufferRef *readonly_shared_realloc_dst =
+        av_buffer_ref(readonly_shared_realloc_src);
+    fail_if(!readonly_shared_realloc_dst,
+            "av_buffer_ref readonly shared realloc failed");
+    ret = av_buffer_realloc(&readonly_shared_realloc_dst, 5);
+    printf("buffer:readonly-shared-realloc-ret|%d\n", ret);
+    print_buffer_opaque("buffer:readonly-shared-realloc-src",
+                        readonly_shared_realloc_src);
+    print_buffer_prefix("buffer:readonly-shared-realloc-dst",
+                        readonly_shared_realloc_dst, 3);
+    printf("buffer:readonly-shared-realloc-dst-opaque|%llu\n",
+           (unsigned long long)(uintptr_t)
+               av_buffer_get_opaque(readonly_shared_realloc_dst));
+    printf("buffer:readonly-shared-realloc-shares|%d\n",
+           readonly_shared_realloc_src->buffer ==
+               readonly_shared_realloc_dst->buffer);
+    printf("buffer:readonly-shared-realloc-release-before-src-drop|%d\n",
+           create_release_count);
+    av_buffer_unref(&readonly_shared_realloc_dst);
+    printf("buffer:readonly-shared-realloc-release-before-src-unref|%d\n",
+           create_release_count);
+    av_buffer_unref(&readonly_shared_realloc_src);
+    print_create_release("buffer:readonly-shared-realloc-release");
 
     static const uint8_t replace_src_bytes[] = { 3, 4, 5 };
     AVBufferRef *replace_src = av_buffer_allocz(3);
