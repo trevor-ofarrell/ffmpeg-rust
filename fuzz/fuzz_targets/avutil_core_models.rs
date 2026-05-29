@@ -1305,11 +1305,21 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     assert!(readonly_opaque_data.is_readonly());
     assert!(!readonly_opaque_data.is_writable());
     readonly_opaque_data.make_mut();
+    assert_eq!(readonly_opaque_data.as_slice(), payload.as_slice());
+    assert!(!readonly_opaque_data.is_readonly());
+    assert!(readonly_opaque_data.is_writable());
     assert!(readonly_opaque_data.opaque_ref::<usize>().is_none());
     assert_eq!(
         *readonly_opaque_data_released.lock().unwrap(),
         vec![(payload_len, payload.clone())]
     );
+    if !readonly_opaque_data.is_empty() {
+        let replacement = readonly_opaque_data.as_slice()[0].wrapping_add(1);
+        readonly_opaque_data.make_mut()[0] = replacement;
+        assert_eq!(readonly_opaque_data.as_slice()[0], replacement);
+    } else {
+        assert_eq!(readonly_opaque_data.make_mut(), &mut []);
+    }
 
     let replace_source = BufferRef::copy_from_slice(&payload);
     let mut replace_empty_dst = None;

@@ -257,6 +257,39 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         release_fields(&create_zero_readonly_released),
     );
 
+    let create_readonly_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_readonly_capture = Arc::clone(&create_readonly_released);
+    let mut create_readonly = BufferRef::from_vec_with_opaque_release_callback_readonly(
+        vec![21, 22, 23],
+        432usize,
+        move |opaque, bytes| {
+            create_readonly_capture
+                .lock()
+                .unwrap()
+                .push((opaque, bytes));
+        },
+    );
+    rows.insert(
+        "buffer:create-readonly".to_string(),
+        buffer_fields_with_opaque(&create_readonly),
+    );
+    create_readonly.make_mut();
+    rows.insert(
+        "buffer:create-readonly-make-writable-ret".to_string(),
+        vec![
+            "0".to_string(),
+            create_readonly_released.lock().unwrap().len().to_string(),
+        ],
+    );
+    rows.insert(
+        "buffer:create-readonly-after".to_string(),
+        buffer_fields_with_opaque(&create_readonly),
+    );
+    rows.insert(
+        "buffer:create-readonly-release".to_string(),
+        release_fields(&create_readonly_released),
+    );
+
     let create_shared_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let create_shared_capture = Arc::clone(&create_shared_released);
     let create_shared_src = BufferRef::from_vec_with_opaque_release_callback(
@@ -1638,6 +1671,26 @@ int main(void) {
                         create_zero_readonly);
     print_create_release("buffer:create-zero-readonly-release");
     av_buffer_unref(&create_zero_readonly);
+
+    reset_create_release();
+    static const uint8_t create_readonly_bytes[] = { 21, 22, 23 };
+    uint8_t *create_readonly_data = av_malloc(sizeof(create_readonly_bytes));
+    fail_if(!create_readonly_data, "av_malloc create_readonly_data failed");
+    for (size_t i = 0; i < sizeof(create_readonly_bytes); i++)
+        create_readonly_data[i] = create_readonly_bytes[i];
+    last_create_release_size = sizeof(create_readonly_bytes);
+    AVBufferRef *create_readonly =
+        av_buffer_create(create_readonly_data, sizeof(create_readonly_bytes),
+                         test_create_free, (void *)(uintptr_t)432,
+                         AV_BUFFER_FLAG_READONLY);
+    fail_if(!create_readonly, "av_buffer_create readonly owner failed");
+    print_buffer_opaque("buffer:create-readonly", create_readonly);
+    ret = av_buffer_make_writable(&create_readonly);
+    printf("buffer:create-readonly-make-writable-ret|%d|%d\n",
+           ret, create_release_count);
+    print_buffer_opaque("buffer:create-readonly-after", create_readonly);
+    print_create_release("buffer:create-readonly-release");
+    av_buffer_unref(&create_readonly);
 
     reset_create_release();
     static const uint8_t create_shared_bytes[] = { 40, 41, 42 };
