@@ -9,6 +9,22 @@
 
 ## Compatible Today
 
+- Latest `avutil-buffer` offset-pool evidence: pinned libavutil rows prove a
+  unique writable custom-pool ref with an offset visible range keeps that
+  offset through `av_buffer_make_writable()`, returns the mutated backing
+  allocation to the pool, reuses it as a normalized zero-offset spare, and
+  releases the full mutated backing bytes on final pool uninit.
+- Latest `avutil-channel-layout` evidence: pinned parser/retype/compare rows
+  prove uppercase base-0 raw user channel tokens such as `USR0X2D` parse,
+  describe, look up, compare, and lossy-retype like their canonical raw-user
+  equivalents.
+- Latest `avutil-pixel-format` evidence: pinned `ffmpeg -pix_fmts` rows prove
+  the modeled bitstream flag for `monow`, `monob`, `rgb4`, `bgr4`, `xv30be`,
+  and `v30xbe`, while non-bitstream rows such as `rgb24`, `yuv420p`, and
+  `pal8` remain unflagged.
+- Latest `avutil-options` evidence: pinned libavutil
+  `av_opt_set_from_string()` rows prove `pairs_sep=""` with
+  `threads=7:quality=0.25` returns `EINVAL` and leaves option state unchanged.
 - Latest delegated `avutil-options` evidence: pinned libavutil
   `av_opt_set_from_string()` rows prove empty key/value separators are rejected
   without mutation, while empty pair separators and overlapping separator sets

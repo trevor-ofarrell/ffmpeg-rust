@@ -4343,6 +4343,18 @@ impl PixelFormat {
         self.descriptor().is_paletted
     }
 
+    pub fn is_bitstream(self) -> bool {
+        matches!(
+            self,
+            Self::MonoWhite
+                | Self::MonoBlack
+                | Self::Rgb4
+                | Self::Bgr4
+                | Self::V30xBe
+                | Self::Xv30Be
+        )
+    }
+
     pub fn is_bayer(self) -> bool {
         matches!(
             self,
@@ -5053,6 +5065,15 @@ mod tests {
         assert_eq!(PixelFormat::Pal8.packed_bytes_per_pixel(), Some(1));
         assert_eq!(AVPALETTE_COUNT, 256);
         assert_eq!(AVPALETTE_SIZE, 1024);
+        assert!(PixelFormat::MonoWhite.is_bitstream());
+        assert!(PixelFormat::MonoBlack.is_bitstream());
+        assert!(PixelFormat::Rgb4.is_bitstream());
+        assert!(PixelFormat::Bgr4.is_bitstream());
+        assert!(PixelFormat::Xv30Be.is_bitstream());
+        assert!(PixelFormat::V30xBe.is_bitstream());
+        assert!(!PixelFormat::Rgb24.is_bitstream());
+        assert!(!PixelFormat::Yuv420p.is_bitstream());
+        assert!(!PixelFormat::Pal8.is_bitstream());
         assert_eq!(PixelFormat::from_name("ya8"), Some(PixelFormat::Ya8));
         assert_eq!(PixelFormat::from_name("gray8a"), Some(PixelFormat::Ya8));
         assert_eq!(PixelFormat::from_name("y400a"), Some(PixelFormat::Ya8));

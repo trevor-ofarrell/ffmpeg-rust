@@ -5737,12 +5737,30 @@ mod tests {
         let raw_mask = (1u64 << 45) | (1u64 << 46);
         let raw_layout = NativeChannelMaskLayout::new(raw_mask).unwrap();
         let raw_custom = CustomChannelLayout::parse_channel_list("USR0x2d+USR056").unwrap();
+        let raw_custom_upper = CustomChannelLayout::parse_channel_list("USR0X2D+USR056").unwrap();
         assert_eq!(raw_custom.canonical_native_mask().unwrap(), raw_mask);
         assert_eq!(raw_custom.channel_from_index(0), Some(ChannelId::User(45)));
         assert_eq!(raw_custom.channel_from_index(1), Some(ChannelId::User(46)));
+        assert_eq!(raw_custom_upper.canonical_native_mask().unwrap(), raw_mask);
+        assert_eq!(
+            raw_custom_upper.channel_from_index(0),
+            Some(ChannelId::User(45))
+        );
+        assert_eq!(
+            raw_custom_upper.channel_from_index(1),
+            Some(ChannelId::User(46))
+        );
         assert_eq!(
             ChannelLayoutSpec::parse("USR0x2d+USR056").unwrap(),
             ChannelLayoutSpec::NativeMask(raw_layout)
+        );
+        let parsed_upper = ChannelLayoutSpec::parse("USR0X2D+USR056").unwrap();
+        assert_eq!(parsed_upper, ChannelLayoutSpec::NativeMask(raw_layout));
+        assert_eq!(parsed_upper.describe(), "2 channels (USR45+USR46)");
+        assert_eq!(parsed_upper.index_from_string("USR0X2D").unwrap(), 0);
+        assert_eq!(
+            parsed_upper.channel_from_string("USR0X2D"),
+            Some(ChannelId::User(45))
         );
         assert_eq!(
             ChannelLayoutSpec::parse("USR0").unwrap(),

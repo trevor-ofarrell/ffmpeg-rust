@@ -237,6 +237,10 @@ const PARSER_CASES: &[ParserCase] = &[
         input: "USR0x2d+USR056",
     },
     ParserCase {
+        id: "raw-users-base0-uppercase-x",
+        input: "USR0X2D+USR056",
+    },
+    ParserCase {
         id: "signed-zero-user",
         input: "USR-0",
     },
@@ -283,8 +287,8 @@ const PARSER_CASES: &[ParserCase] = &[
 ];
 
 const LOOKUP_NAMES: &[&str] = &[
-    "FL", "FR", "FC", "BR", "AMBI0", "AMBI3", "AMBI4", "UNK", "UNSD", "USR45", "USR0x2d", "USR055",
-    "USR-0", "@Left", "FL@Left", "@Right", "FR@Right", "NOPE",
+    "FL", "FR", "FC", "BR", "AMBI0", "AMBI3", "AMBI4", "UNK", "UNSD", "USR45", "USR0x2d",
+    "USR0X2D", "USR055", "USR-0", "@Left", "FL@Left", "@Right", "FR@Right", "NOPE",
 ];
 
 const BYTE_PARSER_CASES: &[ByteParserCase] = &[
@@ -483,6 +487,13 @@ const RETYPE_CASES: &[RetypeCase] = &[
         input: "USR45@Wide+USR46",
         target: RetypeTarget::Native,
         allow_lossy: false,
+        canonical: false,
+    },
+    RetypeCase {
+        id: "uppercase-hex-raw-users-to-unspec-lossy",
+        input: "USR0X2D+USR056",
+        target: RetypeTarget::Unspecified,
+        allow_lossy: true,
         canonical: false,
     },
     RetypeCase {
@@ -730,6 +741,11 @@ const COMPARE_CASES: &[CompareCase] = &[
         id: "raw-mask-order-different",
         left: "USR46+USR45",
         right: "0x600000000000",
+    },
+    CompareCase {
+        id: "raw-mask-uppercase-token-equivalent",
+        left: "USR0X2D+USR056",
+        right: "USR0x2d+USR056",
     },
     CompareCase {
         id: "named-raw-ambisonic-extra-same",

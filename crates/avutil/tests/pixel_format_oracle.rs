@@ -20,6 +20,10 @@ impl PixelFormatRow {
         matches!(self.flags.as_bytes().get(2), Some(b'H'))
     }
 
+    fn is_bitstream(&self) -> bool {
+        matches!(self.flags.as_bytes().get(4), Some(b'B'))
+    }
+
     fn is_paletted(&self) -> bool {
         matches!(self.flags.as_bytes().get(3), Some(b'P'))
     }
@@ -32,6 +36,7 @@ struct ExpectedPixelFormatRow {
     bits_per_pixel: Option<usize>,
     bit_depths: Vec<u8>,
     is_hardware: bool,
+    is_bitstream: bool,
     is_paletted: bool,
 }
 
@@ -88,6 +93,12 @@ fn ffmpeg_pixel_format_inventory_contains_current_pixel_format_subset() {
             expected.name
         );
         assert_eq!(
+            actual.is_bitstream(),
+            expected.is_bitstream,
+            "ffmpeg -pix_fmts bitstream flag diverged for `{}`",
+            expected.name
+        );
+        assert_eq!(
             actual.is_paletted(),
             expected.is_paletted,
             "ffmpeg -pix_fmts paletted flag diverged for `{}`",
@@ -111,6 +122,7 @@ FLAGS NAME            NB_COMPONENTS BITS_PER_PIXEL BIT_DEPTHS
 IO... yuv420p                3            12      8-8-8
 IO..B monow                  1             1      1
 IO.P. pal8                   1             8      8
+....B xv30be                  3             30      10-10-10
 ..H.. vaapi                  0             0      0
 "#,
     );
@@ -128,6 +140,10 @@ IO.P. pal8                   1             8      8
     assert!(rows["vaapi"].is_hardware());
     assert!(!rows["monow"].is_paletted());
     assert!(rows["pal8"].is_paletted());
+    assert!(rows["monow"].is_bitstream());
+    assert!(rows["xv30be"].is_bitstream());
+    assert!(!rows["monow"].is_hardware());
+    assert!(!rows["xv30be"].is_hardware());
     assert_eq!(rows["monow"].bit_depths, vec![1]);
     assert_eq!(rows["pal8"].bit_depths, vec![8]);
 }
@@ -144,6 +160,7 @@ fn expected_pixel_format_subset() -> Vec<ExpectedPixelFormatRow> {
                 bits_per_pixel: descriptor.bits_per_pixel_integer().map(usize::from),
                 bit_depths: format.component_bit_depths(),
                 is_hardware: format.is_hardware(),
+                is_bitstream: format.is_bitstream(),
                 is_paletted: descriptor.is_paletted,
             }
         })

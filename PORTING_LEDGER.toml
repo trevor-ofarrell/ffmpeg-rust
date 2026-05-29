@@ -2,6 +2,15 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest orchestrated evidence: AVBufferPool offset-visible custom allocations
+# now pin unique writable `av_buffer_make_writable()` no-op behavior, visible
+# mutation, normalized spare reuse, and final full-allocation release bytes.
+# Latest orchestrated evidence: channel layout parser/retype/compare rows now
+# pin uppercase base-0 raw user tokens such as `USR0X2D`.
+# Latest orchestrated evidence: AVOption set-from-string rows now pin
+# `pairs_sep=""` with multi-pair-like input returning EINVAL without mutation.
+# Latest orchestrated evidence: `ffmpeg -pix_fmts` subset parity now checks the
+# FFmpeg bitstream flag for the modeled bit-packed formats.
 # Latest orchestrated evidence: AVBufferPool same-pool `av_buffer_replace()`
 # rows now pin immediate destination-spare return, pre-source-drop spare reuse,
 # and final LIFO release ordering.
@@ -921,6 +930,7 @@ unit_tests = [
   "buffer::tests::custom_buffer_pool_unique_make_mut_preserves_pool_ownership",
   "buffer::tests::custom_buffer_pool_readonly_allocation_reuses_as_writable_storage",
   "buffer::tests::custom_buffer_pool_offset_allocation_reuses_original_base_storage",
+  "buffer::tests::custom_buffer_pool_offset_allocation_mutable_make_mut_preserves_visible_offset_shape",
   "buffer::tests::custom_buffer_pool_readonly_offset_allocation_reuses_base_storage_as_writable",
   "buffer::tests::custom_buffer_pool_releases_outstanding_storage_after_pool_drop",
   "buffer::tests::custom_buffer_pool_rejects_bad_allocator_shape_and_releases_storage",
@@ -940,6 +950,12 @@ fate_tests = [
   "not_applicable: upstream FFmpeg FATE has no standalone AVBufferRef/AVBufferPool API target; covered by unit tests plus pinned libavutil differential oracle",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest offset-pool make-writable slice: pinned libavutil oracle coverage now
+# validates `av_buffer_make_writable()` on a unique writable custom-pool
+# allocation whose visible data pointer is offset from the backing allocation.
+# FFmpeg keeps the visible offset stable for mutation, returns the full backing
+# allocation to the pool after unref, reuses it with a normalized zero-offset
+# view, and releases the full mutated backing bytes on final pool uninit.
 # Latest same-pool replace slice: pinned libavutil oracle coverage now validates
 # `av_buffer_replace()` between two refs from the same custom
 # `av_buffer_pool_init2()` pool. The original destination storage returns to
@@ -2732,6 +2748,9 @@ fate_tests = [
   "options_oracle::upstream_fate_opt_passes",
 ]
 fuzz_targets = ["avutil_metadata_options"]
+# Latest orchestrated update: pinned libavutil `av_opt_set_from_string()` rows
+# now prove `pairs_sep=""` with multi-pair-like input
+# `threads=7:quality=0.25` returns EINVAL and preserves all option state.
 # Latest delegated update: pinned libavutil `av_opt_set_from_string()` rows now
 # prove `key_val_sep=""` returns EINVAL without mutation, while
 # `pairs_sep=""` and overlapping key/value-pair separators are accepted for the
@@ -2810,6 +2829,9 @@ differential_tests = [
 fate_tests = ["tests/fate/mappings.txt:avutil-pixel-format|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
 notes = "Differential pass for the current bounded shared pixel-format subset under the selected ffmpeg-8.1.1-default-native profile. The model covers the current Rust PixelFormat::ALL software inventory plus PixelFormat::HARDWARE identity inventory with FFmpeg-style names and descriptor metadata for class, component count, uniform or explicitly nonuniform component bit-depth vectors, logical bits per pixel, plane counts, packed/planar storage, alpha, float, paletted, packed byte-size, chroma geometry, frame-size math, line-size math, and plane splitting. The ignored pixel_format_oracle harness runs pinned `ffmpeg -hide_banner -pix_fmts` through the local oracle and checks that every current Rust descriptor name appears with matching component count, integer bits-per-pixel where exactly modeled, BIT_DEPTHS values, paletted flag, and hardware flag for PixelFormat::HARDWARE rows. This oracle exposed and corrected Bayer CFA bit-depth vectors: 8-bit Bayer formats report `2-4-2`, and 16-bit Bayer formats report `4-8-4`; low-bit RGB and RGB565/BGR565 vectors are also modeled explicitly. This slice also corrects `xv36le`/`xv36be` storage to eight bytes per pixel while preserving 36 logical bpp. Unit tests cover names, descriptors, frame/plane sizing, line sizing, split behavior, invalid dimensions, and invalid payload lengths. The avutil_core_models fuzz target covers pixel-format lookup and descriptor invariants, including the explicit nonuniform component-bit-depth vectors, hardware identity zero-layout invariants, no-byte-stride classification for planar and bit-packed single-plane formats, and planar GBRA alpha classification; it has passed WSL smoke execution plus a warmed 4096-run sanitizer fuzz execution after replaying the saved crash seed for the stale invariant. This row remains below complete because the oracle is still a subset inventory check, not full AVPixFmtDescriptor parity or full FFmpeg pixel inventory parity; upstream FATE media coverage, conversion behavior, full hardware frame/device integration, and zero known limitations are still pending. The local FATE-runner smoke mapping executes the pixel unit filter only and does not count as upstream FATE parity."
+# Latest orchestrated update: the ignored `ffmpeg -pix_fmts` oracle harness now
+# validates FFmpeg's bitstream flag for the modeled bit-packed formats:
+# `monow`, `monob`, `rgb4`, `bgr4`, `xv30be`, and `v30xbe`.
 # Latest fuzz execution: WSL `cargo fuzz run avutil_core_models -- -runs=4096` initially found a stale no-byte-stride invariant outside logging coverage. The harness now accepts planar formats plus bit-packed single-plane Mono/RGB4/UYYVYY411 rows when `packed_bytes_per_pixel()` is absent, treats planar GBRA as alpha-bearing, replays the saved crash seed successfully, and passes a warmed 4096-run sanitizer execution.
 # Latest fuzz execution: WSL `cargo fuzz run avutil_core_models -- -runs=1` passes locally after correcting stale low-bit RGB logical-bpp expectations in the deterministic fuzz table.
 # Latest update: the ignored ffmpeg -pix_fmts oracle harness now includes PixelFormat::HARDWARE identity rows and validates FFmpeg's ..H.. flag plus zero component/bpp/BIT_DEPTHS metadata for vaapi, dxva2_vld, vdpau, qsv, mmal, d3d11va_vld, cuda, videotoolbox_vld, mediacodec, d3d11, drm_prime, opencl, vulkan, d3d12, amf, and ohcodec.
@@ -2974,6 +2996,10 @@ fate_tests = [
   "tests/fate/upstream-mappings.txt:avutil-channel-layout|fate-channel_layout",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest orchestrated parser note: parser/retype/compare oracle rows now pin
+# uppercase base-0 raw user channel tokens such as `USR0X2D`. They parse and
+# describe canonically as `USR45`, participate in index/channel lookup, compare
+# equal to lowercase-`0x` spellings, and can lossy-retype to unspecified order.
 # Latest oracle-inventory note: the ignored `ffmpeg -layouts` differential harness now passes through the local pinned WSL oracle wrapper after adding `3.1.2` and matching FFmpeg's `22.2` and `hexadecagonal` decomposition order.
 # Latest escaped-token parser note: CustomChannelLayout::parse_channel_list now follows the bounded FFmpeg av_opt_get_key_value/av_get_token channel-list shape for ASCII/UTF-8 Rust strings: FFmpeg whitespace around keys and values, implicit keys, single-quoted token segments, backslash-escaped separators, unescaped `@` inside custom names after the first key separator, and trailing `+` separators are covered. `FL++FR` and leading empty tokens remain invalid, while `FL+` now mirrors FFmpeg's accepted trailing separator behavior.
 # Latest ambisonic parser note: ChannelLayoutSpec now has a bounded explicit Ambisonic variant for AV_CHANNEL_ORDER_AMBISONIC-like order plus native-extra-mask layouts. ChannelLayoutSpec::parse returns that variant for `ambisonic <order>`, signed-zero `ambisonic -0`, no-conversion extra forms such as `ambisonic +stereo` and `ambisonic -0+stereo`, ordinary `+stereo`, and exact native masks such as `+0x5`; named/custom extras such as `+FL@Left+FR@Right` still fall back to Custom-backed AMBI0..AMBI<N> maps. Unsupported negative nonzero orders, unspecified extras, or nested ambisonic extras still return typed invalid-argument errors.

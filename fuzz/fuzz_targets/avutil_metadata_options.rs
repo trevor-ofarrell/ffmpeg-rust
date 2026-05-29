@@ -419,6 +419,14 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                     escaped_quote_options.get("metadata"),
                     Some(&OptionValue::String("\\x".to_owned()))
                 );
+                let mut empty_pairs_multi = sample_options();
+                let empty_pairs_multi_result =
+                    empty_pairs_multi.set_avoptions_from_string("threads=7:quality=0.25", &[], "=", "");
+                assert_eq!(
+                    empty_pairs_multi_result.err().and_then(|err| err.code()),
+                    Some(AvErrorCode::EINVAL)
+                );
+                assert_eq!(empty_pairs_multi, sample_options());
                 assert_option_set_invariants(&options);
             }
             18 => {

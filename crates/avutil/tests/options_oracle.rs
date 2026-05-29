@@ -648,6 +648,24 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         ],
     );
 
+    let mut string_empty_pairs_multi = sample_options();
+    insert_row(
+        &mut rows,
+        "ret:set-from-string-empty-pairs-multi",
+        [ret_count(
+            string_empty_pairs_multi.set_avoptions_from_string(
+                "threads=7:quality=0.25",
+                &[],
+                "=",
+                "",
+            ),
+        )],
+    );
+    rows.insert(
+        "state:set-from-string-empty-pairs-multi".to_string(),
+        state_fields(&string_empty_pairs_multi),
+    );
+
     let mut string_shorthand_overflow = sample_options();
     insert_row(
         &mut rows,
@@ -5866,6 +5884,15 @@ static void print_set_from_string_rows(void) {
                                  "metadata='title",
                                  NULL, "=", ":");
     printf("ret:set-from-string-unclosed-quote|%d\n", ret);
+    av_opt_free(&ctx);
+    av_opt_free(&ctx.child);
+
+    init_context(&ctx);
+    ret = av_opt_set_from_string(&ctx,
+                                 "threads=7:quality=0.25",
+                                 NULL, "=", "");
+    printf("ret:set-from-string-empty-pairs-multi|%d\n", ret);
+    print_state("state:set-from-string-empty-pairs-multi", &ctx);
     av_opt_free(&ctx);
     av_opt_free(&ctx.child);
 }

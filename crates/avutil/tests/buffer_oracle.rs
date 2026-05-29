@@ -2726,6 +2726,69 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     );
     drop(offset_pool_release_values);
 
+    let offset_pool_unique_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let offset_pool_unique_release_capture = Arc::clone(&offset_pool_unique_releases);
+    let offset_pool_unique = BufferPool::with_callbacks(
+        3,
+        0,
+        BufferPoolCallbacks::with_allocation_callbacks(
+            |allocated_len| {
+                BufferPoolAllocation::with_opaque_visible_range(
+                    vec![0xee, 0x31, 0x32, 0x33],
+                    1,
+                    allocated_len,
+                    PoolToken {
+                        id: 90,
+                        size: allocated_len + 1,
+                    },
+                )
+            },
+            move |allocation| {
+                let token = allocation
+                    .opaque_ref::<PoolToken>()
+                    .expect("unique offset pool token should be preserved");
+                offset_pool_unique_release_capture
+                    .lock()
+                    .unwrap()
+                    .push((token.id, allocation.as_slice().to_vec()));
+            },
+        ),
+    )
+    .unwrap();
+    let mut offset_unique = offset_pool_unique.get().unwrap();
+    offset_unique.make_mut()[0] = 0xaa;
+    rows.insert("pool-offset-unique:ret".to_string(), vec!["0".to_string()]);
+    rows.insert(
+        "pool-offset-unique:after".to_string(),
+        buffer_fields(&offset_unique),
+    );
+    drop(offset_unique);
+    rows.insert(
+        "pool-offset-unique:after-first-unref".to_string(),
+        vec![offset_pool_unique_releases
+            .lock()
+            .unwrap()
+            .len()
+            .to_string()],
+    );
+    let offset_unique_reuse = offset_pool_unique.get().unwrap();
+    rows.insert(
+        "pool-offset-unique:reuse".to_string(),
+        buffer_fields(&offset_unique_reuse),
+    );
+    drop(offset_unique_reuse);
+    drop(offset_pool_unique);
+    let offset_unique_release_values = offset_pool_unique_releases.lock().unwrap();
+    rows.insert(
+        "pool-offset-unique:uninit-release".to_string(),
+        vec![
+            offset_unique_release_values.len().to_string(),
+            offset_unique_release_values[0].0.to_string(),
+            hex(&offset_unique_release_values[0].1),
+        ],
+    );
+    drop(offset_unique_release_values);
+
     let readonly_offset_pool_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let readonly_offset_pool_frees = Arc::new(Mutex::new(Vec::<usize>::new()));
     let readonly_offset_pool_release_capture = Arc::clone(&readonly_offset_pool_releases);
@@ -4994,6 +5057,32 @@ int main(void) {
     av_buffer_unref(&offset_reuse);
     av_buffer_pool_uninit(&offset_pool);
     printf("pool-offset:uninit-release|%d|%" PRIuPTR "|",
+           pool_release_count, last_pool_release_id);
+    print_hex(last_pool_release, last_pool_release_size);
+    printf("\n");
+
+    reset_pool_counters();
+    PoolOpaque unique_offset_pool_opaque = { 90, 4 };
+    AVBufferPool *unique_offset_pool =
+        av_buffer_pool_init2(3, &unique_offset_pool_opaque,
+                             test_pool_alloc_offset, NULL);
+    fail_if(!unique_offset_pool, "av_buffer_pool_init2 unique offset failed");
+    AVBufferRef *unique_offset = av_buffer_pool_get(unique_offset_pool);
+    fail_if(!unique_offset, "av_buffer_pool_get unique offset failed");
+    ret = av_buffer_make_writable(&unique_offset);
+    printf("pool-offset-unique:ret|%d\n", ret);
+    fail_if(ret < 0, "av_buffer_make_writable unique offset failed");
+    unique_offset->data[0] = 0xaa;
+    print_buffer("pool-offset-unique:after", unique_offset);
+    av_buffer_unref(&unique_offset);
+    printf("pool-offset-unique:after-first-unref|%d\n",
+           pool_release_count);
+    AVBufferRef *unique_offset_reuse = av_buffer_pool_get(unique_offset_pool);
+    fail_if(!unique_offset_reuse, "av_buffer_pool_get unique offset reuse failed");
+    print_buffer("pool-offset-unique:reuse", unique_offset_reuse);
+    av_buffer_unref(&unique_offset_reuse);
+    av_buffer_pool_uninit(&unique_offset_pool);
+    printf("pool-offset-unique:uninit-release|%d|%" PRIuPTR "|",
            pool_release_count, last_pool_release_id);
     print_hex(last_pool_release, last_pool_release_size);
     printf("\n");

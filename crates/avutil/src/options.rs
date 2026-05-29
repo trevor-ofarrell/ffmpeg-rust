@@ -9164,6 +9164,13 @@ mod tests {
             Some(&OptionValue::Int(7))
         );
 
+        let mut empty_pairs_multi = sample_options();
+        let err = empty_pairs_multi
+            .set_avoptions_from_string("threads=7:quality=0.25", &[], "=", "")
+            .unwrap_err();
+        assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
+        assert_eq!(empty_pairs_multi, sample_options());
+
         let mut escaped = sample_options();
         assert_eq!(
             escaped
