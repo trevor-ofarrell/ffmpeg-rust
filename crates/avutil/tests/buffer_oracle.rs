@@ -617,6 +617,56 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         release_fields(&readonly_realloc_same_released),
     );
 
+    let readonly_realloc_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let readonly_realloc_capture = Arc::clone(&readonly_realloc_released);
+    let mut readonly_realloc = Some(BufferRef::from_vec_with_opaque_release_callback_readonly(
+        vec![90, 91, 92],
+        889usize,
+        move |opaque, bytes| {
+            readonly_realloc_capture
+                .lock()
+                .unwrap()
+                .push((opaque, bytes));
+        },
+    ));
+    let readonly_realloc_ptr = readonly_realloc
+        .as_ref()
+        .expect("readonly realloc input")
+        .as_ptr();
+    BufferRef::realloc(&mut readonly_realloc, 5).unwrap();
+    let readonly_realloc = readonly_realloc.expect("readonly realloc result");
+    rows.insert(
+        "buffer:readonly-realloc-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:readonly-realloc".to_string(),
+        buffer_prefix_fields(&readonly_realloc, 3),
+    );
+    rows.insert(
+        "buffer:readonly-realloc-opaque".to_string(),
+        vec![readonly_realloc
+            .opaque_ref::<usize>()
+            .copied()
+            .unwrap_or_default()
+            .to_string()],
+    );
+    rows.insert(
+        "buffer:readonly-realloc-replaced".to_string(),
+        vec![bool_field(
+            readonly_realloc_ptr != readonly_realloc.as_ptr(),
+        )],
+    );
+    rows.insert(
+        "buffer:readonly-realloc-release-before-unref".to_string(),
+        release_fields(&readonly_realloc_released),
+    );
+    drop(readonly_realloc);
+    rows.insert(
+        "buffer:readonly-realloc-release-after-unref".to_string(),
+        release_fields(&readonly_realloc_released),
+    );
+
     let readonly_shared_realloc_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let readonly_shared_realloc_capture = Arc::clone(&readonly_shared_realloc_released);
     let readonly_shared_realloc_src = BufferRef::from_vec_with_opaque_release_callback_readonly(
@@ -1891,6 +1941,33 @@ int main(void) {
            create_release_count);
     av_buffer_unref(&readonly_realloc_same);
     print_create_release("buffer:readonly-realloc-same-release");
+
+    reset_create_release();
+    static const uint8_t readonly_realloc_bytes[] = { 90, 91, 92 };
+    uint8_t *readonly_realloc_data =
+        av_malloc(sizeof(readonly_realloc_bytes));
+    fail_if(!readonly_realloc_data,
+            "av_malloc readonly_realloc_data failed");
+    for (size_t i = 0; i < sizeof(readonly_realloc_bytes); i++)
+        readonly_realloc_data[i] = readonly_realloc_bytes[i];
+    last_create_release_size = sizeof(readonly_realloc_bytes);
+    AVBufferRef *readonly_realloc =
+        av_buffer_create(readonly_realloc_data,
+                         sizeof(readonly_realloc_bytes),
+                         test_create_free, (void *)(uintptr_t)889,
+                         AV_BUFFER_FLAG_READONLY);
+    fail_if(!readonly_realloc, "av_buffer_create readonly realloc failed");
+    uint8_t *readonly_realloc_before = readonly_realloc->data;
+    ret = av_buffer_realloc(&readonly_realloc, 5);
+    printf("buffer:readonly-realloc-ret|%d\n", ret);
+    print_buffer_prefix("buffer:readonly-realloc", readonly_realloc, 3);
+    printf("buffer:readonly-realloc-opaque|%llu\n",
+           (unsigned long long)(uintptr_t)av_buffer_get_opaque(readonly_realloc));
+    printf("buffer:readonly-realloc-replaced|%d\n",
+           readonly_realloc_before != readonly_realloc->data);
+    print_create_release("buffer:readonly-realloc-release-before-unref");
+    av_buffer_unref(&readonly_realloc);
+    print_create_release("buffer:readonly-realloc-release-after-unref");
 
     reset_create_release();
     static const uint8_t readonly_shared_realloc_bytes[] = { 80, 81, 82 };

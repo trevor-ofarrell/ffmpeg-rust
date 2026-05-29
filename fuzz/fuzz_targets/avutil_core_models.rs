@@ -1459,6 +1459,35 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         vec![(payload_len, payload.clone())]
     );
 
+    let readonly_realloc_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let readonly_realloc_capture = Arc::clone(&readonly_realloc_released);
+    let mut readonly_realloc = Some(BufferRef::from_vec_with_opaque_release_callback_readonly(
+        payload.clone(),
+        payload_len,
+        move |opaque, bytes| {
+            readonly_realloc_capture
+                .lock()
+                .unwrap()
+                .push((opaque, bytes));
+        },
+    ));
+    BufferRef::realloc(&mut readonly_realloc, payload_len + 1).unwrap();
+    let readonly_realloc = readonly_realloc.expect("readonly realloc stays present");
+    assert_eq!(readonly_realloc.len(), payload_len + 1);
+    assert_eq!(&readonly_realloc.as_slice()[..payload_len], payload.as_slice());
+    assert!(readonly_realloc.is_writable());
+    assert!(!readonly_realloc.is_readonly());
+    assert!(readonly_realloc.opaque_ref::<usize>().is_none());
+    assert_eq!(
+        *readonly_realloc_released.lock().unwrap(),
+        vec![(payload_len, payload.clone())]
+    );
+    drop(readonly_realloc);
+    assert_eq!(
+        *readonly_realloc_released.lock().unwrap(),
+        vec![(payload_len, payload.clone())]
+    );
+
     let shared_readonly_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let shared_readonly_capture = Arc::clone(&shared_readonly_released);
     let shared_readonly_source = BufferRef::from_vec_with_opaque_release_callback_readonly(

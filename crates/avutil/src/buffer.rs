@@ -2334,6 +2334,43 @@ mod tests {
             vec![(543, vec![51, 52, 53])]
         );
 
+        let readonly_realloc_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let readonly_realloc_capture = std::sync::Arc::clone(&readonly_realloc_released);
+        let mut readonly_realloc = Some(BufferRef::from_vec_with_opaque_release_callback_readonly(
+            vec![81, 82, 83],
+            876usize,
+            move |opaque, storage| {
+                readonly_realloc_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, storage));
+            },
+        ));
+        let readonly_realloc_storage =
+            std::sync::Arc::as_ptr(&readonly_realloc.as_ref().unwrap().data);
+        BufferRef::realloc(&mut readonly_realloc, 5).unwrap();
+        let readonly_realloc = readonly_realloc.expect("readonly realloc result");
+        assert_ne!(
+            std::sync::Arc::as_ptr(&readonly_realloc.data),
+            readonly_realloc_storage
+        );
+        assert!(readonly_realloc.data.reallocatable);
+        assert!(!readonly_realloc.is_readonly());
+        assert!(readonly_realloc.is_writable());
+        assert_eq!(readonly_realloc.len(), 5);
+        assert_eq!(&readonly_realloc.as_slice()[..3], &[81, 82, 83]);
+        assert!(readonly_realloc.opaque_ref::<usize>().is_none());
+        assert_eq!(
+            *readonly_realloc_released.lock().unwrap(),
+            vec![(876, vec![81, 82, 83])]
+        );
+        drop(readonly_realloc);
+        assert_eq!(
+            *readonly_realloc_released.lock().unwrap(),
+            vec![(876, vec![81, 82, 83])]
+        );
+
         let shared_readonly_released =
             std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
         let shared_readonly_capture = std::sync::Arc::clone(&shared_readonly_released);
