@@ -648,6 +648,24 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         ],
     );
 
+    let mut string_shorthand_overflow = sample_options();
+    insert_row(
+        &mut rows,
+        "ret:set-from-string-shorthand-overflow",
+        [ret_count(
+            string_shorthand_overflow.set_avoptions_from_string(
+                "9:yes:15",
+                &["threads", "bitexact"],
+                "=",
+                ":",
+            ),
+        )],
+    );
+    rows.insert(
+        "state:set-from-string-shorthand-overflow".to_string(),
+        state_fields(&string_shorthand_overflow),
+    );
+
     let mut string_escaped = sample_options();
     insert_row(
         &mut rows,
@@ -5808,6 +5826,17 @@ static void print_set_from_string_rows(void) {
            ret_invalid_separator_1,
            ret_invalid_separator_2,
            ret_invalid_separator_3);
+    av_opt_free(&ctx);
+    av_opt_free(&ctx.child);
+
+    init_context(&ctx);
+    ret = av_opt_set_from_string(&ctx,
+                                 "9:yes:15",
+                                 shorthand,
+                                 "=",
+                                 ":");
+    printf("ret:set-from-string-shorthand-overflow|%d\n", ret);
+    print_state("state:set-from-string-shorthand-overflow", &ctx);
     av_opt_free(&ctx);
     av_opt_free(&ctx.child);
 

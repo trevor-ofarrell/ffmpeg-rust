@@ -11795,6 +11795,62 @@ mod tests {
     }
 
     #[test]
+    fn packet_make_writable_preserves_metadata_and_detaches_shared_payloads() {
+        let mut src = Packet::new(vec![0xaa, 0xbb, 0xcc], 7);
+        src.make_refcounted().unwrap();
+        src.set_pts(Some(12));
+        src.set_dts(Some(10));
+        src.set_duration(2).unwrap();
+        src.set_pos(Some(77)).unwrap();
+        src.set_flag(PacketFlags::KEY, true);
+        src.set_flag(PacketFlags::DISPOSABLE, true);
+        src.set_time_base(Rational::new(1, 1_000).unwrap()).unwrap();
+        src.push_side_data(SideData::new_extradata(vec![0x11, 0x22, 0x33]).unwrap());
+        src.set_opaque(Some(PacketOpaque::new(0x1234).unwrap()));
+        src.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad, 0xbe])));
+
+        let mut dst = Packet::default();
+        dst.ref_from(&src);
+        let shared_ptr = dst.data_buffer().as_padded_ptr();
+
+        dst.make_writable().unwrap();
+
+        assert_eq!(dst.data(), src.data());
+        assert_eq!(dst.pts(), src.pts());
+        assert_eq!(dst.dts(), src.dts());
+        assert_eq!(dst.duration(), src.duration());
+        assert_eq!(dst.pos(), src.pos());
+        assert_eq!(dst.time_base(), src.time_base());
+        assert!(dst.flags().contains(PacketFlags::KEY));
+        assert!(dst.flags().contains(PacketFlags::DISPOSABLE));
+        assert_eq!(
+            dst.side_data_by_kind("new_extradata").unwrap().data(),
+            &[0x11, 0x22, 0x33]
+        );
+        assert_eq!(dst.opaque_address(), Some(0x1234));
+        assert!(dst
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(src.opaque_ref().unwrap()));
+        assert!(!dst.data_buffer().shares_storage(src.data_buffer()));
+        assert_ne!(dst.data_buffer().as_padded_ptr(), shared_ptr);
+        assert_eq!(
+            dst.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(dst
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+
+        dst.make_data_writable()[0] = 0xcc;
+
+        assert_eq!(src.data(), &[0xaa, 0xbb, 0xcc]);
+        assert_eq!(dst.data(), &[0xcc, 0xbb, 0xcc]);
+    }
+
+    #[test]
     fn packet_custom_padding_capacity_preserves_clone_and_writable() {
         let released = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
         let capture = Arc::clone(&released);

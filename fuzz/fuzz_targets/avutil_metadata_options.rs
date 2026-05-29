@@ -363,7 +363,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                     5 => "",
                     _ => ":",
                 };
-                let opts = match cursor.next().unwrap_or_default() % 8 {
+                let opts = match cursor.next().unwrap_or_default() % 9 {
                     0 => "threads=7:quality=0.25:metadata=from-string",
                     1 => " 9 : yes : metadata = shorthand ",
                     2 => "10:quality=0.75:no",
@@ -371,17 +371,27 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                     4 => "threads=12:unknown=1",
                     5 => "metadata=title\\:clip\\=one\\\\two:threads=14:preset_level=slow",
                     6 => "metadata=' title : clip = one ':threads=15",
-                    _ => "12",
+                    7 => "12",
+                    _ => "9:yes:15",
                 };
                 let before = options.clone();
                 let result = options.set_avoptions_from_string(opts, &shorthand, key_val_sep, pairs_sep);
                 let empty_key_result =
                     options.set_avoptions_from_string("=7", &shorthand, "=", ":");
                 let separators_invalid = key_val_sep.is_empty();
+                let shorthand_overflow_case =
+                    opts == "9:yes:15" && key_val_sep == "=" && pairs_sep == ":";
                 if separators_invalid
                 {
                     assert_eq!(result.err().and_then(|err| err.code()), Some(AvErrorCode::EINVAL));
                     assert_eq!(options, before);
+                } else if shorthand_overflow_case {
+                    assert_eq!(
+                        result.err().and_then(|err| err.code()),
+                        Some(AvErrorCode::EINVAL),
+                    );
+                    assert_eq!(options.get("threads"), Some(&OptionValue::Int(9)));
+                    assert_eq!(options.get("bitexact"), Some(&OptionValue::Bool(true)));
                 } else if let Ok(count) = result {
                     assert!(count <= 3);
                     assert_option_set_invariants(&options);

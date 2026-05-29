@@ -9129,14 +9129,28 @@ mod tests {
         assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
         assert_eq!(invalid_sep, sample_options());
 
-        let mut valid_sep = sample_options();
+        let mut overlap_sep = sample_options();
         assert_eq!(
-            valid_sep
+            overlap_sep
                 .set_avoptions_from_string("threads=7", &[], ":=", ":")
                 .unwrap(),
             1
         );
-        assert_eq!(valid_sep.get("threads"), Some(&OptionValue::Int(7)));
+        assert_eq!(overlap_sep.get("threads"), Some(&OptionValue::Int(7)));
+
+        let mut shorthand_overflow = sample_options();
+        let err = shorthand_overflow
+            .set_avoptions_from_string("9:yes:15", &["threads", "bitexact"], "=", ":")
+            .unwrap_err();
+        assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
+        assert_eq!(
+            shorthand_overflow.get("threads"),
+            Some(&OptionValue::Int(9))
+        );
+        assert_eq!(
+            shorthand_overflow.get("bitexact"),
+            Some(&OptionValue::Bool(true))
+        );
 
         let mut valid_empty_pair_sep = sample_options();
         assert_eq!(

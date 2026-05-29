@@ -8952,6 +8952,58 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         &[0xde, 0xad, 0xbe]
     );
 
+    let mut writable_props_src = Packet::new(vec![0xaa, 0xbb, 0xcc], 7);
+    writable_props_src.make_refcounted().unwrap();
+    writable_props_src.set_pts(Some(12));
+    writable_props_src.set_dts(Some(10));
+    writable_props_src.set_duration(2).unwrap();
+    writable_props_src.set_pos(Some(77)).unwrap();
+    writable_props_src.set_flag(PacketFlags::KEY, true);
+    writable_props_src.set_flag(PacketFlags::DISPOSABLE, true);
+    writable_props_src
+        .set_time_base(Rational::new(1, 1_000).unwrap())
+        .unwrap();
+    writable_props_src.push_side_data(SideData::new_extradata(vec![0x11, 0x22, 0x33]).unwrap());
+    writable_props_src.set_opaque(Some(PacketOpaque::new(0x1234).unwrap()));
+    writable_props_src.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad, 0xbe])));
+    let mut writable_props_dst = Packet::default();
+    writable_props_dst.ref_from(&writable_props_src);
+    let writable_props_dst_ptr = writable_props_dst.data_buffer().as_padded_ptr();
+    writable_props_dst.make_writable().unwrap();
+    assert_eq!(
+        writable_props_dst.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(writable_props_dst.is_data_writable());
+    assert!(!writable_props_dst
+        .data_buffer()
+        .shares_storage(writable_props_src.data_buffer()));
+    assert_ne!(
+        writable_props_dst.data_buffer().as_padded_ptr(),
+        writable_props_dst_ptr
+    );
+    assert_eq!(writable_props_dst.pts(), Some(12));
+    assert_eq!(writable_props_dst.dts(), Some(10));
+    assert_eq!(writable_props_dst.duration(), 2);
+    assert_eq!(writable_props_dst.pos(), Some(77));
+    assert!(writable_props_dst.flags().contains(PacketFlags::KEY));
+    assert!(writable_props_dst.flags().contains(PacketFlags::DISPOSABLE));
+    assert_eq!(
+        writable_props_dst
+            .side_data_by_kind("new_extradata")
+            .unwrap()
+            .data(),
+        &[0x11, 0x22, 0x33]
+    );
+    assert_eq!(writable_props_dst.opaque_address(), Some(0x1234));
+    assert!(writable_props_dst
+        .opaque_ref()
+        .unwrap()
+        .shares_storage(writable_props_src.opaque_ref().unwrap()));
+    writable_props_dst.make_data_writable()[0] = 0xcc;
+    assert_eq!(writable_props_src.data(), &[0xaa, 0xbb, 0xcc]);
+    assert_eq!(writable_props_dst.data(), &[0xcc, 0xbb, 0xcc]);
+
     let mut new_packet_reset = Packet::from_data(vec![0x01, 0x02]).unwrap();
     new_packet_reset.set_pts(Some(90_000));
     new_packet_reset.set_dts(Some(45_000));

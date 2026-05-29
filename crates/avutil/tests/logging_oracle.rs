@@ -382,6 +382,12 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
         "format-line2-context-carriage-return-line",
         escape_row_text(context_carriage_return.bytes()),
     );
+    let (context_size1, _) =
+        rust_format_line2_context(LogLevel::Warning, "ctxmsg", LogFlags::PRINT_LEVEL, true, 1);
+    rows.insert(
+        "format-line2-context-size1-line",
+        escape_row_text(context_size1.bytes()),
+    );
 
     let (time, _) = rust_format_line2(LogLevel::Warning, "plain", LogFlags::PRINT_TIME, true, 128);
     rows.insert("format-line2-time-line", escape_row_text(time.bytes()));
@@ -1355,6 +1361,27 @@ fn add_format_line2_int_rows(rows: &mut BTreeMap<&'static str, i32>) {
         "format-line2-context-noprefix-prefix",
         bool_to_i32(context_no_prefix_state),
     );
+    let size1_context = AvLogContextPrefix::new("rustctx", "0x123456789abc");
+    let (context_size1, context_size1_state) = rust_format_line2_context_with_context(
+        LogLevel::Warning,
+        "ctxmsg",
+        LogFlags::PRINT_LEVEL,
+        true,
+        1,
+        &size1_context,
+    );
+    rows.insert(
+        "format-line2-context-size1-ret",
+        usize_to_i32(context_size1.full_len()),
+    );
+    rows.insert(
+        "format-line2-context-size1-prefix",
+        bool_to_i32(context_size1_state),
+    );
+    rows.insert(
+        "format-line2-context-size1-len",
+        usize_to_i32(context_size1.bytes().len()),
+    );
 
     let (_, context_newline_prefix) =
         rust_format_line2_context(LogLevel::Info, "withnl\n", LogFlags::PRINT_LEVEL, true, 128);
@@ -1601,9 +1628,27 @@ fn rust_format_line2_context(
     line_size: usize,
 ) -> (AvLogFormatLine2, bool) {
     let context = AvLogContextPrefix::new("rustctx", "<ptr>");
+    rust_format_line2_context_with_context(
+        level,
+        message,
+        flags,
+        initial_prefix,
+        line_size,
+        &context,
+    )
+}
+
+fn rust_format_line2_context_with_context(
+    level: LogLevel,
+    message: &str,
+    flags: LogFlags,
+    initial_prefix: bool,
+    line_size: usize,
+    context: &AvLogContextPrefix,
+) -> (AvLogFormatLine2, bool) {
     let mut prefix = initial_prefix;
     let line = LogRecord::new(level, "ignored", message)
-        .format_av_log_line2_context(&context, flags, &mut prefix, line_size)
+        .format_av_log_line2_context(context, flags, &mut prefix, line_size)
         .expect("bounded av_log_format_line2 context model should support this flag shape");
     (line, prefix)
 }
@@ -2568,6 +2613,14 @@ static void print_format_line2_rows(void) {
     (void)ret;
     ROW("format-line2-context-noprefix-prefix", print_prefix);
     ROW_STR_NORMALIZED_CONTEXT("format-line2-context-noprefix-line", line);
+
+    memset(small, 'X', sizeof(small));
+    print_prefix = 1;
+    ret = call_format_line2(&ctx, small, 1, &print_prefix, AV_LOG_WARNING, "%s", "ctxmsg");
+    ROW("format-line2-context-size1-ret", ret);
+    ROW("format-line2-context-size1-prefix", print_prefix);
+    ROW("format-line2-context-size1-len", strlen(small));
+    ROW_STR("format-line2-context-size1-line", small);
 
     memset(line, 'X', sizeof(line));
     print_prefix = 1;

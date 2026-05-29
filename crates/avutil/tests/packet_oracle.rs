@@ -1601,6 +1601,26 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_fields(&writable),
     );
 
+    let mut writable_props_src = Packet::new(vec![0xaa, 0xbb, 0xcc], 7);
+    writable_props_src.make_refcounted().unwrap();
+    set_common_packet_props(&mut writable_props_src);
+    let mut writable_props_dst = Packet::default();
+    writable_props_dst.ref_from(&writable_props_src);
+    writable_props_dst.make_writable().unwrap();
+    writable_props_dst.make_data_writable()[0] = 0xcc;
+    rows.insert(
+        "packet:payload-make-writable-props-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-writable-props-src".to_string(),
+        packet_fields(&writable_props_src),
+    );
+    rows.insert(
+        "packet:payload-make-writable-props-dst".to_string(),
+        packet_fields(&writable_props_dst),
+    );
+
     let mut unrefcounted_writable = Packet::new(vec![0xaa, 0xbb], 0);
     unrefcounted_writable.make_writable().unwrap();
     unrefcounted_writable.make_data_writable()[0] = 0xcc;
@@ -5457,6 +5477,19 @@ static void exercise_payload_api(void) {
     print_payload("packet:payload-make-writable-dst", dst);
     av_packet_free(&dst);
     av_packet_free(&src);
+
+    AVPacket *writable_props_src = packet_with_common_props();
+    AVPacket *writable_props_dst = new_packet();
+    fail_if(av_packet_ref(writable_props_dst, writable_props_src) < 0,
+            "av_packet_ref writable props dst failed");
+    ret = av_packet_make_writable(writable_props_dst);
+    printf("packet:payload-make-writable-props-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_make_writable writable props failed");
+    writable_props_dst->data[0] = 0xcc;
+    print_packet("packet:payload-make-writable-props-src", writable_props_src);
+    print_packet("packet:payload-make-writable-props-dst", writable_props_dst);
+    av_packet_free(&writable_props_dst);
+    av_packet_free(&writable_props_src);
 
     pkt = new_packet();
     uint8_t writable_stack_data[2] = { 0xaa, 0xbb };
