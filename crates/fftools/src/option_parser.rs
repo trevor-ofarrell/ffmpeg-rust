@@ -210,6 +210,7 @@ pub fn parse_ffmpeg_args(args: &[String]) -> Result<ParsedCommand, CliParseError
             let option_name = option_name(arg)?;
             let spec = option_spec(option_name)
                 .ok_or_else(|| CliParseError::new(format!("unknown option `{arg}`")))?;
+            validate_stream_specifier_name(option_name, arg)?;
 
             let option = match spec.arity {
                 OptionArity::Flag => {
@@ -290,6 +291,20 @@ fn option_spec(name: &str) -> Option<OptionSpec> {
         arity,
         value_kind,
     })
+}
+
+fn validate_stream_specifier_name(name: &str, arg: &str) -> Result<(), CliParseError> {
+    let Some((_, specifier)) = name.split_once(':') else {
+        return Ok(());
+    };
+
+    if specifier.starts_with(':') || specifier.contains("::") {
+        return Err(CliParseError::new(format!(
+            "invalid stream specifier in option `{arg}`"
+        )));
+    }
+
+    Ok(())
 }
 
 fn take_value(
@@ -763,6 +778,40 @@ mod tests {
         let err = parse_ffmpeg_args(&strings(&["--version"])).unwrap_err();
 
         assert!(err.message().contains("unknown option `--version`"));
+    }
+
+    #[test]
+    fn rejects_malformed_stream_specifier_option_names() {
+        for invalid in ["-c::", "-c::0", "-c:a::0"] {
+            let err =
+                parse_ffmpeg_args(&strings(&["-i", "in.wav", invalid, "pcm_s16le", "out.wav"]))
+                    .unwrap_err();
+
+            assert!(err.message().contains("invalid stream specifier"));
+        }
+
+        let parsed = parse_ffmpeg_args(&strings(&[
+            "-i",
+            "in.wav",
+            "-c:",
+            "copy",
+            "-c:0",
+            "pcm_s16le",
+            "-c:a:0",
+            "pcm_s16le",
+            "-c:a:",
+            "pcm_s16le",
+            "-c:v:",
+            "rawvideo",
+            "out.wav",
+        ]))
+        .unwrap();
+
+        assert_eq!(parsed.outputs()[0].options()[0].name(), "c:");
+        assert_eq!(parsed.outputs()[0].options()[1].name(), "c:0");
+        assert_eq!(parsed.outputs()[0].options()[2].name(), "c:a:0");
+        assert_eq!(parsed.outputs()[0].options()[3].name(), "c:a:");
+        assert_eq!(parsed.outputs()[0].options()[4].name(), "c:v:");
     }
 
     #[test]
