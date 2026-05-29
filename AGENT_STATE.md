@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Current goal directive: continue from the completed 10% strict-parity milestone toward 100% FFmpeg 8.1.1 default-native compatibility using the orchestrator workflow. The main Codex thread is the merge captain and may use up to 10 subagents when tasks have disjoint ownership, independent validation, and low merge risk; default to 3-5 active agents when that is sufficient.
+
 Orchestrator workflow is active: the main Codex thread is the merge captain, delegates only disjoint bounded work, owns ledger/state/docs/mappings/manifests/final status changes/commits, and may use up to 10 subagents when it reduces wall-clock time without creating merge risk. Default to 3-5 active agents, and always give workers exact owned files, forbidden files, tests, and final report requirements.
 
 Current parallel-agent state: `Bohr` completed the bounded `avformat-wav-demuxer` invalid RIFF-size lane and that result was committed with the buffer slice. Three new workers are active from a clean base: `Gibbs` (`019e73d7-0bba-7510-9012-2bf850c7ef78`) owns the `fftools-version` lane; `Herschel` (`019e73d7-2a8e-7b43-9b86-467e17cbcaa9`) owns the raw `pcm_s16le` demuxer lane; and `Maxwell` (`019e73d7-4ca4-75a3-9f28-206a0aaad77b`) owns the `yuv4mpegpipe` demuxer lane. They must not touch ledger/state/docs/mappings/manifests/lockfiles.

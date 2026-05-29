@@ -8,6 +8,8 @@ The end state is a one-to-one compatible Rust implementation of the FFmpeg 8.1.1
 
 ## Active Milestone
 
+Current operating goal: advance the pinned FFmpeg 8.1.1 Rust rewrite as an orchestrated parity-ledger program. The main Codex thread must act as merge captain, use up to 10 subagents when useful, prefer 3-5 when that is enough, integrate subagent output serially, and keep driving from the current 10% strict-parity baseline toward 100% default-native compatibility before later profiles.
+
 The first milestone, 10% strict parity, has been reached. Continue the same strict parity-ledger loop toward 100% FFmpeg 8.1.1 default-native compatibility, then expand to later GPL/version3/nonfree/external-library/platform profiles.
 
 For the current 96-row `PORTING_LEDGER.toml`, 10% strict parity meant at least 10 components marked `complete` under the normal completion definition below. The initial high-confidence infrastructure push covered or prioritized:
