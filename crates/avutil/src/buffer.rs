@@ -1345,7 +1345,7 @@ impl Drop for BufferPoolInner {
             Ok(spare) => spare,
             Err(poisoned) => poisoned.into_inner(),
         };
-        for storage in spare.drain(..) {
+        while let Some(storage) = spare.pop() {
             self.callbacks.release(storage);
         }
         self.callbacks.free_pool();
@@ -3419,6 +3419,53 @@ mod tests {
         drop(pool);
 
         assert_eq!(*releases.lock().unwrap(), vec![vec![0xa1, 0xa2, 0xa3]]);
+    }
+
+    #[test]
+    fn custom_buffer_pool_reuses_and_releases_multiple_spares_lifo() {
+        let next_allocation = std::sync::Arc::new(std::sync::Mutex::new(0u8));
+        let releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+        let allocate_capture = std::sync::Arc::clone(&next_allocation);
+        let release_capture = std::sync::Arc::clone(&releases);
+        let pool = BufferPool::with_callbacks(
+            2,
+            0,
+            BufferPoolCallbacks::new(
+                move |allocated_len| {
+                    let mut next = allocate_capture.lock().unwrap();
+                    let base = 0x70 + *next;
+                    *next += 1;
+                    Ok(vec![base; allocated_len])
+                },
+                move |storage| {
+                    release_capture.lock().unwrap().push(storage);
+                },
+            ),
+        )
+        .unwrap();
+
+        let mut first = pool.get().unwrap();
+        let mut second = pool.get().unwrap();
+        assert_eq!(first.as_slice(), &[0x70, 0x70]);
+        assert_eq!(second.as_slice(), &[0x71, 0x71]);
+        first.make_mut().copy_from_slice(&[0xa1, 0xa2]);
+        second.make_mut().copy_from_slice(&[0xb1, 0xb2]);
+        drop(first);
+        drop(second);
+        assert_eq!(pool.available_count().unwrap(), 2);
+
+        let reuse_first = pool.get().unwrap();
+        let reuse_second = pool.get().unwrap();
+        assert_eq!(reuse_first.as_slice(), &[0xb1, 0xb2]);
+        assert_eq!(reuse_second.as_slice(), &[0xa1, 0xa2]);
+        drop(reuse_first);
+        drop(reuse_second);
+        drop(pool);
+
+        assert_eq!(
+            *releases.lock().unwrap(),
+            vec![vec![0xa1, 0xa2], vec![0xb1, 0xb2]]
+        );
     }
 
     #[test]

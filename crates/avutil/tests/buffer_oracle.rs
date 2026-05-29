@@ -1521,6 +1521,64 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     );
     drop(legacy_release_values);
 
+    let multi_spare_allocations = Arc::new(Mutex::new(0u8));
+    let multi_spare_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let multi_spare_allocate_capture = Arc::clone(&multi_spare_allocations);
+    let multi_spare_release_capture = Arc::clone(&multi_spare_releases);
+    let multi_spare_pool = BufferPool::with_callbacks(
+        2,
+        0,
+        BufferPoolCallbacks::new(
+            move |allocated_len| {
+                let mut next = multi_spare_allocate_capture.lock().unwrap();
+                let base = 0x70 + *next;
+                *next += 1;
+                Ok(vec![base; allocated_len])
+            },
+            move |storage| {
+                multi_spare_release_capture.lock().unwrap().push(storage);
+            },
+        ),
+    )
+    .unwrap();
+    let mut multi_spare_first = multi_spare_pool.get().unwrap();
+    let mut multi_spare_second = multi_spare_pool.get().unwrap();
+    multi_spare_first.make_mut().copy_from_slice(&[0xa1, 0xa2]);
+    multi_spare_second.make_mut().copy_from_slice(&[0xb1, 0xb2]);
+    drop(multi_spare_first);
+    drop(multi_spare_second);
+    rows.insert(
+        "pool-multi-spare:after-drop".to_string(),
+        vec![multi_spare_releases.lock().unwrap().len().to_string()],
+    );
+    let multi_spare_reuse_first = multi_spare_pool.get().unwrap();
+    let multi_spare_reuse_second = multi_spare_pool.get().unwrap();
+    rows.insert(
+        "pool-multi-spare:reuse-first".to_string(),
+        buffer_fields(&multi_spare_reuse_first),
+    );
+    rows.insert(
+        "pool-multi-spare:reuse-second".to_string(),
+        buffer_fields(&multi_spare_reuse_second),
+    );
+    rows.insert(
+        "pool-multi-spare:reuse-allocs".to_string(),
+        vec![multi_spare_allocations.lock().unwrap().to_string()],
+    );
+    drop(multi_spare_reuse_first);
+    drop(multi_spare_reuse_second);
+    drop(multi_spare_pool);
+    let multi_spare_release_values = multi_spare_releases.lock().unwrap();
+    rows.insert(
+        "pool-multi-spare:uninit-releases".to_string(),
+        vec![
+            multi_spare_release_values.len().to_string(),
+            hex(&multi_spare_release_values[0]),
+            hex(&multi_spare_release_values[1]),
+        ],
+    );
+    drop(multi_spare_release_values);
+
     struct PoolToken {
         id: usize,
         size: usize,
@@ -2997,6 +3055,10 @@ static uintptr_t last_pool_release_id = 0;
 static uintptr_t last_pool_free_id = 0;
 static size_t last_pool_release_size = 0;
 static uint8_t last_pool_release[32];
+#define MAX_POOL_RELEASE_EVENTS 16
+static uintptr_t pool_release_ids[MAX_POOL_RELEASE_EVENTS];
+static size_t pool_release_sizes[MAX_POOL_RELEASE_EVENTS];
+static uint8_t pool_release_data[MAX_POOL_RELEASE_EVENTS][32];
 
 typedef struct PoolOpaque {
     uintptr_t id;
@@ -3043,17 +3105,31 @@ static void reset_pool_counters(void) {
     last_pool_release_size = 0;
     for (size_t i = 0; i < sizeof(last_pool_release); i++)
         last_pool_release[i] = 0;
+    for (size_t event = 0; event < MAX_POOL_RELEASE_EVENTS; event++) {
+        pool_release_ids[event] = 0;
+        pool_release_sizes[event] = 0;
+        for (size_t i = 0; i < sizeof(pool_release_data[event]); i++)
+            pool_release_data[event][i] = 0;
+    }
 }
 
 static void test_pool_free(void *opaque, uint8_t *data) {
     PoolOpaque *pool_opaque = opaque;
-    pool_release_count++;
+    int event = pool_release_count++;
     last_pool_release_id = pool_opaque->id;
     last_pool_release_size = pool_opaque->size;
     fail_if(last_pool_release_size > sizeof(last_pool_release),
             "pool release fixture too large");
     for (size_t i = 0; i < last_pool_release_size; i++)
         last_pool_release[i] = data[i];
+    if (event < MAX_POOL_RELEASE_EVENTS) {
+        pool_release_ids[event] = pool_opaque->id;
+        pool_release_sizes[event] = pool_opaque->size;
+        fail_if(pool_opaque->size > sizeof(pool_release_data[event]),
+                "pool release event fixture too large");
+        for (size_t i = 0; i < pool_opaque->size; i++)
+            pool_release_data[event][i] = data[i];
+    }
     av_free(data);
 }
 
@@ -3074,11 +3150,17 @@ static AVBufferRef *test_pool_alloc(void *opaque, size_t size) {
 
 static void test_pool_free_legacy(void *opaque, uint8_t *data) {
     (void)opaque;
-    pool_release_count++;
+    int event = pool_release_count++;
     last_pool_release_id = 0;
     last_pool_release_size = 3;
     for (size_t i = 0; i < last_pool_release_size; i++)
         last_pool_release[i] = data[i];
+    if (event < MAX_POOL_RELEASE_EVENTS) {
+        pool_release_ids[event] = 0;
+        pool_release_sizes[event] = last_pool_release_size;
+        for (size_t i = 0; i < last_pool_release_size; i++)
+            pool_release_data[event][i] = data[i];
+    }
     av_free(data);
 }
 
@@ -3089,6 +3171,15 @@ static AVBufferRef *test_pool_alloc_legacy(size_t size) {
     for (size_t i = 0; i < size; i++)
         data[i] = (uint8_t)(0x51 + i);
     return av_buffer_create(data, size, test_pool_free_legacy, NULL, 0);
+}
+
+static AVBufferRef *test_pool_alloc_multi_spare(void *opaque, size_t size) {
+    uint8_t *data = av_malloc(size);
+    fail_if(!data, "av_malloc multi-spare pool data failed");
+    int allocation_index = pool_alloc_count++;
+    for (size_t i = 0; i < size; i++)
+        data[i] = (uint8_t)(0x70 + allocation_index);
+    return av_buffer_create(data, size, test_pool_free, opaque, 0);
 }
 
 static AVBufferRef *test_pool_alloc_offset(void *opaque, size_t size) {
@@ -4210,6 +4301,46 @@ int main(void) {
     printf("pool-legacy-custom:uninit-release|%d|",
            pool_release_count);
     print_hex(last_pool_release, last_pool_release_size);
+    printf("\n");
+
+    reset_pool_counters();
+    PoolOpaque multi_spare_opaque = { 70, 2 };
+    AVBufferPool *multi_spare_pool =
+        av_buffer_pool_init2(2, &multi_spare_opaque,
+                             test_pool_alloc_multi_spare, NULL);
+    fail_if(!multi_spare_pool, "av_buffer_pool_init2 multi-spare failed");
+    AVBufferRef *multi_spare_first = av_buffer_pool_get(multi_spare_pool);
+    AVBufferRef *multi_spare_second = av_buffer_pool_get(multi_spare_pool);
+    fail_if(!multi_spare_first || !multi_spare_second,
+            "av_buffer_pool_get multi-spare failed");
+    static const uint8_t multi_spare_first_bytes[] = { 0xa1, 0xa2 };
+    static const uint8_t multi_spare_second_bytes[] = { 0xb1, 0xb2 };
+    fill_bytes(multi_spare_first, multi_spare_first_bytes,
+               sizeof(multi_spare_first_bytes));
+    fill_bytes(multi_spare_second, multi_spare_second_bytes,
+               sizeof(multi_spare_second_bytes));
+    av_buffer_unref(&multi_spare_first);
+    av_buffer_unref(&multi_spare_second);
+    printf("pool-multi-spare:after-drop|%d\n", pool_release_count);
+    AVBufferRef *multi_spare_reuse_first =
+        av_buffer_pool_get(multi_spare_pool);
+    AVBufferRef *multi_spare_reuse_second =
+        av_buffer_pool_get(multi_spare_pool);
+    fail_if(!multi_spare_reuse_first || !multi_spare_reuse_second,
+            "av_buffer_pool_get multi-spare reuse failed");
+    print_buffer("pool-multi-spare:reuse-first",
+                 multi_spare_reuse_first);
+    print_buffer("pool-multi-spare:reuse-second",
+                 multi_spare_reuse_second);
+    printf("pool-multi-spare:reuse-allocs|%d\n", pool_alloc_count);
+    av_buffer_unref(&multi_spare_reuse_first);
+    av_buffer_unref(&multi_spare_reuse_second);
+    av_buffer_pool_uninit(&multi_spare_pool);
+    printf("pool-multi-spare:uninit-releases|%d|",
+           pool_release_count);
+    print_hex(pool_release_data[0], pool_release_sizes[0]);
+    printf("|");
+    print_hex(pool_release_data[1], pool_release_sizes[1]);
     printf("\n");
 
     reset_pool_counters();

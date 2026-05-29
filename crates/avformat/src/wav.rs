@@ -70,6 +70,11 @@ impl<'a> WavDemuxer<'a> {
         let mut reader = ByteReader::new(input);
         expect_fourcc(&mut reader, b"RIFF")?;
         let riff_size = reader.read_u32_le()?;
+        if riff_size < 4 {
+            return Err(AvError::invalid_data(
+                "WAV RIFF size is too small for WAVE form type",
+            ));
+        }
         expect_fourcc(&mut reader, b"WAVE")?;
 
         let riff_end = usize::try_from(riff_size)
@@ -430,6 +435,12 @@ mod tests {
                 .kind(),
             AvErrorKind::InvalidData
         );
+        assert_eq!(
+            WavDemuxer::open(&wav_with_too_small_riff_size())
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
         assert!(WavDemuxer::open(&wav_without_data_chunk()).is_err());
         assert!(WavDemuxer::open(&wav_with_audio_format(3)).is_err());
     }
@@ -560,6 +571,13 @@ mod tests {
     fn wav_with_bad_wave_fourcc() -> Vec<u8> {
         let mut out = wav_bytes(1, 48_000, &[0, 0]);
         out[8..12].copy_from_slice(b"WEBM");
+        out
+    }
+
+    fn wav_with_too_small_riff_size() -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(b"RIFF");
+        out.extend_from_slice(&0_u32.to_le_bytes());
         out
     }
 

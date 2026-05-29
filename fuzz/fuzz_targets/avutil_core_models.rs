@@ -2674,6 +2674,47 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         vec![legacy_expected_release]
     );
 
+    let multi_spare_allocations = Arc::new(Mutex::new(0u8));
+    let multi_spare_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let multi_spare_allocate_capture = Arc::clone(&multi_spare_allocations);
+    let multi_spare_release_capture = Arc::clone(&multi_spare_releases);
+    let multi_spare_pool = BufferPool::with_callbacks(
+        2,
+        0,
+        BufferPoolCallbacks::new(
+            move |allocated_len| {
+                let mut next = multi_spare_allocate_capture.lock().unwrap();
+                let base = 0x70 + *next;
+                *next += 1;
+                Ok(vec![base; allocated_len])
+            },
+            move |storage| {
+                multi_spare_release_capture.lock().unwrap().push(storage);
+            },
+        ),
+    )
+    .unwrap();
+    let mut multi_spare_first = multi_spare_pool.get().unwrap();
+    let mut multi_spare_second = multi_spare_pool.get().unwrap();
+    multi_spare_first.make_mut().copy_from_slice(&[0xa1, 0xa2]);
+    multi_spare_second.make_mut().copy_from_slice(&[0xb1, 0xb2]);
+    drop(multi_spare_first);
+    drop(multi_spare_second);
+    assert_eq!(multi_spare_pool.available_count().unwrap(), 2);
+    assert!(multi_spare_releases.lock().unwrap().is_empty());
+    let multi_spare_reuse_first = multi_spare_pool.get().unwrap();
+    let multi_spare_reuse_second = multi_spare_pool.get().unwrap();
+    assert_eq!(multi_spare_reuse_first.as_slice(), &[0xb1, 0xb2]);
+    assert_eq!(multi_spare_reuse_second.as_slice(), &[0xa1, 0xa2]);
+    assert_eq!(*multi_spare_allocations.lock().unwrap(), 2);
+    drop(multi_spare_reuse_first);
+    drop(multi_spare_reuse_second);
+    drop(multi_spare_pool);
+    assert_eq!(
+        *multi_spare_releases.lock().unwrap(),
+        vec![vec![0xa1, 0xa2], vec![0xb1, 0xb2]]
+    );
+
     let custom_allocations = Arc::new(Mutex::new(Vec::<usize>::new()));
     let custom_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let custom_pool_frees = Arc::new(Mutex::new(0usize));
