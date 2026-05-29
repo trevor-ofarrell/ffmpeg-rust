@@ -1995,6 +1995,11 @@ fate_tests = [
   "not_applicable: pinned FFmpeg 8.1.1 tests/fate/libavutil.mak has no fate-log target; libavutil/tests/log is an upstream TESTPROGS utility and is built/run through the upstream mapping",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: pinned libavutil no-force pseudo-terminal TERM=dumb rows now
+# prove BASIC default-callback color mode also colorizes AV_LOG_QUIET messages
+# with the BASIC fatal color (`4;31m`) while still suppressing time/level
+# prefixes; normalized AVClass context prefixes keep the BASIC context color.
+# Rust unit and oracle coverage mirror that bounded BASIC quiet behavior.
 # Latest update: pinned libavutil default-callback rows now add
 # `TZ=AEST-10AEDT,M10.1.0,M4.1.0/3`, proving byte-identical POSIX DST
 # formatting when the daylight interval wraps across the end of the UTC year.

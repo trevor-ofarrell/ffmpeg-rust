@@ -1302,14 +1302,12 @@ impl LogRecord {
 
     fn default_callback_basic_ansi_color_code(&self) -> Option<&'static str> {
         match self.level {
-            LogLevel::Panic | LogLevel::Fatal => Some(DEFAULT_CALLBACK_BASIC_FATAL_COLOR),
+            LogLevel::Panic | LogLevel::Fatal | LogLevel::Quiet => {
+                Some(DEFAULT_CALLBACK_BASIC_FATAL_COLOR)
+            }
             LogLevel::Error => Some(DEFAULT_CALLBACK_BASIC_ERROR_COLOR),
             LogLevel::Warning => Some(DEFAULT_CALLBACK_BASIC_WARNING_COLOR),
-            LogLevel::Quiet
-            | LogLevel::Info
-            | LogLevel::Verbose
-            | LogLevel::Debug
-            | LogLevel::Trace => None,
+            LogLevel::Info | LogLevel::Verbose | LogLevel::Debug | LogLevel::Trace => None,
         }
     }
 
@@ -2897,6 +2895,16 @@ mod tests {
             LogRecord::new(LogLevel::Error, "ignored", "plain\n")
                 .format_default_callback_line_null_context_with_options(options),
             "\x1b[1;31m[error] \x1b[0m\x1b[1;31mplain\n\x1b[0m"
+        );
+        assert_eq!(
+            LogRecord::new(LogLevel::Quiet, "ignored", "quiet\n")
+                .format_default_callback_line_null_context_with_options(options),
+            "\x1b[4;31mquiet\n\x1b[0m"
+        );
+        assert_eq!(
+            LogRecord::new(LogLevel::Quiet, "ignored", "quiet\n")
+                .format_default_callback_line_context_with_options(&context, options),
+            "\x1b[0;39m[rustctx @ <ptr>] \x1b[0m\x1b[4;31mquiet\n\x1b[0m"
         );
         assert_eq!(
             LogRecord::new(LogLevel::Fatal, "ignored", "plain\n")

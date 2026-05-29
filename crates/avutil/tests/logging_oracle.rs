@@ -916,6 +916,25 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
         "default-callback-no-force-tty-term-dumb-context-warning-level-line",
         escape_row_text(default_no_force_tty_term_dumb_context.as_bytes()),
     );
+    let default_no_force_tty_term_dumb_quiet = rust_default_callback_no_force_tty_term_quiet_line(
+        Some(OsStr::new("dumb")),
+        None,
+        LogFlags::PRINT_LEVEL,
+    );
+    rows.insert(
+        "default-callback-no-force-tty-term-dumb-quiet-line",
+        escape_row_text(default_no_force_tty_term_dumb_quiet.as_bytes()),
+    );
+    let default_no_force_tty_term_dumb_quiet_context =
+        rust_default_callback_no_force_tty_term_quiet_line(
+            Some(OsStr::new("dumb")),
+            Some(&context),
+            LogFlags::PRINT_LEVEL,
+        );
+    rows.insert(
+        "default-callback-no-force-tty-term-dumb-quiet-context-level-line",
+        escape_row_text(default_no_force_tty_term_dumb_quiet_context.as_bytes()),
+    );
     let default_no_force_tty_term_dumb_error = rust_default_callback_no_force_tty_term_line(
         Some(OsStr::new("dumb")),
         LogLevel::Error,
@@ -1807,6 +1826,25 @@ fn rust_default_callback_no_force_tty_term_line(
     assert_eq!(options.color_mode(), expected_mode);
     assert_eq!(color_state.cached_mode(), Some(expected_mode));
     let record = LogRecord::new(level, "ignored", "plain\n");
+    match context {
+        Some(context) => record.format_default_callback_line_context_with_options(context, options),
+        None => record.format_default_callback_line_null_context_with_options(options),
+    }
+}
+
+fn rust_default_callback_no_force_tty_term_quiet_line(
+    term: Option<&OsStr>,
+    context: Option<&AvLogContextPrefix>,
+    flags: LogFlags,
+) -> String {
+    let mut color_state = DefaultCallbackColorState::new();
+    let options = LogFormatOptions::new(flags)
+        .with_default_callback_color_state_and_resolver(&mut color_state, || {
+            LogColorMode::from_ffmpeg_env_vars_stderr_and_term(|_| false, true, term)
+        });
+    assert_eq!(options.color_mode(), LogColorMode::Basic);
+    assert_eq!(color_state.cached_mode(), Some(LogColorMode::Basic));
+    let record = LogRecord::new(LogLevel::Quiet, "ignored", "quiet\n");
     match context {
         Some(context) => record.format_default_callback_line_context_with_options(context, options),
         None => record.format_default_callback_line_null_context_with_options(options),
@@ -3206,6 +3244,12 @@ static void print_default_callback_no_force_tty_term_dumb_row(void) {
     print_default_callback_tty_level_row(
         "default-callback-no-force-tty-term-dumb-context-warning-level-line",
         &ctx, AV_LOG_WARNING, AV_LOG_PRINT_LEVEL, "plain");
+    print_default_callback_tty_level_row(
+        "default-callback-no-force-tty-term-dumb-quiet-line",
+        NULL, AV_LOG_QUIET, AV_LOG_PRINT_LEVEL, "quiet");
+    print_default_callback_tty_level_row(
+        "default-callback-no-force-tty-term-dumb-quiet-context-level-line",
+        &ctx, AV_LOG_QUIET, AV_LOG_PRINT_LEVEL, "quiet");
     print_default_callback_tty_level_row(
         "default-callback-no-force-tty-term-dumb-error-level-line",
         NULL, AV_LOG_ERROR, AV_LOG_PRINT_LEVEL, "plain");
