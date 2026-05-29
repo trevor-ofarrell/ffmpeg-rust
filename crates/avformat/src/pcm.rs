@@ -107,11 +107,8 @@ impl<'a> PcmS16leDemuxer<'a> {
             .checked_mul(packet_samples)
             .ok_or_else(|| AvError::invalid_argument("pcm_s16le packet size overflow"))?;
 
-        let total_samples_per_channel = audio.sample_frames_in_bytes(
-            input.len(),
-            AvErrorKind::EndOfFile,
-            "pcm_s16le input ends with a partial sample frame",
-        )?;
+        let total_samples_per_channel =
+            complete_sample_frames_in_bytes(input.len(), audio.bytes_per_sample_frame());
 
         Ok(Self {
             info: PcmS16leInfo {
@@ -137,7 +134,8 @@ impl<'a> PcmS16leDemuxer<'a> {
 
         let remaining = self.input.len() - self.position;
         let packet_len = remaining.min(self.info.packet_size);
-        let samples = packet_len / self.info.bytes_per_sample_frame();
+        let samples =
+            complete_sample_frames_in_bytes(packet_len, self.info.bytes_per_sample_frame());
         let duration = i64::try_from(samples)
             .map_err(|_| AvError::invalid_data("pcm_s16le packet duration does not fit i64"))?;
         let end = self
@@ -161,6 +159,10 @@ impl<'a> PcmS16leDemuxer<'a> {
             .ok_or_else(|| AvError::invalid_data("pcm_s16le PTS overflow"))?;
         Ok(Some(packet))
     }
+}
+
+fn complete_sample_frames_in_bytes(byte_len: usize, bytes_per_sample_frame: usize) -> usize {
+    byte_len / bytes_per_sample_frame
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -323,15 +325,43 @@ mod tests {
     }
 
     #[test]
-    fn rejects_invalid_parameters_and_partial_sample_frames() {
+    fn rejects_invalid_parameters() {
         assert!(PcmS16leDemuxer::open(&[0, 0], 0, 2, 1).is_err());
         assert!(PcmS16leDemuxer::open(&[0, 0], 48_000, 0, 1).is_err());
         assert!(PcmS16leDemuxer::open(&[0, 0], 48_000, 1, 0).is_err());
+    }
 
-        let err = PcmS16leDemuxer::open(&[0, 0, 1], 48_000, 1, 1).unwrap_err();
-        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
-        let err = PcmS16leDemuxer::open(&[0, 0, 1, 0, 2, 0], 48_000, 2, 1).unwrap_err();
-        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+    #[test]
+    fn accepts_partial_final_sample_frame_like_raw_ffmpeg_demuxing() {
+        let input = [0, 1, 2, 3, 4, 5];
+        let mut demuxer = PcmS16leDemuxer::open(&input, 48_000, 2, 2).unwrap();
+
+        assert_eq!(demuxer.info().bytes_per_sample_frame(), 4);
+        assert_eq!(demuxer.info().total_samples_per_channel(), 1);
+
+        let first = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(first.data(), &[0, 1, 2, 3, 4, 5]);
+        assert_eq!(first.pts(), Some(0));
+        assert_eq!(first.dts(), Some(0));
+        assert_eq!(first.duration(), 1);
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
+    fn truncates_partial_packet_duration_to_complete_sample_frames() {
+        let input = [0, 1, 2, 3, 4, 5];
+        let mut demuxer = PcmS16leDemuxer::open(&input, 48_000, 2, 1).unwrap();
+
+        let full = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(full.data(), &[0, 1, 2, 3]);
+        assert_eq!(full.duration(), 1);
+
+        let partial = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(partial.data(), &[4, 5]);
+        assert_eq!(partial.pts(), Some(1));
+        assert_eq!(partial.dts(), Some(1));
+        assert_eq!(partial.duration(), 0);
+        assert!(demuxer.read_packet().unwrap().is_none());
     }
 
     #[test]

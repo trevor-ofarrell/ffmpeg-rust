@@ -39,10 +39,9 @@ fn exercise_pcm(input: &[u8], sample_rate: u32, channels: u16, packet_samples: u
         info.packet_size(),
         info.bytes_per_sample_frame() * info.packet_samples()
     );
-    assert_eq!(
-        info.total_samples_per_channel() * info.bytes_per_sample_frame(),
-        input.len()
-    );
+    let accounted_bytes = info.total_samples_per_channel() * info.bytes_per_sample_frame();
+    assert!(accounted_bytes <= input.len());
+    assert!(input.len().saturating_sub(accounted_bytes) < info.bytes_per_sample_frame());
 
     let mut expected_pts = 0_i64;
     for _ in 0..32 {
@@ -51,12 +50,14 @@ fn exercise_pcm(input: &[u8], sample_rate: u32, channels: u16, packet_samples: u
                 assert_eq!(packet.stream_index(), 0);
                 assert_eq!(packet.pts(), Some(expected_pts));
                 assert_eq!(packet.dts(), Some(expected_pts));
-                assert!(packet.duration() > 0);
+                assert!(packet.duration() >= 0);
                 assert!(packet.data().len() <= info.packet_size());
-                assert_eq!(packet.data().len() % info.bytes_per_sample_frame(), 0);
-                assert_eq!(
-                    packet.duration() as usize * info.bytes_per_sample_frame(),
-                    packet.data().len()
+                let packet_accounted_bytes =
+                    packet.duration() as usize * info.bytes_per_sample_frame();
+                assert!(packet_accounted_bytes <= packet.data().len());
+                assert!(
+                    packet.data().len().saturating_sub(packet_accounted_bytes)
+                        < info.bytes_per_sample_frame()
                 );
                 assert_eq!(packet.side_data()[0].kind(), "pcm_sample_fmt");
                 assert_eq!(packet.side_data()[0].data(), b"s16");

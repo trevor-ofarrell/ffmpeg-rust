@@ -4665,19 +4665,23 @@ unit_tests = [
   "pcm::tests::slices_interleaved_stereo_packets_with_sample_timing",
   "pcm::tests::emits_short_final_packet_on_sample_frame_boundary",
   "pcm::tests::accepts_empty_input_as_zero_packets_when_parameters_are_valid",
-  "pcm::tests::rejects_invalid_parameters_and_partial_sample_frames",
+  "pcm::tests::rejects_invalid_parameters",
+  "pcm::tests::accepts_partial_final_sample_frame_like_raw_ffmpeg_demuxing",
+  "pcm::tests::truncates_partial_packet_duration_to_complete_sample_frames",
 ]
 differential_tests = [
   "tests/differential/mappings.txt:avformat-pcm-s16le-demuxer|oracle-pcm-s16le-framecrc-records",
+  "tests/differential/mappings.txt:avformat-pcm-s16le-demuxer|oracle-pcm-s16le-partial-framecrc-records",
   "tests/differential/mappings.txt:avformat-pcm-s16le-demuxer|oracle-pcm-s16le-file-output",
   "tests/differential/mappings.txt:avformat-pcm-s16le-demuxer|oracle-pcm-s16le-wav-file-output",
   "pcm_oracle::pcm_s16le_framecrc_records_match_ffmpeg_oracle",
+  "pcm_oracle::pcm_s16le_partial_framecrc_records_match_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_file_output_matches_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_wav_file_output_matches_ffmpeg_oracle",
 ]
 fate_tests = ["tests/fate/mappings.txt:avformat-pcm-s16le-demuxer|local-avformat-pcm-unit"]
 fuzz_targets = ["avformat_pcm_s16le"]
-notes = "Initial raw pcm_s16le demuxer slices whole interleaved sample-frame packets with configurable packet sample counts, sample-rate/channel validation through the shared avformat AudioStreamParameters helper, SampleFormat::S16-derived frame sizing, native or count-only ChannelLayoutSpec metadata where safe, PTS measured in samples, and partial-frame rejection. The bounded stereo pcm_s16le oracle rows compare Rust framecrc streamcopy records, raw s16le file output, and byte-exact WAV file output against pinned FFmpeg 8.1.1 output, proving the demuxed packet payload, byte count, sample-duration timing, and packet transfer into the constrained WAV muxer for that path. Build-checked cargo-fuzz target avformat_pcm_s16le exercises parameter validation, packet slicing, packet timing, and side-data invariants. Probe integration, other PCM formats, broader differential tests, upstream FATE, and sustained fuzz execution are pending. The local FATE-runner smoke mapping executes the pcm unit filter only and does not count as upstream FATE parity."
+notes = "Initial raw pcm_s16le demuxer slices interleaved sample-frame packets with configurable packet sample counts, sample-rate/channel validation through the shared avformat AudioStreamParameters helper, SampleFormat::S16-derived frame sizing, native or count-only ChannelLayoutSpec metadata where safe, and PTS measured in samples. It now accepts trailing partial raw PCM packet payloads like FFmpeg's raw s16le demuxer while computing duration from complete interleaved sample frames, including zero-duration partial-only packet payloads. The bounded stereo pcm_s16le oracle rows compare Rust framecrc streamcopy records, raw s16le file output, and byte-exact WAV file output against pinned FFmpeg 8.1.1 output, proving the demuxed packet payload, byte count, sample-duration timing, and packet transfer into the constrained WAV muxer for complete-packet paths. The latest partial-frame framecrc oracle row proves a 6-byte stereo s16le packet is accepted with FFmpeg-matching size and duration. Build-checked cargo-fuzz target avformat_pcm_s16le exercises parameter validation, packet slicing including trailing partial payloads, packet timing, and side-data invariants. Probe integration, other PCM formats, broader differential tests, upstream FATE, and sustained fuzz execution are pending. The local FATE-runner smoke mapping executes the pcm unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
