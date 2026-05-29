@@ -28,7 +28,7 @@ fn exercise_pattern(pattern: &str) {
         return;
     };
 
-    for number in [0, 1, 42] {
+    for number in [0, 1, 42, 1000] {
         let path = parsed.path_for_frame_number(number).unwrap();
         let matched = parsed.frame_number_for_path(&path).unwrap();
         if parsed.is_sequence() {
@@ -168,6 +168,15 @@ fn exercise_fixtures() {
         vec![entry("cover%final.png", b"cover")],
         0,
         Rational::ONE,
+    );
+    exercise_demux(
+        "frame-%03d.ppm",
+        vec![
+            entry("frame-999.ppm", b"nine_nine_nine"),
+            entry("frame-1000.ppm", b"thousand"),
+        ],
+        999,
+        Rational::new(25, 1).unwrap(),
     );
     exercise_mux(
         "frame-%03d.png",

@@ -1,7 +1,7 @@
 use fftools::ffmpeg_output;
 use std::{
     env, fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -31,6 +31,17 @@ fn image2_ppm_numbered_sequence_file_output_matches_ffmpeg_oracle() {
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
 fn image2_ppm_numbered_sequence_framecrc_records_match_ffmpeg_oracle() {
     compare_image2_sequence_framecrc_records("ppm", "1", &[PPM_1X1_RED, PPM_1X1_GREEN]);
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn image2_ppm_padded_width_growth_framecrc_records_match_ffmpeg_oracle() {
+    compare_image2_sequence_framecrc_records_from_start(
+        "ppm",
+        "25",
+        999,
+        &[PPM_1X1_RED, PPM_1X1_GREEN],
+    );
 }
 
 fn compare_image2_file_output(extension: &str, frame_rate: &str, payload: &[u8]) {
@@ -264,13 +275,22 @@ fn compare_image2_sequence_file_output(extension: &str, frame_rate: &str, payloa
 }
 
 fn compare_image2_sequence_framecrc_records(extension: &str, frame_rate: &str, payloads: &[&[u8]]) {
+    compare_image2_sequence_framecrc_records_from_start(extension, frame_rate, 0, payloads);
+}
+
+fn compare_image2_sequence_framecrc_records_from_start(
+    extension: &str,
+    frame_rate: &str,
+    start_number: u64,
+    payloads: &[&[u8]],
+) {
     let oracle = oracle_ffmpeg();
     let input_dir = unique_temp_dir("image2-sequence-framecrc-input");
 
     fs::create_dir(&input_dir).expect("temp image2 framecrc input dir should be creatable");
 
     for (index, payload) in payloads.iter().enumerate() {
-        let frame_number = u64::try_from(index).expect("test index should fit u64");
+        let frame_number = start_number + u64::try_from(index).expect("test index should fit u64");
         fs::write(
             input_dir.join(sequence_file_name("in", frame_number, extension)),
             payload,
@@ -289,7 +309,7 @@ fn compare_image2_sequence_framecrc_records(extension: &str, frame_rate: &str, p
         "-framerate",
         frame_rate,
         "-start_number",
-        "0",
+        &start_number.to_string(),
         "-i",
         input_pattern.as_str(),
         "-f",
@@ -309,7 +329,7 @@ fn compare_image2_sequence_framecrc_records(extension: &str, frame_rate: &str, p
             "-framerate",
             frame_rate,
             "-start_number",
-            "0",
+            &start_number.to_string(),
             "-i",
             input_pattern.as_str(),
             "-c:v",
@@ -349,14 +369,23 @@ fn compare_image2_sequence_framecrc_records(extension: &str, frame_rate: &str, p
 }
 
 fn oracle_ffmpeg() -> PathBuf {
-    if let Some(path) = env::var_os("FFMPEG_ORACLE").map(PathBuf::from) {
+    if let Some(path) = env::var_os("FFMPEG_ORACLE")
+        .map(PathBuf::from)
+        .map(resolve_repo_relative_path)
+    {
+        assert!(
+            path.is_file(),
+            "FFMPEG_ORACLE must point to the pinned FFmpeg 8.1.1 binary, got `{}`",
+            path.display()
+        );
         return path;
     }
 
+    let root = repo_root();
     for candidate in [
-        PathBuf::from("third_party/ffmpeg-oracle/build/bin/ffmpeg.exe"),
-        PathBuf::from("third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd"),
-        PathBuf::from("third_party/ffmpeg-oracle/build/bin/ffmpeg"),
+        root.join("third_party/ffmpeg-oracle/build/bin/ffmpeg.exe"),
+        root.join("third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd"),
+        root.join("third_party/ffmpeg-oracle/build/bin/ffmpeg"),
     ] {
         if candidate.is_file() {
             return candidate;
@@ -364,6 +393,25 @@ fn oracle_ffmpeg() -> PathBuf {
     }
 
     panic!("missing pinned FFmpeg oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg");
+}
+
+fn resolve_repo_relative_path(path: PathBuf) -> PathBuf {
+    if path.is_file() || path.is_absolute() {
+        return path;
+    }
+    let candidate = repo_root().join(&path);
+    if candidate.is_file() {
+        return candidate;
+    }
+    path
+}
+
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("fftools crate should be under crates/")
+        .to_path_buf()
 }
 
 fn write_temp_bytes(prefix: &str, extension: &str, bytes: &[u8]) -> PathBuf {

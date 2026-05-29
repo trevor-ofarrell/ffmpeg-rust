@@ -116,7 +116,7 @@ impl Image2Pattern {
                 }
 
                 let digits = &path[number_start..number_end];
-                if width.is_some_and(|width| digits.len() != width)
+                if width.is_some_and(|width| digits.len() < width)
                     || !digits.as_bytes().iter().all(u8::is_ascii_digit)
                 {
                     return None;
@@ -584,6 +584,16 @@ mod tests {
         assert!(Image2Pattern::parse("frame-%99d.png").is_err());
         assert!(Image2Pattern::parse("frame-%.png").is_err());
         assert!(Image2Pattern::parse("frame-%%-%d.png").is_ok());
+        let padded = Image2Pattern::parse("frame-%03d.png").unwrap();
+        assert_eq!(padded.frame_number_for_path("frame-1.png"), None);
+        assert_eq!(padded.frame_number_for_path("frame-10.png"), None);
+        assert_eq!(padded.frame_number_for_path("frame-100.png"), Some(100));
+        assert_eq!(padded.frame_number_for_path("frame-1000.png"), Some(1000));
+        assert_eq!(
+            padded.path_for_frame_number(1000).unwrap(),
+            "frame-1000.png"
+        );
+        assert_eq!(padded.frame_number_for_path("frame-1000.png"), Some(1000));
 
         assert!(Image2Demuxer::open(
             "frame-%d.png",
@@ -688,6 +698,35 @@ mod tests {
         assert_eq!(second.dts(), Some(1));
         assert_eq!(second.duration(), 1);
         assert_eq!(second.side_data()[0].data(), b"frame-011.ppm");
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
+    fn accepts_padded_sequence_entries_that_grow_beyond_width() {
+        let entries = vec![
+            entry("frame-999.ppm", b"nine_nine_nine"),
+            entry("frame-1000.ppm", b"thousand"),
+        ];
+        let mut demuxer = Image2Demuxer::open(
+            "frame-%03d.ppm",
+            entries,
+            999,
+            Rational::new(30, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(demuxer.info().start_number(), 999);
+        assert_eq!(demuxer.frames().len(), 2);
+        let first = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(first.data(), b"nine_nine_nine");
+        assert_eq!(first.pts(), Some(0));
+        assert_eq!(first.dts(), Some(0));
+        assert_eq!(first.side_data()[0].data(), b"frame-999.ppm");
+        let second = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(second.data(), b"thousand");
+        assert_eq!(second.pts(), Some(1));
+        assert_eq!(second.dts(), Some(1));
+        assert_eq!(second.side_data()[0].data(), b"frame-1000.ppm");
         assert!(demuxer.read_packet().unwrap().is_none());
     }
 
