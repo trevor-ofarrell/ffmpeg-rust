@@ -2245,6 +2245,19 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         "frame:ref-rich-hw-shares".to_string(),
         hw_frames_context_share_fields(&replace_source, &ref_destination),
     );
+    let ref_after_unref = {
+        let mut source_copy = replace_source.clone();
+        source_copy.unref();
+        source_copy
+    };
+    rows.insert(
+        "frame:ref-rich-src-after-unref".to_string(),
+        frame_fields(&ref_after_unref),
+    );
+    rows.insert(
+        "frame:ref-rich-dst-after-source-unref".to_string(),
+        frame_fields(&ref_destination),
+    );
     drop(ref_destination);
 
     let mut replace_clone = replace_source.clone_ref();
@@ -6088,6 +6101,12 @@ int main(void)
     print_share("frame:ref-rich-plane-shares", replace_src, ref_dst);
     print_side_share("frame:ref-rich-side-shares", replace_src, ref_dst);
     print_hw_share("frame:ref-rich-hw-shares", replace_src, ref_dst);
+    AVFrame *replace_src_after_unref = av_frame_clone(replace_src);
+    fail_if(!replace_src_after_unref, "replace_src_after_unref av_frame_clone failed");
+    av_frame_unref(replace_src_after_unref);
+    print_frame("frame:ref-rich-src-after-unref", replace_src_after_unref);
+    print_frame("frame:ref-rich-dst-after-source-unref", ref_dst);
+    av_frame_free(&replace_src_after_unref);
     av_frame_free(&ref_dst);
 
     AVFrame *replace_clone = av_frame_clone(replace_src);

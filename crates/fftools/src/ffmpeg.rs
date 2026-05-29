@@ -1,4 +1,5 @@
 use crate::option_parser::parse_log_level_directive;
+use crate::option_parser::CliParseError;
 use crate::{
     build_io_plan, buildconf_banner, parse_ffmpeg_args, version_banner, CliOption, Endpoint,
     IoPlan, PlannedFile,
@@ -358,7 +359,13 @@ pub fn ffmpeg_output(args: &[String]) -> Result<FfmpegOutput, FfmpegError> {
             "-version" => version_banner("ffmpeg"),
             _ => unreachable!("helper only returns version/buildconf requests"),
         };
-        validate_ffmpeg_prefix(&args[..index]).map_err(|err| err.with_banner(banner.clone()))?;
+        if let Err(err) = validate_ffmpeg_prefix(&args[..index]) {
+            let parse_error = FfmpegError::usage(format!("failed to parse options: {err}"));
+            if is_invalid_loglevel_parse_error(&err) {
+                return Err(parse_error);
+            }
+            return Err(parse_error.with_banner(banner.clone()));
+        }
         return Ok(FfmpegOutput::version(banner));
     }
 
@@ -374,12 +381,14 @@ pub fn ffmpeg_output(args: &[String]) -> Result<FfmpegOutput, FfmpegError> {
     execute_plan(&plan)
 }
 
-fn validate_ffmpeg_prefix(prefix: &[String]) -> Result<(), FfmpegError> {
+fn is_invalid_loglevel_parse_error(error: &CliParseError) -> bool {
+    error.message().contains("invalid loglevel")
+}
+
+fn validate_ffmpeg_prefix(prefix: &[String]) -> Result<(), CliParseError> {
     let mut args = prefix.to_vec();
     args.push("fftools-version-sink".to_owned());
-    parse_ffmpeg_args(&args)
-        .map_err(|err| FfmpegError::usage(format!("failed to parse options: {err}")))?;
-    Ok(())
+    parse_ffmpeg_args(&args).map(|_| ())
 }
 
 fn execute_plan(plan: &IoPlan) -> Result<FfmpegOutput, FfmpegError> {
@@ -1835,6 +1844,19 @@ mod tests {
 
         assert!(buildconf_err.message().contains("unknown option"));
         assert_eq!(buildconf_err.banner(), Some(expected_buildconf.as_str()));
+    }
+
+    #[test]
+    fn ffmpeg_version_and_buildconf_without_banner_for_preceding_invalid_loglevel() {
+        let version_err = ffmpeg_output(&strings(&["-v", "foo", "-version"])).unwrap_err();
+        let buildconf_err =
+            ffmpeg_output(&strings(&["-loglevel", "foo", "-buildconf"])).unwrap_err();
+
+        assert!(version_err.message().contains("invalid loglevel"));
+        assert_eq!(version_err.banner(), None);
+
+        assert!(buildconf_err.message().contains("invalid loglevel"));
+        assert_eq!(buildconf_err.banner(), None);
     }
 
     #[test]

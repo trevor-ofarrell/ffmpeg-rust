@@ -75,6 +75,18 @@ fn pcm_s16le_odd_payload_wav_file_output_matches_ffmpeg_oracle() {
     compare_pcm_s16le_wav_file_output("48000", "1", &[0, 0, 1]);
 }
 
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn pcm_s16le_zero_sample_rate_rejects_like_oracle() {
+    compare_pcm_s16le_invalid_stream_parameters("0", "2", "sample rate", "sample rate");
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn pcm_s16le_zero_channels_rejects_like_oracle() {
+    compare_pcm_s16le_invalid_stream_parameters("48000", "0", "channel count", "ch_layout");
+}
+
 fn compare_pcm_s16le_framecrc_records(sample_rate: &str, channels: &str, payload: &[u8]) {
     let oracle = oracle_ffmpeg();
     let input_path = write_temp_bytes("pcm-s16le-framecrc-input", "raw", payload);
@@ -301,6 +313,80 @@ fn compare_pcm_s16le_wav_file_output(sample_rate: &str, channels: &str, payload:
     let packet = demuxer.read_packet().unwrap().unwrap();
     assert_eq!(packet.data(), payload);
     assert!(demuxer.read_packet().unwrap().is_none());
+}
+
+fn compare_pcm_s16le_invalid_stream_parameters(
+    sample_rate: &str,
+    channels: &str,
+    expected_rust_message: &str,
+    expected_oracle_message: &str,
+) {
+    let oracle = oracle_ffmpeg();
+    let input_path = write_temp_bytes("pcm-s16le-invalid-input", "raw", &[0, 0, 1, 0]);
+    let input_arg = input_path.to_string_lossy().into_owned();
+
+    let rust = ffmpeg_output(&strings(&[
+        "-f",
+        "s16le",
+        "-ar",
+        sample_rate,
+        "-ac",
+        channels,
+        "-i",
+        input_arg.as_str(),
+        "-f",
+        "framecrc",
+        "-",
+    ]));
+    let rust_message = rust
+        .expect_err("Rust ffmpeg should reject invalid raw PCM stream parameters")
+        .message()
+        .to_lowercase();
+
+    let oracle_status = Command::new(&oracle)
+        .args([
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "s16le",
+            "-ar",
+            sample_rate,
+            "-ac",
+            channels,
+            "-i",
+            input_arg.as_str(),
+            "-f",
+            "framecrc",
+            "-",
+        ])
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", oracle.display()));
+
+    remove_temp_files(&[input_path]);
+
+    assert!(
+        !oracle_status.status.success(),
+        "oracle should reject invalid raw PCM parameters sample_rate={sample_rate} channels={channels}, got status {:?}",
+        oracle_status.status.code()
+    );
+    let oracle_output = String::from_utf8_lossy(&oracle_status.stdout).to_lowercase()
+        + &String::from_utf8_lossy(&oracle_status.stderr).to_lowercase();
+    assert!(
+        oracle_output.contains(expected_oracle_message),
+        "oracle output should mention `{expected_oracle_message}`, got status {:?} output:\n{}",
+        oracle_status.status.code(),
+        oracle_output
+    );
+    assert!(
+        rust_message.contains(expected_rust_message),
+        "Rust output should mention `{expected_rust_message}`, got `{rust_message}`"
+    );
+    assert!(
+        rust_message.contains("pcm_s16le"),
+        "Rust output should report raw PCM context, got `{rust_message}`"
+    );
 }
 
 fn expected_pcm_packet_count(payload_len: usize, channels: &str) -> u64 {

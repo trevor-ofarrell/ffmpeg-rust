@@ -2479,6 +2479,17 @@ mod tests {
         assert!(same_dst.as_ref().unwrap().shares_storage(&same_source));
         assert_eq!(same_source.strong_count(), 2);
 
+        let mut self_dst = Some(BufferRef::from_vec(vec![2, 4, 6]));
+        let self_before = self_dst.as_ref().unwrap().as_ptr();
+        let self_source = BufferRef::ref_from(self_dst.as_ref().unwrap());
+        BufferRef::replace(&mut self_dst, Some(&self_source));
+        drop(self_source);
+        let self_replaced = self_dst.as_ref().unwrap();
+        assert_eq!(self_replaced.as_slice(), &[2, 4, 6]);
+        assert!(std::ptr::eq(self_replaced.as_ptr(), self_before));
+        assert_eq!(self_replaced.strong_count(), 1);
+        assert!(self_replaced.is_writable());
+
         BufferRef::replace(&mut same_dst, None);
         assert!(same_dst.is_none());
         let mut null_dst = None;

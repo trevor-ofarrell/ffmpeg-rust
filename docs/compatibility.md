@@ -9,6 +9,14 @@
 
 ## Compatible Today
 
+- Latest orchestrated parallel evidence: xhigh worker lanes plus main-thread
+  review added pinned oracle rows for `av_buffer_replace(&buf, buf)`,
+  `av_frame_ref()` destination lifetime after source unref, malformed and
+  duplicate YUV4MPEG2 `A` sample-aspect fields, raw `pcm_s16le` zero
+  sample-rate/channel rejection, and `ffmpeg`/`ffprobe`
+  `-v`/`-loglevel` invalid-prefix failures before `-version`/`-buildconf`
+  banners. These rows strengthen existing incomplete components; strict
+  complete count remains unchanged.
 - Latest orchestrated edge batch: xhigh fast/full-access worker lanes added
   pinned oracle rows for `av_opt_set_from_string()` empty pair separators with
   embedded `=`, `ambisonic + 1` channel-layout normalization, bare `x2rgb10`

@@ -1168,6 +1168,24 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         ],
     );
 
+    let mut replace_self = Some(BufferRef::from_vec(vec![2, 4, 6]));
+    let replace_self_before = replace_self.as_ref().expect("self replace input").as_ptr();
+    let replace_self_source = BufferRef::ref_from(replace_self.as_ref().expect("self replace ref"));
+    BufferRef::replace(&mut replace_self, Some(&replace_self_source));
+    drop(replace_self_source);
+    let replace_self = replace_self.expect("self replace keeps destination");
+    rows.insert(
+        "buffer:replace-self-ret".to_string(),
+        vec![
+            "0".to_string(),
+            bool_field(std::ptr::eq(replace_self_before, replace_self.as_ptr())),
+        ],
+    );
+    rows.insert(
+        "buffer:replace-self".to_string(),
+        buffer_fields(&replace_self),
+    );
+
     let mut unref_null_input = None;
     BufferRef::unref(&mut unref_null_input);
     rows.insert(
@@ -4272,6 +4290,17 @@ int main(void) {
            replace_equiv_src->data == replace_equiv_dst->data);
     av_buffer_unref(&replace_equiv_dst);
     av_buffer_unref(&replace_equiv_src);
+
+    static const uint8_t replace_self_bytes[] = { 2, 4, 6 };
+    AVBufferRef *replace_self = av_buffer_allocz(3);
+    fail_if(!replace_self, "av_buffer_allocz replace_self failed");
+    fill_bytes(replace_self, replace_self_bytes, sizeof(replace_self_bytes));
+    uint8_t *replace_self_data = replace_self->data;
+    ret = av_buffer_replace(&replace_self, replace_self);
+    printf("buffer:replace-self-ret|%d|%d\n",
+           ret, replace_self->data == replace_self_data);
+    print_buffer("buffer:replace-self", replace_self);
+    av_buffer_unref(&replace_self);
 
     AVBufferRef *unref_null_input = NULL;
     av_buffer_unref(NULL);

@@ -1,7 +1,7 @@
 #![no_main]
 
 use avformat::{Yuv4MpegDemuxer, Yuv4MpegMuxer};
-use avutil::{FrameColorRange, PixelFormat};
+use avutil::{FrameColorRange, PixelFormat, Rational};
 use libfuzzer_sys::fuzz_target;
 
 const VALID_Y4M: &[u8] = b"YUV4MPEG2 W2 H2 F25:1 Ip A1:1 C420jpeg\nFRAME\nabcdef";
@@ -12,6 +12,21 @@ const VALID_Y4M_XCOLORRANGE_LIMITED: &[u8] =
     b"YUV4MPEG2 W2 H2 F25:1 Ip A1:1 C420jpeg XCOLORRANGE=LIMITED\nFRAME\nabcdef";
 const VALID_Y4M_XCOLORRANGE_BOGUS: &[u8] =
     b"YUV4MPEG2 W2 H2 F25:1 Ip A1:1 C420jpeg XCOLORRANGE=BOGUS\nFRAME\nabcdef";
+const VALID_Y4M_A_MALFORMED_DUP: &[u8] =
+    b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg Afoo A4:3\nFRAME\nabcdef";
+const VALID_Y4M_A_TRAILING_MALFORMED: &[u8] =
+    b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg A4:3 Afoo\nFRAME\nabcdef";
+const VALID_Y4M_A_RESET_TO_ZERO: &[u8] =
+    b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg A4:3 A0:0\nFRAME\nabcdef";
+const VALID_Y4M_A_MISSING_DENOM: &[u8] = b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg A1\nFRAME\nabcdef";
+const VALID_Y4M_A_MALFORMED_DENOM: &[u8] =
+    b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg A1:foo\nFRAME\nabcdef";
+const VALID_Y4M_A_ZERO_NUMERATOR: &[u8] =
+    b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg A4:3 A0:1\nFRAME\nabcdef";
+const VALID_Y4M_A_NEGATIVE: &[u8] =
+    b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg A-1:-2\nFRAME\nabcdef";
+const VALID_Y4M_A_INVALID_ONLY: &[u8] = b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg Afoo\nFRAME\nabcdef";
+const VALID_Y4M_A_EMPTY_FIELD: &[u8] = b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg A\nFRAME\nabcdef";
 const BASE_Y4M_HEADER: &[u8] = b"YUV4MPEG2 W2 H2 F25:1 Ip A1:1 C420jpeg\n";
 const VALID_FRAME_VARIANTS: &[&[u8]] = &[
     b"YUV4MPEG2 W2 H2 F25:1 Ip A1:1 C420jpeg\nFRAME\nabcdef",
@@ -27,6 +42,7 @@ fuzz_target!(|data: &[u8]| {
     exercise_xcolorrange_roundtrip();
     exercise_truncated_tail_frame_header();
     exercise_frame_variants();
+    exercise_sample_aspect_fields();
     exercise_y4m(VALID_Y4M);
 });
 
@@ -148,5 +164,34 @@ fn exercise_frame_variants() {
         assert_eq!(packet.duration(), 1);
         assert_eq!(packet.data(), b"abcdef");
         assert!(demuxer.read_packet().unwrap().is_none());
+    }
+}
+
+fn exercise_sample_aspect_fields() {
+    let valid_sample_aspect = Rational::new(4, 3).unwrap();
+
+    let cases = [
+        (VALID_Y4M_A_MALFORMED_DUP, Some(valid_sample_aspect)),
+        (VALID_Y4M_A_TRAILING_MALFORMED, Some(valid_sample_aspect)),
+        (VALID_Y4M_A_RESET_TO_ZERO, None),
+        (VALID_Y4M_A_MISSING_DENOM, Some(Rational::from_raw(1, 0))),
+        (VALID_Y4M_A_MALFORMED_DENOM, Some(Rational::from_raw(1, 0))),
+        (VALID_Y4M_A_ZERO_NUMERATOR, None),
+        (VALID_Y4M_A_NEGATIVE, Some(Rational::from_raw(-1, -2))),
+        (VALID_Y4M_A_INVALID_ONLY, None),
+        (VALID_Y4M_A_EMPTY_FIELD, None),
+    ];
+
+    for (input, expected_sample_aspect) in cases {
+        let Ok(demuxer) = Yuv4MpegDemuxer::open(input) else {
+            continue;
+        };
+
+        let info = demuxer.info().clone();
+        assert_eq!(info.sample_aspect_ratio(), expected_sample_aspect);
+
+        let mut demuxer = demuxer;
+        assert_eq!(demuxer.read_packet().unwrap().unwrap().data(), b"abcdef");
+        assert!(matches!(demuxer.read_packet(), Ok(None)));
     }
 }

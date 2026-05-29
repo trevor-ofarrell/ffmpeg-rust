@@ -84,6 +84,7 @@ avutil-packet|oracle-rawvideo-yuv4mpegpipe-file-output|.|cargo|env:FFMPEG_ORACLE
 avformat-yuv4mpegpipe-demuxer|oracle-yuv4mpegpipe-sar-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|yuv4mpegpipe_oracle|yuv4mpegpipe_sample_aspect_ratio_header_matches_ffmpeg_oracle|--|--ignored
 avformat-yuv4mpegpipe-muxer|oracle-yuv4mpegpipe-sar-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|yuv4mpegpipe_oracle|yuv4mpegpipe_sample_aspect_ratio_header_matches_ffmpeg_oracle|--|--ignored
 avutil-packet|oracle-yuv4mpegpipe-sar-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|yuv4mpegpipe_oracle|yuv4mpegpipe_sample_aspect_ratio_header_matches_ffmpeg_oracle|--|--ignored
+avformat-yuv4mpegpipe-demuxer|oracle-yuv4mpegpipe-sample-aspect-fields|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|yuv4mpegpipe_oracle|yuv4mpegpipe_sample_aspect_fields_match_ffmpeg_oracle|--|--ignored
 fftools-ffmpeg-yuv4mpegpipe-framecrc-null|oracle-yuv4mpegpipe-framecrc-records|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|yuv4mpegpipe_oracle|yuv4mpegpipe_yuv420p_framecrc_records_match_ffmpeg_oracle|--|--ignored
 avformat-yuv4mpegpipe-demuxer|oracle-yuv4mpegpipe-framecrc-records|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|yuv4mpegpipe_oracle|yuv4mpegpipe_yuv420p_framecrc_records_match_ffmpeg_oracle|--|--ignored
 avformat-framecrc-muxer|oracle-yuv4mpegpipe-framecrc-records|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|yuv4mpegpipe_oracle|yuv4mpegpipe_yuv420p_framecrc_records_match_ffmpeg_oracle|--|--ignored
@@ -157,6 +158,7 @@ avformat-pcm-s16le-demuxer|oracle-pcm-s16le-wav-file-output|.|cargo|env:FFMPEG_O
 avformat-wav-muxer|oracle-pcm-s16le-wav-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|pcm_oracle|pcm_s16le_wav_file_output_matches_ffmpeg_oracle|--|--ignored
 fftools-ffmpeg-pcm-s16le-wav-file-output|oracle-pcm-s16le-wav-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|pcm_oracle|pcm_s16le_wav_file_output_matches_ffmpeg_oracle|--|--ignored
 avutil-packet|oracle-pcm-s16le-wav-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|pcm_oracle|pcm_s16le_wav_file_output_matches_ffmpeg_oracle|--|--ignored
+avformat-pcm-s16le-demuxer|oracle-pcm-s16le-invalid-parameters|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|pcm_oracle|pcm_s16le_zero_|--|--ignored
 avformat-pcm-s16le-demuxer|oracle-pcm-s16le-odd-wav-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|pcm_oracle|pcm_s16le_odd_payload_wav_file_output_matches_ffmpeg_oracle|--|--ignored
 avformat-wav-muxer|oracle-pcm-s16le-odd-wav-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|pcm_oracle|pcm_s16le_odd_payload_wav_file_output_matches_ffmpeg_oracle|--|--ignored
 fftools-ffmpeg-pcm-s16le-wav-file-output|oracle-pcm-s16le-odd-wav-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|pcm_oracle|pcm_s16le_odd_payload_wav_file_output_matches_ffmpeg_oracle|--|--ignored
@@ -174,6 +176,7 @@ fftools-version|oracle-version-unknown-order|.|cargo|env:FFMPEG_ORACLE={oracle_f
 fftools-version|oracle-version-trailing-invalid-loglevel|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|version_oracle|version_requests_warn_for_later_invalid_loglevel_but_still_succeed|--|--ignored
 fftools-version|oracle-dash-prefixed-values-before-special-requests|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|version_oracle|dash_prefixed_values_are_consumed_before_special_requests|--|--ignored
 fftools-version|oracle-version-buildconf-late-value-options|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|version_oracle|version_and_buildconf_preempt_late_value_options|--|--ignored
+fftools-version|oracle-version-buildconf-invalid-loglevel-prefix|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|version_oracle|version_buildconf_fail_without_banner_for_preceding_invalid_loglevel|--|--ignored
 fftools-option-parser|oracle-cli-loglevel-directives|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|version_oracle|loglevel_directive_acceptance_matches_oracle_for_version_requests|--|--ignored
 fftools-option-parser|oracle-dash-prefixed-values-before-special-requests|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|version_oracle|dash_prefixed_values_are_consumed_before_special_requests|--|--ignored
 avutil-logging|oracle-cli-loglevel-directives|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|version_oracle|loglevel_directive_acceptance_matches_oracle_for_version_requests|--|--ignored

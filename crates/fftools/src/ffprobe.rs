@@ -493,7 +493,13 @@ pub fn ffprobe_output(args: &[String]) -> Result<String, FfprobeError> {
             "-version" => crate::version_banner("ffprobe"),
             _ => unreachable!("helper only returns version/buildconf requests"),
         };
-        validate_ffprobe_prefix(&args[..index]).map_err(|err| err.with_banner(banner.clone()))?;
+        validate_ffprobe_prefix(&args[..index]).map_err(|err| {
+            if is_invalid_loglevel_parse_error(&err) {
+                err
+            } else {
+                err.with_banner(banner.clone())
+            }
+        })?;
         return Ok(banner);
     }
 
@@ -560,6 +566,10 @@ fn validate_ffprobe_prefix(args: &[String]) -> Result<(), FfprobeError> {
     }
 
     Ok(())
+}
+
+fn is_invalid_loglevel_parse_error(error: &FfprobeError) -> bool {
+    error.message().contains("invalid loglevel")
 }
 
 pub fn probe_local_file(path: &str) -> Result<FfprobeReport, FfprobeError> {
@@ -2159,6 +2169,19 @@ mod tests {
 
         assert!(buildconf_err.message().contains("unknown option"));
         assert_eq!(buildconf_err.banner(), Some(expected_buildconf.as_str()));
+    }
+
+    #[test]
+    fn ffprobe_version_and_buildconf_without_banner_for_preceding_invalid_loglevel() {
+        let version_err = ffprobe_output(&strings(&["-v", "foo", "-version"])).unwrap_err();
+        let buildconf_err =
+            ffprobe_output(&strings(&["-loglevel", "foo", "-buildconf"])).unwrap_err();
+
+        assert!(version_err.message().contains("invalid loglevel"));
+        assert_eq!(version_err.banner(), None);
+
+        assert!(buildconf_err.message().contains("invalid loglevel"));
+        assert_eq!(buildconf_err.banner(), None);
     }
 
     #[test]

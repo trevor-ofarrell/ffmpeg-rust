@@ -112,6 +112,13 @@ fn version_requests_warn_for_later_invalid_loglevel_but_still_succeed() {
 
 #[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn version_buildconf_fail_without_banner_for_preceding_invalid_loglevel() {
+    compare_version_buildconf_invalid_loglevel_preempts_banner("ffmpeg");
+    compare_version_buildconf_invalid_loglevel_preempts_banner("ffprobe");
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
 fn dash_prefixed_values_are_consumed_before_special_requests() {
     compare_dash_prefixed_value_case(
         "ffmpeg",
@@ -500,6 +507,88 @@ fn compare_trailing_invalid_loglevel_warning(tool_name: &str, request: &str, val
         assert!(rust.stdout.starts_with(&format!("{tool_name} version")));
     } else {
         assert!(rust.stdout.starts_with("  configuration:\n"));
+    }
+}
+
+fn compare_version_buildconf_invalid_loglevel_preempts_banner(tool_name: &str) {
+    let oracle = oracle_tool(tool_name);
+    let invalid_prefix_values = ["-v", "-loglevel"];
+
+    for option_name in &invalid_prefix_values {
+        let oracle_version = run_oracle(&oracle, tool_name, &[option_name, "foo", "-version"]);
+        let oracle_buildconf = run_oracle(&oracle, tool_name, &[option_name, "foo", "-buildconf"]);
+        let oracle_version_combined = format!("{}{}", oracle_version.stdout, oracle_version.stderr);
+        let oracle_buildconf_combined =
+            format!("{}{}", oracle_buildconf.stdout, oracle_buildconf.stderr);
+
+        assert!(
+            !oracle_version.status_success,
+            "oracle `{}` should fail for `{option_name} foo -version`, got status success={}",
+            oracle.display(),
+            oracle_version.status_success
+        );
+        assert!(
+            !oracle_version_combined.starts_with(&format!("{tool_name} version")),
+            "oracle `{}` should not preempt invalid loglevel prefix as version banner for `{option_name} foo -version`, got: {oracle_version_combined}",
+            oracle.display()
+        );
+        assert!(
+            oracle_version_combined.to_lowercase().contains("invalid loglevel"),
+            "oracle `{}` should mention invalid loglevel for `{option_name} foo -version`, got: {oracle_version_combined}",
+            oracle.display()
+        );
+
+        assert!(
+            !oracle_buildconf.status_success,
+            "oracle `{}` should fail for `{option_name} foo -buildconf`, got status success={}",
+            oracle.display(),
+            oracle_buildconf.status_success
+        );
+        assert!(
+            !oracle_buildconf_combined.starts_with("  configuration:\n"),
+            "oracle `{}` should not preempt invalid loglevel prefix as buildconf banner for `{option_name} foo -buildconf`, got: {oracle_buildconf_combined}",
+            oracle.display()
+        );
+        assert!(
+            oracle_buildconf_combined.to_lowercase().contains("invalid loglevel"),
+            "oracle `{}` should mention invalid loglevel for `{option_name} foo -buildconf`, got: {oracle_buildconf_combined}",
+            oracle.display()
+        );
+    }
+
+    for option_name in &invalid_prefix_values {
+        let rust_version = run_rust_tool(tool_name, &[option_name, "foo", "-version"]);
+        let rust_buildconf = run_rust_tool(tool_name, &[option_name, "foo", "-buildconf"]);
+        let rust_version_combined = format!("{}{}", rust_version.stdout, rust_version.stderr);
+        let rust_buildconf_combined = format!("{}{}", rust_buildconf.stdout, rust_buildconf.stderr);
+
+        assert!(
+            !rust_version.status_success,
+            "Rust {tool_name}-rs should fail for `{option_name} foo -version` with status={}",
+            rust_version.status_success
+        );
+        assert!(
+            !rust_version_combined.contains("ffmpeg version") && !rust_version_combined.contains("ffprobe version"),
+            "Rust {tool_name}-rs should not emit version banner for `{option_name} foo -version`, got: {rust_version_combined}"
+        );
+        assert!(
+            rust_version_combined.to_lowercase().contains("invalid loglevel"),
+            "Rust {tool_name}-rs should mention invalid loglevel for `{option_name} foo -version`, got: {rust_version_combined}"
+        );
+
+        assert!(
+            !rust_buildconf.status_success,
+            "Rust {tool_name}-rs should fail for `{option_name} foo -buildconf` with status={}",
+            rust_buildconf.status_success
+        );
+        assert!(
+            !rust_buildconf_combined.contains("  configuration:\n") && !rust_buildconf_combined.contains("ffmpeg version") && !rust_buildconf_combined.contains("ffprobe version"),
+            "Rust {tool_name}-rs should not emit buildconf banner for `{option_name} foo -buildconf`, got: {rust_buildconf_combined}"
+        );
+        assert!(
+            rust_buildconf_combined.to_lowercase().contains("invalid loglevel"),
+            "Rust {tool_name}-rs should mention invalid loglevel for `{option_name} foo -buildconf`, got: {rust_buildconf_combined}"
+        );
     }
 }
 

@@ -23021,6 +23021,133 @@ mod tests {
     }
 
     #[test]
+    fn frame_ref_destination_survives_source_unref() {
+        let plane = BufferRef::copy_from_slice(&[1, 2, 3, 4]);
+        let side = BufferRef::copy_from_slice(&[0x55, 0x66, 0x77]);
+        let hw_context = BufferRef::copy_from_slice(&[0xAA, 0xBB]);
+        let opaque_ref = BufferRef::copy_from_slice(&[0x10, 0x11, 0x12]);
+        let source_video =
+            VideoFrame::new_with_buffer_refs(4, 1, PixelFormat::Gray8, vec![plane.clone()])
+                .unwrap();
+        let mut source = Frame::video(source_video).with_hw_frames_context(hw_context);
+        source.set_pts(Some(1234));
+        source.set_pkt_dts(Some(1233));
+        source.set_duration(120).unwrap();
+        source
+            .set_time_base(Rational::new(1, 48_000).unwrap())
+            .unwrap();
+        source.set_sample_rate(48_000);
+        source.set_channel_layout(Some(ChannelLayout::mono()));
+        source
+            .set_sample_aspect_ratio(Rational::new(16, 9).unwrap())
+            .unwrap();
+        source.set_crop_offsets(1, 2, 3, 4);
+        source.set_picture_type(FramePictureType::P);
+        source.set_quality(42);
+        source.set_repeat_pict(0);
+        source.set_flags(FrameFlags::KEY);
+        source.set_color_range(FrameColorRange::Jpeg);
+        source.set_color_primaries(FrameColorPrimaries::Bt709);
+        source.set_color_transfer_characteristic(FrameColorTransferCharacteristic::Bt709);
+        source.set_color_space(FrameColorSpace::Rgb);
+        source.set_chroma_location(FrameChromaLocation::Left);
+        source.set_best_effort_timestamp(Some(5678));
+        source.set_decode_error_flags(FrameDecodeErrorFlags::INVALID_BITSTREAM);
+        source.set_opaque_address(0x9999);
+        source.set_opaque_ref(Some(opaque_ref));
+        source.set_alpha_mode(FrameAlphaMode::Straight);
+        source
+            .metadata_mut()
+            .set("title", "shared-through-ref")
+            .unwrap();
+        source
+            .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, side)
+            .unwrap();
+
+        let mut destination = Frame::empty();
+        destination.ref_from(&source);
+        let destination_before_unref = destination.clone();
+
+        assert_eq!(destination.pts(), Some(1234));
+        assert_eq!(destination.pkt_dts(), Some(1233));
+        assert_eq!(destination.duration(), 120);
+        assert_eq!(destination.time_base(), Rational::new(1, 48_000).unwrap());
+        assert_eq!(destination.sample_rate(), 48_000);
+        assert_eq!(source.channel_count(), 1);
+        assert_eq!(
+            destination.sample_aspect_ratio(),
+            Rational::new(16, 9).unwrap()
+        );
+        assert_eq!(destination.crop(), FrameCrop::new(1, 2, 3, 4));
+        assert_eq!(destination.picture_type(), FramePictureType::P);
+        assert_eq!(destination.quality(), 42);
+        assert!(destination.flags().contains(FrameFlags::KEY));
+        assert_eq!(destination.color_range(), FrameColorRange::Jpeg);
+        assert_eq!(destination.color_primaries(), FrameColorPrimaries::Bt709);
+        assert_eq!(
+            destination.color_transfer_characteristic(),
+            FrameColorTransferCharacteristic::Bt709
+        );
+        assert_eq!(destination.color_space(), FrameColorSpace::Rgb);
+        assert_eq!(destination.chroma_location(), FrameChromaLocation::Left);
+        assert_eq!(destination.best_effort_timestamp(), Some(5678));
+        assert!(destination
+            .decode_error_flags()
+            .contains(FrameDecodeErrorFlags::INVALID_BITSTREAM));
+        assert_eq!(destination.opaque_address(), Some(0x9999));
+        assert_eq!(
+            destination.metadata().get("title"),
+            Some("shared-through-ref")
+        );
+        assert_eq!(destination.side_data().len(), 1);
+        assert_eq!(
+            destination.opaque_ref().map(|buffer| buffer.as_slice()),
+            Some(&[0x10, 0x11, 0x12][..])
+        );
+
+        assert!(destination
+            .plane_buffer(0)
+            .expect("destination has plane 0")
+            .shares_storage(&plane));
+        assert!(destination.side_data()[0]
+            .buffer()
+            .shares_storage(source.side_data()[0].buffer()));
+        assert!(destination
+            .hw_frames_context()
+            .expect("hw context exists")
+            .shares_storage(source.hw_frames_context().expect("source hw context")));
+        assert!(destination
+            .opaque_ref()
+            .expect("opaque ref exists")
+            .shares_storage(source.opaque_ref().expect("source opaque ref")));
+
+        source.unref();
+
+        assert!(source.is_empty());
+        assert_eq!(source.pts(), None);
+        assert!(source.side_data().is_empty());
+        assert!(destination == destination_before_unref);
+        assert_eq!(destination.pts(), Some(1234));
+        assert_eq!(
+            destination.metadata().get("title"),
+            Some("shared-through-ref")
+        );
+        assert_eq!(destination.side_data().len(), 1);
+        assert!(destination.side_data()[0].metadata().is_empty());
+        assert_eq!(
+            destination.opaque_ref().map(|buffer| buffer.as_slice()),
+            Some(&[0x10, 0x11, 0x12][..])
+        );
+        assert_eq!(
+            destination
+                .opaque_ref()
+                .expect("destination opaque")
+                .as_slice(),
+            &[0x10, 0x11, 0x12]
+        );
+    }
+
+    #[test]
     fn frame_ref_from_shares_references_and_replaces_destination() {
         let source_plane = BufferRef::copy_from_slice(&[1, 2, 3]);
         let source_side = BufferRef::copy_from_slice(&[0x44]);

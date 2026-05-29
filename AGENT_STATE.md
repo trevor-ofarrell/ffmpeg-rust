@@ -2,37 +2,49 @@
 
 ## Current Status
 
-Current authoritative turn status: orchestrator workflow is active with all
-current xhigh fast/full-access workers completed and integrated for review.
-This batch added bounded strict-parity evidence for `avutil-options`
-(`metadata=title=clip` with empty pair separators), `avutil-channel-layout`
-(`ambisonic + 1` normalization), `avutil-pixel-format` (`x2rgb10`/`x2bgr10`
-alias lookup), `avformat-image2-demuxer` (padded start-probe exhaustion), and
-`avformat-wav-demuxer` (valid first `fmt ` chunk with truncated duplicate fmt
-ignored). It also maps the new WAV row through `fftools-ffmpeg-wav-framecrc-null`,
-`avformat-framecrc-muxer`, and `avutil-packet` where packet/framecrc output is
-actually exercised. No component was promoted to `complete`; strict completion
-remains 11/96 components, about 11.5%.
+Current authoritative turn status: orchestrator workflow is active. The current
+xhigh fast/full-access worker batch was reviewed, corrected where needed, and
+integrated with the main-thread `avutil-buffer` self-replacement oracle slice.
+Workers completed and are ready to close: Darwin (`avformat-yuv4mpegpipe-demuxer`
+sample-aspect fields), Newton (`avformat-pcm-s16le-demuxer` invalid zero sample
+rate/channel parameters), Huygens (`fftools-version` invalid loglevel prefix
+before `-version`/`-buildconf`), and Lorentz (`avutil-frame` ref destination
+after source unref). No approval prompts were used.
 
-Latest committed slice: `Pin parallel edge parity`, integrating and validating
-the xhigh worker edge-evidence batch across mappings, ledger, docs, and state.
-The first attempted fast workers for options and WAV hit model capacity, were
-closed, and were replaced successfully. Completed workers: Socrates
-(`avutil-channel-layout`), Sartre (`avutil-pixel-format`), Fermat
-(`avformat-image2-demuxer`), James (`avutil-options`), and Goodall
-(`avformat-wav-demuxer`).
+This batch added bounded strict-parity evidence for `avutil-buffer`
+(`av_buffer_replace(&buf, buf)` self-replacement), `avutil-frame`
+(destination frame ref survives source unref), `avformat-yuv4mpegpipe-demuxer`
+(malformed, duplicate, signed, and zero sample-aspect fields), `avformat-pcm-s16le-demuxer`
+(FFmpeg-shaped rejection of zero sample rate/channel parameters), and
+`fftools-version` (invalid `-v`/`-loglevel` before special version/buildconf
+requests fails without attaching the usual banner). No component was promoted to
+`complete`; strict completion remains 11/96 components, about 11.5%.
 
-Latest validation commands for the current xhigh worker edge batch passed:
-focused unit tests for avutil options/channel-layout/pixel and avformat
-image2/WAV; ignored pinned oracle rows for options, channel-layout, pixel-format,
-image2, and WAV; differential mapping runs for the new image2 and WAV targets;
-`cargo test -p fate-runner current_ledger`; `cargo run -p fate-runner -- run
---changed`; `cargo run -p xtask -- guard-runtime`; `cargo run -p xtask --
-oracle-doctor`; clippy for avutil/avformat/fftools/fate-runner; fuzz target
-check/clippy for avutil_core_models, avutil_metadata_options, avformat_image2,
-and avformat_wav; WSL one-run `cargo fuzz run` smoke for those four fuzz
-targets; `cargo fmt --all -- --check`; and `git diff --check` with expected
-CRLF normalization warnings only.
+Latest committed slice: `Pin parallel edge parity`. Pending coherent slice:
+`Pin orchestrated edge parity`, integrating and validating the current xhigh
+worker evidence batch across code, oracle tests, differential mappings, ledger,
+docs, fuzz target checks, and state.
+
+Latest validation commands for the current xhigh worker evidence batch passed:
+focused local tests for avformat sample-aspect parsing, PCM invalid parameters,
+avutil frame ref/unref, fftools invalid-loglevel version/buildconf behavior, and
+avutil buffer self-replacement; ignored pinned oracle rows for buffer, frame,
+yuv4mpegpipe, PCM, and version/buildconf invalid-loglevel prefix behavior;
+`cargo check` and clippy for `fuzz` target `avformat_yuv4mpegpipe`; core clippy
+for `avutil`, `avformat`, `fftools`, and `fate-runner`; `cargo test -p
+fate-runner current_ledger`; `cargo run -p xtask -- guard-runtime`; `cargo run
+-p xtask -- oracle-doctor`; a differential mapping run for the new yuv4mpegpipe,
+PCM, and fftools-version targets; `cargo run -p fate-runner -- run --changed`;
+WSL `cargo fuzz run avformat_yuv4mpegpipe -- -runs=1`; `cargo fmt --all -- --check`;
+and `git diff --check` with expected CRLF normalization warnings only.
+
+Latest failing commands for the current xhigh worker evidence batch: the first
+PCM unit assertion expected the wrong local error message and was corrected to
+the actual zero-sample wording; the first PCM oracle assertion expected the
+wrong FFmpeg wording and was corrected to check Rust `channel count` and FFmpeg
+`ch_layout` separately; the first core clippy run found `clippy::map_identity`
+in yuv4mpegpipe sample-aspect parsing and was fixed. No current validation
+failures remain.
 
 Current goal directive: continue from the completed 10% strict-parity milestone toward 100% FFmpeg 8.1.1 default-native compatibility using the orchestrator workflow. The main Codex thread is the merge captain and may use up to 10 subagents when tasks have disjoint ownership, independent validation, and low merge risk; default to 3-5 active agents when that is sufficient.
 

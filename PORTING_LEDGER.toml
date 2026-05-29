@@ -993,6 +993,9 @@ fate_tests = [
   "not_applicable: upstream FFmpeg FATE has no standalone AVBufferRef/AVBufferPool API target; covered by unit tests plus pinned libavutil differential oracle",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest self-replace slice: pinned libavutil oracle coverage now validates
+# `av_buffer_replace(&buf, buf)` succeeds without changing the visible data
+# pointer, bytes, writability, or final single-reference shape.
 # Latest offset-pool make-writable slice: pinned libavutil oracle coverage now
 # validates `av_buffer_make_writable()` on a unique writable custom-pool
 # allocation whose visible data pointer is offset from the backing allocation.
@@ -1257,6 +1260,7 @@ unit_tests = [
   "frame::tests::frame_opaque_ref_shares_moves_takes_and_releases_lifecycle",
   "frame::tests::frame_color_metadata_values_match_ffmpeg_8_1_1_header",
   "frame::tests::empty_frame_unref_clears_data_and_releases_references",
+  "frame::tests::frame_ref_destination_survives_source_unref",
   "frame::tests::frame_ref_from_shares_references_and_replaces_destination",
   "frame::tests::frame_clone_ref_and_replace_from_share_references_and_unref_empty_source",
   "frame::tests::frame_move_ref_from_moves_references_and_unrefs_source",
@@ -1387,6 +1391,11 @@ differential_tests = [
 ]
 fate_tests = ["tests/fate/mappings.txt:avutil-frame|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
+# Latest ref/unref slice: pinned libavutil oracle coverage now validates an
+# `av_frame_ref()` destination remains populated after an equivalent rich
+# source frame is unreffed, while the source becomes empty. Unit coverage pins
+# metadata, timing, side-data, plane, hw_frames_ctx, opaque_ref, and flag
+# preservation through that source-unref lifecycle.
 # Latest update: The pinned libavutil `AVFrame` oracle now validates
 # `av_frame_apply_cropping()` for paletted `pal8` software frames. FFmpeg
 # 8.1.1 applies the same one-byte index-plane crop math as other byte-packed
@@ -2460,6 +2469,7 @@ unit_tests = [
   "ffmpeg::tests::ffmpeg_buildconf_preempts_unknown_options_like_upstream",
   "ffmpeg::tests::ffmpeg_version_and_buildconf_ignore_trailing_unknown_options",
   "ffmpeg::tests::ffmpeg_version_and_buildconf_attach_banner_for_preceding_errors",
+  "ffmpeg::tests::ffmpeg_version_and_buildconf_without_banner_for_preceding_invalid_loglevel",
   "ffmpeg::tests::ffmpeg_output_rejects_double_dash_version_like_upstream",
   "ffmpeg::tests::ffmpeg_version_vs_buildconf_follows_arg_order",
   "ffprobe::tests::ffprobe_output_prints_version_banner",
@@ -2468,6 +2478,7 @@ unit_tests = [
   "ffprobe::tests::ffprobe_buildconf_preempts_unknown_options_like_upstream",
   "ffprobe::tests::ffprobe_version_and_buildconf_ignore_trailing_unknown_options",
   "ffprobe::tests::ffprobe_version_and_buildconf_attach_banner_for_preceding_errors",
+  "ffprobe::tests::ffprobe_version_and_buildconf_without_banner_for_preceding_invalid_loglevel",
   "ffprobe::tests::ffprobe_output_rejects_double_dash_version_like_upstream",
   "ffprobe::tests::ffprobe_version_vs_buildconf_follows_arg_order",
   "option_parser::tests::treats_buildconf_as_global_flag",
@@ -2487,14 +2498,21 @@ differential_tests = [
   "tests/differential/mappings.txt:fftools-version|oracle-version-trailing-invalid-loglevel",
   "tests/differential/mappings.txt:fftools-version|oracle-dash-prefixed-values-before-special-requests",
   "tests/differential/mappings.txt:fftools-version|oracle-version-buildconf-late-value-options",
+  "tests/differential/mappings.txt:fftools-version|oracle-version-buildconf-invalid-loglevel-prefix",
   "version_oracle::dash_prefixed_values_are_consumed_before_special_requests",
   "version_oracle::version_and_buildconf_preempt_late_value_options",
+  "version_oracle::version_buildconf_fail_without_banner_for_preceding_invalid_loglevel",
 ]
 fate_tests = [
   "tests/fate/mappings.txt:fftools-version|local-version-unit",
   "tests/fate/mappings.txt:fftools-version|local-buildconf-unit",
 ]
 fuzz_targets = []
+# Latest invalid-loglevel prefix slice: pinned ffmpeg/ffprobe rows now prove
+# `-v foo -version`, `-loglevel foo -version`, `-v foo -buildconf`, and
+# `-loglevel foo -buildconf` fail before emitting a version/buildconf banner.
+# Rust mirrors that no-banner failure shape while preserving banner attachment
+# for other earlier-prefix parse failures.
 notes = "Version/buildconf command support exists but is not byte-identical to upstream. The Rust version banner uses FFmpeg-shaped dual library ABI lines (`current / configured`) and reports the pinned target version/profile, while keeping Rust-specific build text. The Rust `-buildconf` path reports the selected default-native configure flag surface as an FFmpeg-shaped indented configuration block without the normal version line or library table; it also mirrors the pinned oracle's preemptive `-buildconf` shape where unknown trailing options do not make the request fail. When `-version` and `-buildconf` are both present, Rust follows pinned FFmpeg/ffprobe first-occurrence precedence: `-version -buildconf` prints the version/library surface, while `-buildconf -version` prints the build configuration surface. The latest version-order evidence proves `-version` ignores later unknown options, while an earlier unknown option causes failure after the version banner is carried to stderr like the pinned tools. The latest late-value-option evidence proves `-version -f` and `-buildconf -f` preempt a trailing value-taking option before missing-value diagnostics, matching pinned ffmpeg/ffprobe success output for the bounded rows. The latest trailing-loglevel evidence proves pinned ffmpeg/ffprobe still exit successfully for `-version -loglevel warn` and `-buildconf -loglevel foo` while emitting an `Invalid loglevel` diagnostic after the special request; the Rust binary paths now emit the same success/diagnostic shape. The latest dash-prefixed-value evidence proves value-taking options consume `-version`, `-buildconf`, and invalid `-loglevel`-shaped tokens as values before special request handling, matching pinned ffmpeg/ffprobe failure shape for the bounded `-f -version ...` and `-v -not-a-level ...` cases. The pinned FFmpeg 8.1.1 oracle is installed locally through WSL wrappers under ignored third_party/ffmpeg-oracle/, and the differential harness runs pinned ffmpeg/ffprobe -version, checks the target 8.1.1 first-line version prefix, compares the reported libav* ABI versions against the Rust banner constants, verifies that `-hide_banner -version` prints the same version surface as `-version`, verifies that GNU-style `--version` is not a clean successful version request, verifies the `-buildconf` configuration-block shape plus unknown-option preemption for both tools, verifies mixed `-version`/`-buildconf` precedence for both tools, verifies version/unknown-option ordering, verifies trailing invalid-loglevel success diagnostics, verifies dash-prefixed values are consumed before standalone special request detection, and verifies late value-taking options do not override already-detected special requests. The buildconf row compares shape rather than exact configure flags because the Rust implementation reports the selected compatibility profile while the local WSL oracle wrapper includes bootstrap-local `--prefix` and `--disable-x86asm` flags. `cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component fftools-version --target oracle-ffmpeg-version --target oracle-ffprobe-version --target oracle-double-dash-version-rejection --target oracle-hide-banner-version --target oracle-buildconf-surface --target oracle-version-buildconf-precedence --target oracle-version-unknown-order --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd` passed; the trailing invalid-loglevel row was separately validated by `cargo test -p fftools --test version_oracle version_requests_warn_for_later_invalid_loglevel_but_still_succeed -- --ignored --nocapture`. It derives ffprobe from FFPROBE_ORACLE, a sibling of FFMPEG_ORACLE, or the standard third_party oracle path including the generated ffmpeg.cmd/ffprobe.cmd wrappers; env-provided relative oracle paths are resolved against the repository root in the version oracle harness. WSL process checks for `ffmpeg-rs -version`, `ffprobe-rs -version`, `ffmpeg-rs --version`, and `ffprobe-rs --version` passed, with the double-dash forms exiting nonzero. The bootstrap script now emits .cmd oracle wrappers that propagate WSL exit codes for future installs. The local FATE-runner smoke mappings execute version and buildconf unit filters only and do not count as upstream FATE parity."
 blocked_reason = ""
 
@@ -4892,6 +4910,8 @@ unit_tests = [
   "yuv4mpegpipe::tests::treats_truncated_frame_only_tail_as_eof",
   "yuv4mpegpipe::tests::parses_ffmpeg_xcolorrange_extension_and_ignores_empty_x_field",
   "yuv4mpegpipe::tests::parses_last_xcolorrange_extension",
+  "yuv4mpegpipe::tests::parses_malformed_sample_aspect_fields_with_last_valid_wins",
+  "yuv4mpegpipe::tests::parses_sample_aspect_token_variants",
   "yuv4mpegpipe::tests::parses_nonstandard_frame_header_fields_as_data",
   "yuv4mpegpipe::tests::invalid_frame_header_after_payload_is_error",
 ]
@@ -4903,6 +4923,7 @@ differential_tests = [
   "tests/differential/mappings.txt:avformat-yuv4mpegpipe-demuxer|oracle-yuv4mpegpipe-flexible-frame-header-records",
   "tests/differential/mappings.txt:avformat-yuv4mpegpipe-demuxer|oracle-yuv4mpegpipe-invalid-first-marker-eof-records",
   "tests/differential/mappings.txt:avformat-yuv4mpegpipe-demuxer|oracle-yuv4mpegpipe-sar-file-output",
+  "tests/differential/mappings.txt:avformat-yuv4mpegpipe-demuxer|oracle-yuv4mpegpipe-sample-aspect-fields",
   "tests/differential/mappings.txt:avformat-yuv4mpegpipe-demuxer|oracle-yuv4mpegpipe-xcolorrange-remux",
   "yuv4mpegpipe_oracle::rawvideo_yuv420p_yuv4mpegpipe_file_output_matches_ffmpeg_oracle",
   "yuv4mpegpipe_oracle::yuv4mpegpipe_yuv420p_framecrc_records_match_ffmpeg_oracle",
@@ -4911,10 +4932,16 @@ differential_tests = [
   "yuv4mpegpipe_oracle::yuv4mpegpipe_flexible_frame_header_variants_match_ffmpeg_oracle",
   "yuv4mpegpipe_oracle::yuv4mpegpipe_invalid_first_frame_marker_is_clean_eof",
   "yuv4mpegpipe_oracle::yuv4mpegpipe_sample_aspect_ratio_header_matches_ffmpeg_oracle",
+  "yuv4mpegpipe_oracle::yuv4mpegpipe_sample_aspect_fields_match_ffmpeg_oracle",
   "yuv4mpegpipe_oracle::yuv4mpegpipe_xcolorrange_remux_preserves_color_range_oracle",
 ]
 fate_tests = ["tests/fate/mappings.txt:avformat-yuv4mpegpipe-demuxer|local-avformat-yuv4mpegpipe-unit"]
 fuzz_targets = ["avformat_yuv4mpegpipe"]
+# Latest sample-aspect parser slice: pinned FFmpeg 8.1.1 rows now prove
+# malformed and duplicate Y4M `A` fields are permissive: invalid tokens are
+# ignored, last valid fields win, zero numerators normalize to unspecified
+# `A0:0`, missing or malformed denominators become denominator zero, and signed
+# numerator/denominator tokens are preserved in the bounded remux rows.
 # Latest delegated update: pinned FFmpeg 8.1.1 accepts Y4M frame-header lines
 # beginning with `FRAME` even with nonstandard suffixes/fields, treats an
 # invalid first frame marker as clean EOF with zero packet records, and keeps
@@ -5071,6 +5098,7 @@ differential_tests = [
   "tests/differential/mappings.txt:avformat-pcm-s16le-demuxer|oracle-pcm-s16le-packetized-file-output",
   "tests/differential/mappings.txt:avformat-pcm-s16le-demuxer|oracle-pcm-s16le-odd-file-output",
   "tests/differential/mappings.txt:avformat-pcm-s16le-demuxer|oracle-pcm-s16le-wav-file-output",
+  "tests/differential/mappings.txt:avformat-pcm-s16le-demuxer|oracle-pcm-s16le-invalid-parameters",
   "pcm_oracle::pcm_s16le_framecrc_records_match_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_partial_framecrc_records_match_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_odd_packet_framecrc_records_match_ffmpeg_oracle",
@@ -5080,9 +5108,15 @@ differential_tests = [
   "pcm_oracle::pcm_s16le_packetized_file_output_matches_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_odd_packet_file_output_matches_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_wav_file_output_matches_ffmpeg_oracle",
+  "pcm_oracle::pcm_s16le_zero_sample_rate_rejects_like_oracle",
+  "pcm_oracle::pcm_s16le_zero_channels_rejects_like_oracle",
 ]
 fate_tests = ["tests/fate/mappings.txt:avformat-pcm-s16le-demuxer|local-avformat-pcm-unit"]
 fuzz_targets = ["avformat_pcm_s16le"]
+# Latest invalid-parameter oracle slice: pinned FFmpeg 8.1.1 rejects raw
+# `s16le` inputs with zero sample rate or zero channels before packet output;
+# Rust rejects the same cases through the constrained CLI path with typed
+# invalid-argument context.
 notes = "Initial raw pcm_s16le demuxer slices interleaved sample-frame packets with configurable packet sample counts, sample-rate/channel validation through the shared avformat AudioStreamParameters helper, SampleFormat::S16-derived frame sizing, native or count-only ChannelLayoutSpec metadata where safe, and PTS measured in samples. It accepts trailing partial and odd-byte raw PCM packet payloads like FFmpeg's raw s16le demuxer while computing duration from complete interleaved sample frames, including zero-duration partial-only packet payloads. The bounded stereo pcm_s16le oracle rows compare Rust framecrc streamcopy records, raw s16le file output, multi-packet raw file output, and byte-exact WAV file output against pinned FFmpeg 8.1.1 output, proving the demuxed packet payload, byte count, sample-duration timing, packet count, and packet transfer into the constrained raw and WAV muxers for complete and non-sample-frame-aligned packet paths. Empty-input framecrc evidence now proves FFmpeg-style zero packet output with header-only framecrc success, and the three-channel 14-byte framecrc row proves FFmpeg's default 3-channel `2.1` layout plus duration truncation for a trailing partial interleaved sample frame. Build-checked cargo-fuzz target avformat_pcm_s16le exercises parameter validation, empty input, packet slicing including trailing partial/odd payloads and multi-packet timing, muxer byte preservation, and side-data invariants. Probe integration, other PCM formats, broader differential tests, upstream FATE, and sustained fuzz execution are pending. The local FATE-runner smoke mapping executes the pcm unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 

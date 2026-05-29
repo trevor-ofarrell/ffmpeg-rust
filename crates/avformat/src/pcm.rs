@@ -349,9 +349,17 @@ mod tests {
 
     #[test]
     fn rejects_invalid_parameters() {
-        assert!(PcmS16leDemuxer::open(&[0, 0], 0, 2, 1).is_err());
-        assert!(PcmS16leDemuxer::open(&[0, 0], 48_000, 0, 1).is_err());
-        assert!(PcmS16leDemuxer::open(&[0, 0], 48_000, 1, 0).is_err());
+        let err = PcmS16leDemuxer::open(&[0, 0], 0, 2, 1).unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(err.message(), "pcm_s16le sample rate must be non-zero");
+
+        let err = PcmS16leDemuxer::open(&[0, 0], 48_000, 0, 1).unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(err.message(), "pcm_s16le channel count must be non-zero");
+
+        let err = PcmS16leDemuxer::open(&[0, 0], 48_000, 1, 0).unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(err.message(), "pcm_s16le packet samples must be non-zero");
     }
 
     #[test]
@@ -453,8 +461,13 @@ mod tests {
 
     #[test]
     fn muxer_rejects_invalid_stream_parameters_and_packets() {
-        assert!(PcmS16leMuxer::new(0, 2).is_err());
-        assert!(PcmS16leMuxer::new(48_000, 0).is_err());
+        let err = PcmS16leMuxer::new(0, 2).unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(err.message(), "pcm_s16le sample rate must be non-zero");
+
+        let err = PcmS16leMuxer::new(48_000, 0).unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(err.message(), "pcm_s16le channel count must be non-zero");
 
         let mut muxer = PcmS16leMuxer::new(48_000, 2).unwrap();
         let wrong_stream = muxer.write_packet(&Packet::new(vec![0, 0, 1, 0], 1));

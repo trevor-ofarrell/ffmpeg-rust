@@ -184,6 +184,30 @@ fn yuv4mpegpipe_sample_aspect_ratio_header_matches_ffmpeg_oracle() {
     );
 }
 
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn yuv4mpegpipe_sample_aspect_fields_match_ffmpeg_oracle() {
+    let payload = [0, 1, 2, 3, 4, 5];
+
+    for (extra_header_fields, expected_sample_aspect_ratio) in [
+        ("Afoo A16:9", Some(Rational::new(16, 9).unwrap())),
+        ("A16:9 Afoo", Some(Rational::new(16, 9).unwrap())),
+        ("A16:9 A0:0", None),
+        ("A16:9 A0:1", None),
+        ("A1:foo", Some(Rational::from_raw(1, 0))),
+        ("Afoo", None),
+        ("A1", Some(Rational::from_raw(1, 0))),
+        ("A-1:-2", Some(Rational::from_raw(-1, -2))),
+        ("Afoo A1:0 A2:3", Some(Rational::new(2, 3).unwrap())),
+    ] {
+        compare_yuv4mpegpipe_sample_aspect_fields_with_oracle(
+            &payload,
+            extra_header_fields,
+            expected_sample_aspect_ratio,
+        );
+    }
+}
+
 fn compare_rawvideo_yuv4mpegpipe_file_output(size: &str, rate: &str, payload: &[u8]) {
     let oracle = oracle_ffmpeg();
     let input_path = write_temp_bytes("yuv420p-y4m-input", "raw", payload);
@@ -547,6 +571,77 @@ fn compare_yuv4mpegpipe_color_range_metadata(
     let oracle_color_range =
         String::from_utf8(oracle_output.stdout).expect("oracle color range should be UTF-8");
     assert_eq!(oracle_color_range.trim(), expected_oracle_color_range);
+}
+
+fn compare_yuv4mpegpipe_sample_aspect_fields_with_oracle(
+    frame: &[u8],
+    extra_header_fields: &str,
+    expected_sample_aspect_ratio: Option<Rational>,
+) {
+    let input =
+        y4m_file_bytes_with_extra_header_fields(2, 2, "25:1", extra_header_fields, &[frame]);
+    let oracle = oracle_ffmpeg();
+    let input_path = write_temp_bytes("yuv420p-y4m-sample-aspect-input", "y4m", &input);
+    let input_arg = input_path.to_string_lossy().into_owned();
+
+    let mut demuxer = Yuv4MpegDemuxer::open(&input).expect("Rust yuv4mpegpipe input should parse");
+    assert_eq!(
+        demuxer.info().sample_aspect_ratio(),
+        expected_sample_aspect_ratio
+    );
+    assert_eq!(demuxer.read_packet().unwrap().unwrap().data(), frame);
+    assert!(demuxer.read_packet().unwrap().is_none());
+
+    let oracle_output_path = unique_temp_path("yuv420p-oracle-sample-aspect-output", "y4m");
+    let oracle_output_arg = oracle_output_path.to_string_lossy().into_owned();
+    let oracle_output = Command::new(&oracle)
+        .args([
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "yuv4mpegpipe",
+            "-i",
+            input_arg.as_str(),
+            "-c:v",
+            "copy",
+            "-f",
+            "yuv4mpegpipe",
+            oracle_output_arg.as_str(),
+        ])
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", oracle.display()));
+    assert!(
+        oracle_output.status.success(),
+        "oracle yuv4mpegpipe remux failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        oracle_output.status.code(),
+        String::from_utf8_lossy(&oracle_output.stdout),
+        String::from_utf8_lossy(&oracle_output.stderr)
+    );
+
+    let oracle_output_bytes =
+        fs::read(&oracle_output_path).expect("oracle output should be readable");
+    remove_temp_files(&[input_path, oracle_output_path]);
+    assert_eq!(
+        sample_aspect_token(&header_line(&oracle_output_bytes)),
+        expected_sample_aspect_token(expected_sample_aspect_ratio)
+    );
+}
+
+fn sample_aspect_token(header_line: &str) -> String {
+    header_line
+        .split_ascii_whitespace()
+        .find(|token| token.starts_with('A'))
+        .expect("yuv4mpegpipe header should contain sample aspect token")
+        .to_string()
+}
+
+fn expected_sample_aspect_token(value: Option<Rational>) -> String {
+    match value {
+        Some(value) => format!("A{}:{}", value.num(), value.den()),
+        None => "A0:0".to_string(),
+    }
 }
 
 fn ffprobe_color_range(oracle: &Path, input: &str) -> String {

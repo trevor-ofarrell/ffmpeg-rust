@@ -290,7 +290,7 @@ fn parse_header(line: &str) -> AvResult<Yuv4MpegInfo> {
     for field in line[Y4M_MAGIC.len()..].split_ascii_whitespace() {
         let (tag, value) = field.split_at(1);
         if value.is_empty() {
-            if tag == "X" {
+            if tag == "X" || tag == "A" {
                 continue;
             }
             return Err(AvError::invalid_data(format!(
@@ -302,7 +302,11 @@ fn parse_header(line: &str) -> AvResult<Yuv4MpegInfo> {
             "W" => width = Some(parse_positive_u32(value, "YUV4MPEG2 width")?),
             "H" => height = Some(parse_positive_u32(value, "YUV4MPEG2 height")?),
             "F" => frame_rate = Some(parse_positive_rational(value, "YUV4MPEG2 frame rate")?),
-            "A" => sample_aspect_ratio = parse_sample_aspect_ratio(value)?,
+            "A" => {
+                if let Some(parsed_sample_aspect_ratio) = parse_sample_aspect_ratio(value) {
+                    sample_aspect_ratio = parsed_sample_aspect_ratio;
+                }
+            }
             "X" => {
                 if let Some(parsed_color_range) = parse_color_range_extension(value) {
                     color_range = parsed_color_range;
@@ -348,14 +352,23 @@ fn parse_header(line: &str) -> AvResult<Yuv4MpegInfo> {
     })
 }
 
-fn parse_sample_aspect_ratio(value: &str) -> AvResult<Option<Rational>> {
+fn parse_sample_aspect_ratio(value: &str) -> Option<Option<Rational>> {
     if value == "0:0" {
-        return Ok(None);
+        return Some(None);
     }
-    Ok(Some(parse_positive_rational(
-        value,
-        "YUV4MPEG2 sample aspect ratio",
-    )?))
+
+    let (num, den) = value.split_once(':').unwrap_or((value, "0"));
+    let num = match num.parse::<i32>() {
+        Ok(num) => num,
+        Err(_) => return None,
+    };
+    let den = den.parse::<i32>().unwrap_or(0);
+
+    if num == 0 {
+        Some(None)
+    } else {
+        Some(Some(Rational::from_raw(num, den)))
+    }
 }
 
 fn parse_color_range_extension(value: &str) -> Option<FrameColorRange> {
@@ -617,6 +630,63 @@ mod tests {
         let first_packet = demuxer.read_packet().unwrap().unwrap();
         assert_eq!(first_packet.data(), b"abcdef");
         assert_eq!(demuxer.read_packet().unwrap(), None);
+    }
+
+    #[test]
+    fn parses_malformed_sample_aspect_fields_with_last_valid_wins() {
+        let payload = frame_bytes(6, 0x80);
+
+        let valid_4_by_3 = Some(Rational::new(4, 3).unwrap());
+        let valid_1_by_0 = Rational::from_raw(1, 0);
+        for (header_fields, expected_aspect_ratio) in [
+            ("W2 H2 F25:1 Ip C420jpeg Afoo A4:3", valid_4_by_3),
+            ("W2 H2 F25:1 Ip C420jpeg A4:3 Afoo", valid_4_by_3),
+            ("W2 H2 F25:1 Ip C420jpeg A4:3 A0:0", None),
+            ("W2 H2 F25:1 Ip C420jpeg A4:3 A0:1", None),
+            ("W2 H2 F25:1 Ip C420jpeg Afoo", None),
+            ("W2 H2 F25:1 Ip C420jpeg A1:foo", Some(valid_1_by_0)),
+            ("W2 H2 F25:1 Ip C420jpeg Afoo A1", Some(valid_1_by_0)),
+            ("W2 H2 F25:1 Ip C420jpeg A1", Some(valid_1_by_0)),
+            ("W2 H2 F25:1 Ip C420jpeg Afoo A1:0", Some(valid_1_by_0)),
+            (
+                "W2 H2 F25:1 Ip C420jpeg A-1:-2",
+                Some(Rational::from_raw(-1, -2)),
+            ),
+        ] {
+            let bytes = y4m_bytes(header_fields, &[&payload]);
+            let mut demuxer = Yuv4MpegDemuxer::open(&bytes).unwrap();
+
+            assert_eq!(
+                demuxer.info().sample_aspect_ratio(),
+                expected_aspect_ratio,
+                "header_fields={header_fields}"
+            );
+            let packet = demuxer.read_packet().unwrap().unwrap();
+            assert_eq!(packet.data(), payload.as_slice());
+            assert_eq!(demuxer.read_packet().unwrap(), None);
+        }
+    }
+
+    #[test]
+    fn parses_sample_aspect_token_variants() {
+        let expected = Rational::new(4, 3).unwrap();
+        assert_eq!(parse_sample_aspect_ratio("4:3"), Some(Some(expected)));
+        assert_eq!(parse_sample_aspect_ratio("foo"), None);
+        assert_eq!(
+            parse_sample_aspect_ratio("1:foo"),
+            Some(Some(Rational::from_raw(1, 0)))
+        );
+        assert_eq!(parse_sample_aspect_ratio("0:foo"), Some(None));
+        assert_eq!(parse_sample_aspect_ratio("0:5"), Some(None));
+        assert_eq!(
+            parse_sample_aspect_ratio("1"),
+            Some(Some(Rational::from_raw(1, 0)))
+        );
+        assert_eq!(parse_sample_aspect_ratio("0"), Some(None));
+        assert_eq!(
+            parse_sample_aspect_ratio("-1:-2"),
+            Some(Some(Rational::from_raw(-1, -2)))
+        );
     }
 
     #[test]
