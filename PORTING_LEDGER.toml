@@ -4574,6 +4574,8 @@ unit_tests = [
   "image2::tests::supports_single_image_inputs",
   "image2::tests::validates_patterns_and_frame_rate",
   "image2::tests::rejects_unmatched_duplicate_non_contiguous_and_empty_entries",
+  "image2::tests::rejects_unpadded_numeric_aliases_for_same_frame_number",
+  "image2::tests::reads_nonzero_start_number_with_zero_based_packet_timestamps",
 ]
 differential_tests = [
   "tests/differential/mappings.txt:avformat-image2-demuxer|oracle-image2-file-output",
@@ -4587,7 +4589,7 @@ differential_tests = [
 ]
 fate_tests = ["tests/fate/mappings.txt:avformat-image2-demuxer|local-avformat-image2-unit"]
 fuzz_targets = ["avformat_image2"]
-notes = "Initial image2 demuxer packetizes one single-image entry or contiguous %d/%0Nd numbered entries in deterministic frame order with PTS/duration assignment and path side data. The pinned PPM single-image and numbered-sequence oracle rows prove this current demuxer feeds the Packet path and Image2Muxer into byte-identical FFmpeg 8.1.1 `-c:v copy -f image2` output for bounded valid PPM inputs, including an explicit start_number 0 sequence. The pinned PPM single-image and sequence framecrc oracle rows prove the same demuxed packet payloads and timing fields feed the FrameCrcMuxer into FFmpeg-matching streamcopy packet records. A build-checked avformat_image2 cargo-fuzz target covers pattern parsing, entry sequence validation, packet timing/path side data, and mux-demux round trips; actual local fuzz execution is blocked until cargo-fuzz is installed. Broader filesystem discovery, glob patterns, timestamps, looping, codec probing, broader CLI wiring, upstream FATE, and sustained fuzz execution remain pending. The local FATE-runner smoke mapping executes the image2 unit filter only and does not count as upstream FATE parity."
+notes = "Initial image2 demuxer packetizes one single-image entry or contiguous %d/%0Nd numbered entries in deterministic frame order with PTS/duration assignment and path side data. Unit coverage now also proves unpadded %d inputs reject numeric aliases for the same frame number such as frame-1.png and frame-01.png, and that nonzero start_number sequences preserve original frame numbers/paths while emitted packets use zero-based PTS/DTS with duration 1. The pinned PPM single-image and numbered-sequence oracle rows prove this current demuxer feeds the Packet path and Image2Muxer into byte-identical FFmpeg 8.1.1 `-c:v copy -f image2` output for bounded valid PPM inputs, including an explicit start_number 0 sequence. The pinned PPM single-image and sequence framecrc oracle rows prove the same demuxed packet payloads and timing fields feed the FrameCrcMuxer into FFmpeg-matching streamcopy packet records. A build-checked avformat_image2 cargo-fuzz target covers pattern parsing, entry sequence validation, packet timing/path side data, and mux-demux round trips; actual local fuzz execution is blocked until cargo-fuzz is installed. Broader filesystem discovery, glob patterns, timestamps, looping, codec probing, broader CLI wiring, upstream FATE, and sustained fuzz execution remain pending. The local FATE-runner smoke mapping executes the image2 unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]

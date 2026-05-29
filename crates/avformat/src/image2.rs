@@ -640,6 +640,58 @@ mod tests {
     }
 
     #[test]
+    fn rejects_unpadded_numeric_aliases_for_same_frame_number() {
+        let err = Image2Demuxer::open(
+            "frame-%d.png",
+            vec![
+                entry("frame-1.png", b"one"),
+                entry("frame-01.png", b"alias"),
+            ],
+            1,
+            Rational::new(1, 1).unwrap(),
+        )
+        .unwrap_err();
+
+        assert_eq!(err.kind(), avutil::AvErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn reads_nonzero_start_number_with_zero_based_packet_timestamps() {
+        let entries = vec![
+            entry("frame-011.ppm", b"eleven"),
+            entry("frame-010.ppm", b"ten"),
+        ];
+        let mut demuxer =
+            Image2Demuxer::open("frame-%03d.ppm", entries, 10, Rational::new(30, 1).unwrap())
+                .unwrap();
+
+        assert_eq!(demuxer.info().start_number(), 10);
+        assert_eq!(
+            demuxer
+                .frames()
+                .iter()
+                .map(|frame| (frame.number(), frame.path()))
+                .collect::<Vec<_>>(),
+            vec![(10, "frame-010.ppm"), (11, "frame-011.ppm")]
+        );
+
+        let first = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(first.data(), b"ten");
+        assert_eq!(first.pts(), Some(0));
+        assert_eq!(first.dts(), Some(0));
+        assert_eq!(first.duration(), 1);
+        assert_eq!(first.side_data()[0].data(), b"frame-010.ppm");
+
+        let second = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(second.data(), b"eleven");
+        assert_eq!(second.pts(), Some(1));
+        assert_eq!(second.dts(), Some(1));
+        assert_eq!(second.duration(), 1);
+        assert_eq!(second.side_data()[0].data(), b"frame-011.ppm");
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
     fn muxer_writes_numbered_sequence_and_round_trips_through_demuxer() {
         let mut muxer =
             Image2Muxer::new("frame-%03d.png", 2, Rational::new(25, 1).unwrap()).unwrap();
