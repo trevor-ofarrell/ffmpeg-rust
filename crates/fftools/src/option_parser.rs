@@ -261,7 +261,7 @@ fn option_name(arg: &str) -> Result<&str, CliParseError> {
 fn option_spec(name: &str) -> Option<OptionSpec> {
     let base_name = name.split_once(':').map_or(name, |(base, _)| base);
     let (scope, arity, value_kind) = match base_name {
-        "hide_banner" | "y" | "n" | "nostdin" | "version" => (
+        "hide_banner" | "y" | "n" | "nostdin" | "version" | "buildconf" => (
             OptionScope::Global,
             OptionArity::Flag,
             OptionValueKind::Generic,
@@ -763,6 +763,16 @@ mod tests {
         let err = parse_ffmpeg_args(&strings(&["--version"])).unwrap_err();
 
         assert!(err.message().contains("unknown option `--version`"));
+    }
+
+    #[test]
+    fn treats_buildconf_as_global_flag() {
+        let parsed = parse_ffmpeg_args(&strings(&["-hide_banner", "-buildconf"])).unwrap();
+
+        assert_eq!(parsed.global_options()[0].name(), "hide_banner");
+        assert_eq!(parsed.global_options()[1].name(), "buildconf");
+        assert!(parsed.inputs().is_empty());
+        assert!(parsed.outputs().is_empty());
     }
 
     fn strings(values: &[&str]) -> Vec<String> {

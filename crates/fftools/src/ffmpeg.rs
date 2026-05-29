@@ -1,5 +1,6 @@
 use crate::{
-    build_io_plan, parse_ffmpeg_args, version_banner, CliOption, Endpoint, IoPlan, PlannedFile,
+    build_io_plan, buildconf_banner, parse_ffmpeg_args, version_banner, CliOption, Endpoint,
+    IoPlan, PlannedFile,
 };
 use avformat::mov::MovCodecParameters;
 use avformat::{
@@ -310,6 +311,10 @@ pub fn run_ffmpeg_tool(args: &[String]) -> i32 {
 }
 
 pub fn ffmpeg_output(args: &[String]) -> Result<FfmpegOutput, FfmpegError> {
+    if args.iter().any(|arg| arg == "-buildconf") {
+        return Ok(FfmpegOutput::version(buildconf_banner("ffmpeg")));
+    }
+
     if args.iter().any(|arg| arg == "-version") {
         parse_ffmpeg_args(args)
             .map_err(|err| FfmpegError::usage(format!("failed to parse options: {err}")))?;
@@ -1723,6 +1728,30 @@ mod tests {
         assert_eq!(hide.stdout(), plain.stdout());
         assert!(hide.stderr().is_empty());
         assert_eq!(hide.output_format(), None);
+    }
+
+    #[test]
+    fn ffmpeg_buildconf_output_prints_configuration() {
+        let output = ffmpeg_output(&strings(&["-hide_banner", "-buildconf"])).unwrap();
+
+        assert!(output.stdout().starts_with("  configuration:\n"));
+        assert!(output.stdout().contains("configuration:\n"));
+        assert!(output.stdout().contains("    --disable-gpl\n"));
+        assert!(output.stdout().contains("    --disable-nonfree\n"));
+        assert!(output.stdout().contains("    --disable-doc\n"));
+        assert!(!output.stdout().contains("ffmpeg version"));
+        assert!(!output.stdout().contains("libavutil"));
+        assert!(output.stderr().is_empty());
+        assert_eq!(output.output_format(), None);
+    }
+
+    #[test]
+    fn ffmpeg_buildconf_preempts_unknown_options_like_upstream() {
+        let output = ffmpeg_output(&strings(&["-buildconf", "-not_a_real_option"])).unwrap();
+
+        assert!(output.stdout().starts_with("  configuration:\n"));
+        assert!(output.stderr().is_empty());
+        assert_eq!(output.output_format(), None);
     }
 
     #[test]

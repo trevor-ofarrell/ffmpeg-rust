@@ -447,6 +447,10 @@ pub fn run_ffprobe_tool(args: &[String]) -> i32 {
 }
 
 pub fn ffprobe_output(args: &[String]) -> Result<String, FfprobeError> {
+    if args.iter().any(|arg| arg == "-buildconf") {
+        return Ok(crate::buildconf_banner("ffprobe"));
+    }
+
     if args.iter().any(|arg| arg == "-version") {
         crate::option_parser::validate_loglevel_options(args)
             .map_err(|err| FfprobeError::usage(format!("failed to parse options: {err}")))?;
@@ -2032,6 +2036,26 @@ mod tests {
         let stdout = ffprobe_output(&strings(&["-hide_banner", "-version"])).unwrap();
 
         assert!(stdout.starts_with("ffprobe version 8.1.1-rust target FFmpeg 8.1.1"));
+    }
+
+    #[test]
+    fn ffprobe_buildconf_output_prints_configuration() {
+        let stdout = ffprobe_output(&strings(&["-hide_banner", "-buildconf"])).unwrap();
+
+        assert!(stdout.starts_with("  configuration:\n"));
+        assert!(stdout.contains("configuration:\n"));
+        assert!(stdout.contains("    --disable-gpl\n"));
+        assert!(stdout.contains("    --disable-nonfree\n"));
+        assert!(stdout.contains("    --disable-doc\n"));
+        assert!(!stdout.contains("ffprobe version"));
+        assert!(!stdout.contains("libavutil"));
+    }
+
+    #[test]
+    fn ffprobe_buildconf_preempts_unknown_options_like_upstream() {
+        let stdout = ffprobe_output(&strings(&["-buildconf", "-not_a_real_option"])).unwrap();
+
+        assert!(stdout.starts_with("  configuration:\n"));
     }
 
     #[test]

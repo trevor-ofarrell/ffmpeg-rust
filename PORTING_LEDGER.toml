@@ -2259,21 +2259,27 @@ blocked_reason = ""
 [[component]]
 id = "fftools-version"
 kind = "cli"
-ffmpeg_name = "ffmpeg/ffprobe -version"
+ffmpeg_name = "ffmpeg/ffprobe -version/-buildconf"
 upstream_profile = "ffmpeg-8.1.1-default-native"
 status = "differential_pass"
 priority = 2
-oracle_command = "ffmpeg -version; ffprobe -version"
-rust_command = "cargo test -p fftools version"
+oracle_command = "ffmpeg -version; ffprobe -version; ffmpeg -buildconf; ffprobe -buildconf"
+rust_command = "cargo test -p fftools version; cargo test -p fftools buildconf"
 unit_tests = [
   "tests::version_banner_names_target_and_libraries",
+  "tests::buildconf_banner_lists_configure_flags_without_version_table",
   "tests::version_request_exits_successfully",
   "tests::double_dash_version_is_not_a_successful_version_request",
   "ffmpeg::tests::ffmpeg_output_accepts_hide_banner_with_version",
+  "ffmpeg::tests::ffmpeg_buildconf_output_prints_configuration",
+  "ffmpeg::tests::ffmpeg_buildconf_preempts_unknown_options_like_upstream",
   "ffmpeg::tests::ffmpeg_output_rejects_double_dash_version_like_upstream",
   "ffprobe::tests::ffprobe_output_prints_version_banner",
   "ffprobe::tests::ffprobe_output_accepts_hide_banner_with_version",
+  "ffprobe::tests::ffprobe_buildconf_output_prints_configuration",
+  "ffprobe::tests::ffprobe_buildconf_preempts_unknown_options_like_upstream",
   "ffprobe::tests::ffprobe_output_rejects_double_dash_version_like_upstream",
+  "option_parser::tests::treats_buildconf_as_global_flag",
   "option_parser::tests::double_dash_options_are_not_normalized_to_single_dash_options",
   "tests/version_oracle.rs::parses_split_ffmpeg_library_version_lines",
   "tests/version_oracle.rs::rust_banner_library_versions_are_parseable",
@@ -2283,10 +2289,14 @@ differential_tests = [
   "tests/differential/mappings.txt:fftools-version|oracle-ffprobe-version",
   "tests/differential/mappings.txt:fftools-version|oracle-double-dash-version-rejection",
   "tests/differential/mappings.txt:fftools-version|oracle-hide-banner-version",
+  "tests/differential/mappings.txt:fftools-version|oracle-buildconf-surface",
 ]
-fate_tests = ["tests/fate/mappings.txt:fftools-version|local-version-unit"]
+fate_tests = [
+  "tests/fate/mappings.txt:fftools-version|local-version-unit",
+  "tests/fate/mappings.txt:fftools-version|local-buildconf-unit",
+]
 fuzz_targets = []
-notes = "Version command support exists but is not byte-identical to upstream. The Rust banner now uses FFmpeg-shaped dual library ABI lines (`current / configured`) and reports the pinned target version/profile, while keeping Rust-specific build text. The pinned FFmpeg 8.1.1 oracle is installed locally through WSL wrappers under ignored third_party/ffmpeg-oracle/, and the differential harness runs pinned ffmpeg/ffprobe -version, checks the target 8.1.1 first-line version prefix, and compares the reported libav* ABI versions against the Rust banner constants. It also verifies that `-hide_banner -version` prints the same version surface as `-version` for both upstream and Rust. The previous slice fixed a CLI parity bug: upstream does not treat GNU-style `--version` as a clean successful version request, so `ffmpeg-rs` and `ffprobe-rs` reject `--version` instead of printing the version banner. `cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component fftools-version --target oracle-ffmpeg-version --target oracle-ffprobe-version --target oracle-double-dash-version-rejection --target oracle-hide-banner-version --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd` passed. It derives ffprobe from FFPROBE_ORACLE, a sibling of FFMPEG_ORACLE, or the standard third_party oracle path including the generated ffmpeg.cmd/ffprobe.cmd wrappers; env-provided relative oracle paths are resolved against the repository root in the version oracle harness. WSL process checks for `ffmpeg-rs -version`, `ffprobe-rs -version`, `ffmpeg-rs --version`, and `ffprobe-rs --version` passed, with the double-dash forms exiting nonzero. The bootstrap script now emits .cmd oracle wrappers that propagate WSL exit codes for future installs. The local FATE-runner smoke mapping executes the version unit filter only and does not count as upstream FATE parity."
+notes = "Version/buildconf command support exists but is not byte-identical to upstream. The Rust version banner uses FFmpeg-shaped dual library ABI lines (`current / configured`) and reports the pinned target version/profile, while keeping Rust-specific build text. The Rust `-buildconf` path reports the selected default-native configure flag surface as an FFmpeg-shaped indented configuration block without the normal version line or library table; it also mirrors the pinned oracle's preemptive `-buildconf` shape where unknown trailing options do not make the request fail. The pinned FFmpeg 8.1.1 oracle is installed locally through WSL wrappers under ignored third_party/ffmpeg-oracle/, and the differential harness runs pinned ffmpeg/ffprobe -version, checks the target 8.1.1 first-line version prefix, compares the reported libav* ABI versions against the Rust banner constants, verifies that `-hide_banner -version` prints the same version surface as `-version`, verifies that GNU-style `--version` is not a clean successful version request, and verifies the `-buildconf` configuration-block shape plus unknown-option preemption for both tools. The buildconf row compares shape rather than exact configure flags because the Rust implementation reports the selected compatibility profile while the local WSL oracle wrapper includes bootstrap-local `--prefix` and `--disable-x86asm` flags. `cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component fftools-version --target oracle-ffmpeg-version --target oracle-ffprobe-version --target oracle-double-dash-version-rejection --target oracle-hide-banner-version --target oracle-buildconf-surface --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd` passed. It derives ffprobe from FFPROBE_ORACLE, a sibling of FFMPEG_ORACLE, or the standard third_party oracle path including the generated ffmpeg.cmd/ffprobe.cmd wrappers; env-provided relative oracle paths are resolved against the repository root in the version oracle harness. WSL process checks for `ffmpeg-rs -version`, `ffprobe-rs -version`, `ffmpeg-rs --version`, and `ffprobe-rs --version` passed, with the double-dash forms exiting nonzero. The bootstrap script now emits .cmd oracle wrappers that propagate WSL exit codes for future installs. The local FATE-runner smoke mappings execute version and buildconf unit filters only and do not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]

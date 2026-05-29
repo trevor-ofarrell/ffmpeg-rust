@@ -37,6 +37,13 @@ fn hide_banner_version_matches_plain_version_surface() {
 
 #[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn buildconf_reports_configuration_without_library_versions() {
+    compare_buildconf_surface("ffmpeg");
+    compare_buildconf_surface("ffprobe");
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
 fn loglevel_directive_acceptance_matches_oracle_for_version_requests() {
     let accepted = [
         "repeat",
@@ -278,6 +285,95 @@ fn compare_hide_banner_version(tool_name: &str) {
         }
         other => panic!("unsupported tool `{other}`"),
     }
+}
+
+fn compare_buildconf_surface(tool_name: &str) {
+    let oracle = oracle_tool(tool_name);
+    let oracle_output = run_oracle(&oracle, tool_name, &["-buildconf"]);
+    assert!(
+        oracle_output.status_success,
+        "oracle `{}` should accept -buildconf, got stdout:\n{}\nstderr:\n{}",
+        oracle.display(),
+        oracle_output.stdout,
+        oracle_output.stderr
+    );
+    let oracle_combined = format!("{}{}", oracle_output.stdout, oracle_output.stderr);
+    let oracle_buildconf = normalized_buildconf_output(tool_name, &oracle_combined);
+    let oracle_first_line = oracle_combined
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .expect("oracle buildconf output should include a first line");
+    assert!(
+        oracle_first_line.trim_start().starts_with("configuration:"),
+        "oracle {tool_name} buildconf first non-empty line should be the configuration header, got `{oracle_first_line}`"
+    );
+    assert_buildconf_shape(tool_name, oracle_buildconf, "oracle");
+
+    let oracle_unknown = run_oracle(&oracle, tool_name, &["-buildconf", "-not_a_real_option"]);
+    assert!(
+        oracle_unknown.status_success,
+        "oracle `{}` should let -buildconf preempt unknown options, got stdout:\n{}\nstderr:\n{}",
+        oracle.display(),
+        oracle_unknown.stdout,
+        oracle_unknown.stderr
+    );
+    let oracle_unknown_combined = format!("{}{}", oracle_unknown.stdout, oracle_unknown.stderr);
+    assert_buildconf_shape(
+        tool_name,
+        normalized_buildconf_output(tool_name, &oracle_unknown_combined),
+        "oracle unknown-option",
+    );
+
+    match tool_name {
+        "ffmpeg" => {
+            let rust = ffmpeg_output(&strings(&["-hide_banner", "-buildconf"])).unwrap();
+            assert_buildconf_shape(tool_name, rust.stdout(), "Rust");
+            assert!(rust.stderr().is_empty());
+            assert_eq!(rust.output_format(), None);
+            let rust_unknown = ffmpeg_output(&strings(&["-buildconf", "-not_a_real_option"]))
+                .expect("Rust ffmpeg buildconf should preempt unknown options");
+            assert_buildconf_shape(tool_name, rust_unknown.stdout(), "Rust unknown-option");
+        }
+        "ffprobe" => {
+            let rust = ffprobe_output(&strings(&["-hide_banner", "-buildconf"])).unwrap();
+            assert_buildconf_shape(tool_name, &rust, "Rust");
+            let rust_unknown = ffprobe_output(&strings(&["-buildconf", "-not_a_real_option"]))
+                .expect("Rust ffprobe buildconf should preempt unknown options");
+            assert_buildconf_shape(tool_name, &rust_unknown, "Rust unknown-option");
+        }
+        other => panic!("unsupported tool `{other}`"),
+    }
+}
+
+fn normalized_buildconf_output<'a>(tool_name: &str, output: &'a str) -> &'a str {
+    let without_exit_trailer = output
+        .split("Exiting with exit code")
+        .next()
+        .unwrap_or(output);
+    let version_trailer = format!("{tool_name} version");
+    without_exit_trailer
+        .split(version_trailer.as_str())
+        .next()
+        .unwrap_or(without_exit_trailer)
+}
+
+fn assert_buildconf_shape(tool_name: &str, stdout: &str, source: &str) {
+    assert!(
+        stdout.contains("configuration:\n"),
+        "{source} {tool_name} buildconf output should include a configuration header, got:\n{stdout}"
+    );
+    assert!(
+        stdout
+            .lines()
+            .skip_while(|line| !line.trim_start().starts_with("configuration:"))
+            .skip(1)
+            .any(|line| line.trim_start().starts_with("--")),
+        "{source} {tool_name} buildconf output should include at least one configure flag after the header, got:\n{stdout}"
+    );
+    assert!(
+        !stdout.lines().any(|line| line.trim_start().starts_with("lib")),
+        "{source} {tool_name} buildconf output should not include library version lines, got:\n{stdout}"
+    );
 }
 
 fn version_error_output(output: &str) -> bool {

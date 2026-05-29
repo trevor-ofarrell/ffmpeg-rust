@@ -31,15 +31,30 @@ pub const TARGET_LIBRARY_VERSIONS: &[(&str, &str)] = &[
     ("libswresample", "6.3.101"),
 ];
 
+pub const TARGET_CONFIGURE_FLAGS: &[&str] =
+    &["--disable-gpl", "--disable-nonfree", "--disable-doc"];
+
 pub fn version_banner(tool_name: &str) -> String {
     let mut out = String::new();
     out.push_str(&format!(
         "{tool_name} version {TARGET_FFMPEG_VERSION}-rust target FFmpeg {TARGET_FFMPEG_VERSION} \"{TARGET_RELEASE_NAME}\"\n"
     ));
     out.push_str("built with rustc\n");
-    out.push_str("configuration: --disable-gpl --disable-nonfree --disable-doc\n");
+    out.push_str("configuration: ");
+    out.push_str(&TARGET_CONFIGURE_FLAGS.join(" "));
+    out.push('\n');
     for (name, version) in TARGET_LIBRARY_VERSIONS {
         out.push_str(&format_library_version_line(name, version));
+    }
+    out
+}
+
+pub fn buildconf_banner(_tool_name: &str) -> String {
+    let mut out = String::from("  configuration:\n");
+    for flag in TARGET_CONFIGURE_FLAGS {
+        out.push_str("    ");
+        out.push_str(flag);
+        out.push('\n');
     }
     out
 }
@@ -93,6 +108,18 @@ mod tests {
         assert!(banner.starts_with("ffprobe version 8.1.1-rust target FFmpeg 8.1.1"));
         assert!(banner.contains("libavutil      60. 26.101 / 60. 26.101"));
         assert!(banner.contains("--disable-gpl --disable-nonfree --disable-doc"));
+    }
+
+    #[test]
+    fn buildconf_banner_lists_configure_flags_without_version_table() {
+        let banner = buildconf_banner("ffmpeg");
+
+        assert!(banner.starts_with("  configuration:\n"));
+        assert!(banner.contains("    --disable-gpl\n"));
+        assert!(banner.contains("    --disable-nonfree\n"));
+        assert!(banner.contains("    --disable-doc\n"));
+        assert!(!banner.contains("ffmpeg version"));
+        assert!(!banner.contains("libavutil"));
     }
 
     #[test]
