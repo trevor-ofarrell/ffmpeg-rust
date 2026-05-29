@@ -414,6 +414,7 @@ differential_tests = [
   "tests/differential/mappings.txt:avutil-packet|oracle-mov-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-yuv4mpegpipe-file-output",
   "tests/differential/mappings.txt:avutil-packet|oracle-yuv4mpegpipe-framecrc-records",
+  "tests/differential/mappings.txt:avutil-packet|oracle-yuv4mpegpipe-truncated-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-framehash-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-framemd5-records",
@@ -3778,7 +3779,7 @@ unit_tests = [
   "ffmpeg::tests::runs_s16le_to_framecrc_stdout",
   "ffmpeg::tests::runs_s16le_to_null_stdout",
   "ffmpeg::tests::rejects_s16le_without_required_stream_parameters",
-  "ffmpeg::tests::rejects_s16le_partial_sample_frame",
+  "ffmpeg::tests::accepts_s16le_partial_sample_frame",
 ]
 differential_tests = [
   "tests/differential/mappings.txt:fftools-ffmpeg-pcm-s16le-framecrc-null|oracle-pcm-s16le-framecrc-records",
@@ -3786,7 +3787,7 @@ differential_tests = [
 ]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffmpeg-pcm-s16le-framecrc-null|local-ffmpeg-unit"]
 fuzz_targets = []
-notes = "ffmpeg-rs command execution now supports exactly one local seekable raw pcm_s16le input and one stdout pipe output with explicit -f s16le or -f pcm_s16le plus required -ar and -ac stream parameters. It uses the Rust raw PCM demuxer with 1024-sample packetization and the Rust null/framecrc muxers, rejects missing parameters and partial sample frames. The bounded stereo pcm_s16le framecrc oracle row compares normalized Rust streamcopy packet rows against pinned FFmpeg 8.1.1 and proves packet count, byte count, sample-duration timing, payload size, and checksum for that path. Upstream FATE coverage and broader raw PCM/null output differential coverage remain pending. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
+notes = "ffmpeg-rs command execution now supports exactly one local seekable raw pcm_s16le input and one stdout pipe output with explicit -f s16le or -f pcm_s16le plus required -ar and -ac stream parameters. It uses the Rust raw PCM demuxer with 1024-sample packetization and the Rust null/framecrc muxers, rejects missing parameters, and preserves trailing partial packet bytes while computing duration from complete sample frames. The bounded stereo pcm_s16le framecrc oracle row compares normalized Rust streamcopy packet rows against pinned FFmpeg 8.1.1 and proves packet count, byte count, sample-duration timing, payload size, and checksum for that path. Upstream FATE coverage and broader raw PCM/null output differential coverage remain pending. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -4014,15 +4015,17 @@ unit_tests = [
   "ffmpeg::tests::runs_yuv4mpegpipe_to_framecrc_stdout",
   "ffmpeg::tests::runs_detected_yuv4mpegpipe_to_null_stdout",
   "ffmpeg::tests::rejects_yuv4mpegpipe_bad_header",
-  "ffmpeg::tests::rejects_yuv4mpegpipe_truncated_frame",
+  "ffmpeg::tests::treats_yuv4mpegpipe_truncated_frame_as_clean_eof",
 ]
 differential_tests = [
   "tests/differential/mappings.txt:fftools-ffmpeg-yuv4mpegpipe-framecrc-null|oracle-yuv4mpegpipe-framecrc-records",
+  "tests/differential/mappings.txt:fftools-ffmpeg-yuv4mpegpipe-framecrc-null|oracle-yuv4mpegpipe-truncated-framecrc-records",
   "yuv4mpegpipe_oracle::yuv4mpegpipe_yuv420p_framecrc_records_match_ffmpeg_oracle",
+  "yuv4mpegpipe_oracle::yuv4mpegpipe_truncated_frame_eof_records_match_ffmpeg_oracle",
 ]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffmpeg-yuv4mpegpipe-framecrc-null|local-ffmpeg-unit"]
 fuzz_targets = []
-notes = "ffmpeg-rs command execution now supports exactly one local seekable yuv4mpegpipe input and one stdout pipe output with explicit -f yuv4mpegpipe or YUV4MPEG2/.y4m detection. It uses the Rust YUV4MPEG2 demuxer and Rust null/framecrc muxers, accepts the current progressive C420jpeg demuxer subset, and rejects malformed stream headers and truncated frame payloads. The bounded two-frame yuv420p oracle row compares normalized framecrc streamcopy records against pinned FFmpeg 8.1.1 `-c:v copy -f framecrc`, proving packet count, byte count, DTS, PTS, duration, size, and checksum for that constrained CLI path. The local null output path and local unit coverage remain separate from upstream FATE parity. Broader chroma/interlace/frame-header handling, broad CLI execution, upstream FATE coverage, and sustained fuzz execution remain pending. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
+notes = "ffmpeg-rs command execution now supports exactly one local seekable yuv4mpegpipe input and one stdout pipe output with explicit -f yuv4mpegpipe or YUV4MPEG2/.y4m detection. It uses the Rust YUV4MPEG2 demuxer and Rust null/framecrc muxers, accepts the current progressive C420jpeg demuxer subset, rejects malformed stream headers, and treats truncated frame payloads at EOF as clean end-of-stream like pinned FFmpeg. The bounded two-frame yuv420p oracle row compares normalized framecrc streamcopy records against pinned FFmpeg 8.1.1 `-c:v copy -f framecrc`, proving packet count, byte count, DTS, PTS, duration, size, and checksum for that constrained CLI path. The truncated-frame oracle row proves FFmpeg-compatible zero-record output for a truncated first frame and one-record output for a complete first frame followed by a truncated tail. The local null output path and local unit coverage remain separate from upstream FATE parity. Broader chroma/interlace/frame-header handling, broad CLI execution, upstream FATE coverage, and sustained fuzz execution remain pending. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -4306,6 +4309,7 @@ differential_tests = [
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-pcm-s16le-framecrc-records",
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-wav-generated-framecrc-records",
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-yuv4mpegpipe-framecrc-records",
+  "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-yuv4mpegpipe-truncated-framecrc-records",
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-image2-single-framecrc-records",
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-image2-sequence-framecrc-records",
   "rawvideo_oracle::rawvideo_rgb24_framecrc_records_match_ffmpeg_oracle",
@@ -4314,12 +4318,13 @@ differential_tests = [
   "pcm_oracle::pcm_s16le_framecrc_records_match_ffmpeg_oracle",
   "wav_oracle::wav_pcm_s16le_generated_framecrc_matches_ffmpeg_oracle",
   "yuv4mpegpipe_oracle::yuv4mpegpipe_yuv420p_framecrc_records_match_ffmpeg_oracle",
+  "yuv4mpegpipe_oracle::yuv4mpegpipe_truncated_frame_eof_records_match_ffmpeg_oracle",
   "image2_oracle::image2_ppm_single_framecrc_records_match_ffmpeg_oracle",
   "image2_oracle::image2_ppm_numbered_sequence_framecrc_records_match_ffmpeg_oracle",
 ]
 fate_tests = ["tests/fate/mappings.txt:avformat-framecrc-muxer|local-avformat-framecrc-unit"]
 fuzz_targets = ["avformat_packet_muxers"]
-notes = "Initial internal framecrc-style muxer records one FFmpeg-shaped comma-separated line per packet with stream index, PTS/DTS, duration, size, and the FFmpeg framecrc Adler-style checksum initialized at zero. The ignored rawvideo oracle row compares normalized rgb24 framecrc packet rows against pinned FFmpeg streamcopy output, proving bounded video record parity for packet count, PTS, DTS, duration, payload size, and checksum. The ignored generated AVI oracle row compares normalized RGB24 AVI input framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape after AVI demuxing including DIB scanline-padding payload sizes and checksums. The ignored generated MOV oracle row compares normalized rgb24 MOV input framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape after MOV demuxing for packet timing, payload sizes, and checksums. The ignored raw PCM oracle row compares normalized stereo pcm_s16le framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape for bounded audio packet timing, duration, payload size, and checksum. The ignored generated WAV oracle row compares normalized PCM s16le WAV input framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape after WAV demuxing. The ignored yuv4mpegpipe oracle row compares normalized two-frame yuv420p YUV4MPEG2 input framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape for bounded demuxed video packets. The ignored image2 oracle rows compare normalized single-frame and two-frame PPM sequence framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape for bounded encoded-image packets. Header byte identity remains outside the current claim. Build-checked cargo-fuzz target avformat_packet_muxers covers per-packet record fields, checksum stability, render/finish stability, and post-finish rejection. Broader input differential rows, byte-identical headers, upstream FATE coverage, and sustained fuzz execution are pending."
+notes = "Initial internal framecrc-style muxer records one FFmpeg-shaped comma-separated line per packet with stream index, PTS/DTS, duration, size, and the FFmpeg framecrc Adler-style checksum initialized at zero. The ignored rawvideo oracle row compares normalized rgb24 framecrc packet rows against pinned FFmpeg streamcopy output, proving bounded video record parity for packet count, PTS, DTS, duration, payload size, and checksum. The ignored generated AVI oracle row compares normalized RGB24 AVI input framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape after AVI demuxing including DIB scanline-padding payload sizes and checksums. The ignored generated MOV oracle row compares normalized rgb24 MOV input framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape after MOV demuxing for packet timing, payload sizes, and checksums. The ignored raw PCM oracle row compares normalized stereo pcm_s16le framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape for bounded audio packet timing, duration, payload size, and checksum. The ignored generated WAV oracle row compares normalized PCM s16le WAV input framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape after WAV demuxing. The ignored yuv4mpegpipe oracle rows compare normalized two-frame and truncated-tail yuv420p YUV4MPEG2 input framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape for bounded demuxed video packets and no-record/one-record EOF-truncation cases. The ignored image2 oracle rows compare normalized single-frame and two-frame PPM sequence framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape for bounded encoded-image packets. Header byte identity remains outside the current claim. Build-checked cargo-fuzz target avformat_packet_muxers covers per-packet record fields, checksum stability, render/finish stability, and post-finish rejection. Broader input differential rows, byte-identical headers, upstream FATE coverage, and sustained fuzz execution are pending."
 blocked_reason = ""
 
 [[component]]
@@ -4551,18 +4556,22 @@ unit_tests = [
   "yuv4mpegpipe::tests::parses_ffmpeg_unspecified_sample_aspect_and_xyscss_extension",
   "yuv4mpegpipe::tests::rejects_bad_or_incomplete_stream_headers",
   "yuv4mpegpipe::tests::rejects_unsupported_chroma_modes_with_unsupported_error",
-  "yuv4mpegpipe::tests::rejects_bad_frame_headers_and_truncated_payloads",
-  "yuv4mpegpipe::tests::preserves_frame_boundaries_before_rejecting_truncated_next_frame",
+  "yuv4mpegpipe::tests::rejects_bad_frame_headers_and_treats_truncated_payload_as_eof",
+  "yuv4mpegpipe::tests::preserves_frame_boundaries_before_truncated_tail_eof",
+  "yuv4mpegpipe::tests::treats_truncated_frame_only_tail_as_eof",
 ]
 differential_tests = [
   "tests/differential/mappings.txt:avformat-yuv4mpegpipe-demuxer|oracle-rawvideo-yuv4mpegpipe-file-output",
   "tests/differential/mappings.txt:avformat-yuv4mpegpipe-demuxer|oracle-yuv4mpegpipe-framecrc-records",
+  "tests/differential/mappings.txt:avformat-yuv4mpegpipe-demuxer|oracle-yuv4mpegpipe-truncated-framecrc-records",
   "yuv4mpegpipe_oracle::rawvideo_yuv420p_yuv4mpegpipe_file_output_matches_ffmpeg_oracle",
   "yuv4mpegpipe_oracle::yuv4mpegpipe_yuv420p_framecrc_records_match_ffmpeg_oracle",
+  "yuv4mpegpipe_oracle::yuv4mpegpipe_truncated_frame_eof_records_match_ffmpeg_oracle",
+  "yuv4mpegpipe_oracle::yuv4mpegpipe_truncated_frame_eof_records_match_ffmpeg_oracle",
 ]
 fate_tests = ["tests/fate/mappings.txt:avformat-yuv4mpegpipe-demuxer|local-avformat-yuv4mpegpipe-unit"]
 fuzz_targets = ["avformat_yuv4mpegpipe"]
-notes = "Initial YUV4MPEG2 demuxer parses progressive 4:2:0 C420jpeg headers, validates dimensions and frame size through shared VideoStreamParameters plus PixelFormat::Yuv420p while keeping frame rate/interlace, chroma, and frame-header checks local, treats FFmpeg's `A0:0` yuv4mpegpipe header as unspecified sample aspect, ignores YUV4MPEG2 `X*` extension fields including the pinned `XYSCSS=420JPEG` field, emits one stream-0 packet per frame with incrementing PTS, rejects unsupported chroma identifiers such as 420mpeg2/420paldv/422/444/mono with a typed Unsupported error, and preserves an already complete frame packet before returning EndOfFile for a truncated following frame. The bounded yuv420p yuv4mpegpipe file-output oracle row parses pinned FFmpeg 8.1.1 y4m output with this demuxer after byte comparison, and the bounded YUV4MPEG2 input framecrc oracle row proves demuxed packet payload/timing through the Rust framecrc muxer against pinned FFmpeg streamcopy records. Build-checked cargo-fuzz target avformat_yuv4mpegpipe exercises demuxer opening, frame packet emission, and parsed stream invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Other chroma modes, interlaced modes, frame header overrides, broader CLI wiring, upstream FATE, and sustained fuzz execution are pending."
+notes = "Initial YUV4MPEG2 demuxer parses progressive 4:2:0 C420jpeg headers, validates dimensions and frame size through shared VideoStreamParameters plus PixelFormat::Yuv420p while keeping frame rate/interlace, chroma, and frame-header checks local, treats FFmpeg's `A0:0` yuv4mpegpipe header as unspecified sample aspect, ignores YUV4MPEG2 `X*` extension fields including the pinned `XYSCSS=420JPEG` field, emits one stream-0 packet per complete frame with incrementing PTS, rejects unsupported chroma identifiers such as 420mpeg2/420paldv/422/444/mono with a typed Unsupported error, and treats EOF-truncated frame payloads as clean end-of-stream after preserving any complete preceding frames. The bounded yuv420p yuv4mpegpipe file-output oracle row parses pinned FFmpeg 8.1.1 y4m output with this demuxer after byte comparison, and the bounded YUV4MPEG2 input framecrc oracle row proves demuxed packet payload/timing through the Rust framecrc muxer against pinned FFmpeg streamcopy records. The truncated-frame oracle row proves FFmpeg-compatible zero-record output for a truncated first frame and one-record output for a complete first frame followed by a truncated tail. Build-checked cargo-fuzz target avformat_yuv4mpegpipe exercises demuxer opening, frame packet emission, clean EOF after truncated payload tails, and parsed stream invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Other chroma modes, interlaced modes, frame header overrides, broader CLI wiring, upstream FATE, and sustained fuzz execution are pending."
 blocked_reason = ""
 
 [[component]]

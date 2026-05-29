@@ -2899,11 +2899,11 @@ mod tests {
     }
 
     #[test]
-    fn rejects_s16le_partial_sample_frame() {
+    fn accepts_s16le_partial_sample_frame() {
         let path = write_temp_bytes("raw-pcm-partial", "raw", &[0, 0, 1]);
         let path_arg = path.to_string_lossy().into_owned();
 
-        let err = ffmpeg_output(&strings(&[
+        let output = ffmpeg_output(&strings(&[
             "-f",
             "s16le",
             "-ar",
@@ -2916,11 +2916,15 @@ mod tests {
             "framecrc",
             "-",
         ]))
-        .expect_err("raw PCM input must contain whole sample frames");
+        .expect("raw PCM input should preserve trailing partial packet bytes");
 
         let _ = fs::remove_file(&path);
 
-        assert!(err.message().contains("partial sample frame"));
+        assert_eq!(output.output_format(), Some("framecrc"));
+        assert_eq!(output.packet_count(), 1);
+        assert_eq!(output.byte_count(), 3);
+        assert!(output.stdout().contains(",        1,        3,"));
+        assert!(output.stderr().is_empty());
     }
 
     #[test]
@@ -5704,7 +5708,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_yuv4mpegpipe_truncated_frame() {
+    fn treats_yuv4mpegpipe_truncated_frame_as_clean_eof() {
         let path = write_temp_bytes(
             "y4m-truncated-frame",
             "y4m",
@@ -5712,12 +5716,15 @@ mod tests {
         );
         let path_arg = path.to_string_lossy().into_owned();
 
-        let err = ffmpeg_output(&strings(&["-i", path_arg.as_str(), "-f", "framecrc", "-"]))
-            .expect_err("YUV4MPEG2 input should reject truncated frames");
+        let output = ffmpeg_output(&strings(&["-i", path_arg.as_str(), "-f", "framecrc", "-"]))
+            .expect("YUV4MPEG2 truncated frame payload should behave like clean EOF");
 
         let _ = fs::remove_file(&path);
 
-        assert!(err.message().contains("truncated"));
+        assert_eq!(output.output_format(), Some("framecrc"));
+        assert_eq!(output.packet_count(), 0);
+        assert_eq!(output.byte_count(), 0);
+        assert!(output.stderr().is_empty());
     }
 
     fn strings(values: &[&str]) -> Vec<String> {

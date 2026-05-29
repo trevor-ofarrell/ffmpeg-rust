@@ -113,10 +113,8 @@ impl<'a> Yuv4MpegDemuxer<'a> {
             .checked_add(self.info.frame_size())
             .ok_or_else(|| AvError::invalid_data("YUV4MPEG2 frame size overflow"))?;
         if frame_end > self.input.len() {
-            return Err(AvError::new(
-                AvErrorKind::EndOfFile,
-                "YUV4MPEG2 frame payload is truncated",
-            ));
+            self.position = self.input.len();
+            return Ok(None);
         }
 
         let mut packet = Packet::new(self.input[self.position..frame_end].to_vec(), 0);
@@ -537,13 +535,10 @@ mod tests {
     }
 
     #[test]
-    fn rejects_bad_frame_headers_and_truncated_payloads() {
+    fn rejects_bad_frame_headers_and_treats_truncated_payload_as_eof() {
         let truncated = b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg\nFRAME\nabc";
         let mut demuxer = Yuv4MpegDemuxer::open(truncated).unwrap();
-        assert_eq!(
-            demuxer.read_packet().unwrap_err().kind(),
-            AvErrorKind::EndOfFile
-        );
+        assert_eq!(demuxer.read_packet().unwrap(), None);
 
         let bad_header = b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg\nFIELD\nabcdef";
         let mut demuxer = Yuv4MpegDemuxer::open(bad_header).unwrap();
@@ -561,7 +556,7 @@ mod tests {
     }
 
     #[test]
-    fn preserves_frame_boundaries_before_rejecting_truncated_next_frame() {
+    fn preserves_frame_boundaries_before_truncated_tail_eof() {
         let first = frame_bytes(6, 0x30);
         let mut input = y4m_bytes("W2 H2 F25:1 Ip C420jpeg", &[&first]);
         input.extend_from_slice(b"FRAME\nabcde");
@@ -571,10 +566,22 @@ mod tests {
         assert_eq!(packet.data(), first.as_slice());
         assert_eq!(packet.pts(), Some(0));
         assert_eq!(packet.duration(), 1);
-        assert_eq!(
-            demuxer.read_packet().unwrap_err().kind(),
-            AvErrorKind::EndOfFile
-        );
+        assert_eq!(demuxer.read_packet().unwrap(), None);
+        assert_eq!(demuxer.read_packet().unwrap(), None);
+    }
+
+    #[test]
+    fn treats_truncated_frame_only_tail_as_eof() {
+        let first = frame_bytes(6, 0x20);
+        let mut input = y4m_bytes("W2 H2 F25:1 Ip C420jpeg", &[&first]);
+        input.extend_from_slice(b"FRAME\n");
+        let mut demuxer = Yuv4MpegDemuxer::open(&input).unwrap();
+
+        let packet = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(packet.data(), first.as_slice());
+        assert_eq!(packet.duration(), 1);
+        assert_eq!(demuxer.read_packet().unwrap(), None);
+        assert_eq!(demuxer.read_packet().unwrap(), None);
     }
 
     #[test]
