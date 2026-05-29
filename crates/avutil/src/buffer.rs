@@ -1940,6 +1940,38 @@ mod tests {
     }
 
     #[test]
+    fn zero_length_readonly_opaque_data_buffer_detaches_and_releases_owner() {
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let capture = std::sync::Arc::clone(&released);
+        let mut buffer = BufferRef::from_vec_with_opaque_release_callback_readonly(
+            Vec::new(),
+            987usize,
+            move |opaque, bytes| {
+                capture.lock().unwrap().push((opaque, bytes));
+            },
+        );
+
+        assert_eq!(buffer.len(), 0);
+        assert!(buffer.as_slice().is_empty());
+        assert_eq!(buffer.allocated_len(), 0);
+        assert!(buffer.is_readonly());
+        assert!(!buffer.is_writable());
+        assert_eq!(buffer.strong_count(), 1);
+        assert_eq!(buffer.opaque_ref::<usize>(), Some(&987));
+        assert!(released.lock().unwrap().is_empty());
+
+        assert!(buffer.make_mut().is_empty());
+
+        assert_eq!(*released.lock().unwrap(), vec![(987, Vec::new())]);
+        assert_eq!(buffer.len(), 0);
+        assert!(buffer.as_slice().is_empty());
+        assert_eq!(buffer.allocated_len(), 0);
+        assert!(!buffer.is_readonly());
+        assert!(buffer.is_writable());
+        assert!(buffer.opaque_ref::<usize>().is_none());
+    }
+
+    #[test]
     fn readonly_opaque_data_buffers_release_original_bytes_on_detach() {
         let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
         let capture = std::sync::Arc::clone(&released);

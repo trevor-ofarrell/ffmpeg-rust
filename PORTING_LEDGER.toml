@@ -777,6 +777,7 @@ unit_tests = [
   "buffer::tests::external_readonly_buffer_rejects_invalid_visible_len_without_release",
   "buffer::tests::opaque_data_buffers_preserve_owner_until_original_release",
   "buffer::tests::zero_length_opaque_data_buffer_preserves_owner_until_release",
+  "buffer::tests::zero_length_readonly_opaque_data_buffer_detaches_and_releases_owner",
   "buffer::tests::readonly_opaque_data_buffers_release_original_bytes_on_detach",
   "buffer::tests::zeroed_buffer_allocates_requested_zero_bytes",
   "buffer::tests::cloned_buffers_share_until_copy_on_write_mutation",
@@ -827,6 +828,12 @@ fate_tests = [
   "not_applicable: upstream FFmpeg FATE has no standalone AVBufferRef/AVBufferPool API target; covered by unit tests plus pinned libavutil differential oracle",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest zero-length readonly custom-owner slice: pinned libavutil oracle
+# coverage now validates `av_buffer_create(data, 0, free, opaque,
+# AV_BUFFER_FLAG_READONLY)` followed by `av_buffer_make_writable()`. The
+# readonly custom-owner ref reports non-writable zero-length storage, preserves
+# opaque lookup, detaches to ordinary writable empty storage, and runs the
+# original release callback once with zero visible bytes.
 # Latest zero-length custom-owner slice: pinned libavutil oracle coverage now
 # validates `av_buffer_create(data, 0, free, opaque, 0)`. The custom-owner ref
 # is a successful writable zero-length buffer, preserves opaque lookup, and runs

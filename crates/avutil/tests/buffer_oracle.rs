@@ -220,6 +220,43 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         release_fields(&create_zero_released),
     );
 
+    let create_zero_readonly_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_zero_readonly_capture = Arc::clone(&create_zero_readonly_released);
+    let mut create_zero_readonly = BufferRef::from_vec_with_opaque_release_callback_readonly(
+        Vec::new(),
+        654usize,
+        move |opaque, bytes| {
+            create_zero_readonly_capture
+                .lock()
+                .unwrap()
+                .push((opaque, bytes));
+        },
+    );
+    rows.insert(
+        "buffer:create-zero-readonly".to_string(),
+        buffer_fields_with_opaque(&create_zero_readonly),
+    );
+    create_zero_readonly.make_mut();
+    rows.insert(
+        "buffer:create-zero-readonly-make-writable-ret".to_string(),
+        vec![
+            "0".to_string(),
+            create_zero_readonly_released
+                .lock()
+                .unwrap()
+                .len()
+                .to_string(),
+        ],
+    );
+    rows.insert(
+        "buffer:create-zero-readonly-after".to_string(),
+        buffer_fields_with_opaque(&create_zero_readonly),
+    );
+    rows.insert(
+        "buffer:create-zero-readonly-release".to_string(),
+        release_fields(&create_zero_readonly_released),
+    );
+
     let create_shared_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let create_shared_capture = Arc::clone(&create_shared_released);
     let create_shared_src = BufferRef::from_vec_with_opaque_release_callback(
@@ -1582,6 +1619,25 @@ int main(void) {
     print_buffer_opaque("buffer:create-zero", create_zero);
     av_buffer_unref(&create_zero);
     print_create_release("buffer:create-zero-release");
+
+    reset_create_release();
+    uint8_t *create_zero_readonly_data = av_malloc(1);
+    fail_if(!create_zero_readonly_data,
+            "av_malloc create_zero_readonly_data failed");
+    create_zero_readonly_data[0] = 0xcd;
+    last_create_release_size = 0;
+    AVBufferRef *create_zero_readonly =
+        av_buffer_create(create_zero_readonly_data, 0, test_create_free,
+                         (void *)(uintptr_t)654, AV_BUFFER_FLAG_READONLY);
+    fail_if(!create_zero_readonly, "av_buffer_create zero readonly failed");
+    print_buffer_opaque("buffer:create-zero-readonly", create_zero_readonly);
+    ret = av_buffer_make_writable(&create_zero_readonly);
+    printf("buffer:create-zero-readonly-make-writable-ret|%d|%d\n",
+           ret, create_release_count);
+    print_buffer_opaque("buffer:create-zero-readonly-after",
+                        create_zero_readonly);
+    print_create_release("buffer:create-zero-readonly-release");
+    av_buffer_unref(&create_zero_readonly);
 
     reset_create_release();
     static const uint8_t create_shared_bytes[] = { 40, 41, 42 };

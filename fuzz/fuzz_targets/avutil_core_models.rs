@@ -1257,6 +1257,39 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         vec![(payload_len, Vec::new())]
     );
 
+    let zero_readonly_opaque_data_released =
+        Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let zero_readonly_opaque_data_capture = Arc::clone(&zero_readonly_opaque_data_released);
+    let mut zero_readonly_opaque_data =
+        BufferRef::from_vec_with_opaque_release_callback_readonly(
+            Vec::new(),
+            payload_len,
+            move |opaque, bytes| {
+                zero_readonly_opaque_data_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        );
+    assert_eq!(zero_readonly_opaque_data.len(), 0);
+    assert_eq!(zero_readonly_opaque_data.allocated_len(), 0);
+    assert!(zero_readonly_opaque_data.is_readonly());
+    assert!(!zero_readonly_opaque_data.is_writable());
+    assert_eq!(
+        zero_readonly_opaque_data.opaque_ref::<usize>(),
+        Some(&payload_len)
+    );
+    assert!(zero_readonly_opaque_data
+        .make_mut()
+        .is_empty());
+    assert!(!zero_readonly_opaque_data.is_readonly());
+    assert!(zero_readonly_opaque_data.is_writable());
+    assert!(zero_readonly_opaque_data.opaque_ref::<usize>().is_none());
+    assert_eq!(
+        *zero_readonly_opaque_data_released.lock().unwrap(),
+        vec![(payload_len, Vec::new())]
+    );
+
     let readonly_opaque_data_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let readonly_opaque_data_capture = Arc::clone(&readonly_opaque_data_released);
     let mut readonly_opaque_data = BufferRef::from_vec_with_opaque_release_callback_readonly(

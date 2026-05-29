@@ -2,6 +2,16 @@
 
 ## Current Status
 
+Latest `avutil-buffer` zero-length readonly custom-owner slice: pinned FFmpeg 8.1.1 libavutil `av_buffer_create(data, 0, free, opaque, AV_BUFFER_FLAG_READONLY)` followed by `av_buffer_make_writable()` rows now prove the zero-size readonly custom-owner ref succeeds, reports non-writable empty storage, preserves `av_buffer_get_opaque()` lookup, detaches to ordinary writable empty storage, and invokes the original release callback exactly once with zero visible bytes. Rust unit coverage and `avutil_core_models` fuzz invariants mirror that lifecycle. `avutil-buffer` remains `differential_pass`, not complete, because broader AVBuffer/AVBufferRef ABI/lifetime closure, hardware/device ownership integration, and final completion evidence remain pending. Strict completion remains 11/96 components, about 11.5%.
+
+Latest validation commands for the zero-length readonly custom-owner slice passed: `cargo fmt --all`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib zero_length_readonly_opaque_data_buffer_detaches_and_releases_owner -- --nocapture`; `$env:CARGO_TARGET_DIR='target-codex'; cargo check --manifest-path fuzz\\Cargo.toml --bin avutil_core_models`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --test buffer_oracle libavutil_buffer_refs_match_current_model -- --ignored --nocapture`; `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy -p avutil --all-targets --all-features -- -D warnings`; `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --manifest-path fuzz\\Cargo.toml --bin avutil_core_models -- -D warnings`; and WSL `RUST_MIN_STACK=33554432 CXXFLAGS='-O1' HOST_CXXFLAGS='-O1' CARGO_TARGET_DIR=target-wsl-buffer-zero-readonly-create-fuzz-o1 cargo fuzz run avutil_core_models -- -runs=1`.
+
+Final repository gates for the zero-length readonly custom-owner slice also passed: `cargo fmt --all -- --check`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib buffer -- --nocapture`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p fate-runner current_ledger -- --nocapture`; `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-buffer`; `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-buffer --target oracle-libavutil-buffer --oracle-ffmpeg .\\third_party\\ffmpeg-oracle\\build\\bin\\ffmpeg.cmd`; `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- guard-runtime`; `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- oracle-doctor`; `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --workspace --all-targets --all-features -- -D warnings`; `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed`; and `git diff --check` with CRLF conversion warnings only.
+
+Latest failing commands for the zero-length readonly custom-owner slice: none.
+
+Latest change summary: `Pin zero-length readonly AVBuffer create owner`.
+
 Latest `avutil-buffer` zero-length custom-owner slice: pinned FFmpeg 8.1.1 libavutil `av_buffer_create(data, 0, free, opaque, 0)` rows now prove zero-size custom-owner creation succeeds, reports a writable zero-length ref, preserves `av_buffer_get_opaque()` lookup, and invokes the release callback exactly once on unref with zero visible bytes. Rust unit coverage and `avutil_core_models` fuzz invariants mirror that lifecycle. `avutil-buffer` remains `differential_pass`, not complete, because broader AVBuffer/AVBufferRef ABI/lifetime closure, hardware/device ownership integration, and final completion evidence remain pending. Strict completion remains 11/96 components, about 11.5%.
 
 Latest validation commands for the zero-length custom-owner slice passed: `cargo fmt --all`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib zero_length_opaque_data_buffer_preserves_owner_until_release -- --nocapture`; `$env:CARGO_TARGET_DIR='target-codex'; cargo check --manifest-path fuzz\\Cargo.toml --bin avutil_core_models`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --test buffer_oracle libavutil_buffer_refs_match_current_model -- --ignored --nocapture`; `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy -p avutil --all-targets --all-features -- -D warnings`; `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --manifest-path fuzz\\Cargo.toml --bin avutil_core_models -- -D warnings`; and WSL `RUST_MIN_STACK=33554432 CXXFLAGS='-O1' HOST_CXXFLAGS='-O1' CARGO_TARGET_DIR=target-wsl-buffer-zero-create-fuzz-o1 cargo fuzz run avutil_core_models -- -runs=1`.
@@ -1499,6 +1509,25 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-buffer` zero-length readonly custom-owner slice:
+  - `cargo fmt --all`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib zero_length_readonly_opaque_data_buffer_detaches_and_releases_owner -- --nocapture`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo check --manifest-path fuzz\\Cargo.toml --bin avutil_core_models`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --test buffer_oracle libavutil_buffer_refs_match_current_model -- --ignored --nocapture`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy -p avutil --all-targets --all-features -- -D warnings`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --manifest-path fuzz\\Cargo.toml --bin avutil_core_models -- -D warnings`
+  - WSL `RUST_MIN_STACK=33554432 CXXFLAGS='-O1' HOST_CXXFLAGS='-O1' CARGO_TARGET_DIR=target-wsl-buffer-zero-readonly-create-fuzz-o1 cargo fuzz run avutil_core_models -- -runs=1`
+  - `cargo fmt --all -- --check`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib buffer -- --nocapture`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p fate-runner current_ledger -- --nocapture`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-buffer`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-buffer --target oracle-libavutil-buffer --oracle-ffmpeg .\\third_party\\ffmpeg-oracle\\build\\bin\\ffmpeg.cmd`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- guard-runtime`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- oracle-doctor`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --workspace --all-targets --all-features -- -D warnings`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed`
+  - `git diff --check` (passed with CRLF warnings only)
 
 - Current `avutil-buffer` zero-length shared make-writable slice:
   - `cargo fmt --all`
@@ -7625,6 +7654,9 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-buffer` zero-length readonly custom-owner slice:
+  - None. The WSL fuzz command rebuilt sanitizer artifacts for the new target dir before passing the one-run corpus smoke.
+
 - Current `avutil-buffer` zero-length shared make-writable slice:
   - None. The WSL fuzz command rebuilt sanitizer artifacts for the new target dir before passing the one-run corpus smoke.
 
@@ -8338,6 +8370,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-buffer` is the current focus. The latest coherent slice pins zero-length readonly custom-owner behavior against FFmpeg 8.1.1: `av_buffer_create(data, 0, free, opaque, AV_BUFFER_FLAG_READONLY)` creates a non-writable empty ref with opaque lookup, and `av_buffer_make_writable()` detaches it to ordinary writable empty storage while releasing the original owner. The component remains `differential_pass`, not complete, because remaining AVBuffer/AVBufferRef ABI/lifetime edges, hardware/device ownership integration, and final completion evidence still need closure.
+
 `avutil-buffer` is the current focus. The latest coherent slice pins zero-length shared make-writable behavior against FFmpeg 8.1.1: `av_buffer_make_writable()` on one shared `av_buffer_allocz(0)` ref detaches the destination to a separate writable empty ref, while the source returns to refcount 1 and writable status. The component remains `differential_pass`, not complete, because remaining AVBuffer/AVBufferRef ABI/lifetime edges, hardware/device ownership integration, and final completion evidence still need closure.
 
 `avutil-buffer` is the current focus. The latest coherent slice pins zero-size default-pool behavior against FFmpeg 8.1.1: `av_buffer_pool_init(0, NULL)` returns writable zero-length refs with NULL per-buffer pool opaque data, and the pool can accept and reuse those empty refs after unref. The component remains `differential_pass`, not complete, because remaining AVBuffer/AVBufferRef ABI/lifetime edges, hardware/device ownership integration, and final completion evidence still need closure.
@@ -8842,6 +8876,7 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Known Blockers
 
+- `avutil-buffer` now has pinned zero-length readonly custom-owner evidence: `av_buffer_create(data, 0, free, opaque, AV_BUFFER_FLAG_READONLY)` plus `av_buffer_make_writable()` proves non-writable empty-owner creation, opaque lookup preservation, detach to ordinary writable empty storage, and immediate original-owner release. It remains below strict completion because broader AVBuffer/AVBufferRef ABI/lifetime closure, hardware/device ownership integration, and final limitation-zero documentation are still incomplete.
 - `avutil-buffer` now has pinned zero-length shared make-writable evidence: `av_buffer_make_writable()` on one shared `av_buffer_allocz(0)` ref detaches the destination to separate writable empty storage and leaves the source writable with refcount 1. It remains below strict completion because broader AVBuffer/AVBufferRef ABI/lifetime closure, hardware/device ownership integration, and final limitation-zero documentation are still incomplete.
 - `avutil-buffer` now has pinned zero-size default-pool evidence: `av_buffer_pool_init(0, NULL)` plus repeated `av_buffer_pool_get()` rows prove reusable writable empty refs with NULL per-buffer pool opaque data. It remains below strict completion because broader AVBuffer/AVBufferRef ABI/lifetime closure, hardware/device ownership integration, and final limitation-zero documentation are still incomplete.
 - `avutil-buffer` now has pinned shared-readonly `av_buffer_realloc()` evidence: reallocating one ref detaches the destination, copies the prefix, clears destination opaque data, preserves the readonly source owner, and releases the original owner only after the final original reference drops. It remains below strict completion because broader AVBuffer/AVBufferRef ABI/lifetime closure, hardware/device ownership integration, and final limitation-zero documentation are still incomplete.
