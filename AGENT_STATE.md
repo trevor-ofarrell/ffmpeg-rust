@@ -2,6 +2,16 @@
 
 ## Current Status
 
+Latest `avutil-buffer` shared custom-owner realloc slice: pinned FFmpeg 8.1.1 libavutil `av_buffer_realloc()` rows now prove that reallocating one reference of a shared writable `av_buffer_create` opaque owner detaches the destination to writable reallocatable storage, copies the stable prefix, clears destination opaque data, preserves the writable source and its opaque owner, and delays the original release callback until the final original reference is unreffed. Rust unit coverage and `avutil_core_models` fuzz invariants mirror that lifetime shape. `avutil-buffer` remains `differential_pass`, not complete, because broader AVBuffer/AVBufferRef lifetime and ABI closure, hardware/device ownership integration, and final completion evidence remain pending. Strict completion remains 11/96 components, about 11.5%.
+
+Latest validation commands for the shared custom-owner realloc slice passed: `cargo fmt --all`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib buffer_ref_realloc_handles_nullable_c_api_shape -- --nocapture`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --test buffer_oracle libavutil_buffer_refs_match_current_model -- --ignored --nocapture`; `$env:CARGO_TARGET_DIR='target-codex'; cargo check --manifest-path fuzz\\Cargo.toml --bin avutil_core_models`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib buffer -- --nocapture`; `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy -p avutil --all-targets --all-features -- -D warnings`; `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --manifest-path fuzz\\Cargo.toml --bin avutil_core_models -- -D warnings`; and WSL `RUST_MIN_STACK=33554432 CXXFLAGS='-O1' HOST_CXXFLAGS='-O1' CARGO_TARGET_DIR=target-wsl-buffer-shared-custom-realloc-fuzz-o1 cargo fuzz run avutil_core_models -- -runs=1`.
+
+Final repository gates for the shared custom-owner realloc slice also passed: `cargo fmt --all -- --check`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p fate-runner current_ledger -- --nocapture`; `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-buffer`; `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-buffer --target oracle-libavutil-buffer --oracle-ffmpeg .\\third_party\\ffmpeg-oracle\\build\\bin\\ffmpeg.cmd`; `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- guard-runtime`; `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- oracle-doctor`; `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --workspace --all-targets --all-features -- -D warnings`; `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed`; and `git diff --check` with CRLF conversion warnings only.
+
+Latest failing commands for the shared custom-owner realloc slice: none.
+
+Latest change summary: `Pin shared custom AVBuffer realloc`.
+
 Latest `avutil-buffer` shared-readonly realloc slice: pinned FFmpeg 8.1.1 libavutil `av_buffer_realloc()` rows now prove that reallocating one reference of a shared readonly `av_buffer_create` owner detaches the destination to writable reallocatable storage, copies the stable prefix, clears destination opaque data, preserves the readonly source and its opaque owner, and delays the original release callback until the final original reference is unreffed. Rust unit coverage and `avutil_core_models` fuzz invariants mirror that lifetime shape. `avutil-buffer` remains `differential_pass`, not complete, because broader AVBuffer/AVBufferRef lifetime and ABI closure, hardware/device ownership integration, and final completion evidence remain pending. Strict completion remains 11/96 components, about 11.5%.
 
 Latest validation commands for the shared-readonly realloc slice passed: `cargo fmt --all`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib buffer_ref_realloc_handles_nullable_c_api_shape -- --nocapture`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --test buffer_oracle libavutil_buffer_refs_match_current_model -- --ignored --nocapture`; `$env:CARGO_TARGET_DIR='target-codex'; cargo check --manifest-path fuzz\\Cargo.toml --bin avutil_core_models`; `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy -p avutil --all-targets --all-features -- -D warnings`; `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --manifest-path fuzz\\Cargo.toml --bin avutil_core_models -- -D warnings`; `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib buffer -- --nocapture`; and WSL `RUST_MIN_STACK=33554432 CXXFLAGS='-O1' HOST_CXXFLAGS='-O1' CARGO_TARGET_DIR=target-wsl-buffer-readonly-realloc-fuzz-o1 cargo fuzz run avutil_core_models -- -runs=1`.
@@ -1459,6 +1469,25 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-buffer` shared custom-owner realloc slice:
+  - `cargo fmt --all`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib buffer_ref_realloc_handles_nullable_c_api_shape -- --nocapture`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --test buffer_oracle libavutil_buffer_refs_match_current_model -- --ignored --nocapture`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo check --manifest-path fuzz\\Cargo.toml --bin avutil_core_models`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib buffer -- --nocapture`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy -p avutil --all-targets --all-features -- -D warnings`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --manifest-path fuzz\\Cargo.toml --bin avutil_core_models -- -D warnings`
+  - WSL `RUST_MIN_STACK=33554432 CXXFLAGS='-O1' HOST_CXXFLAGS='-O1' CARGO_TARGET_DIR=target-wsl-buffer-shared-custom-realloc-fuzz-o1 cargo fuzz run avutil_core_models -- -runs=1`
+  - `cargo fmt --all -- --check`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p fate-runner current_ledger -- --nocapture`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-buffer`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-buffer --target oracle-libavutil-buffer --oracle-ffmpeg .\\third_party\\ffmpeg-oracle\\build\\bin\\ffmpeg.cmd`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- guard-runtime`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- oracle-doctor`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --workspace --all-targets --all-features -- -D warnings`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed`
+  - `git diff --check` (passed with CRLF warnings only)
 
 - Current `avutil-buffer` shared-readonly realloc slice:
   - `cargo fmt --all`
@@ -7527,6 +7556,9 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 - `git diff --check`
 
 ## Last Failing Commands
+
+- Current `avutil-buffer` shared custom-owner realloc slice:
+  - None.
 
 - Current `avutil-buffer` shared-readonly realloc slice:
   - None.

@@ -2290,6 +2290,40 @@ mod tests {
             vec![(654, vec![61, 62, 63])]
         );
 
+        let shared_custom_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let shared_custom_capture = std::sync::Arc::clone(&shared_custom_released);
+        let shared_custom_source = BufferRef::from_vec_with_opaque_release_callback(
+            vec![71, 72, 73],
+            765usize,
+            move |opaque, storage| {
+                shared_custom_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, storage));
+            },
+        );
+        let mut shared_custom_realloc = Some(BufferRef::ref_from(&shared_custom_source));
+        BufferRef::realloc(&mut shared_custom_realloc, 5).unwrap();
+        let shared_custom_realloc = shared_custom_realloc.expect("shared custom realloc result");
+        assert_eq!(shared_custom_source.as_slice(), &[71, 72, 73]);
+        assert_eq!(shared_custom_source.strong_count(), 1);
+        assert!(shared_custom_source.is_writable());
+        assert_eq!(shared_custom_source.opaque_ref::<usize>(), Some(&765));
+        assert_eq!(shared_custom_realloc.len(), 5);
+        assert_eq!(&shared_custom_realloc.as_slice()[..3], &[71, 72, 73]);
+        assert!(shared_custom_realloc.is_writable());
+        assert!(shared_custom_realloc.opaque_ref::<usize>().is_none());
+        assert!(!shared_custom_realloc.shares_storage(&shared_custom_source));
+        assert!(shared_custom_released.lock().unwrap().is_empty());
+        drop(shared_custom_realloc);
+        assert!(shared_custom_released.lock().unwrap().is_empty());
+        drop(shared_custom_source);
+        assert_eq!(
+            *shared_custom_released.lock().unwrap(),
+            vec![(765, vec![71, 72, 73])]
+        );
+
         let shared_source = BufferRef::from_vec(vec![7, 8, 9]);
         let mut shared_realloc = Some(shared_source.clone());
         BufferRef::realloc(&mut shared_realloc, 4).unwrap();

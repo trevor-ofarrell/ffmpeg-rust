@@ -233,6 +233,71 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         release_fields(&create_shared_released),
     );
 
+    let create_shared_realloc_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_shared_realloc_capture = Arc::clone(&create_shared_realloc_released);
+    let create_shared_realloc_src = BufferRef::from_vec_with_opaque_release_callback(
+        vec![44, 45, 46],
+        567usize,
+        move |opaque, bytes| {
+            create_shared_realloc_capture
+                .lock()
+                .unwrap()
+                .push((opaque, bytes));
+        },
+    );
+    let mut create_shared_realloc_dst = Some(BufferRef::ref_from(&create_shared_realloc_src));
+    BufferRef::realloc(&mut create_shared_realloc_dst, 5).unwrap();
+    let create_shared_realloc_dst =
+        create_shared_realloc_dst.expect("create shared realloc result");
+    rows.insert(
+        "buffer:create-shared-realloc-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:create-shared-realloc-src".to_string(),
+        buffer_fields_with_opaque(&create_shared_realloc_src),
+    );
+    rows.insert(
+        "buffer:create-shared-realloc-dst".to_string(),
+        buffer_prefix_fields(&create_shared_realloc_dst, 3),
+    );
+    rows.insert(
+        "buffer:create-shared-realloc-dst-opaque".to_string(),
+        vec![create_shared_realloc_dst
+            .opaque_ref::<usize>()
+            .copied()
+            .unwrap_or_default()
+            .to_string()],
+    );
+    rows.insert(
+        "buffer:create-shared-realloc-shares".to_string(),
+        vec![bool_field(
+            create_shared_realloc_src.shares_storage(&create_shared_realloc_dst),
+        )],
+    );
+    rows.insert(
+        "buffer:create-shared-realloc-release-before-src-drop".to_string(),
+        vec![create_shared_realloc_released
+            .lock()
+            .unwrap()
+            .len()
+            .to_string()],
+    );
+    drop(create_shared_realloc_dst);
+    rows.insert(
+        "buffer:create-shared-realloc-release-before-src-unref".to_string(),
+        vec![create_shared_realloc_released
+            .lock()
+            .unwrap()
+            .len()
+            .to_string()],
+    );
+    drop(create_shared_realloc_src);
+    rows.insert(
+        "buffer:create-shared-realloc-release".to_string(),
+        release_fields(&create_shared_realloc_released),
+    );
+
     let create_realloc_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let create_realloc_capture = Arc::clone(&create_realloc_released);
     let mut create_realloc = Some(BufferRef::from_vec_with_opaque_release_callback(
@@ -1461,6 +1526,45 @@ int main(void) {
            create_release_count);
     av_buffer_unref(&create_shared_src);
     print_create_release("buffer:create-shared-release");
+
+    reset_create_release();
+    static const uint8_t create_shared_realloc_bytes[] = { 44, 45, 46 };
+    uint8_t *create_shared_realloc_data =
+        av_malloc(sizeof(create_shared_realloc_bytes));
+    fail_if(!create_shared_realloc_data,
+            "av_malloc create_shared_realloc_data failed");
+    for (size_t i = 0; i < sizeof(create_shared_realloc_bytes); i++)
+        create_shared_realloc_data[i] = create_shared_realloc_bytes[i];
+    last_create_release_size = sizeof(create_shared_realloc_bytes);
+    AVBufferRef *create_shared_realloc_src =
+        av_buffer_create(create_shared_realloc_data,
+                         sizeof(create_shared_realloc_bytes),
+                         test_create_free, (void *)(uintptr_t)567, 0);
+    fail_if(!create_shared_realloc_src,
+            "av_buffer_create shared realloc src failed");
+    AVBufferRef *create_shared_realloc_dst =
+        av_buffer_ref(create_shared_realloc_src);
+    fail_if(!create_shared_realloc_dst,
+            "av_buffer_ref create_shared_realloc failed");
+    ret = av_buffer_realloc(&create_shared_realloc_dst, 5);
+    printf("buffer:create-shared-realloc-ret|%d\n", ret);
+    print_buffer_opaque("buffer:create-shared-realloc-src",
+                        create_shared_realloc_src);
+    print_buffer_prefix("buffer:create-shared-realloc-dst",
+                        create_shared_realloc_dst, 3);
+    printf("buffer:create-shared-realloc-dst-opaque|%llu\n",
+           (unsigned long long)(uintptr_t)
+               av_buffer_get_opaque(create_shared_realloc_dst));
+    printf("buffer:create-shared-realloc-shares|%d\n",
+           create_shared_realloc_src->buffer ==
+               create_shared_realloc_dst->buffer);
+    printf("buffer:create-shared-realloc-release-before-src-drop|%d\n",
+           create_release_count);
+    av_buffer_unref(&create_shared_realloc_dst);
+    printf("buffer:create-shared-realloc-release-before-src-unref|%d\n",
+           create_release_count);
+    av_buffer_unref(&create_shared_realloc_src);
+    print_create_release("buffer:create-shared-realloc-release");
 
     reset_create_release();
     static const uint8_t create_realloc_bytes[] = { 50, 51, 52 };
