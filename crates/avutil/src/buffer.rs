@@ -2202,6 +2202,10 @@ mod tests {
         assert_eq!(buffer.as_slice(), &[0, 0, 0, 0]);
         assert_eq!(buffer.allocated_len(), 4);
         assert_eq!(buffer.padding_len(), 0);
+
+        let huge = BufferRef::zeroed(usize::MAX).unwrap_err();
+        assert_eq!(huge.kind(), AvErrorKind::External);
+        assert_eq!(huge.code(), Some(AvErrorCode::ENOMEM));
     }
 
     #[test]
@@ -3593,5 +3597,23 @@ mod tests {
             BufferPool::new(1, usize::MAX).unwrap_err().kind(),
             AvErrorKind::InvalidArgument
         );
+
+        let pool_frees = std::sync::Arc::new(std::sync::Mutex::new(Vec::<usize>::new()));
+        let pool_free_capture = std::sync::Arc::clone(&pool_frees);
+        let huge_pool = BufferPool::with_callbacks(
+            usize::MAX,
+            0,
+            BufferPoolCallbacks::default().with_pool_free(move || {
+                pool_free_capture.lock().unwrap().push(99);
+            }),
+        )
+        .unwrap();
+        let get_err = huge_pool.get().unwrap_err();
+        assert_eq!(get_err.kind(), AvErrorKind::External);
+        assert_eq!(get_err.code(), Some(AvErrorCode::ENOMEM));
+        assert!(pool_frees.lock().unwrap().is_empty());
+        assert_eq!(huge_pool.available_count().unwrap(), 0);
+        drop(huge_pool);
+        assert_eq!(*pool_frees.lock().unwrap(), vec![99]);
     }
 }

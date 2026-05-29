@@ -947,6 +947,9 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     assert_eq!(zeroed_empty.len(), 0);
     assert_eq!(zeroed_empty.allocated_len(), 0);
     assert!(zeroed_empty.is_writable());
+    let zeroed_huge = BufferRef::zeroed(usize::MAX).unwrap_err();
+    assert_eq!(zeroed_huge.kind(), AvErrorKind::External);
+    assert_eq!(zeroed_huge.code(), Some(AvErrorCode::ENOMEM));
 
     let padding_len = usize::from(cursor.next().unwrap_or_default()) % (MAX_PAYLOAD + 1);
     let mut padded = BufferRef::copy_from_slice_with_padding(&payload, padding_len).unwrap();
@@ -2449,6 +2452,24 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         BufferPool::new(1, usize::MAX).unwrap_err().kind(),
         AvErrorKind::InvalidArgument
     );
+
+    let huge_pool_frees = Arc::new(Mutex::new(0usize));
+    let huge_pool_free_capture = Arc::clone(&huge_pool_frees);
+    let huge_pool = BufferPool::with_callbacks(
+        usize::MAX,
+        0,
+        BufferPoolCallbacks::default().with_pool_free(move || {
+            *huge_pool_free_capture.lock().unwrap() += 1;
+        }),
+    )
+    .unwrap();
+    let huge_pool_err = huge_pool.get().unwrap_err();
+    assert_eq!(huge_pool_err.kind(), AvErrorKind::External);
+    assert_eq!(huge_pool_err.code(), Some(AvErrorCode::ENOMEM));
+    assert_eq!(huge_pool.available_count().unwrap(), 0);
+    assert_eq!(*huge_pool_frees.lock().unwrap(), 0);
+    drop(huge_pool);
+    assert_eq!(*huge_pool_frees.lock().unwrap(), 1);
 }
 
 fn exercise_errors(cursor: &mut Cursor<'_>) {

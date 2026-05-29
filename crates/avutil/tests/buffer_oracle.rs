@@ -7,8 +7,8 @@ use std::{
 };
 
 use avutil::{
-    BufferPool, BufferPoolAllocation, BufferPoolCallbacks, BufferRef, AV_BUFFER_FLAG_READONLY,
-    AV_BUFFER_REF_ABI_LAYOUT,
+    AvErrorCode, BufferPool, BufferPoolAllocation, BufferPoolCallbacks, BufferRef,
+    AV_BUFFER_FLAG_READONLY, AV_BUFFER_REF_ABI_LAYOUT,
 };
 
 type ReleaseRows = Arc<Mutex<Vec<(usize, Vec<u8>)>>>;
@@ -73,12 +73,20 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         "buffer:alloc".to_string(),
         vec!["4".to_string(), "1".to_string(), "1".to_string()],
     );
+    rows.insert("buffer:alloc-huge".to_string(), vec!["1".to_string()]);
 
     let alloc_zero = BufferRef::from_vec(Vec::new());
     rows.insert("buffer:alloc-zero".to_string(), buffer_fields(&alloc_zero));
 
     let allocz = BufferRef::zeroed(4).unwrap();
     rows.insert("buffer:allocz".to_string(), buffer_fields(&allocz));
+
+    rows.insert(
+        "buffer:allocz-huge".to_string(),
+        vec![bool_field(
+            BufferRef::zeroed(usize::MAX).unwrap_err().code() == Some(AvErrorCode::ENOMEM),
+        )],
+    );
 
     let allocz_zero = BufferRef::zeroed(0).unwrap();
     rows.insert(
@@ -1624,6 +1632,35 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     drop(readonly_pool_free_values);
     drop(readonly_release_values);
 
+    let huge_default_pool_frees = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let huge_default_pool_free_capture = Arc::clone(&huge_default_pool_frees);
+    let huge_default_pool = BufferPool::with_callbacks(
+        usize::MAX,
+        0,
+        BufferPoolCallbacks::default().with_pool_free(move || {
+            huge_default_pool_free_capture.lock().unwrap().push(99);
+        }),
+    )
+    .unwrap();
+    let huge_default_err = huge_default_pool.get().unwrap_err();
+    rows.insert(
+        "pool-default-huge:get".to_string(),
+        vec![
+            bool_field(huge_default_err.code() == Some(AvErrorCode::ENOMEM)),
+            huge_default_pool_frees.lock().unwrap().len().to_string(),
+        ],
+    );
+    drop(huge_default_pool);
+    let huge_default_pool_free_values = huge_default_pool_frees.lock().unwrap();
+    rows.insert(
+        "pool-default-huge:uninit".to_string(),
+        vec![
+            huge_default_pool_free_values.len().to_string(),
+            huge_default_pool_free_values[0].to_string(),
+        ],
+    );
+    drop(huge_default_pool_free_values);
+
     let outstanding_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let outstanding_pool_frees = Arc::new(Mutex::new(Vec::<usize>::new()));
     let outstanding_release_capture = Arc::clone(&outstanding_releases);
@@ -2060,6 +2097,10 @@ int main(void) {
     print_status("buffer:alloc", buf);
     av_buffer_unref(&buf);
 
+    buf = av_buffer_alloc(SIZE_MAX);
+    printf("buffer:alloc-huge|%d\n", buf == NULL);
+    av_buffer_unref(&buf);
+
     buf = av_buffer_alloc(0);
     fail_if(!buf, "av_buffer_alloc zero failed");
     print_buffer("buffer:alloc-zero", buf);
@@ -2068,6 +2109,10 @@ int main(void) {
     buf = av_buffer_allocz(4);
     fail_if(!buf, "av_buffer_allocz failed");
     print_buffer("buffer:allocz", buf);
+    av_buffer_unref(&buf);
+
+    buf = av_buffer_allocz(SIZE_MAX);
+    printf("buffer:allocz-huge|%d\n", buf == NULL);
     av_buffer_unref(&buf);
 
     buf = av_buffer_allocz(0);
@@ -3083,6 +3128,20 @@ int main(void) {
            pool_release_count, last_pool_release_id);
     print_hex(last_pool_release, last_pool_release_size);
     printf("|%d|%" PRIuPTR "\n", pool_free_count, last_pool_free_id);
+
+    reset_pool_counters();
+    PoolOpaque huge_default_opaque = { 99, SIZE_MAX };
+    AVBufferPool *huge_default_pool =
+        av_buffer_pool_init2(SIZE_MAX, &huge_default_opaque, NULL,
+                             test_pool_owner_free);
+    fail_if(!huge_default_pool, "av_buffer_pool_init2 huge default failed");
+    AVBufferRef *huge_default_get = av_buffer_pool_get(huge_default_pool);
+    printf("pool-default-huge:get|%d|%d\n",
+           huge_default_get == NULL, pool_free_count);
+    av_buffer_unref(&huge_default_get);
+    av_buffer_pool_uninit(&huge_default_pool);
+    printf("pool-default-huge:uninit|%d|%" PRIuPTR "\n",
+           pool_free_count, last_pool_free_id);
 
     reset_pool_counters();
     PoolOpaque outstanding_opaque = { 66, 2 };
