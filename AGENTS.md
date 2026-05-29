@@ -30,6 +30,51 @@ Pinned upstream target:
 - Build profile 1: default upstream build, no `--enable-gpl`, no `--enable-nonfree`, no optional external libraries
 - Later profiles: GPL, version3, nonfree, external-library, platform/hardware, and historical compatibility profiles
 
+## Orchestrator Workflow
+
+The main Codex agent is the orchestrator and merge captain. Its job is to keep the parity ledger honest, choose the next strict evidence slice, delegate safe parallel work, review returned patches, run final gates, update persistent state, and commit coherent changes.
+
+Parallel subagents are allowed for this goal. Use up to 10 concurrent subagents when useful, but prefer 3-5 active agents unless the work has clearly disjoint write sets and independent validation. More agents are only helpful when they reduce wall-clock time without increasing merge risk.
+
+Use these roles:
+- Explorers: read-only auditors for specific questions. They may inspect code and report blockers or task maps, but must not edit files.
+- Workers: implementation agents with explicit ownership of a component and file set. They may edit only their assigned files and must report changed files, tests run, pass/fail, and remaining blockers.
+
+Before spawning workers:
+1. Inspect `git status --short`.
+2. Finish, commit, or explicitly reserve any dirty files.
+3. Define each worker's component id, exact owned files/directories, forbidden files, expected tests/oracle commands, and final report format.
+4. Ensure no two active workers own the same source module, oracle harness, fuzz target, mapping file, docs file, ledger entry, or Cargo manifest.
+5. Keep the immediate blocking task on the main thread if the next step depends on it.
+
+Files reserved for the orchestrator unless explicitly delegated to exactly one worker at a time:
+- `PORTING_LEDGER.toml`
+- `AGENT_STATE.md`
+- `AGENTS.md`
+- `docs/architecture.md`
+- `docs/compatibility.md`
+- `docs/oracle.md`
+- `tests/differential/mappings.txt`
+- `tests/fate/*.txt`
+- workspace manifests and lockfile
+- crate root files such as `crates/*/src/lib.rs`
+
+Workers must be told that other agents may be active in the codebase. They must not revert edits they did not make, must not broaden their write scope, and must not mark components complete. A worker may advance implementation and tests for a bounded slice, but only the orchestrator may change ledger status, update global docs, or commit.
+
+Preferred parallel lanes after the current dirty slice is committed:
+- `avutil-options`
+- `avutil-logging`
+- `avutil-packet`
+- `avformat-wav-demuxer`
+- `avformat-yuv4mpegpipe-demuxer`
+- `avformat-image2-demuxer`
+- `avformat-pcm-s16le-demuxer`
+- `fftools-version`
+- FATE/oracle mapping expansion
+- isolated fuzz corpus and harness strengthening
+
+Each worker should use a unique target directory such as `target-par-<component>` to avoid Cargo artifact contention. If separate git worktrees or branches are available, prefer one per worker. Merge worker output serially: review diffs, run narrow tests, run required oracle/FATE/fuzz gates, update ledger/state/docs centrally, then commit.
+
 ## Non-Negotiable Rules
 
 1. Do not link against FFmpeg/libav* at runtime.
@@ -123,14 +168,17 @@ At the start of every Codex turn:
 4. Run `git status --short`.
 5. Identify the highest-priority failing or incomplete component.
 6. Make a concrete plan for this turn.
-7. Implement one coherent slice.
-8. Add or strengthen tests before marking progress.
-9. Run the narrowest relevant tests.
-10. Run formatting and clippy if the change is Rust code.
-11. Update `PORTING_LEDGER.toml`.
-12. Update `AGENT_STATE.md`.
-13. Commit if tests pass and the change is coherent.
-14. End with a concise summary.
+7. Decide what the main thread will do locally on the critical path.
+8. When parallel work is useful, spawn explorers or workers with disjoint ownership and continue local non-overlapping work.
+9. Implement or integrate one coherent slice.
+10. Add or strengthen tests before marking progress.
+11. Run the narrowest relevant tests.
+12. Run formatting and clippy if the change is Rust code.
+13. Review any worker results before integration; reject broad, stubby, untested, or conflicting changes.
+14. Update `PORTING_LEDGER.toml`.
+15. Update `AGENT_STATE.md`.
+16. Commit if tests pass and the change is coherent.
+17. End with a concise summary.
 
 ## Completion Definition For A Component
 
