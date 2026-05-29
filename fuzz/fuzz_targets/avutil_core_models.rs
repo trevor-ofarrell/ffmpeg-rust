@@ -2322,6 +2322,65 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     );
     assert_eq!(*custom_pool_frees.lock().unwrap(), 1);
 
+    let offset_pool_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let offset_release_capture = Arc::clone(&offset_pool_releases);
+    let offset_pool = BufferPool::with_callbacks(
+        payload_len,
+        padding_len,
+        BufferPoolCallbacks::with_allocation_callbacks(
+            move |allocated_len| {
+                let mut bytes = vec![0x31; allocated_len + 1];
+                bytes[0] = 0xee;
+                BufferPoolAllocation::with_opaque_visible_range(
+                    bytes,
+                    1,
+                    payload_len,
+                    allocated_len + 1,
+                )
+            },
+            move |allocation| {
+                let opaque = *allocation.opaque_ref::<usize>().unwrap();
+                offset_release_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, allocation.into_vec()));
+            },
+        ),
+    )
+    .unwrap();
+    let offset_first = offset_pool.get().unwrap();
+    assert_eq!(offset_first.offset(), 1);
+    assert_eq!(offset_first.len(), payload_len);
+    assert_eq!(offset_first.as_slice(), vec![0x31; payload_len].as_slice());
+    assert_eq!(
+        offset_first.pool_opaque_ref::<usize>().copied(),
+        Some(payload_len + padding_len + 1)
+    );
+    drop(offset_first);
+    assert!(offset_pool_releases.lock().unwrap().is_empty());
+    assert_eq!(offset_pool.available_count().unwrap(), 1);
+
+    let offset_reuse = offset_pool.get().unwrap();
+    assert_eq!(offset_reuse.offset(), 0);
+    assert_eq!(offset_reuse.len(), payload_len);
+    let mut expected_reuse = vec![0x31; payload_len];
+    if let Some(first) = expected_reuse.first_mut() {
+        *first = 0xee;
+    }
+    assert_eq!(offset_reuse.as_slice(), expected_reuse.as_slice());
+    assert_eq!(
+        offset_reuse.pool_opaque_ref::<usize>().copied(),
+        Some(payload_len + padding_len + 1)
+    );
+    drop(offset_reuse);
+    drop(offset_pool);
+    let mut expected_offset_release = vec![0x31; payload_len + padding_len + 1];
+    expected_offset_release[0] = 0xee;
+    assert_eq!(
+        *offset_pool_releases.lock().unwrap(),
+        vec![(payload_len + padding_len + 1, expected_offset_release)]
+    );
+
     let readonly_pool_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let readonly_pool_frees = Arc::new(Mutex::new(0usize));
     let readonly_release_capture = Arc::clone(&readonly_pool_releases);

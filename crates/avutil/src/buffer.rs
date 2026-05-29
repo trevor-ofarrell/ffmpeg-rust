@@ -58,6 +58,9 @@ pub struct BufferPoolAllocation {
     bytes: Vec<u8>,
     opaque: Option<Box<dyn Any + Send + Sync>>,
     readonly: bool,
+    visible_offset: usize,
+    visible_len: Option<usize>,
+    allow_oversized_recycle: bool,
 }
 
 impl BufferPoolAllocation {
@@ -66,6 +69,9 @@ impl BufferPoolAllocation {
             bytes,
             opaque: None,
             readonly: false,
+            visible_offset: 0,
+            visible_len: None,
+            allow_oversized_recycle: false,
         }
     }
 
@@ -77,6 +83,9 @@ impl BufferPoolAllocation {
             bytes,
             opaque: Some(Box::new(opaque)),
             readonly: false,
+            visible_offset: 0,
+            visible_len: None,
+            allow_oversized_recycle: false,
         }
     }
 
@@ -85,6 +94,9 @@ impl BufferPoolAllocation {
             bytes,
             opaque: None,
             readonly: true,
+            visible_offset: 0,
+            visible_len: None,
+            allow_oversized_recycle: false,
         }
     }
 
@@ -96,7 +108,54 @@ impl BufferPoolAllocation {
             bytes,
             opaque: Some(Box::new(opaque)),
             readonly: true,
+            visible_offset: 0,
+            visible_len: None,
+            allow_oversized_recycle: false,
         }
+    }
+
+    pub fn with_visible_range(bytes: Vec<u8>, offset: usize, len: usize) -> AvResult<Self> {
+        Self::validate_visible_range(bytes.len(), offset, len)?;
+        Ok(Self {
+            bytes,
+            opaque: None,
+            readonly: false,
+            visible_offset: offset,
+            visible_len: Some(len),
+            allow_oversized_recycle: true,
+        })
+    }
+
+    pub fn with_opaque_visible_range<T>(
+        bytes: Vec<u8>,
+        offset: usize,
+        len: usize,
+        opaque: T,
+    ) -> AvResult<Self>
+    where
+        T: Any + Send + Sync + 'static,
+    {
+        Self::validate_visible_range(bytes.len(), offset, len)?;
+        Ok(Self {
+            bytes,
+            opaque: Some(Box::new(opaque)),
+            readonly: false,
+            visible_offset: offset,
+            visible_len: Some(len),
+            allow_oversized_recycle: true,
+        })
+    }
+
+    fn validate_visible_range(storage_len: usize, offset: usize, len: usize) -> AvResult<()> {
+        let end = offset.checked_add(len).ok_or_else(|| {
+            AvError::invalid_argument("buffer pool allocation visible range overflows")
+        })?;
+        if end > storage_len {
+            return Err(AvError::invalid_argument(format!(
+                "buffer pool allocation visible range {offset}..{end} exceeds {storage_len} bytes"
+            )));
+        }
+        Ok(())
     }
 
     pub fn len(&self) -> usize {
@@ -115,6 +174,14 @@ impl BufferPoolAllocation {
         self.readonly
     }
 
+    pub fn visible_offset(&self) -> usize {
+        self.visible_offset
+    }
+
+    pub fn visible_len(&self) -> Option<usize> {
+        self.visible_len
+    }
+
     pub fn opaque_ref<T: 'static>(&self) -> Option<&T> {
         self.opaque.as_deref()?.downcast_ref::<T>()
     }
@@ -130,6 +197,9 @@ impl std::fmt::Debug for BufferPoolAllocation {
             .field("bytes", &self.bytes)
             .field("has_opaque", &self.opaque.is_some())
             .field("readonly", &self.readonly)
+            .field("visible_offset", &self.visible_offset)
+            .field("visible_len", &self.visible_len)
+            .field("allow_oversized_recycle", &self.allow_oversized_recycle)
             .finish()
     }
 }
@@ -820,6 +890,7 @@ enum BufferOwner {
         pool: Arc<BufferPoolInner>,
         allocated_len: usize,
         opaque: Option<Box<dyn Any + Send + Sync>>,
+        allow_oversized_recycle: bool,
     },
     Callback(BufferReleaseCallback),
     Opaque(Box<dyn OpaqueOwner>),
@@ -979,6 +1050,9 @@ impl BufferStorage {
             bytes,
             opaque,
             readonly,
+            visible_offset: _,
+            visible_len: _,
+            allow_oversized_recycle,
         } = allocation;
         Self {
             bytes: BufferBytes::owned(bytes),
@@ -986,6 +1060,7 @@ impl BufferStorage {
                 pool: Arc::clone(pool),
                 allocated_len: pool.allocated_len,
                 opaque,
+                allow_oversized_recycle,
             }),
             readonly,
             reallocatable: false,
@@ -1035,7 +1110,21 @@ impl BufferStorage {
 
     fn into_pool_allocation(mut self) -> BufferPoolAllocation {
         let opaque = match self.owner.take() {
-            Some(BufferOwner::Pool { opaque, .. }) => opaque,
+            Some(BufferOwner::Pool {
+                opaque,
+                allow_oversized_recycle,
+                ..
+            }) => {
+                self.readonly = false;
+                return BufferPoolAllocation {
+                    bytes: self.bytes.take_vec(),
+                    opaque,
+                    readonly: false,
+                    visible_offset: 0,
+                    visible_len: None,
+                    allow_oversized_recycle,
+                };
+            }
             _ => None,
         };
         self.readonly = false;
@@ -1043,6 +1132,9 @@ impl BufferStorage {
             bytes: self.bytes.take_vec(),
             opaque,
             readonly: false,
+            visible_offset: 0,
+            visible_len: None,
+            allow_oversized_recycle: false,
         }
     }
 }
@@ -1159,6 +1251,7 @@ impl Drop for BufferStorage {
                 pool,
                 allocated_len,
                 opaque,
+                allow_oversized_recycle,
             }) => {
                 let storage = self.bytes.take_vec();
                 let storage_len = storage.len();
@@ -1166,8 +1259,16 @@ impl Drop for BufferStorage {
                     bytes: storage,
                     opaque,
                     readonly: false,
+                    visible_offset: 0,
+                    visible_len: None,
+                    allow_oversized_recycle,
                 };
-                if storage_len != allocated_len {
+                let shape_matches = if allow_oversized_recycle {
+                    storage_len >= allocated_len
+                } else {
+                    storage_len == allocated_len
+                };
+                if !shape_matches {
                     pool.callbacks.release(allocation);
                     return;
                 };
@@ -1268,17 +1369,23 @@ impl BufferPool {
     pub fn get(&self) -> AvResult<BufferRef> {
         let storage = self.lock_spare()?.pop();
         match storage {
-            Some(storage) => Ok(BufferRef {
-                data: Arc::new(BufferStorage::with_pool(storage, &self.inner)),
-                offset: 0,
-                len: self.len(),
-            }),
-            None => {
-                let storage = self.allocate_storage()?;
+            Some(storage) => {
+                let offset = storage.visible_offset();
+                let len = storage.visible_len().unwrap_or_else(|| self.len());
                 Ok(BufferRef {
                     data: Arc::new(BufferStorage::with_pool(storage, &self.inner)),
-                    offset: 0,
-                    len: self.len(),
+                    offset,
+                    len,
+                })
+            }
+            None => {
+                let storage = self.allocate_storage()?;
+                let offset = storage.visible_offset();
+                let len = storage.visible_len().unwrap_or_else(|| self.len());
+                Ok(BufferRef {
+                    data: Arc::new(BufferStorage::with_pool(storage, &self.inner)),
+                    offset,
+                    len,
                 })
             }
         }
@@ -1309,6 +1416,15 @@ impl BufferPool {
 
     fn allocate_storage(&self) -> AvResult<BufferPoolAllocation> {
         let storage = (self.inner.callbacks.allocate)(self.allocated_len())?;
+        if storage.visible_len().is_some() || storage.visible_offset() != 0 {
+            let visible_len = storage.visible_len().unwrap_or_else(|| self.len());
+            BufferPoolAllocation::validate_visible_range(
+                storage.len(),
+                storage.visible_offset(),
+                visible_len,
+            )?;
+            return Ok(storage);
+        }
         if storage.len() != self.allocated_len() {
             let actual_len = storage.len();
             self.inner.callbacks.release(storage);
@@ -3298,6 +3414,71 @@ mod tests {
             vec![(41, vec![0xaa, 0xbb, 0xcc])]
         );
         assert_eq!(*pool_free_events.lock().unwrap(), vec!["pool-free"]);
+    }
+
+    #[test]
+    fn custom_buffer_pool_offset_allocation_reuses_original_base_storage() {
+        #[derive(Debug)]
+        struct PoolToken {
+            id: usize,
+        }
+
+        let releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let release_capture = std::sync::Arc::clone(&releases);
+        let pool = BufferPool::with_callbacks(
+            3,
+            0,
+            BufferPoolCallbacks::with_allocation_callbacks(
+                |allocated_len| {
+                    assert_eq!(allocated_len, 3);
+                    BufferPoolAllocation::with_opaque_visible_range(
+                        vec![0xee, 0x31, 0x32, 0x33],
+                        1,
+                        3,
+                        PoolToken { id: 88 },
+                    )
+                },
+                move |allocation| {
+                    let id = allocation
+                        .opaque_ref::<PoolToken>()
+                        .map(|token| token.id)
+                        .unwrap_or_default();
+                    release_capture
+                        .lock()
+                        .unwrap()
+                        .push((id, allocation.into_vec()));
+                },
+            ),
+        )
+        .unwrap();
+
+        let first = pool.get().unwrap();
+        assert_eq!(first.offset(), 1);
+        assert_eq!(first.len(), 3);
+        assert_eq!(first.as_slice(), &[0x31, 0x32, 0x33]);
+        assert_eq!(
+            first.pool_opaque_ref::<PoolToken>().map(|token| token.id),
+            Some(88)
+        );
+        drop(first);
+        assert!(releases.lock().unwrap().is_empty());
+        assert_eq!(pool.available_count().unwrap(), 1);
+
+        let reuse = pool.get().unwrap();
+        assert_eq!(reuse.offset(), 0);
+        assert_eq!(reuse.len(), 3);
+        assert_eq!(reuse.as_slice(), &[0xee, 0x31, 0x32]);
+        assert_eq!(
+            reuse.pool_opaque_ref::<PoolToken>().map(|token| token.id),
+            Some(88)
+        );
+        drop(reuse);
+        drop(pool);
+
+        assert_eq!(
+            *releases.lock().unwrap(),
+            vec![(88, vec![0xee, 0x31, 0x32, 0x33])]
+        );
     }
 
     #[test]

@@ -1544,6 +1544,83 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         vec![pool_frees.lock().unwrap().len().to_string()],
     );
 
+    let offset_pool_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let offset_pool_release_capture = Arc::clone(&offset_pool_releases);
+    let offset_pool = BufferPool::with_callbacks(
+        3,
+        0,
+        BufferPoolCallbacks::with_allocation_callbacks(
+            |allocated_len| {
+                BufferPoolAllocation::with_opaque_visible_range(
+                    vec![0xee, 0x31, 0x32, 0x33],
+                    1,
+                    allocated_len,
+                    PoolToken {
+                        id: 88,
+                        size: allocated_len + 1,
+                    },
+                )
+            },
+            move |allocation| {
+                let token = allocation
+                    .opaque_ref::<PoolToken>()
+                    .expect("offset pool token should be preserved");
+                offset_pool_release_capture
+                    .lock()
+                    .unwrap()
+                    .push((token.id, allocation.as_slice().to_vec()));
+            },
+        ),
+    )
+    .unwrap();
+    let offset_first = offset_pool.get().unwrap();
+    rows.insert(
+        "pool-offset:first".to_string(),
+        buffer_fields(&offset_first),
+    );
+    let offset_first_token = offset_first
+        .pool_opaque_ref::<PoolToken>()
+        .expect("offset first pool token");
+    rows.insert(
+        "pool-offset:opaque-first".to_string(),
+        vec![
+            offset_first_token.id.to_string(),
+            offset_first_token.size.to_string(),
+        ],
+    );
+    drop(offset_first);
+    rows.insert(
+        "pool-offset:after-first-unref".to_string(),
+        vec![offset_pool_releases.lock().unwrap().len().to_string()],
+    );
+    let offset_reuse = offset_pool.get().unwrap();
+    rows.insert(
+        "pool-offset:reuse".to_string(),
+        buffer_fields(&offset_reuse),
+    );
+    let offset_reuse_token = offset_reuse
+        .pool_opaque_ref::<PoolToken>()
+        .expect("offset reuse pool token");
+    rows.insert(
+        "pool-offset:opaque-reuse".to_string(),
+        vec![
+            offset_reuse_token.id.to_string(),
+            offset_reuse_token.size.to_string(),
+        ],
+    );
+    drop(offset_reuse);
+    drop(offset_pool);
+    let offset_pool_release_values = offset_pool_releases.lock().unwrap();
+    rows.insert(
+        "pool-offset:uninit-release".to_string(),
+        vec![
+            offset_pool_release_values.len().to_string(),
+            offset_pool_release_values[0].0.to_string(),
+            hex(&offset_pool_release_values[0].1),
+        ],
+    );
+    drop(offset_pool_release_values);
+
     let readonly_pool_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let readonly_pool_frees = Arc::new(Mutex::new(Vec::<usize>::new()));
     let readonly_pool_release_capture = Arc::clone(&readonly_pool_releases);
@@ -1997,6 +2074,21 @@ static AVBufferRef *test_pool_alloc(void *opaque, size_t size) {
     for (size_t i = 0; i < size; i++)
         data[i] = (uint8_t)(i + 1);
     return av_buffer_create(data, size, test_pool_free, opaque, 0);
+}
+
+static AVBufferRef *test_pool_alloc_offset(void *opaque, size_t size) {
+    uint8_t *data = av_malloc(size + 1);
+    AVBufferRef *ret;
+    fail_if(!data, "av_malloc offset pool data failed");
+    pool_alloc_count++;
+    data[0] = 0xee;
+    for (size_t i = 0; i < size; i++)
+        data[i + 1] = (uint8_t)(0x31 + i);
+    ret = av_buffer_create(data, size + 1, test_pool_free, opaque, 0);
+    fail_if(!ret, "av_buffer_create offset pool failed");
+    ret->data = data + 1;
+    ret->size = size;
+    return ret;
 }
 
 static AVBufferRef *test_pool_alloc_readonly(void *opaque, size_t size) {
@@ -3094,6 +3186,37 @@ int main(void) {
     print_hex(last_pool_release, last_pool_release_size);
     printf("\n");
     printf("pool:uninit-pool-free|%d\n", pool_free_count);
+
+    reset_pool_counters();
+    PoolOpaque offset_pool_opaque = { 88, 4 };
+    AVBufferPool *offset_pool =
+        av_buffer_pool_init2(3, &offset_pool_opaque,
+                             test_pool_alloc_offset, NULL);
+    fail_if(!offset_pool, "av_buffer_pool_init2 offset failed");
+    AVBufferRef *offset_first = av_buffer_pool_get(offset_pool);
+    fail_if(!offset_first, "av_buffer_pool_get offset first failed");
+    print_buffer("pool-offset:first", offset_first);
+    PoolOpaque *offset_first_opaque =
+        av_buffer_pool_buffer_get_opaque(offset_first);
+    fail_if(!offset_first_opaque, "pool offset first opaque missing");
+    printf("pool-offset:opaque-first|%" PRIuPTR "|%zu\n",
+           offset_first_opaque->id, offset_first_opaque->size);
+    av_buffer_unref(&offset_first);
+    printf("pool-offset:after-first-unref|%d\n", pool_release_count);
+    AVBufferRef *offset_reuse = av_buffer_pool_get(offset_pool);
+    fail_if(!offset_reuse, "av_buffer_pool_get offset reuse failed");
+    print_buffer("pool-offset:reuse", offset_reuse);
+    PoolOpaque *offset_reuse_opaque =
+        av_buffer_pool_buffer_get_opaque(offset_reuse);
+    fail_if(!offset_reuse_opaque, "pool offset reuse opaque missing");
+    printf("pool-offset:opaque-reuse|%" PRIuPTR "|%zu\n",
+           offset_reuse_opaque->id, offset_reuse_opaque->size);
+    av_buffer_unref(&offset_reuse);
+    av_buffer_pool_uninit(&offset_pool);
+    printf("pool-offset:uninit-release|%d|%" PRIuPTR "|",
+           pool_release_count, last_pool_release_id);
+    print_hex(last_pool_release, last_pool_release_size);
+    printf("\n");
 
     reset_pool_counters();
     PoolOpaque readonly_pool_opaque = { 77, 3 };
