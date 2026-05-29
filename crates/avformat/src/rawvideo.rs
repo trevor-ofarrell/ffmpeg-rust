@@ -3031,6 +3031,54 @@ mod tests {
     }
 
     #[test]
+    fn rejects_invalid_frame_rate() {
+        let payload = [0_u8; 6];
+
+        assert_eq!(
+            RawVideoDemuxer::open(&payload, 2, 1, RawVideoPixelFormat::Gray8, Rational::ZERO,)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            RawVideoDemuxer::open(
+                &payload,
+                2,
+                1,
+                RawVideoPixelFormat::Gray8,
+                Rational::from_raw(0, 0),
+            )
+            .unwrap_err()
+            .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            RawVideoDemuxer::open(
+                &payload,
+                2,
+                1,
+                RawVideoPixelFormat::Gray8,
+                Rational::from_raw(-1, 1),
+            )
+            .unwrap_err()
+            .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            RawVideoDemuxer::open(
+                &payload,
+                2,
+                1,
+                RawVideoPixelFormat::Gray8,
+                Rational::from_raw(1, 0),
+            )
+            .unwrap_err()
+            .kind(),
+            AvErrorKind::InvalidArgument
+        );
+    }
+
+    #[test]
     fn muxer_finish_prevents_more_writes() {
         let mut muxer = RawVideoMuxer::new(
             2,

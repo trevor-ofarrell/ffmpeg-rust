@@ -20,6 +20,14 @@ fuzz_target!(|data: &[u8]| {
     let payload = data.get(4..).unwrap_or(&[]);
 
     exercise_rawvideo(payload, width, height, pixel_format, frame_rate);
+    exercise_rawvideo_rejects_rate(payload, width, height, pixel_format, Rational::ZERO);
+    exercise_rawvideo_rejects_rate(
+        payload,
+        width,
+        height,
+        pixel_format,
+        Rational::from_raw(0, 0),
+    );
     exercise_rawvideo(b"abcdefgh", 2, 2, RawVideoPixelFormat::Gray8, Rational::ONE);
     exercise_rawvideo(
         b"abcdefgh",
@@ -688,10 +696,12 @@ fn exercise_rawvideo(
         Some(input.len())
     );
 
-    for expected_pts in 0..32 {
+    let mut packet_count = 0_usize;
+    for expected_pts in 0..info.frame_count().min(32) {
         match demuxer.read_packet() {
             Ok(Some(packet)) => {
                 assert_eq!(packet.stream_index(), 0);
+                let expected_pts = i64::try_from(expected_pts).unwrap();
                 assert_eq!(packet.pts(), Some(expected_pts));
                 assert_eq!(packet.dts(), Some(expected_pts));
                 assert_eq!(packet.duration(), 1);
@@ -701,10 +711,26 @@ fn exercise_rawvideo(
                     packet.side_data()[0].data(),
                     info.pixel_format().name().as_bytes()
                 );
+                packet_count += 1;
             }
             Ok(None) | Err(_) => break,
         }
     }
+
+    if info.frame_count() <= 32 {
+        assert_eq!(packet_count, info.frame_count());
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+}
+
+fn exercise_rawvideo_rejects_rate(
+    input: &[u8],
+    width: usize,
+    height: usize,
+    pixel_format: RawVideoPixelFormat,
+    frame_rate: Rational,
+) {
+    assert!(RawVideoDemuxer::open(input, width, height, pixel_format, frame_rate).is_err());
 }
 
 fn dimension_from(byte: u8) -> usize {
