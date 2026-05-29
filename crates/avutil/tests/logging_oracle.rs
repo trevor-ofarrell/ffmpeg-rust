@@ -543,6 +543,38 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
             .format_default_callback_line_null_context_with_options(pacific_time_options);
         rows.insert(name, escape_row_text(local_datetime.as_bytes()));
     }
+    let eastern_australia_time_zone = LogDefaultCallbackTimeZone::posix_dst(
+        10 * 3_600,
+        11 * 3_600,
+        PosixDstTransition::month_week_weekday(10, 1, 0).unwrap(),
+        PosixDstTransition::month_week_weekday_time(4, 1, 0, 3 * 3_600).unwrap(),
+    );
+    let eastern_australia_time_options =
+        LogFormatOptions::new(LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL)
+            .with_default_callback_time_zone(eastern_australia_time_zone);
+    for (name, timestamp) in [
+        (
+            "default-callback-posix-dst-aest-before-start-level-line",
+            1_728_143_999_123_456,
+        ),
+        (
+            "default-callback-posix-dst-aest-after-start-level-line",
+            1_728_144_000_123_456,
+        ),
+        (
+            "default-callback-posix-dst-aest-before-end-level-line",
+            1_712_419_199_123_456,
+        ),
+        (
+            "default-callback-posix-dst-aest-after-end-level-line",
+            1_712_419_200_123_456,
+        ),
+    ] {
+        let local_datetime = LogRecord::new(LogLevel::Warning, "ignored", "dst\n")
+            .with_timestamp(LogTimestamp::from_unix_micros(timestamp))
+            .format_default_callback_line_null_context_with_options(eastern_australia_time_options);
+        rows.insert(name, escape_row_text(local_datetime.as_bytes()));
+    }
     let mut threshold_logger = Logger::new_with_flags(LogLevel::Warning, LogFlags::PRINT_LEVEL);
     assert!(!threshold_logger.log(LogRecord::new(LogLevel::Info, "ignored", "hidden\n")));
     rows.insert(
@@ -2942,6 +2974,26 @@ static void print_default_callback_rows(void) {
         "default-callback-posix-dst-pacific-after-fall-level-line",
         "PST8PDT,M3.2.0,M11.1.0",
         1730624400123456LL, AV_LOG_PRINT_DATETIME | AV_LOG_PRINT_LEVEL,
+        "dst");
+    print_default_callback_fixed_time_row(
+        "default-callback-posix-dst-aest-before-start-level-line",
+        "AEST-10AEDT,M10.1.0,M4.1.0/3",
+        1728143999123456LL, AV_LOG_PRINT_DATETIME | AV_LOG_PRINT_LEVEL,
+        "dst");
+    print_default_callback_fixed_time_row(
+        "default-callback-posix-dst-aest-after-start-level-line",
+        "AEST-10AEDT,M10.1.0,M4.1.0/3",
+        1728144000123456LL, AV_LOG_PRINT_DATETIME | AV_LOG_PRINT_LEVEL,
+        "dst");
+    print_default_callback_fixed_time_row(
+        "default-callback-posix-dst-aest-before-end-level-line",
+        "AEST-10AEDT,M10.1.0,M4.1.0/3",
+        1712419199123456LL, AV_LOG_PRINT_DATETIME | AV_LOG_PRINT_LEVEL,
+        "dst");
+    print_default_callback_fixed_time_row(
+        "default-callback-posix-dst-aest-after-end-level-line",
+        "AEST-10AEDT,M10.1.0,M4.1.0/3",
+        1712419200123456LL, AV_LOG_PRINT_DATETIME | AV_LOG_PRINT_LEVEL,
         "dst");
     print_default_callback_threshold_row(
         "default-callback-filter-info-at-warning-line", NULL, AV_LOG_WARNING,

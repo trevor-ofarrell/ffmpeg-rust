@@ -2235,6 +2235,42 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
             expected
         );
     }
+    let eastern_australia = LogDefaultCallbackTimeZone::posix_dst(
+        10 * 3_600,
+        11 * 3_600,
+        PosixDstTransition::month_week_weekday(10, 1, 0).unwrap(),
+        PosixDstTransition::month_week_weekday_time(4, 1, 0, 3 * 3_600).unwrap(),
+    );
+    let eastern_australia_options =
+        LogFormatOptions::new(LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL)
+            .with_default_callback_time_zone(eastern_australia);
+    for (timestamp, expected) in [
+        (
+            1_728_143_999_123_456,
+            "2024-10-06 01:59:59.123 [warning] dst\n",
+        ),
+        (
+            1_728_144_000_123_456,
+            "2024-10-06 03:00:00.123 [warning] dst\n",
+        ),
+        (
+            1_712_419_199_123_456,
+            "2024-04-07 02:59:59.123 [warning] dst\n",
+        ),
+        (
+            1_712_419_200_123_456,
+            "2024-04-07 02:00:00.123 [warning] dst\n",
+        ),
+    ] {
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "dst\n")
+                .with_timestamp(LogTimestamp::from_unix_micros(timestamp))
+                .format_default_callback_line_null_context_with_options(
+                    eastern_australia_options,
+                ),
+            expected
+        );
+    }
     let callback_context = AvLogContextPrefix::new("rustctx", "<ptr>");
     assert_eq!(
         LogRecord::new(LogLevel::Warning, "ignored", "ctxmsg\n")
