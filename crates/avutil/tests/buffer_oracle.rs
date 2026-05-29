@@ -290,6 +290,68 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         release_fields(&create_readonly_released),
     );
 
+    let create_readonly_shared_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_readonly_shared_capture = Arc::clone(&create_readonly_shared_released);
+    let create_readonly_shared_src = BufferRef::from_vec_with_opaque_release_callback_readonly(
+        vec![24, 25, 26],
+        433usize,
+        move |opaque, bytes| {
+            create_readonly_shared_capture
+                .lock()
+                .unwrap()
+                .push((opaque, bytes));
+        },
+    );
+    let mut create_readonly_shared_dst = BufferRef::ref_from(&create_readonly_shared_src);
+    rows.insert(
+        "buffer:create-readonly-shared-ref-src".to_string(),
+        buffer_fields_with_opaque(&create_readonly_shared_src),
+    );
+    rows.insert(
+        "buffer:create-readonly-shared-ref-dst".to_string(),
+        buffer_fields_with_opaque(&create_readonly_shared_dst),
+    );
+    rows.insert(
+        "buffer:create-readonly-shared-ref-shares".to_string(),
+        vec![
+            bool_field(create_readonly_shared_src.shares_storage(&create_readonly_shared_dst)),
+            create_readonly_shared_src.strong_count().to_string(),
+        ],
+    );
+    create_readonly_shared_dst.make_mut();
+    rows.insert(
+        "buffer:create-readonly-shared-make-writable-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:create-readonly-shared-src".to_string(),
+        buffer_fields_with_opaque(&create_readonly_shared_src),
+    );
+    rows.insert(
+        "buffer:create-readonly-shared-dst".to_string(),
+        buffer_fields_with_opaque(&create_readonly_shared_dst),
+    );
+    rows.insert(
+        "buffer:create-readonly-shared-shares".to_string(),
+        vec![bool_field(
+            create_readonly_shared_src.shares_storage(&create_readonly_shared_dst),
+        )],
+    );
+    drop(create_readonly_shared_dst);
+    rows.insert(
+        "buffer:create-readonly-shared-release-before-src-drop".to_string(),
+        vec![create_readonly_shared_released
+            .lock()
+            .unwrap()
+            .len()
+            .to_string()],
+    );
+    drop(create_readonly_shared_src);
+    rows.insert(
+        "buffer:create-readonly-shared-release".to_string(),
+        release_fields(&create_readonly_shared_released),
+    );
+
     let create_shared_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let create_shared_capture = Arc::clone(&create_shared_released);
     let create_shared_src = BufferRef::from_vec_with_opaque_release_callback(
@@ -1971,6 +2033,47 @@ int main(void) {
     print_buffer_opaque("buffer:create-readonly-after", create_readonly);
     print_create_release("buffer:create-readonly-release");
     av_buffer_unref(&create_readonly);
+
+    reset_create_release();
+    static const uint8_t create_readonly_shared_bytes[] = { 24, 25, 26 };
+    uint8_t *create_readonly_shared_data =
+        av_malloc(sizeof(create_readonly_shared_bytes));
+    fail_if(!create_readonly_shared_data,
+            "av_malloc create_readonly_shared_data failed");
+    for (size_t i = 0; i < sizeof(create_readonly_shared_bytes); i++)
+        create_readonly_shared_data[i] = create_readonly_shared_bytes[i];
+    last_create_release_size = sizeof(create_readonly_shared_bytes);
+    AVBufferRef *create_readonly_shared_src =
+        av_buffer_create(create_readonly_shared_data,
+                         sizeof(create_readonly_shared_bytes),
+                         test_create_free, (void *)(uintptr_t)433,
+                         AV_BUFFER_FLAG_READONLY);
+    fail_if(!create_readonly_shared_src,
+            "av_buffer_create readonly shared owner failed");
+    AVBufferRef *create_readonly_shared_dst =
+        av_buffer_ref(create_readonly_shared_src);
+    fail_if(!create_readonly_shared_dst,
+            "av_buffer_ref readonly shared owner failed");
+    print_buffer_opaque("buffer:create-readonly-shared-ref-src",
+                        create_readonly_shared_src);
+    print_buffer_opaque("buffer:create-readonly-shared-ref-dst",
+                        create_readonly_shared_dst);
+    printf("buffer:create-readonly-shared-ref-shares|%d|%d\n",
+           create_readonly_shared_src->data == create_readonly_shared_dst->data,
+           av_buffer_get_ref_count(create_readonly_shared_src));
+    ret = av_buffer_make_writable(&create_readonly_shared_dst);
+    printf("buffer:create-readonly-shared-make-writable-ret|%d\n", ret);
+    print_buffer_opaque("buffer:create-readonly-shared-src",
+                        create_readonly_shared_src);
+    print_buffer_opaque("buffer:create-readonly-shared-dst",
+                        create_readonly_shared_dst);
+    printf("buffer:create-readonly-shared-shares|%d\n",
+           create_readonly_shared_src->data == create_readonly_shared_dst->data);
+    av_buffer_unref(&create_readonly_shared_dst);
+    printf("buffer:create-readonly-shared-release-before-src-drop|%d\n",
+           create_release_count);
+    av_buffer_unref(&create_readonly_shared_src);
+    print_create_release("buffer:create-readonly-shared-release");
 
     reset_create_release();
     static const uint8_t create_shared_bytes[] = { 40, 41, 42 };

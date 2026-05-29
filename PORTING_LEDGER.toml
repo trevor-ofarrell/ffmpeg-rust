@@ -828,6 +828,12 @@ fate_tests = [
   "not_applicable: upstream FFmpeg FATE has no standalone AVBufferRef/AVBufferPool API target; covered by unit tests plus pinned libavutil differential oracle",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest shared-readonly make-writable slice: pinned libavutil oracle coverage
+# now validates `av_buffer_make_writable()` on one reference of a shared readonly
+# av_buffer_create-style owner. The destination becomes ordinary writable storage
+# with copied bytes and NULL opaque data, while the readonly source keeps its
+# opaque owner and the release callback runs only after the final original
+# reference is unreffed.
 # Latest unique writable shrink-realloc slice: pinned libavutil oracle coverage
 # now validates `av_buffer_realloc()` shrinking a unique writable
 # av_buffer_create-style owner. The destination becomes ordinary writable

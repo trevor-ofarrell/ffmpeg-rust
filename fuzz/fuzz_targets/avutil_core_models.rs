@@ -1321,6 +1321,71 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         assert_eq!(readonly_opaque_data.make_mut(), &mut []);
     }
 
+    let shared_readonly_opaque_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let shared_readonly_opaque_capture = Arc::clone(&shared_readonly_opaque_released);
+    let shared_readonly_opaque_source =
+        BufferRef::from_vec_with_opaque_release_callback_readonly(
+            payload.clone(),
+            payload_len,
+            move |opaque, bytes| {
+                shared_readonly_opaque_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        );
+    let mut shared_readonly_opaque_detached =
+        BufferRef::ref_from(&shared_readonly_opaque_source);
+    assert!(shared_readonly_opaque_source.shares_storage(&shared_readonly_opaque_detached));
+    assert_eq!(shared_readonly_opaque_source.strong_count(), 2);
+    assert!(shared_readonly_opaque_source.is_readonly());
+    assert!(shared_readonly_opaque_detached.is_readonly());
+    assert_eq!(
+        shared_readonly_opaque_source.opaque_ref::<usize>(),
+        Some(&payload_len)
+    );
+    assert_eq!(
+        shared_readonly_opaque_detached.opaque_ref::<usize>(),
+        Some(&payload_len)
+    );
+    if !shared_readonly_opaque_detached.is_empty() {
+        let replacement = shared_readonly_opaque_detached.as_slice()[0].wrapping_add(1);
+        shared_readonly_opaque_detached.make_mut()[0] = replacement;
+        assert_eq!(shared_readonly_opaque_detached.as_slice()[0], replacement);
+    } else {
+        assert_eq!(shared_readonly_opaque_detached.make_mut(), &mut []);
+    }
+    assert_eq!(
+        shared_readonly_opaque_source.as_slice(),
+        payload.as_slice()
+    );
+    assert_eq!(shared_readonly_opaque_source.strong_count(), 1);
+    assert!(shared_readonly_opaque_source.is_readonly());
+    assert_eq!(
+        shared_readonly_opaque_source.opaque_ref::<usize>(),
+        Some(&payload_len)
+    );
+    assert!(!shared_readonly_opaque_detached.is_readonly());
+    assert!(shared_readonly_opaque_detached.is_writable());
+    assert!(shared_readonly_opaque_detached
+        .opaque_ref::<usize>()
+        .is_none());
+    assert!(!shared_readonly_opaque_detached.shares_storage(&shared_readonly_opaque_source));
+    assert!(shared_readonly_opaque_released
+        .lock()
+        .unwrap()
+        .is_empty());
+    drop(shared_readonly_opaque_detached);
+    assert!(shared_readonly_opaque_released
+        .lock()
+        .unwrap()
+        .is_empty());
+    drop(shared_readonly_opaque_source);
+    assert_eq!(
+        *shared_readonly_opaque_released.lock().unwrap(),
+        vec![(payload_len, payload.clone())]
+    );
+
     let replace_source = BufferRef::copy_from_slice(&payload);
     let mut replace_empty_dst = None;
     BufferRef::replace(&mut replace_empty_dst, Some(&replace_source));

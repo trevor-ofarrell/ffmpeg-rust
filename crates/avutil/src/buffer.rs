@@ -1997,6 +1997,47 @@ mod tests {
         assert_eq!(buffer.as_slice(), &[7, 8, 4]);
         assert_eq!(buffer.padding_slice(), &[0]);
 
+        let shared_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let shared_capture = std::sync::Arc::clone(&shared_released);
+        let shared_source = BufferRef::from_vec_with_opaque_release_callback_readonly(
+            vec![10, 11, 12],
+            43usize,
+            move |opaque, bytes| {
+                shared_capture.lock().unwrap().push((opaque, bytes));
+            },
+        );
+        let mut shared_detached = BufferRef::ref_from(&shared_source);
+
+        assert!(shared_source.shares_storage(&shared_detached));
+        assert_eq!(shared_source.strong_count(), 2);
+        assert!(shared_source.is_readonly());
+        assert!(shared_detached.is_readonly());
+        assert!(!shared_source.is_writable());
+        assert!(!shared_detached.is_writable());
+        assert_eq!(shared_source.opaque_ref::<usize>(), Some(&43));
+        assert_eq!(shared_detached.opaque_ref::<usize>(), Some(&43));
+
+        shared_detached.make_mut()[0] = 99;
+
+        assert_eq!(shared_source.as_slice(), &[10, 11, 12]);
+        assert_eq!(shared_source.strong_count(), 1);
+        assert!(shared_source.is_readonly());
+        assert_eq!(shared_source.opaque_ref::<usize>(), Some(&43));
+        assert_eq!(shared_detached.as_slice(), &[99, 11, 12]);
+        assert!(!shared_detached.is_readonly());
+        assert!(shared_detached.is_writable());
+        assert!(shared_detached.opaque_ref::<usize>().is_none());
+        assert!(!shared_detached.shares_storage(&shared_source));
+        assert!(shared_released.lock().unwrap().is_empty());
+        drop(shared_detached);
+        assert!(shared_released.lock().unwrap().is_empty());
+        drop(shared_source);
+        assert_eq!(
+            *shared_released.lock().unwrap(),
+            vec![(43, vec![10, 11, 12])]
+        );
+
         let invalid_released =
             std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
         let invalid_capture = std::sync::Arc::clone(&invalid_released);
