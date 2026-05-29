@@ -810,6 +810,7 @@ unit_tests = [
   "buffer::tests::buffer_pool_waits_until_last_shared_reference_drops",
   "buffer::tests::buffer_pool_copy_on_write_returns_only_original_storage",
   "buffer::tests::buffer_resize_detaches_pool_owned_storage_back_to_pool",
+  "buffer::tests::buffer_realloc_detaches_pool_owned_storage_back_to_pool",
   "buffer::tests::custom_buffer_pool_callbacks_allocate_reuse_and_release_storage",
   "buffer::tests::custom_buffer_pool_preserves_buffer_opaque_and_runs_pool_free_last",
   "buffer::tests::custom_buffer_pool_readonly_allocation_reuses_as_writable_storage",
@@ -833,6 +834,13 @@ fate_tests = [
   "not_applicable: upstream FFmpeg FATE has no standalone AVBufferRef/AVBufferPool API target; covered by unit tests plus pinned libavutil differential oracle",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest custom-pool realloc slice: pinned libavutil oracle coverage now
+# validates `av_buffer_realloc()` on a pool-owned custom allocation. The
+# destination detaches to ordinary writable storage with copied stable-prefix
+# bytes and NULL ordinary opaque lookup, the original pool storage returns to
+# the pool immediately for reuse with preserved pool opaque data, detached
+# destination mutation does not recycle into the pool, and final pool uninit
+# releases only the original pool storage plus pool owner.
 # Latest custom-pool copy-on-write slice: pinned libavutil oracle coverage now
 # validates `av_buffer_make_writable()` on one reference of a shared
 # `av_buffer_pool_init2()` custom allocation. The destination detaches to

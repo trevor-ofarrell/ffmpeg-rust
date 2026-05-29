@@ -1644,6 +1644,110 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     drop(pool_cow_free_values);
     drop(pool_cow_release_values);
 
+    let pool_realloc_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let pool_realloc_frees = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let pool_realloc_release_capture = Arc::clone(&pool_realloc_releases);
+    let pool_realloc_free_capture = Arc::clone(&pool_realloc_frees);
+    let pool_realloc_pool = BufferPool::with_callbacks(
+        3,
+        0,
+        BufferPoolCallbacks::with_allocation_callbacks(
+            |allocated_len| {
+                assert_eq!(allocated_len, 3);
+                Ok(BufferPoolAllocation::with_opaque(
+                    vec![1, 2, 3],
+                    PoolToken {
+                        id: 57,
+                        size: allocated_len,
+                    },
+                ))
+            },
+            move |allocation| {
+                let token = allocation
+                    .opaque_ref::<PoolToken>()
+                    .expect("pool realloc token should be preserved");
+                pool_realloc_release_capture
+                    .lock()
+                    .unwrap()
+                    .push((token.id, allocation.as_slice().to_vec()));
+            },
+        )
+        .with_pool_free(move || {
+            pool_realloc_free_capture.lock().unwrap().push(57);
+        }),
+    )
+    .unwrap();
+    let mut pool_realloc = Some(pool_realloc_pool.get().unwrap());
+    pool_realloc
+        .as_mut()
+        .unwrap()
+        .make_mut()
+        .copy_from_slice(&[0x10, 0x11, 0x12]);
+    BufferRef::realloc(&mut pool_realloc, 5).unwrap();
+    let mut pool_realloc_dst = pool_realloc.expect("pool realloc destination");
+    rows.insert("pool-realloc:ret".to_string(), vec!["0".to_string()]);
+    rows.insert(
+        "pool-realloc:dst".to_string(),
+        buffer_prefix_fields(&pool_realloc_dst, 3),
+    );
+    rows.insert(
+        "pool-realloc:dst-opaque-null".to_string(),
+        vec![bool_field(
+            pool_realloc_dst.opaque_ref::<PoolToken>().is_none(),
+        )],
+    );
+    rows.insert(
+        "pool-realloc:after-realloc".to_string(),
+        vec![
+            pool_realloc_releases.lock().unwrap().len().to_string(),
+            pool_realloc_frees.lock().unwrap().len().to_string(),
+        ],
+    );
+    let pool_realloc_reuse = pool_realloc_pool.get().unwrap();
+    rows.insert(
+        "pool-realloc:reuse".to_string(),
+        buffer_fields(&pool_realloc_reuse),
+    );
+    let pool_realloc_reuse_token = pool_realloc_reuse
+        .pool_opaque_ref::<PoolToken>()
+        .expect("pool realloc reuse token");
+    rows.insert(
+        "pool-realloc:opaque-reuse".to_string(),
+        vec![
+            pool_realloc_reuse_token.id.to_string(),
+            pool_realloc_reuse_token.size.to_string(),
+        ],
+    );
+    pool_realloc_dst.make_mut()[0] = 0xee;
+    rows.insert(
+        "pool-realloc:dst-mutated".to_string(),
+        buffer_prefix_fields(&pool_realloc_dst, 3),
+    );
+    drop(pool_realloc_dst);
+    rows.insert(
+        "pool-realloc:after-dst-unref".to_string(),
+        vec![
+            pool_realloc_releases.lock().unwrap().len().to_string(),
+            pool_realloc_frees.lock().unwrap().len().to_string(),
+        ],
+    );
+    drop(pool_realloc_reuse);
+    drop(pool_realloc_pool);
+    let pool_realloc_release_values = pool_realloc_releases.lock().unwrap();
+    let pool_realloc_free_values = pool_realloc_frees.lock().unwrap();
+    rows.insert(
+        "pool-realloc:uninit-release".to_string(),
+        vec![
+            pool_realloc_release_values.len().to_string(),
+            pool_realloc_release_values[0].0.to_string(),
+            hex(&pool_realloc_release_values[0].1),
+            pool_realloc_free_values.len().to_string(),
+            pool_realloc_free_values[0].to_string(),
+        ],
+    );
+    drop(pool_realloc_free_values);
+    drop(pool_realloc_release_values);
+
     let offset_pool_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let offset_pool_release_capture = Arc::clone(&offset_pool_releases);
     let offset_pool = BufferPool::with_callbacks(
@@ -3435,6 +3539,45 @@ int main(void) {
     av_buffer_unref(&pool_cow_reuse);
     av_buffer_pool_uninit(&pool_cow);
     printf("pool-cow:uninit-release|%d|%" PRIuPTR "|",
+           pool_release_count, last_pool_release_id);
+    print_hex(last_pool_release, last_pool_release_size);
+    printf("|%d|%" PRIuPTR "\n", pool_free_count, last_pool_free_id);
+
+    reset_pool_counters();
+    PoolOpaque pool_realloc_opaque = { 57, 3 };
+    AVBufferPool *pool_realloc_pool =
+        av_buffer_pool_init2(3, &pool_realloc_opaque, test_pool_alloc,
+                             test_pool_owner_free);
+    fail_if(!pool_realloc_pool, "av_buffer_pool_init2 realloc failed");
+    AVBufferRef *pool_realloc = av_buffer_pool_get(pool_realloc_pool);
+    fail_if(!pool_realloc, "av_buffer_pool_get realloc failed");
+    static const uint8_t pool_realloc_bytes[] = { 0x10, 0x11, 0x12 };
+    fill_bytes(pool_realloc, pool_realloc_bytes, sizeof(pool_realloc_bytes));
+    ret = av_buffer_realloc(&pool_realloc, 5);
+    printf("pool-realloc:ret|%d\n", ret);
+    fail_if(ret < 0, "av_buffer_realloc pool ref failed");
+    print_buffer_prefix("pool-realloc:dst", pool_realloc, 3);
+    printf("pool-realloc:dst-opaque-null|%d\n",
+           av_buffer_get_opaque(pool_realloc) == NULL);
+    printf("pool-realloc:after-realloc|%d|%d\n",
+           pool_release_count, pool_free_count);
+    AVBufferRef *pool_realloc_reuse =
+        av_buffer_pool_get(pool_realloc_pool);
+    fail_if(!pool_realloc_reuse, "av_buffer_pool_get realloc reuse failed");
+    print_buffer("pool-realloc:reuse", pool_realloc_reuse);
+    PoolOpaque *pool_realloc_reuse_opaque =
+        av_buffer_pool_buffer_get_opaque(pool_realloc_reuse);
+    fail_if(!pool_realloc_reuse_opaque, "pool realloc reuse opaque missing");
+    printf("pool-realloc:opaque-reuse|%" PRIuPTR "|%zu\n",
+           pool_realloc_reuse_opaque->id, pool_realloc_reuse_opaque->size);
+    pool_realloc->data[0] = 0xee;
+    print_buffer_prefix("pool-realloc:dst-mutated", pool_realloc, 3);
+    av_buffer_unref(&pool_realloc);
+    printf("pool-realloc:after-dst-unref|%d|%d\n",
+           pool_release_count, pool_free_count);
+    av_buffer_unref(&pool_realloc_reuse);
+    av_buffer_pool_uninit(&pool_realloc_pool);
+    printf("pool-realloc:uninit-release|%d|%" PRIuPTR "|",
            pool_release_count, last_pool_release_id);
     print_hex(last_pool_release, last_pool_release_size);
     printf("|%d|%" PRIuPTR "\n", pool_free_count, last_pool_free_id);

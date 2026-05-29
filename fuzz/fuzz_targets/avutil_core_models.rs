@@ -2386,6 +2386,82 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     );
     assert_eq!(*custom_cow_frees.lock().unwrap(), 1);
 
+    let custom_realloc_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let custom_realloc_frees = Arc::new(Mutex::new(0usize));
+    let custom_realloc_release_capture = Arc::clone(&custom_realloc_releases);
+    let custom_realloc_free_capture = Arc::clone(&custom_realloc_frees);
+    let custom_realloc_pool = BufferPool::with_callbacks(
+        payload_len,
+        padding_len,
+        BufferPoolCallbacks::with_allocation_callbacks(
+            move |allocated_len| {
+                Ok(BufferPoolAllocation::with_opaque(
+                    vec![0x57; allocated_len],
+                    allocated_len,
+                ))
+            },
+            move |allocation| {
+                let opaque = *allocation.opaque_ref::<usize>().unwrap();
+                custom_realloc_release_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, allocation.into_vec()));
+            },
+        )
+        .with_pool_free(move || {
+            *custom_realloc_free_capture.lock().unwrap() += 1;
+        }),
+    )
+    .unwrap();
+    let mut custom_realloc_ref = Some(custom_realloc_pool.get().unwrap());
+    if let Some(first) = custom_realloc_ref
+        .as_mut()
+        .unwrap()
+        .make_mut()
+        .first_mut()
+    {
+        *first = cursor.next().unwrap_or_default();
+    }
+    let expected_custom_realloc_reuse = custom_realloc_ref
+        .as_ref()
+        .unwrap()
+        .as_padded_slice()
+        .to_vec();
+    let custom_realloc_new_len = payload_len.saturating_add(1);
+    BufferRef::realloc(&mut custom_realloc_ref, custom_realloc_new_len).unwrap();
+    let mut custom_realloc_detached =
+        custom_realloc_ref.expect("custom pool realloc keeps destination");
+    let custom_realloc_prefix_len = payload_len.min(custom_realloc_new_len);
+    assert_eq!(
+        &custom_realloc_detached.as_slice()[..custom_realloc_prefix_len],
+        &expected_custom_realloc_reuse[..custom_realloc_prefix_len]
+    );
+    assert!(custom_realloc_detached.is_writable());
+    assert!(custom_realloc_detached.pool_opaque_ref::<usize>().is_none());
+    assert!(custom_realloc_releases.lock().unwrap().is_empty());
+    assert_eq!(custom_realloc_pool.available_count().unwrap(), 1);
+    let custom_realloc_reuse = custom_realloc_pool.get().unwrap();
+    assert_eq!(
+        custom_realloc_reuse.as_padded_slice(),
+        expected_custom_realloc_reuse.as_slice()
+    );
+    assert_eq!(
+        custom_realloc_reuse.pool_opaque_ref::<usize>().copied(),
+        Some(payload_len + padding_len)
+    );
+    if !custom_realloc_detached.is_empty() {
+        custom_realloc_detached.make_mut()[0] = cursor.next().unwrap_or_default();
+    }
+    drop(custom_realloc_detached);
+    assert!(custom_realloc_releases.lock().unwrap().is_empty());
+    drop(custom_realloc_reuse);
+    drop(custom_realloc_pool);
+    assert_eq!(
+        *custom_realloc_releases.lock().unwrap(),
+        vec![(payload_len + padding_len, expected_custom_realloc_reuse)]
+    );
+    assert_eq!(*custom_realloc_frees.lock().unwrap(), 1);
+
     let offset_pool_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let offset_release_capture = Arc::clone(&offset_pool_releases);
     let offset_pool = BufferPool::with_callbacks(

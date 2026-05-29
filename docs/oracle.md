@@ -520,6 +520,8 @@ cargo test -p avutil --test buffer_oracle -- --ignored
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-buffer --target oracle-libavutil-buffer --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
 ```
 
+The latest buffer oracle rows add custom-pool realloc coverage: `av_buffer_realloc()` on a pool-owned custom allocation detaches the destination to ordinary writable storage, preserves only the stable copied prefix for comparison, returns the original pool storage for immediate reuse with its pool opaque data, keeps detached destination mutation out of the pool, and releases only the original pool allocation plus pool owner on final pool uninit.
+
 The latest buffer oracle rows add readonly offset custom-pool allocation coverage: a custom `av_buffer_pool_init2()` allocator may return a readonly ref whose visible `data`/`size` point inside a larger backing allocation. FFmpeg preserves the readonly offset range for the first checkout, but after unref/reuse creates a writable spare ref from the original backing pointer and pool size while preserving pool opaque lookup and delaying release of the full backing bytes until pool uninit.
 
 Prior buffer oracle rows pin offset custom-pool allocation, readonly custom-pool allocation, default-free opaque owners, shared-readonly custom-owner make-writable, unique readonly make-writable, unique writable/readonly shrink-realloc, and shared writable/read-only shrink-realloc edges. The separate offset and readonly custom-pool rows prove the same base-pointer reuse and readonly-to-writable reuse behaviors independently.
