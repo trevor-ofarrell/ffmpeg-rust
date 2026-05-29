@@ -89,8 +89,9 @@ pub use logging::{
     global_raw_log_level, set_global_log_callback, set_global_log_flag, set_global_log_flags,
     set_global_log_level, set_global_raw_log_level, take_global_log_records, AvLogContextPrefix,
     AvLogFormatLine, AvLogFormatLine2, DefaultCallbackColorState, DefaultCallbackPrefixState,
-    LogColorMode, LogFlags, LogFormatOptions, LogLevel, LogOnceState, LogRecord, LogTimestamp,
-    Logger, AV_LOG_FORCE_COLOR_ENV, AV_LOG_FORCE_NOCOLOR_ENV,
+    LogColorMode, LogDefaultCallbackTimeZone, LogFlags, LogFormatOptions, LogLevel, LogOnceState,
+    LogRecord, LogTimestamp, Logger, PosixDstTransition, AV_LOG_FORCE_COLOR_ENV,
+    AV_LOG_FORCE_NOCOLOR_ENV,
 };
 pub use options::{
     AvOptionRangeEntry, AvOptionRanges, OptionArrayKind, OptionChild, OptionConstant,

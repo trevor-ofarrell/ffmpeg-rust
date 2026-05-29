@@ -46,8 +46,9 @@ use avutil::{
     FrameStereo3dView, FrameThreeDReferenceDisplay, FrameThreeDReferenceDisplays,
     FrameVideoBlockParams, FrameVideoEncParams, FrameVideoEncParamsType, FrameVideoHint,
     FrameVideoHintType, FrameVideoRect, FrameViewId, HashAlgorithm, HashContext, LogColorMode,
-    LogFlags, LogFormatOptions, LogLevel, LogOnceState, LogRecord, LogTimestamp, Logger, MatchMode,
-    Md5, Murmur3, NativeChannelMaskLayout, Packet, PacketA53ClosedCaptions,
+    LogDefaultCallbackTimeZone, LogFlags, LogFormatOptions, LogLevel, LogOnceState, LogRecord,
+    LogTimestamp, Logger, MatchMode, Md5, Murmur3, NativeChannelMaskLayout, Packet,
+    PacketA53ClosedCaptions,
     PacketActiveFormatDescription, PacketAmbientViewingEnvironment, PacketAudioServiceType,
     PacketContentLightMetadata, PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf,
     PacketDoviCompression, PacketDynamicHdr10Plus, PacketEncryptionInfo, PacketEncryptionInitInfo,
@@ -64,10 +65,11 @@ use avutil::{
     PacketStereo3d, PacketStereo3dFlags, PacketStereo3dPrimaryEye, PacketStereo3dType,
     PacketStereo3dView, PacketStringMetadata, PacketSubtitlePosition, PacketThreeDReferenceDisplay,
     PacketThreeDReferenceDisplays, PacketWebVttIdentifier, PacketWebVttSettings, PixelFormat,
-    PixelFormatClass, Rational, Ripemd128, Ripemd160, Ripemd256, Ripemd320, Rounding, SampleFormat,
-    SampleFormatNumericKind, SetMode, Sha1, Sha224, Sha256, Sha384, Sha512, Sha512Trunc224,
-    Sha512Trunc256, SideData, VideoFrame, AVPALETTE_COUNT, AVPALETTE_SIZE, AV_BUFFER_FLAG_READONLY,
-    AV_ERROR_MAX_STRING_SIZE, AV_HASH_MAX_SIZE, AV_INPUT_BUFFER_PADDING_SIZE,
+    PixelFormatClass, PosixDstTransition, Rational, Ripemd128, Ripemd160, Ripemd256, Ripemd320,
+    Rounding, SampleFormat, SampleFormatNumericKind, SetMode, Sha1, Sha224, Sha256, Sha384,
+    Sha512, Sha512Trunc224, Sha512Trunc256, SideData, VideoFrame, AVPALETTE_COUNT,
+    AVPALETTE_SIZE, AV_BUFFER_FLAG_READONLY, AV_ERROR_MAX_STRING_SIZE, AV_HASH_MAX_SIZE,
+    AV_INPUT_BUFFER_PADDING_SIZE,
     AV_LOG_FORCE_COLOR_ENV, AV_LOG_FORCE_NOCOLOR_ENV, AV_NUM_DATA_POINTERS,
     AV_PACKET_MAX_PAYLOAD_SIZE, AV_TIME_BASE, AV_TIME_BASE_Q,
 };
@@ -2199,6 +2201,40 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
             .format_default_callback_line_null_context_with_options(utc_minus_eight),
         "2023-12-31 17:02:03.456 [warning] local\n"
     );
+    let pacific = LogDefaultCallbackTimeZone::posix_dst(
+        -8 * 3_600,
+        -7 * 3_600,
+        PosixDstTransition::month_week_weekday(3, 2, 0).unwrap(),
+        PosixDstTransition::month_week_weekday(11, 1, 0).unwrap(),
+    );
+    let pacific_options =
+        LogFormatOptions::new(LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL)
+            .with_default_callback_time_zone(pacific);
+    for (timestamp, expected) in [
+        (
+            1_710_064_799_123_456,
+            "2024-03-10 01:59:59.123 [warning] dst\n",
+        ),
+        (
+            1_710_064_800_123_456,
+            "2024-03-10 03:00:00.123 [warning] dst\n",
+        ),
+        (
+            1_730_624_399_123_456,
+            "2024-11-03 01:59:59.123 [warning] dst\n",
+        ),
+        (
+            1_730_624_400_123_456,
+            "2024-11-03 01:00:00.123 [warning] dst\n",
+        ),
+    ] {
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "dst\n")
+                .with_timestamp(LogTimestamp::from_unix_micros(timestamp))
+                .format_default_callback_line_null_context_with_options(pacific_options),
+            expected
+        );
+    }
     let callback_context = AvLogContextPrefix::new("rustctx", "<ptr>");
     assert_eq!(
         LogRecord::new(LogLevel::Warning, "ignored", "ctxmsg\n")

@@ -338,7 +338,7 @@ impl DefaultCallbackPrefixState {
 pub struct LogFormatOptions {
     flags: LogFlags,
     color_mode: LogColorMode,
-    default_callback_time_offset_seconds: i32,
+    default_callback_time_zone: LogDefaultCallbackTimeZone,
 }
 
 impl Default for LogFormatOptions {
@@ -352,7 +352,7 @@ impl LogFormatOptions {
         Self {
             flags,
             color_mode: LogColorMode::Never,
-            default_callback_time_offset_seconds: 0,
+            default_callback_time_zone: LogDefaultCallbackTimeZone::FixedOffsetSeconds(0),
         }
     }
 
@@ -360,7 +360,7 @@ impl LogFormatOptions {
         Self {
             flags: self.flags,
             color_mode,
-            default_callback_time_offset_seconds: self.default_callback_time_offset_seconds,
+            default_callback_time_zone: self.default_callback_time_zone,
         }
     }
 
@@ -371,7 +371,20 @@ impl LogFormatOptions {
         Self {
             flags: self.flags,
             color_mode: self.color_mode,
-            default_callback_time_offset_seconds,
+            default_callback_time_zone: LogDefaultCallbackTimeZone::FixedOffsetSeconds(
+                default_callback_time_offset_seconds,
+            ),
+        }
+    }
+
+    pub const fn with_default_callback_time_zone(
+        self,
+        default_callback_time_zone: LogDefaultCallbackTimeZone,
+    ) -> Self {
+        Self {
+            flags: self.flags,
+            color_mode: self.color_mode,
+            default_callback_time_zone,
         }
     }
 
@@ -428,13 +441,154 @@ impl LogFormatOptions {
     }
 
     pub const fn default_callback_time_offset_seconds(self) -> i32 {
-        self.default_callback_time_offset_seconds
+        match self.default_callback_time_zone {
+            LogDefaultCallbackTimeZone::FixedOffsetSeconds(offset_seconds) => offset_seconds,
+            LogDefaultCallbackTimeZone::PosixDst {
+                standard_offset_seconds,
+                ..
+            } => standard_offset_seconds,
+        }
+    }
+
+    pub const fn default_callback_time_zone(self) -> LogDefaultCallbackTimeZone {
+        self.default_callback_time_zone
     }
 }
 
 impl From<LogFlags> for LogFormatOptions {
     fn from(flags: LogFlags) -> Self {
         Self::new(flags)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogDefaultCallbackTimeZone {
+    FixedOffsetSeconds(i32),
+    PosixDst {
+        standard_offset_seconds: i32,
+        daylight_offset_seconds: i32,
+        start: PosixDstTransition,
+        end: PosixDstTransition,
+    },
+}
+
+impl LogDefaultCallbackTimeZone {
+    pub const fn fixed_offset_seconds(offset_seconds: i32) -> Self {
+        Self::FixedOffsetSeconds(offset_seconds)
+    }
+
+    pub const fn posix_dst(
+        standard_offset_seconds: i32,
+        daylight_offset_seconds: i32,
+        start: PosixDstTransition,
+        end: PosixDstTransition,
+    ) -> Self {
+        Self::PosixDst {
+            standard_offset_seconds,
+            daylight_offset_seconds,
+            start,
+            end,
+        }
+    }
+
+    pub fn offset_seconds_for_timestamp(self, timestamp: LogTimestamp) -> Option<i32> {
+        match self {
+            Self::FixedOffsetSeconds(offset_seconds) => Some(offset_seconds),
+            Self::PosixDst {
+                standard_offset_seconds,
+                daylight_offset_seconds,
+                start,
+                end,
+            } => {
+                let (year, _, _, _, _, _, _) = timestamp.parts_utc();
+                let start_utc = start
+                    .local_unix_seconds_for_year(year)?
+                    .checked_sub(i64::from(standard_offset_seconds))?;
+                let end_utc = end
+                    .local_unix_seconds_for_year(year)?
+                    .checked_sub(i64::from(daylight_offset_seconds))?;
+                let utc_seconds = timestamp.unix_micros().div_euclid(1_000_000);
+
+                let is_daylight = if start_utc <= end_utc {
+                    utc_seconds >= start_utc && utc_seconds < end_utc
+                } else {
+                    utc_seconds >= start_utc || utc_seconds < end_utc
+                };
+                Some(if is_daylight {
+                    daylight_offset_seconds
+                } else {
+                    standard_offset_seconds
+                })
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PosixDstTransition {
+    month: u8,
+    week: u8,
+    weekday: u8,
+    seconds: u32,
+}
+
+impl PosixDstTransition {
+    pub const fn month_week_weekday(month: u8, week: u8, weekday: u8) -> Option<Self> {
+        Self::month_week_weekday_time(month, week, weekday, 2 * 3_600)
+    }
+
+    pub const fn month_week_weekday_time(
+        month: u8,
+        week: u8,
+        weekday: u8,
+        seconds: u32,
+    ) -> Option<Self> {
+        if month == 0 || month > 12 || week == 0 || week > 5 || weekday > 6 || seconds >= 86_400 {
+            return None;
+        }
+        Some(Self {
+            month,
+            week,
+            weekday,
+            seconds,
+        })
+    }
+
+    pub const fn month(self) -> u8 {
+        self.month
+    }
+
+    pub const fn week(self) -> u8 {
+        self.week
+    }
+
+    pub const fn weekday(self) -> u8 {
+        self.weekday
+    }
+
+    pub const fn seconds(self) -> u32 {
+        self.seconds
+    }
+
+    fn local_unix_seconds_for_year(self, year: i64) -> Option<i64> {
+        let month = i64::from(self.month);
+        let first_day = unix_days_from_civil(year, month, 1)?;
+        let first_weekday = i64::from(weekday_from_unix_days(first_day));
+        let target_weekday = i64::from(self.weekday);
+        let days_in_month = days_in_month(year, month)?;
+        let day = if self.week == 5 {
+            let last_day = unix_days_from_civil(year, month, days_in_month)?;
+            let last_weekday = i64::from(weekday_from_unix_days(last_day));
+            days_in_month - (last_weekday - target_weekday).rem_euclid(7)
+        } else {
+            1 + (target_weekday - first_weekday).rem_euclid(7) + 7 * (i64::from(self.week) - 1)
+        };
+        if day < 1 || day > days_in_month {
+            return None;
+        }
+        unix_days_from_civil(year, month, day)?
+            .checked_mul(86_400)?
+            .checked_add(i64::from(self.seconds))
     }
 }
 
@@ -611,6 +765,24 @@ impl LogTimestamp {
         ))
     }
 
+    pub fn format_default_callback_time_with_time_zone(
+        self,
+        time_zone: LogDefaultCallbackTimeZone,
+    ) -> Option<String> {
+        self.format_default_callback_time_with_offset_seconds(
+            time_zone.offset_seconds_for_timestamp(self)?,
+        )
+    }
+
+    pub fn format_default_callback_datetime_with_time_zone(
+        self,
+        time_zone: LogDefaultCallbackTimeZone,
+    ) -> Option<String> {
+        self.format_default_callback_datetime_with_offset_seconds(
+            time_zone.offset_seconds_for_timestamp(self)?,
+        )
+    }
+
     fn parts_utc(self) -> (i64, i64, i64, i64, i64, i64, i64) {
         const MICROS_PER_SECOND: i64 = 1_000_000;
         const SECONDS_PER_DAY: i64 = 86_400;
@@ -669,6 +841,47 @@ fn civil_from_unix_days(days: i64) -> (i64, i64, i64) {
     let year = year + if month <= 2 { 1 } else { 0 };
 
     (year, month, day)
+}
+
+fn unix_days_from_civil(year: i64, month: i64, day: i64) -> Option<i64> {
+    if !(1..=12).contains(&month) {
+        return None;
+    }
+    let days_in_month = days_in_month(year, month)?;
+    if day < 1 || day > days_in_month {
+        return None;
+    }
+
+    let adjusted_year = year - if month <= 2 { 1 } else { 0 };
+    let era = (if adjusted_year >= 0 {
+        adjusted_year
+    } else {
+        adjusted_year - 399
+    })
+    .div_euclid(400);
+    let year_of_era = adjusted_year - era * 400;
+    let month_param = month + if month > 2 { -3 } else { 9 };
+    let day_of_year = (153 * month_param + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    Some(era * 146_097 + day_of_era - 719_468)
+}
+
+fn days_in_month(year: i64, month: i64) -> Option<i64> {
+    Some(match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if is_leap_year(year) => 29,
+        2 => 28,
+        _ => return None,
+    })
+}
+
+fn is_leap_year(year: i64) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+}
+
+fn weekday_from_unix_days(days: i64) -> u8 {
+    (days + 4).rem_euclid(7) as u8
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -905,8 +1118,8 @@ impl LogRecord {
             if let Some(timestamp) = self.timestamp {
                 if self.level.permits_prefix_fields() && flags.contains(LogFlags::PRINT_DATETIME) {
                     if let Some(formatted) = timestamp
-                        .format_default_callback_datetime_with_offset_seconds(
-                            options.default_callback_time_offset_seconds(),
+                        .format_default_callback_datetime_with_time_zone(
+                            options.default_callback_time_zone(),
                         )
                     {
                         line.push_str(&formatted);
@@ -914,11 +1127,9 @@ impl LogRecord {
                     }
                 } else if self.level.permits_prefix_fields() && flags.contains(LogFlags::PRINT_TIME)
                 {
-                    if let Some(formatted) = timestamp
-                        .format_default_callback_time_with_offset_seconds(
-                            options.default_callback_time_offset_seconds(),
-                        )
-                    {
+                    if let Some(formatted) = timestamp.format_default_callback_time_with_time_zone(
+                        options.default_callback_time_zone(),
+                    ) {
                         line.push_str(&formatted);
                         line.push(' ');
                     }
@@ -1656,6 +1867,52 @@ mod tests {
     }
 
     #[test]
+    fn log_timestamps_format_posix_dst_default_callback_time_zone() {
+        let pacific = LogDefaultCallbackTimeZone::posix_dst(
+            -8 * 3_600,
+            -7 * 3_600,
+            PosixDstTransition::month_week_weekday(3, 2, 0).unwrap(),
+            PosixDstTransition::month_week_weekday(11, 1, 0).unwrap(),
+        );
+
+        assert_eq!(PosixDstTransition::month_week_weekday(0, 2, 0), None);
+        assert_eq!(PosixDstTransition::month_week_weekday(13, 2, 0), None);
+        assert_eq!(PosixDstTransition::month_week_weekday(3, 0, 0), None);
+        assert_eq!(PosixDstTransition::month_week_weekday(3, 6, 0), None);
+        assert_eq!(PosixDstTransition::month_week_weekday(3, 2, 7), None);
+        assert_eq!(
+            PosixDstTransition::month_week_weekday_time(3, 2, 0, 86_400),
+            None
+        );
+
+        assert_eq!(
+            LogTimestamp::from_unix_micros(1_710_064_799_123_456)
+                .format_default_callback_datetime_with_time_zone(pacific),
+            Some("2024-03-10 01:59:59.123".to_string())
+        );
+        assert_eq!(
+            LogTimestamp::from_unix_micros(1_710_064_800_123_456)
+                .format_default_callback_datetime_with_time_zone(pacific),
+            Some("2024-03-10 03:00:00.123".to_string())
+        );
+        assert_eq!(
+            LogTimestamp::from_unix_micros(1_730_624_399_123_456)
+                .format_default_callback_datetime_with_time_zone(pacific),
+            Some("2024-11-03 01:59:59.123".to_string())
+        );
+        assert_eq!(
+            LogTimestamp::from_unix_micros(1_730_624_400_123_456)
+                .format_default_callback_datetime_with_time_zone(pacific),
+            Some("2024-11-03 01:00:00.123".to_string())
+        );
+        assert_eq!(
+            LogTimestamp::from_unix_micros(1_710_064_800_123_456)
+                .format_default_callback_time_with_time_zone(pacific),
+            Some("03:00:00.123".to_string())
+        );
+    }
+
+    #[test]
     fn log_timestamps_convert_system_time_to_unix_micros() {
         let after_epoch = UNIX_EPOCH + Duration::new(1, 234_567_000);
         assert_eq!(
@@ -1824,6 +2081,40 @@ mod tests {
                 .with_timestamp(LogTimestamp::from_unix_micros(1_704_070_923_456_789))
                 .format_default_callback_line_null_context_with_options(utc_minus_eight),
             "2023-12-31 17:02:03.456 [warning] local\n"
+        );
+
+        let pacific = LogDefaultCallbackTimeZone::posix_dst(
+            -8 * 3_600,
+            -7 * 3_600,
+            PosixDstTransition::month_week_weekday(3, 2, 0).unwrap(),
+            PosixDstTransition::month_week_weekday(11, 1, 0).unwrap(),
+        );
+        let pacific_options =
+            LogFormatOptions::new(LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL)
+                .with_default_callback_time_zone(pacific);
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "dst\n")
+                .with_timestamp(LogTimestamp::from_unix_micros(1_710_064_799_123_456))
+                .format_default_callback_line_null_context_with_options(pacific_options),
+            "2024-03-10 01:59:59.123 [warning] dst\n"
+        );
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "dst\n")
+                .with_timestamp(LogTimestamp::from_unix_micros(1_710_064_800_123_456))
+                .format_default_callback_line_null_context_with_options(pacific_options),
+            "2024-03-10 03:00:00.123 [warning] dst\n"
+        );
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "dst\n")
+                .with_timestamp(LogTimestamp::from_unix_micros(1_730_624_399_123_456))
+                .format_default_callback_line_null_context_with_options(pacific_options),
+            "2024-11-03 01:59:59.123 [warning] dst\n"
+        );
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "ignored", "dst\n")
+                .with_timestamp(LogTimestamp::from_unix_micros(1_730_624_400_123_456))
+                .format_default_callback_line_null_context_with_options(pacific_options),
+            "2024-11-03 01:00:00.123 [warning] dst\n"
         );
         let quiet = LogRecord::new(LogLevel::Quiet, "ignored", "quiet\n").with_timestamp(timestamp);
         assert_eq!(

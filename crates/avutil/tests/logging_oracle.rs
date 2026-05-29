@@ -9,8 +9,8 @@ use std::{
 
 use avutil::{
     AvLogContextPrefix, AvLogFormatLine, AvLogFormatLine2, DefaultCallbackColorState,
-    DefaultCallbackPrefixState, LogColorMode, LogFlags, LogFormatOptions, LogLevel, LogRecord,
-    LogTimestamp, Logger,
+    DefaultCallbackPrefixState, LogColorMode, LogDefaultCallbackTimeZone, LogFlags,
+    LogFormatOptions, LogLevel, LogRecord, LogTimestamp, Logger, PosixDstTransition,
 };
 
 #[test]
@@ -511,6 +511,38 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
         "default-callback-fixed-datetime-utcminus8-level-line",
         escape_row_text(fixed_local_datetime.as_bytes()),
     );
+    let pacific_time_zone = LogDefaultCallbackTimeZone::posix_dst(
+        -8 * 3_600,
+        -7 * 3_600,
+        PosixDstTransition::month_week_weekday(3, 2, 0).unwrap(),
+        PosixDstTransition::month_week_weekday(11, 1, 0).unwrap(),
+    );
+    let pacific_time_options =
+        LogFormatOptions::new(LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL)
+            .with_default_callback_time_zone(pacific_time_zone);
+    for (name, timestamp) in [
+        (
+            "default-callback-posix-dst-pacific-before-spring-level-line",
+            1_710_064_799_123_456,
+        ),
+        (
+            "default-callback-posix-dst-pacific-after-spring-level-line",
+            1_710_064_800_123_456,
+        ),
+        (
+            "default-callback-posix-dst-pacific-before-fall-level-line",
+            1_730_624_399_123_456,
+        ),
+        (
+            "default-callback-posix-dst-pacific-after-fall-level-line",
+            1_730_624_400_123_456,
+        ),
+    ] {
+        let local_datetime = LogRecord::new(LogLevel::Warning, "ignored", "dst\n")
+            .with_timestamp(LogTimestamp::from_unix_micros(timestamp))
+            .format_default_callback_line_null_context_with_options(pacific_time_options);
+        rows.insert(name, escape_row_text(local_datetime.as_bytes()));
+    }
     let mut threshold_logger = Logger::new_with_flags(LogLevel::Warning, LogFlags::PRINT_LEVEL);
     assert!(!threshold_logger.log(LogRecord::new(LogLevel::Info, "ignored", "hidden\n")));
     rows.insert(
@@ -2891,6 +2923,26 @@ static void print_default_callback_rows(void) {
         "default-callback-fixed-datetime-utcminus8-level-line", "Etc/GMT+8",
         1704070923456789LL, AV_LOG_PRINT_DATETIME | AV_LOG_PRINT_LEVEL,
         "local");
+    print_default_callback_fixed_time_row(
+        "default-callback-posix-dst-pacific-before-spring-level-line",
+        "PST8PDT,M3.2.0,M11.1.0",
+        1710064799123456LL, AV_LOG_PRINT_DATETIME | AV_LOG_PRINT_LEVEL,
+        "dst");
+    print_default_callback_fixed_time_row(
+        "default-callback-posix-dst-pacific-after-spring-level-line",
+        "PST8PDT,M3.2.0,M11.1.0",
+        1710064800123456LL, AV_LOG_PRINT_DATETIME | AV_LOG_PRINT_LEVEL,
+        "dst");
+    print_default_callback_fixed_time_row(
+        "default-callback-posix-dst-pacific-before-fall-level-line",
+        "PST8PDT,M3.2.0,M11.1.0",
+        1730624399123456LL, AV_LOG_PRINT_DATETIME | AV_LOG_PRINT_LEVEL,
+        "dst");
+    print_default_callback_fixed_time_row(
+        "default-callback-posix-dst-pacific-after-fall-level-line",
+        "PST8PDT,M3.2.0,M11.1.0",
+        1730624400123456LL, AV_LOG_PRINT_DATETIME | AV_LOG_PRINT_LEVEL,
+        "dst");
     print_default_callback_threshold_row(
         "default-callback-filter-info-at-warning-line", NULL, AV_LOG_WARNING,
         AV_LOG_INFO, AV_LOG_PRINT_LEVEL, "hidden");
