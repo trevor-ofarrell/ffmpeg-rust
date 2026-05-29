@@ -812,6 +812,7 @@ unit_tests = [
   "buffer::tests::buffer_resize_detaches_pool_owned_storage_back_to_pool",
   "buffer::tests::buffer_realloc_detaches_pool_owned_storage_back_to_pool",
   "buffer::tests::buffer_replace_returns_pool_owned_destination_storage_to_pool",
+  "buffer::tests::buffer_replace_null_returns_pool_owned_destination_storage_to_pool",
   "buffer::tests::buffer_replace_shares_pool_owned_source_until_destination_unref",
   "buffer::tests::buffer_replace_between_distinct_pools_preserves_both_pool_lifecycles",
   "buffer::tests::custom_buffer_pool_callbacks_allocate_reuse_and_release_storage",
@@ -838,6 +839,12 @@ fate_tests = [
   "not_applicable: upstream FFmpeg FATE has no standalone AVBufferRef/AVBufferPool API target; covered by unit tests plus pinned libavutil differential oracle",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest pool-owned NULL replace slice: pinned libavutil oracle coverage now
+# validates `av_buffer_replace(&dst, NULL)` when `dst` is owned by a custom
+# `av_buffer_pool_init2()` pool. The call returns success, nulls the
+# destination, returns the original storage to the pool without running
+# release/free callbacks, exposes the same bytes and pool opaque data on spare
+# reuse, and releases the original allocation plus pool owner only at uninit.
 # Latest unique pool make-writable slice: pinned libavutil oracle coverage now
 # validates `av_buffer_make_writable()` on a unique custom-pool allocation.
 # The call is a no-op for the pool-owned ref: data pointer and bytes remain

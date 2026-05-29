@@ -1547,6 +1547,72 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     );
     assert_eq!(*replace_pool_frees.lock().unwrap(), 1);
 
+    let replace_pool_null_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let replace_pool_null_frees = Arc::new(Mutex::new(0usize));
+    let replace_pool_null_release_capture = Arc::clone(&replace_pool_null_releases);
+    let replace_pool_null_free_capture = Arc::clone(&replace_pool_null_frees);
+    let replace_pool_null_opaque = payload_len + padding_len + 63;
+    let replace_pool_null = BufferPool::with_callbacks(
+        payload_len,
+        padding_len,
+        BufferPoolCallbacks::with_allocation_callbacks(
+            move |allocated_len| {
+                Ok(BufferPoolAllocation::with_opaque(
+                    vec![0x63; allocated_len],
+                    replace_pool_null_opaque,
+                ))
+            },
+            move |allocation| {
+                let opaque = *allocation.opaque_ref::<usize>().unwrap();
+                replace_pool_null_release_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, allocation.into_vec()));
+            },
+        )
+        .with_pool_free(move || {
+            *replace_pool_null_free_capture.lock().unwrap() += 1;
+        }),
+    )
+    .unwrap();
+    let mut replace_pool_null_dst = Some(replace_pool_null.get().unwrap());
+    if let Some(first) = replace_pool_null_dst
+        .as_mut()
+        .unwrap()
+        .make_mut()
+        .first_mut()
+    {
+        *first = cursor.next().unwrap_or_default();
+    }
+    let replace_pool_null_expected = replace_pool_null_dst
+        .as_ref()
+        .unwrap()
+        .as_padded_slice()
+        .to_vec();
+    BufferRef::replace(&mut replace_pool_null_dst, None);
+    assert!(replace_pool_null_dst.is_none());
+    assert!(replace_pool_null_releases.lock().unwrap().is_empty());
+    assert_eq!(*replace_pool_null_frees.lock().unwrap(), 0);
+    assert_eq!(replace_pool_null.available_count().unwrap(), 1);
+    let replace_pool_null_reuse = replace_pool_null.get().unwrap();
+    assert_eq!(
+        replace_pool_null_reuse.as_padded_slice(),
+        replace_pool_null_expected.as_slice()
+    );
+    assert_eq!(
+        replace_pool_null_reuse
+            .pool_opaque_ref::<usize>()
+            .copied(),
+        Some(replace_pool_null_opaque)
+    );
+    drop(replace_pool_null_reuse);
+    drop(replace_pool_null);
+    assert_eq!(
+        *replace_pool_null_releases.lock().unwrap(),
+        vec![(replace_pool_null_opaque, replace_pool_null_expected)]
+    );
+    assert_eq!(*replace_pool_null_frees.lock().unwrap(), 1);
+
     let replace_pool_source_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let replace_pool_source_frees = Arc::new(Mutex::new(0usize));
     let replace_pool_source_release_capture = Arc::clone(&replace_pool_source_releases);

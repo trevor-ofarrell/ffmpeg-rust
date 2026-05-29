@@ -4168,6 +4168,79 @@ mod tests {
     }
 
     #[test]
+    fn buffer_replace_null_returns_pool_owned_destination_storage_to_pool() {
+        #[derive(Debug)]
+        struct PoolToken {
+            id: usize,
+            size: usize,
+        }
+
+        let releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let pool_frees = std::sync::Arc::new(std::sync::Mutex::new(Vec::<usize>::new()));
+        let release_capture = std::sync::Arc::clone(&releases);
+        let pool_free_capture = std::sync::Arc::clone(&pool_frees);
+        let pool = BufferPool::with_callbacks(
+            3,
+            0,
+            BufferPoolCallbacks::with_allocation_callbacks(
+                |allocated_len| {
+                    assert_eq!(allocated_len, 3);
+                    Ok(BufferPoolAllocation::with_opaque(
+                        vec![1, 2, 3],
+                        PoolToken {
+                            id: 63,
+                            size: allocated_len,
+                        },
+                    ))
+                },
+                move |allocation| {
+                    let token = allocation
+                        .opaque_ref::<PoolToken>()
+                        .expect("pool token should be preserved");
+                    release_capture
+                        .lock()
+                        .unwrap()
+                        .push((token.id, allocation.as_slice().to_vec()));
+                },
+            )
+            .with_pool_free(move || {
+                pool_free_capture.lock().unwrap().push(63);
+            }),
+        )
+        .unwrap();
+
+        let mut destination = Some(pool.get().unwrap());
+        destination
+            .as_mut()
+            .unwrap()
+            .make_mut()
+            .copy_from_slice(&[0x63, 0x64, 0x65]);
+        BufferRef::replace(&mut destination, None);
+
+        assert!(destination.is_none());
+        assert!(releases.lock().unwrap().is_empty());
+        assert!(pool_frees.lock().unwrap().is_empty());
+        assert_eq!(pool.available_count().unwrap(), 1);
+
+        let reused = pool.get().unwrap();
+        assert_eq!(reused.as_slice(), &[0x63, 0x64, 0x65]);
+        assert_eq!(
+            reused
+                .pool_opaque_ref::<PoolToken>()
+                .map(|token| (token.id, token.size)),
+            Some((63, 3))
+        );
+
+        drop(reused);
+        drop(pool);
+        assert_eq!(
+            *releases.lock().unwrap(),
+            vec![(63, vec![0x63, 0x64, 0x65])]
+        );
+        assert_eq!(*pool_frees.lock().unwrap(), vec![63]);
+    }
+
+    #[test]
     fn buffer_replace_shares_pool_owned_source_until_destination_unref() {
         #[derive(Debug)]
         struct PoolToken {

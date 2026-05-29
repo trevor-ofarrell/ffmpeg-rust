@@ -1973,6 +1973,90 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     drop(pool_replace_free_values);
     drop(pool_replace_release_values);
 
+    let pool_null_replace_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let pool_null_replace_frees = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let pool_null_replace_release_capture = Arc::clone(&pool_null_replace_releases);
+    let pool_null_replace_free_capture = Arc::clone(&pool_null_replace_frees);
+    let pool_null_replace_pool = BufferPool::with_callbacks(
+        3,
+        0,
+        BufferPoolCallbacks::with_allocation_callbacks(
+            |allocated_len| {
+                assert_eq!(allocated_len, 3);
+                Ok(BufferPoolAllocation::with_opaque(
+                    vec![1, 2, 3],
+                    PoolToken {
+                        id: 63,
+                        size: allocated_len,
+                    },
+                ))
+            },
+            move |allocation| {
+                let token = allocation
+                    .opaque_ref::<PoolToken>()
+                    .expect("pool null replace token should be preserved");
+                pool_null_replace_release_capture
+                    .lock()
+                    .unwrap()
+                    .push((token.id, allocation.as_slice().to_vec()));
+            },
+        )
+        .with_pool_free(move || {
+            pool_null_replace_free_capture.lock().unwrap().push(63);
+        }),
+    )
+    .unwrap();
+    let mut pool_null_replace_dst = Some(pool_null_replace_pool.get().unwrap());
+    pool_null_replace_dst
+        .as_mut()
+        .unwrap()
+        .make_mut()
+        .copy_from_slice(&[0x63, 0x64, 0x65]);
+    BufferRef::replace(&mut pool_null_replace_dst, None);
+    rows.insert("pool-null-replace:ret".to_string(), vec!["0".to_string()]);
+    rows.insert(
+        "pool-null-replace:dst-null".to_string(),
+        vec![bool_field(pool_null_replace_dst.is_none())],
+    );
+    rows.insert(
+        "pool-null-replace:after-replace".to_string(),
+        vec![
+            pool_null_replace_releases.lock().unwrap().len().to_string(),
+            pool_null_replace_frees.lock().unwrap().len().to_string(),
+        ],
+    );
+    let pool_null_replace_reuse = pool_null_replace_pool.get().unwrap();
+    rows.insert(
+        "pool-null-replace:reuse".to_string(),
+        buffer_fields(&pool_null_replace_reuse),
+    );
+    let pool_null_replace_reuse_token = pool_null_replace_reuse
+        .pool_opaque_ref::<PoolToken>()
+        .expect("pool null replace reuse token");
+    rows.insert(
+        "pool-null-replace:opaque-reuse".to_string(),
+        vec![
+            pool_null_replace_reuse_token.id.to_string(),
+            pool_null_replace_reuse_token.size.to_string(),
+        ],
+    );
+    drop(pool_null_replace_reuse);
+    drop(pool_null_replace_pool);
+    let pool_null_replace_release_values = pool_null_replace_releases.lock().unwrap();
+    let pool_null_replace_free_values = pool_null_replace_frees.lock().unwrap();
+    rows.insert(
+        "pool-null-replace:uninit-release".to_string(),
+        vec![
+            pool_null_replace_release_values.len().to_string(),
+            pool_null_replace_release_values[0].0.to_string(),
+            hex(&pool_null_replace_release_values[0].1),
+            pool_null_replace_free_values.len().to_string(),
+            pool_null_replace_free_values[0].to_string(),
+        ],
+    );
+    drop(pool_null_replace_free_values);
+    drop(pool_null_replace_release_values);
+
     let pool_source_replace_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let pool_source_replace_frees = Arc::new(Mutex::new(Vec::<usize>::new()));
     let pool_source_replace_release_capture = Arc::clone(&pool_source_replace_releases);
@@ -4232,6 +4316,46 @@ int main(void) {
     av_buffer_unref(&pool_replace_reuse);
     av_buffer_pool_uninit(&pool_replace_pool);
     printf("pool-replace:uninit-release|%d|%" PRIuPTR "|",
+           pool_release_count, last_pool_release_id);
+    print_hex(last_pool_release, last_pool_release_size);
+    printf("|%d|%" PRIuPTR "\n", pool_free_count, last_pool_free_id);
+
+    reset_pool_counters();
+    PoolOpaque pool_null_replace_opaque = { 63, 3 };
+    AVBufferPool *pool_null_replace_pool =
+        av_buffer_pool_init2(3, &pool_null_replace_opaque,
+                             test_pool_alloc, test_pool_owner_free);
+    fail_if(!pool_null_replace_pool,
+            "av_buffer_pool_init2 null replace failed");
+    AVBufferRef *pool_null_replace_ref =
+        av_buffer_pool_get(pool_null_replace_pool);
+    fail_if(!pool_null_replace_ref,
+            "av_buffer_pool_get null replace failed");
+    static const uint8_t pool_null_replace_bytes[] = { 0x63, 0x64, 0x65 };
+    fill_bytes(pool_null_replace_ref, pool_null_replace_bytes,
+               sizeof(pool_null_replace_bytes));
+    ret = av_buffer_replace(&pool_null_replace_ref, NULL);
+    printf("pool-null-replace:ret|%d\n", ret);
+    fail_if(ret < 0, "av_buffer_replace pool null failed");
+    printf("pool-null-replace:dst-null|%d\n",
+           pool_null_replace_ref == NULL);
+    printf("pool-null-replace:after-replace|%d|%d\n",
+           pool_release_count, pool_free_count);
+    AVBufferRef *pool_null_replace_reuse =
+        av_buffer_pool_get(pool_null_replace_pool);
+    fail_if(!pool_null_replace_reuse,
+            "av_buffer_pool_get null replace reuse failed");
+    print_buffer("pool-null-replace:reuse", pool_null_replace_reuse);
+    PoolOpaque *pool_null_replace_reuse_opaque =
+        av_buffer_pool_buffer_get_opaque(pool_null_replace_reuse);
+    fail_if(!pool_null_replace_reuse_opaque,
+            "pool null replace reuse opaque missing");
+    printf("pool-null-replace:opaque-reuse|%" PRIuPTR "|%zu\n",
+           pool_null_replace_reuse_opaque->id,
+           pool_null_replace_reuse_opaque->size);
+    av_buffer_unref(&pool_null_replace_reuse);
+    av_buffer_pool_uninit(&pool_null_replace_pool);
+    printf("pool-null-replace:uninit-release|%d|%" PRIuPTR "|",
            pool_release_count, last_pool_release_id);
     print_hex(last_pool_release, last_pool_release_size);
     printf("|%d|%" PRIuPTR "\n", pool_free_count, last_pool_free_id);
