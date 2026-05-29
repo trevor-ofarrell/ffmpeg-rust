@@ -2731,6 +2731,34 @@ mod tests {
     }
 
     #[test]
+    fn buffer_pool_zero_size_default_allocator_reuses_empty_buffers() {
+        let pool = BufferPool::new(0, 0).unwrap();
+        assert_eq!(pool.len(), 0);
+        assert!(pool.is_empty());
+        assert_eq!(pool.allocated_len(), 0);
+        assert_eq!(pool.padding_len(), 0);
+        assert_eq!(pool.available_count().unwrap(), 0);
+
+        let first = pool.get().unwrap();
+        assert_eq!(first.len(), 0);
+        assert!(first.is_empty());
+        assert_eq!(first.as_slice(), &[]);
+        assert_eq!(first.as_padded_slice(), &[]);
+        assert!(first.is_writable());
+        assert!(first.pool_opaque_ref::<usize>().is_none());
+        drop(first);
+        assert_eq!(pool.available_count().unwrap(), 1);
+
+        let reuse = pool.get().unwrap();
+        assert_eq!(reuse.len(), 0);
+        assert_eq!(reuse.allocated_len(), 0);
+        assert!(reuse.is_writable());
+        assert!(reuse.pool_opaque_ref::<usize>().is_none());
+        drop(reuse);
+        assert_eq!(pool.available_count().unwrap(), 1);
+    }
+
+    #[test]
     fn custom_buffer_pool_callbacks_allocate_reuse_and_release_storage() {
         let allocations = std::sync::Arc::new(std::sync::Mutex::new(Vec::<usize>::new()));
         let releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));

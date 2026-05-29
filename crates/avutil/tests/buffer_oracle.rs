@@ -828,6 +828,23 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         vec![bool_field(null_pool.is_none())],
     );
 
+    let zero_pool = BufferPool::new(0, 0).unwrap();
+    let zero_first = zero_pool.get().unwrap();
+    rows.insert("pool-zero:first".to_string(), buffer_fields(&zero_first));
+    rows.insert(
+        "pool-zero:first-opaque".to_string(),
+        vec![bool_field(zero_first.pool_opaque_ref::<usize>().is_none())],
+    );
+    drop(zero_first);
+    let zero_reuse = zero_pool.get().unwrap();
+    rows.insert("pool-zero:reuse".to_string(), buffer_fields(&zero_reuse));
+    rows.insert(
+        "pool-zero:reuse-opaque".to_string(),
+        vec![bool_field(zero_reuse.pool_opaque_ref::<usize>().is_none())],
+    );
+    drop(zero_reuse);
+    drop(zero_pool);
+
     let default_pool = BufferPool::new(3, 0).unwrap();
     let mut default_first = default_pool.get().unwrap();
     rows.insert(
@@ -1941,6 +1958,22 @@ int main(void) {
     AVBufferPool *pool_null = NULL;
     av_buffer_pool_uninit(&pool_null);
     printf("pool:uninit-null|%d\n", pool_null == NULL);
+
+    AVBufferPool *zero_pool = av_buffer_pool_init(0, NULL);
+    fail_if(!zero_pool, "av_buffer_pool_init zero failed");
+    AVBufferRef *zero_first = av_buffer_pool_get(zero_pool);
+    fail_if(!zero_first, "av_buffer_pool_get zero first failed");
+    print_buffer("pool-zero:first", zero_first);
+    printf("pool-zero:first-opaque|%d\n",
+           av_buffer_pool_buffer_get_opaque(zero_first) == NULL);
+    av_buffer_unref(&zero_first);
+    AVBufferRef *zero_reuse = av_buffer_pool_get(zero_pool);
+    fail_if(!zero_reuse, "av_buffer_pool_get zero reuse failed");
+    print_buffer("pool-zero:reuse", zero_reuse);
+    printf("pool-zero:reuse-opaque|%d\n",
+           av_buffer_pool_buffer_get_opaque(zero_reuse) == NULL);
+    av_buffer_unref(&zero_reuse);
+    av_buffer_pool_uninit(&zero_pool);
 
     AVBufferPool *default_pool = av_buffer_pool_init(3, NULL);
     fail_if(!default_pool, "av_buffer_pool_init default failed");

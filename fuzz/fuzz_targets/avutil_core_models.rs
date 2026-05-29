@@ -1702,6 +1702,22 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     assert!(default_pool_with_free.is_none());
     assert_eq!(*default_pool_free_count.lock().unwrap(), 1);
 
+    let zero_pool = BufferPool::new(0, 0).unwrap();
+    let zero_first = zero_pool.get().unwrap();
+    assert_eq!(zero_first.len(), 0);
+    assert_eq!(zero_first.allocated_len(), 0);
+    assert!(zero_first.is_writable());
+    assert!(zero_first.pool_opaque_ref::<usize>().is_none());
+    drop(zero_first);
+    assert_eq!(zero_pool.available_count().unwrap(), 1);
+    let zero_reuse = zero_pool.get().unwrap();
+    assert_eq!(zero_reuse.len(), 0);
+    assert_eq!(zero_reuse.as_slice(), &[]);
+    assert!(zero_reuse.is_writable());
+    assert!(zero_reuse.pool_opaque_ref::<usize>().is_none());
+    drop(zero_reuse);
+    assert_eq!(zero_pool.available_count().unwrap(), 1);
+
     let mut null_pool = None;
     BufferPool::uninit(&mut null_pool);
     assert!(null_pool.is_none());
