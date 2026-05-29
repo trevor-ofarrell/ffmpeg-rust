@@ -375,6 +375,7 @@ impl FfprobePacketReport {
 pub struct FfprobeError {
     kind: FfprobeErrorKind,
     message: String,
+    banner: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -406,11 +407,21 @@ impl FfprobeError {
         Self {
             kind,
             message: message.into(),
+            banner: None,
         }
     }
 
     pub fn message(&self) -> &str {
         &self.message
+    }
+
+    pub fn banner(&self) -> Option<&str> {
+        self.banner.as_deref()
+    }
+
+    fn with_banner(mut self, banner: impl Into<String>) -> Self {
+        self.banner = Some(banner.into());
+        self
     }
 
     fn exit_code(&self) -> i32 {
@@ -437,6 +448,9 @@ pub fn run_ffprobe_tool(args: &[String]) -> i32 {
             0
         }
         Err(err) => {
+            if let Some(banner) = err.banner() {
+                eprint!("{banner}");
+            }
             eprint!(
                 "{}",
                 crate::cli_logging::tool_error_stderr("ffprobe", args, &err)
@@ -447,14 +461,19 @@ pub fn run_ffprobe_tool(args: &[String]) -> i32 {
 }
 
 pub fn ffprobe_output(args: &[String]) -> Result<String, FfprobeError> {
-    for arg in args {
+    for (index, arg) in args.iter().enumerate() {
         match arg.as_str() {
-            "-buildconf" => return Ok(crate::buildconf_banner("ffprobe")),
+            "-buildconf" => {
+                let banner = crate::buildconf_banner("ffprobe");
+                validate_ffprobe_prefix(&args[..index])
+                    .map_err(|err| err.with_banner(banner.clone()))?;
+                return Ok(banner);
+            }
             "-version" => {
-                crate::option_parser::validate_loglevel_options(args).map_err(|err| {
-                    FfprobeError::usage(format!("failed to parse options: {err}"))
-                })?;
-                return Ok(crate::version_banner("ffprobe"));
+                let banner = crate::version_banner("ffprobe");
+                validate_ffprobe_prefix(&args[..index])
+                    .map_err(|err| err.with_banner(banner.clone()))?;
+                return Ok(banner);
             }
             _ => {}
         }
@@ -476,6 +495,53 @@ pub fn ffprobe_output(args: &[String]) -> Result<String, FfprobeError> {
         attach_packet_counts(&mut report);
     }
     Ok(render_report(&command, &report))
+}
+
+fn validate_ffprobe_prefix(args: &[String]) -> Result<(), FfprobeError> {
+    let mut input_format = None;
+    let mut input_url = None;
+    let mut index = 0;
+
+    while index < args.len() {
+        let arg = &args[index];
+        match arg.as_str() {
+            "-hide_banner" | "-show_format" | "-show_streams" | "-show_packets"
+            | "-count_frames" | "-count_packets" => index += 1,
+            "-of" | "-print_format" => {
+                let value = take_value(args, index, arg)?;
+                parse_writer_format(value)?;
+                index += 2;
+            }
+            "-f" => {
+                let value = take_value(args, index, arg)?;
+                set_input_format(&mut input_format, parse_forced_input_format(value)?)?;
+                index += 2;
+            }
+            "-v" | "-loglevel" => {
+                let value = take_log_level_value(args, index, arg)?;
+                if crate::option_parser::parse_log_level_directive(value).is_none() {
+                    return Err(FfprobeError::usage(format!(
+                        "invalid loglevel `{value}` for `{arg}`"
+                    )));
+                }
+                index += 2;
+            }
+            "-i" => {
+                let value = take_value(args, index, arg)?;
+                set_input_url(&mut input_url, value)?;
+                index += 2;
+            }
+            _ if arg.starts_with('-') => {
+                return Err(FfprobeError::usage(format!("unknown option `{arg}`")));
+            }
+            _ => {
+                set_input_url(&mut input_url, arg)?;
+                index += 1;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 pub fn probe_local_file(path: &str) -> Result<FfprobeReport, FfprobeError> {
@@ -2042,6 +2108,21 @@ mod tests {
     }
 
     #[test]
+    fn ffprobe_version_and_buildconf_ignore_trailing_unknown_options() {
+        let version_output = ffprobe_output(&strings(&["-version", "-not_a_real_option"])).unwrap();
+
+        assert!(version_output.starts_with("ffprobe version 8.1.1-rust target FFmpeg 8.1.1"));
+        assert!(version_output.contains("libavutil"));
+
+        let buildconf_output =
+            ffprobe_output(&strings(&["-buildconf", "-not_a_real_option"])).unwrap();
+
+        assert!(buildconf_output.starts_with("  configuration:\n"));
+        assert!(buildconf_output.contains("    --disable-gpl\n"));
+        assert!(!buildconf_output.contains("ffprobe version"));
+    }
+
+    #[test]
     fn ffprobe_buildconf_output_prints_configuration() {
         let stdout = ffprobe_output(&strings(&["-hide_banner", "-buildconf"])).unwrap();
 
@@ -2059,6 +2140,23 @@ mod tests {
         let stdout = ffprobe_output(&strings(&["-buildconf", "-not_a_real_option"])).unwrap();
 
         assert!(stdout.starts_with("  configuration:\n"));
+    }
+
+    #[test]
+    fn ffprobe_version_and_buildconf_attach_banner_for_preceding_errors() {
+        let version_err =
+            ffprobe_output(&strings(&["-not_a_real_option", "-version"])).unwrap_err();
+        let expected_version = crate::version_banner("ffprobe");
+
+        assert!(version_err.message().contains("unknown option"));
+        assert_eq!(version_err.banner(), Some(expected_version.as_str()));
+
+        let buildconf_err =
+            ffprobe_output(&strings(&["-not_a_real_option", "-buildconf"])).unwrap_err();
+        let expected_buildconf = crate::buildconf_banner("ffprobe");
+
+        assert!(buildconf_err.message().contains("unknown option"));
+        assert_eq!(buildconf_err.banner(), Some(expected_buildconf.as_str()));
     }
 
     #[test]

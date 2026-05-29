@@ -178,6 +178,15 @@ fn exercise_fixtures() {
         999,
         Rational::new(25, 1).unwrap(),
     );
+    exercise_demux(
+        "frame-%020d.ppm",
+        vec![
+            entry("frame-00000000000000000001.ppm", b"one"),
+            entry("frame-00000000000000000002.ppm", b"two"),
+        ],
+        1,
+        Rational::ONE,
+    );
     exercise_mux(
         "frame-%03d.png",
         2,

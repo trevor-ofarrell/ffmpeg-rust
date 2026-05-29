@@ -1,6 +1,8 @@
 use avutil::{AvError, AvResult, Packet, Rational};
 use std::collections::BTreeMap;
 
+const MAX_RENDERED_PATTERN_PATH_BYTES: usize = 4096;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Image2Pattern {
     raw: String,
@@ -58,9 +60,9 @@ impl Image2Pattern {
                 let parsed_width = raw[width_start..spec_end]
                     .parse::<usize>()
                     .map_err(|_| AvError::invalid_argument("image2 pattern width is invalid"))?;
-                if parsed_width == 0 || parsed_width > 18 {
+                if parsed_width == 0 {
                     return Err(AvError::invalid_argument(
-                        "image2 pattern width must be between 1 and 18",
+                        "image2 pattern width must be positive",
                     ));
                 }
                 width = Some(parsed_width);
@@ -140,12 +142,24 @@ impl Image2Pattern {
                 suffix,
                 width,
             } => {
+                let digit_len = width.unwrap_or_else(|| number.to_string().len());
+                let path_len = prefix
+                    .len()
+                    .checked_add(digit_len)
+                    .and_then(|len| len.checked_add(suffix.len()))
+                    .ok_or_else(|| AvError::invalid_argument("image2 path length overflow"))?;
+                if path_len > MAX_RENDERED_PATTERN_PATH_BYTES {
+                    return Err(AvError::invalid_argument(
+                        "image2 rendered path exceeds supported length",
+                    ));
+                }
+
                 let digits = if let Some(width) = width {
                     format!("{number:0width$}")
                 } else {
                     number.to_string()
                 };
-                let mut path = String::with_capacity(prefix.len() + digits.len() + suffix.len());
+                let mut path = String::with_capacity(path_len);
                 path.push_str(prefix);
                 path.push_str(&digits);
                 path.push_str(suffix);
@@ -581,7 +595,6 @@ mod tests {
         assert!(Image2Pattern::parse("frame-%x.png").is_err());
         assert!(Image2Pattern::parse("frame-%d-%d.png").is_err());
         assert!(Image2Pattern::parse("frame-%0d.png").is_err());
-        assert!(Image2Pattern::parse("frame-%99d.png").is_err());
         assert!(Image2Pattern::parse("frame-%.png").is_err());
         assert!(Image2Pattern::parse("frame-%%-%d.png").is_ok());
         let padded = Image2Pattern::parse("frame-%03d.png").unwrap();
@@ -594,6 +607,20 @@ mod tests {
             "frame-1000.png"
         );
         assert_eq!(padded.frame_number_for_path("frame-1000.png"), Some(1000));
+        let wide = Image2Pattern::parse("frame-%020d.png").unwrap();
+        assert_eq!(
+            wide.path_for_frame_number(12).unwrap(),
+            "frame-00000000000000000012.png"
+        );
+        assert_eq!(
+            wide.frame_number_for_path("frame-00000000000000000012.png"),
+            Some(12)
+        );
+        let excessive = Image2Pattern::parse("frame-%05000d.png").unwrap();
+        assert_eq!(
+            excessive.path_for_frame_number(1).unwrap_err().kind(),
+            avutil::AvErrorKind::InvalidArgument
+        );
 
         assert!(Image2Demuxer::open(
             "frame-%d.png",
@@ -727,6 +754,51 @@ mod tests {
         assert_eq!(second.pts(), Some(1));
         assert_eq!(second.dts(), Some(1));
         assert_eq!(second.side_data()[0].data(), b"frame-1000.ppm");
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
+    fn accepts_wide_zero_padded_sequence_inputs() {
+        let entries = vec![
+            entry("frame-00000000000000000002.ppm", b"two"),
+            entry("frame-00000000000000000001.ppm", b"one"),
+        ];
+        let mut demuxer =
+            Image2Demuxer::open("frame-%020d.ppm", entries, 1, Rational::new(1, 1).unwrap())
+                .unwrap();
+
+        assert_eq!(demuxer.info().frame_count(), 2);
+        assert_eq!(
+            demuxer
+                .frames()
+                .iter()
+                .map(|frame| (frame.number(), frame.path()))
+                .collect::<Vec<_>>(),
+            vec![
+                (1, "frame-00000000000000000001.ppm"),
+                (2, "frame-00000000000000000002.ppm")
+            ]
+        );
+
+        let first = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(first.data(), b"one");
+        assert_eq!(first.pts(), Some(0));
+        assert_eq!(first.dts(), Some(0));
+        assert_eq!(first.duration(), 1);
+        assert_eq!(
+            first.side_data()[0].data(),
+            b"frame-00000000000000000001.ppm"
+        );
+
+        let second = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(second.data(), b"two");
+        assert_eq!(second.pts(), Some(1));
+        assert_eq!(second.dts(), Some(1));
+        assert_eq!(second.duration(), 1);
+        assert_eq!(
+            second.side_data()[0].data(),
+            b"frame-00000000000000000002.ppm"
+        );
         assert!(demuxer.read_packet().unwrap().is_none());
     }
 

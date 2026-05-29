@@ -89,6 +89,13 @@ fn version_and_buildconf_args_follow_first_occurrence() {
 
 #[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn version_requests_ignore_later_unknown_options() {
+    compare_version_unknown_order("ffmpeg");
+    compare_version_unknown_order("ffprobe");
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
 fn ffmpeg_repeated_diagnostics_match_default_repeat_summary_shape() {
     let input_pattern = invalid_jpeg_sequence_pattern();
     let input_pattern = input_pattern.to_string_lossy().into_owned();
@@ -321,6 +328,131 @@ fn compare_version_buildconf_precedence(tool_name: &str) {
             let rust_buildconf = ffprobe_output(&strings(&["-buildconf", "-version"]))
                 .expect("ffprobe buildconf should honor first occurrence semantics");
             assert_buildconf_shape(tool_name, &rust_buildconf, "Rust");
+        }
+        other => panic!("unsupported tool `{other}`"),
+    }
+}
+
+fn compare_version_unknown_order(tool_name: &str) {
+    let oracle = oracle_tool(tool_name);
+    let oracle_version_prefix = format!("{tool_name} version {TARGET_FFMPEG_VERSION}");
+
+    assert_version_request_case(
+        tool_name,
+        &oracle,
+        &["-version", "-not_a_real_option"],
+        true,
+        oracle_version_prefix.as_str(),
+        &version_banner(tool_name),
+        "version request with trailing unknown option",
+    );
+    assert_version_request_case(
+        tool_name,
+        &oracle,
+        &["-not_a_real_option", "-version"],
+        false,
+        oracle_version_prefix.as_str(),
+        &version_banner(tool_name),
+        "version request with preceding unknown option",
+    );
+}
+
+fn assert_version_request_case(
+    tool_name: &str,
+    oracle: &Path,
+    args: &[&str],
+    expected_success: bool,
+    expected_oracle_prefix: &str,
+    expected_rust_banner: &str,
+    label: &str,
+) {
+    let oracle_output = run_oracle(oracle, tool_name, args);
+    let oracle_combined = format!("{}{}", oracle_output.stdout, oracle_output.stderr);
+    assert_eq!(
+        oracle_output.status_success,
+        expected_success,
+        "oracle `{}` {label} success mismatch, output:\n{}",
+        oracle.display(),
+        oracle_combined
+    );
+    if expected_success {
+        assert!(
+            oracle_output.stdout.starts_with(expected_oracle_prefix),
+            "oracle `{}` {label} should emit the banner on stdout, got stdout:\n{}\nstderr:\n{}",
+            oracle.display(),
+            oracle_output.stdout,
+            oracle_output.stderr
+        );
+        assert!(
+            oracle_output.stderr.is_empty(),
+            "oracle `{}` {label} should not emit stderr, got:\n{}",
+            oracle.display(),
+            oracle_output.stderr
+        );
+    } else {
+        assert!(
+            oracle_output.stdout.is_empty(),
+            "oracle `{}` {label} should not emit stdout on failure, got stdout:\n{}\nstderr:\n{}",
+            oracle.display(),
+            oracle_output.stdout,
+            oracle_output.stderr
+        );
+        assert!(
+            oracle_output.stderr.starts_with(expected_oracle_prefix),
+            "oracle `{}` {label} should emit the banner on stderr, got stdout:\n{}\nstderr:\n{}",
+            oracle.display(),
+            oracle_output.stdout,
+            oracle_output.stderr
+        );
+        assert!(
+            version_error_output(&oracle_combined),
+            "oracle `{}` {label} should report an option error, got:\n{}",
+            oracle.display(),
+            oracle_combined
+        );
+    }
+
+    match tool_name {
+        "ffmpeg" => {
+            let rust = ffmpeg_output(&strings(args));
+            if expected_success {
+                let output = rust.expect("Rust ffmpeg should accept the version/buildconf request");
+                assert!(
+                    output.stdout().starts_with(expected_rust_banner),
+                    "Rust ffmpeg {label} should emit the banner, got:\n{}",
+                    output.stdout()
+                );
+                assert!(output.stderr().is_empty());
+                assert_eq!(output.output_format(), None);
+            } else {
+                let err = rust.expect_err("Rust ffmpeg should reject the earlier unknown option");
+                assert!(
+                    err.message().contains("unknown option"),
+                    "Rust ffmpeg {label} should report an option error, got: {}",
+                    err.message()
+                );
+                assert_eq!(err.banner(), Some(expected_rust_banner));
+            }
+        }
+        "ffprobe" => {
+            let rust = ffprobe_output(&strings(args));
+            if expected_success {
+                let output =
+                    rust.expect("Rust ffprobe should accept the version/buildconf request");
+                assert!(
+                    output.starts_with(expected_rust_banner),
+                    "Rust ffprobe {label} should emit the banner, got:\n{}",
+                    output
+                );
+            } else {
+                let err = rust.expect_err("Rust ffprobe should reject the earlier unknown option");
+                assert!(
+                    err.message().contains("unknown option"),
+                    "Rust ffprobe {label} should report an option error, got: {}",
+                    err.message()
+                );
+                assert_eq!(err.banner(), Some(expected_rust_banner));
+            }
         }
         other => panic!("unsupported tool `{other}`"),
     }

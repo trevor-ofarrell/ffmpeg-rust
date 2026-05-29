@@ -5,6 +5,7 @@ use avutil::SampleFormat;
 use libfuzzer_sys::fuzz_target;
 
 const VALID_STEREO: &[u8] = &[0, 0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0];
+const PARTIAL_THREE_CHANNEL: &[u8] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
 
 fuzz_target!(|data: &[u8]| {
     let sample_rate = data
@@ -18,6 +19,8 @@ fuzz_target!(|data: &[u8]| {
 
     exercise_pcm(payload, sample_rate, channels, packet_samples);
     exercise_pcm(VALID_STEREO, 48_000, 2, 2);
+    exercise_pcm(PARTIAL_THREE_CHANNEL, 48_000, 3, 1024);
+    exercise_pcm(&[], 48_000, 2, 1024);
 });
 
 fn exercise_pcm(input: &[u8], sample_rate: u32, channels: u16, packet_samples: usize) {

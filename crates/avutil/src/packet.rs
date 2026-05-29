@@ -5637,10 +5637,9 @@ impl Packet {
     }
 
     fn has_input_padding(&self) -> bool {
+        // FFmpeg treats the packet as already padded when the backing storage
+        // has enough trailing room, regardless of the padding byte contents.
         self.data.padding_len() >= AV_INPUT_BUFFER_PADDING_SIZE
-            && self.data.padding_slice()[..AV_INPUT_BUFFER_PADDING_SIZE]
-                .iter()
-                .all(|byte| *byte == 0)
     }
 }
 
@@ -11793,6 +11792,60 @@ mod tests {
             .padding_slice()
             .iter()
             .all(|byte| *byte == 0));
+    }
+
+    #[test]
+    fn packet_custom_padding_capacity_preserves_clone_and_writable() {
+        let released = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+        let capture = Arc::clone(&released);
+        let mut storage = vec![0x11, 0x22];
+        storage.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+        let buffer = BufferRef::from_vec_with_len_and_release_callback(storage, 2, move |data| {
+            capture.lock().unwrap().push(data);
+        })
+        .unwrap();
+
+        let mut packet = Packet::with_buffer(buffer, 7);
+        let packet_ptr = packet.data_buffer().as_padded_ptr();
+
+        assert_eq!(packet.data(), &[0x11, 0x22]);
+        assert_eq!(
+            packet.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(packet
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0x5a));
+        assert!(packet.is_data_writable());
+
+        packet.make_refcounted().unwrap();
+        assert_eq!(packet.data_buffer().as_padded_ptr(), packet_ptr);
+        assert!(released.lock().unwrap().is_empty());
+
+        packet.make_writable().unwrap();
+        assert_eq!(packet.data_buffer().as_padded_ptr(), packet_ptr);
+        assert_eq!(packet.data(), &[0x11, 0x22]);
+        assert!(packet.is_data_writable());
+        assert!(packet
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0x5a));
+        assert!(released.lock().unwrap().is_empty());
+
+        let cloned = packet.clone();
+        assert!(cloned.data_buffer().shares_storage(packet.data_buffer()));
+        assert_eq!(cloned.data_buffer().as_padded_ptr(), packet_ptr);
+        assert_eq!(cloned.data(), &[0x11, 0x22]);
+        assert!(!cloned.is_data_writable());
+        assert!(cloned
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0x5a));
+        assert!(released.lock().unwrap().is_empty());
     }
 
     #[test]

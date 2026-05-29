@@ -76,6 +76,7 @@ impl FfmpegOutput {
 pub struct FfmpegError {
     kind: FfmpegErrorKind,
     message: String,
+    banner: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -107,11 +108,21 @@ impl FfmpegError {
         Self {
             kind,
             message: message.into(),
+            banner: None,
         }
     }
 
     pub fn message(&self) -> &str {
         &self.message
+    }
+
+    pub fn banner(&self) -> Option<&str> {
+        self.banner.as_deref()
+    }
+
+    fn with_banner(mut self, banner: impl Into<String>) -> Self {
+        self.banner = Some(banner.into());
+        self
     }
 
     fn exit_code(&self) -> i32 {
@@ -301,6 +312,9 @@ pub fn run_ffmpeg_tool(args: &[String]) -> i32 {
             0
         }
         Err(err) => {
+            if let Some(banner) = err.banner() {
+                eprint!("{banner}");
+            }
             eprint!(
                 "{}",
                 crate::cli_logging::tool_error_stderr("ffmpeg", args, &err)
@@ -311,13 +325,19 @@ pub fn run_ffmpeg_tool(args: &[String]) -> i32 {
 }
 
 pub fn ffmpeg_output(args: &[String]) -> Result<FfmpegOutput, FfmpegError> {
-    for arg in args {
+    for (index, arg) in args.iter().enumerate() {
         match arg.as_str() {
-            "-buildconf" => return Ok(FfmpegOutput::version(buildconf_banner("ffmpeg"))),
+            "-buildconf" => {
+                let banner = buildconf_banner("ffmpeg");
+                validate_ffmpeg_prefix(&args[..index])
+                    .map_err(|err| err.with_banner(banner.clone()))?;
+                return Ok(FfmpegOutput::version(banner));
+            }
             "-version" => {
-                parse_ffmpeg_args(args)
-                    .map_err(|err| FfmpegError::usage(format!("failed to parse options: {err}")))?;
-                return Ok(FfmpegOutput::version(version_banner("ffmpeg")));
+                let banner = version_banner("ffmpeg");
+                validate_ffmpeg_prefix(&args[..index])
+                    .map_err(|err| err.with_banner(banner.clone()))?;
+                return Ok(FfmpegOutput::version(banner));
             }
             _ => {}
         }
@@ -333,6 +353,14 @@ pub fn ffmpeg_output(args: &[String]) -> Result<FfmpegOutput, FfmpegError> {
         .map_err(|err| FfmpegError::usage(format!("invalid input/output plan: {err}")))?;
 
     execute_plan(&plan)
+}
+
+fn validate_ffmpeg_prefix(prefix: &[String]) -> Result<(), FfmpegError> {
+    let mut args = prefix.to_vec();
+    args.push("fftools-version-sink".to_owned());
+    parse_ffmpeg_args(&args)
+        .map_err(|err| FfmpegError::usage(format!("failed to parse options: {err}")))?;
+    Ok(())
 }
 
 fn execute_plan(plan: &IoPlan) -> Result<FfmpegOutput, FfmpegError> {
@@ -1733,6 +1761,24 @@ mod tests {
     }
 
     #[test]
+    fn ffmpeg_version_and_buildconf_ignore_trailing_unknown_options() {
+        let version_output = ffmpeg_output(&strings(&["-version", "-not_a_real_option"])).unwrap();
+
+        assert!(version_output
+            .stdout()
+            .starts_with("ffmpeg version 8.1.1-rust target FFmpeg 8.1.1"));
+        assert!(version_output.stderr().is_empty());
+        assert_eq!(version_output.output_format(), None);
+
+        let buildconf_output =
+            ffmpeg_output(&strings(&["-buildconf", "-not_a_real_option"])).unwrap();
+
+        assert!(buildconf_output.stdout().starts_with("  configuration:\n"));
+        assert!(buildconf_output.stderr().is_empty());
+        assert_eq!(buildconf_output.output_format(), None);
+    }
+
+    #[test]
     fn ffmpeg_buildconf_output_prints_configuration() {
         let output = ffmpeg_output(&strings(&["-hide_banner", "-buildconf"])).unwrap();
 
@@ -1754,6 +1800,22 @@ mod tests {
         assert!(output.stdout().starts_with("  configuration:\n"));
         assert!(output.stderr().is_empty());
         assert_eq!(output.output_format(), None);
+    }
+
+    #[test]
+    fn ffmpeg_version_and_buildconf_attach_banner_for_preceding_errors() {
+        let version_err = ffmpeg_output(&strings(&["-not_a_real_option", "-version"])).unwrap_err();
+        let expected_version = version_banner("ffmpeg");
+
+        assert!(version_err.message().contains("unknown option"));
+        assert_eq!(version_err.banner(), Some(expected_version.as_str()));
+
+        let buildconf_err =
+            ffmpeg_output(&strings(&["-not_a_real_option", "-buildconf"])).unwrap_err();
+        let expected_buildconf = buildconf_banner("ffmpeg");
+
+        assert!(buildconf_err.message().contains("unknown option"));
+        assert_eq!(buildconf_err.banner(), Some(expected_buildconf.as_str()));
     }
 
     #[test]

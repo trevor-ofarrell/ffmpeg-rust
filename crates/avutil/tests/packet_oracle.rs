@@ -1700,6 +1700,43 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_fields(&readonly_refcounted),
     );
 
+    let mut custom_padding_storage = vec![0x11, 0x22];
+    custom_padding_storage.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+    let mut custom_padding_packet = Packet::with_buffer(
+        BufferRef::from_vec_with_len_and_release_callback(custom_padding_storage, 2, |_| {})
+            .unwrap(),
+        7,
+    );
+    let custom_padding_ptr = custom_padding_packet.data_buffer().as_padded_ptr();
+    custom_padding_packet.make_refcounted().unwrap();
+    custom_padding_packet.make_writable().unwrap();
+    rows.insert(
+        "packet:payload-custom-padding-noop-same-ptr".to_string(),
+        vec![
+            u8::from(custom_padding_packet.data_buffer().as_padded_ptr() == custom_padding_ptr)
+                .to_string(),
+        ],
+    );
+    rows.insert(
+        "packet:payload-custom-padding-noop".to_string(),
+        payload_fields(&custom_padding_packet),
+    );
+
+    let custom_padding_cloned = custom_padding_packet.clone();
+    rows.insert(
+        "packet:payload-clone-custom-padding-same-ptr".to_string(),
+        vec![u8::from(
+            custom_padding_cloned
+                .data_buffer()
+                .shares_storage(custom_padding_packet.data_buffer()),
+        )
+        .to_string()],
+    );
+    rows.insert(
+        "packet:payload-clone-custom-padding".to_string(),
+        payload_fields(&custom_padding_cloned),
+    );
+
     let shared_refcounted_src = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
     let mut shared_refcounted_dst = Packet::default();
     shared_refcounted_dst.ref_from(&shared_refcounted_src);
@@ -4522,6 +4559,30 @@ static AVPacket *packet_with_duplicate_side_data(void) {
     return pkt;
 }
 
+static void free_custom_padding_packet(void *opaque, uint8_t *data) {
+    (void)opaque;
+    av_free(data);
+}
+
+static AVPacket *packet_with_custom_padding(void) {
+    AVPacket *pkt = new_packet();
+    uint8_t *data = av_malloc(2 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!data, "custom padded packet allocation failed");
+    data[0] = 0x11;
+    data[1] = 0x22;
+    memset(data + 2, 0x5a, AV_INPUT_BUFFER_PADDING_SIZE);
+    pkt->buf = av_buffer_create(
+        data,
+        2 + AV_INPUT_BUFFER_PADDING_SIZE,
+        free_custom_padding_packet,
+        NULL,
+        0);
+    fail_if(!pkt->buf, "custom padded packet buffer creation failed");
+    pkt->data = data;
+    pkt->size = 2;
+    return pkt;
+}
+
 static void exercise_side_data_api(void) {
     AVPacket *pkt = new_packet();
     uint8_t *sd = av_packet_new_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, 4);
@@ -6030,6 +6091,26 @@ int main(void) {
                             duplicate_move_src);
     av_packet_free(&duplicate_move_dst);
     av_packet_free(&duplicate_move_src);
+
+    AVPacket *custom_padding_src = packet_with_custom_padding();
+    uint8_t *custom_padding_ptr = custom_padding_src->data;
+    fail_if(av_packet_make_refcounted(custom_padding_src) < 0,
+            "av_packet_make_refcounted custom padded source failed");
+    fail_if(av_packet_make_writable(custom_padding_src) < 0,
+            "av_packet_make_writable custom padded source failed");
+    printf("packet:payload-custom-padding-noop-same-ptr|%d\n",
+           custom_padding_src->data == custom_padding_ptr);
+    print_payload("packet:payload-custom-padding-noop", custom_padding_src);
+
+    AVPacket *custom_padding_cloned = av_packet_clone(custom_padding_src);
+    fail_if(!custom_padding_cloned, "av_packet_clone custom padded source failed");
+    printf("packet:payload-clone-custom-padding-same-ptr|%d\n",
+           custom_padding_cloned->data == custom_padding_src->data);
+    print_payload("packet:payload-clone-custom-padding",
+                  custom_padding_cloned);
+
+    av_packet_free(&custom_padding_cloned);
+    av_packet_free(&custom_padding_src);
 
     dst = new_packet();
     fail_if(av_packet_ref(dst, src) < 0, "av_packet_ref failed");

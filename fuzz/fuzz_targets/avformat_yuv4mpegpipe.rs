@@ -1,14 +1,22 @@
 #![no_main]
 
 use avformat::Yuv4MpegDemuxer;
-use avutil::PixelFormat;
+use avutil::{FrameColorRange, PixelFormat};
 use libfuzzer_sys::fuzz_target;
 
 const VALID_Y4M: &[u8] = b"YUV4MPEG2 W2 H2 F25:1 Ip A1:1 C420jpeg\nFRAME\nabcdef";
+const VALID_Y4M_X_FIELD: &[u8] = b"YUV4MPEG2 W2 H2 F25:1 Ip A1:1 C420jpeg X\nFRAME\nabcdef";
+const VALID_Y4M_XCOLORRANGE_FULL: &[u8] =
+    b"YUV4MPEG2 W2 H2 F25:1 Ip A1:1 C420jpeg XCOLORRANGE=FULL\nFRAME\nabcdef";
+const VALID_Y4M_XCOLORRANGE_LIMITED: &[u8] =
+    b"YUV4MPEG2 W2 H2 F25:1 Ip A1:1 C420jpeg XCOLORRANGE=LIMITED\nFRAME\nabcdef";
+const VALID_Y4M_XCOLORRANGE_BOGUS: &[u8] =
+    b"YUV4MPEG2 W2 H2 F25:1 Ip A1:1 C420jpeg XCOLORRANGE=BOGUS\nFRAME\nabcdef";
 const BASE_Y4M_HEADER: &[u8] = b"YUV4MPEG2 W2 H2 F25:1 Ip A1:1 C420jpeg\n";
 
 fuzz_target!(|data: &[u8]| {
     exercise_y4m(data);
+    exercise_xcolorrange_y4m();
     exercise_truncated_tail_frame_header();
     exercise_y4m(VALID_Y4M);
 });
@@ -50,4 +58,30 @@ fn exercise_truncated_tail_frame_header() {
     assert!(matches!(packet, Ok(Some(packet)) if packet.data() == b"abcdef"));
     assert!(matches!(demuxer.read_packet(), Ok(None)));
     assert!(matches!(demuxer.read_packet(), Ok(None)));
+}
+
+fn exercise_xcolorrange_y4m() {
+    for (input, expected_color_range) in [
+        (VALID_Y4M_X_FIELD, FrameColorRange::Unspecified),
+        (VALID_Y4M_XCOLORRANGE_FULL, FrameColorRange::Jpeg),
+        (VALID_Y4M_XCOLORRANGE_LIMITED, FrameColorRange::Mpeg),
+        (VALID_Y4M_XCOLORRANGE_BOGUS, FrameColorRange::Unspecified),
+    ] {
+        let mut demuxer =
+            Yuv4MpegDemuxer::open(input).expect("valid yuv4mpegpipe seed should parse");
+        let info = demuxer.info().clone();
+        assert_eq!(info.pixel_format(), PixelFormat::Yuv420p);
+        assert_eq!(info.color_range(), expected_color_range);
+
+        let packet = demuxer
+            .read_packet()
+            .expect("valid yuv4mpegpipe seed should yield a packet")
+            .expect("valid yuv4mpegpipe seed should contain a frame");
+        assert_eq!(packet.stream_index(), 0);
+        assert_eq!(packet.pts(), Some(0));
+        assert_eq!(packet.dts(), Some(0));
+        assert_eq!(packet.duration(), 1);
+        assert_eq!(packet.data(), b"abcdef");
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
 }

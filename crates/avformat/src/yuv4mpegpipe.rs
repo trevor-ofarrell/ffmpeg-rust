@@ -1,5 +1,5 @@
 use crate::VideoStreamParameters;
-use avutil::{AvError, AvErrorKind, AvResult, Packet, PixelFormat, Rational};
+use avutil::{AvError, AvErrorKind, AvResult, FrameColorRange, Packet, PixelFormat, Rational};
 
 const Y4M_MAGIC: &str = "YUV4MPEG2";
 const FRAME_MAGIC: &str = "FRAME";
@@ -35,6 +35,7 @@ pub struct Yuv4MpegInfo {
     video: VideoStreamParameters,
     frame_rate: Rational,
     sample_aspect_ratio: Option<Rational>,
+    color_range: FrameColorRange,
     interlace: Yuv4MpegInterlace,
     chroma: Yuv4MpegChroma,
 }
@@ -58,6 +59,10 @@ impl Yuv4MpegInfo {
 
     pub fn sample_aspect_ratio(&self) -> Option<Rational> {
         self.sample_aspect_ratio
+    }
+
+    pub fn color_range(&self) -> FrameColorRange {
+        self.color_range
     }
 
     pub fn interlace(&self) -> Yuv4MpegInterlace {
@@ -156,6 +161,7 @@ impl Yuv4MpegMuxer {
                 video,
                 frame_rate,
                 sample_aspect_ratio,
+                color_range: FrameColorRange::Unspecified,
                 interlace: Yuv4MpegInterlace::Progressive,
                 chroma: Yuv4MpegChroma::C420Jpeg,
             },
@@ -262,12 +268,16 @@ fn parse_header(line: &str) -> AvResult<Yuv4MpegInfo> {
     let mut height = None;
     let mut frame_rate = None;
     let mut sample_aspect_ratio = None;
+    let mut color_range = FrameColorRange::Unspecified;
     let mut interlace = Yuv4MpegInterlace::Progressive;
     let mut chroma = Yuv4MpegChroma::C420Jpeg;
 
     for field in line[Y4M_MAGIC.len()..].split_ascii_whitespace() {
         let (tag, value) = field.split_at(1);
         if value.is_empty() {
+            if tag == "X" {
+                continue;
+            }
             return Err(AvError::invalid_data(format!(
                 "YUV4MPEG2 header field `{field}` has no value"
             )));
@@ -278,6 +288,11 @@ fn parse_header(line: &str) -> AvResult<Yuv4MpegInfo> {
             "H" => height = Some(parse_positive_u32(value, "YUV4MPEG2 height")?),
             "F" => frame_rate = Some(parse_positive_rational(value, "YUV4MPEG2 frame rate")?),
             "A" => sample_aspect_ratio = parse_sample_aspect_ratio(value)?,
+            "X" => {
+                if let Some(parsed_color_range) = parse_color_range_extension(value) {
+                    color_range = parsed_color_range;
+                }
+            }
             "I" => {
                 if value != Yuv4MpegInterlace::Progressive.tag() {
                     return Err(AvError::unsupported(format!(
@@ -294,7 +309,6 @@ fn parse_header(line: &str) -> AvResult<Yuv4MpegInfo> {
                 }
                 chroma = Yuv4MpegChroma::C420Jpeg;
             }
-            "X" => {}
             _ => {
                 return Err(AvError::unsupported(format!(
                     "unsupported YUV4MPEG2 header field `{field}`"
@@ -313,6 +327,7 @@ fn parse_header(line: &str) -> AvResult<Yuv4MpegInfo> {
         video,
         frame_rate,
         sample_aspect_ratio,
+        color_range,
         interlace,
         chroma,
     })
@@ -326,6 +341,15 @@ fn parse_sample_aspect_ratio(value: &str) -> AvResult<Option<Rational>> {
         value,
         "YUV4MPEG2 sample aspect ratio",
     )?))
+}
+
+fn parse_color_range_extension(value: &str) -> Option<FrameColorRange> {
+    let value = value.strip_prefix("COLORRANGE=")?;
+    match value {
+        "FULL" => Some(FrameColorRange::Jpeg),
+        "LIMITED" => Some(FrameColorRange::Mpeg),
+        _ => None,
+    }
 }
 
 fn parse_frame_header(line: &str) -> AvResult<()> {
@@ -499,6 +523,32 @@ mod tests {
         let packet = demuxer.read_packet().unwrap().unwrap();
         assert_eq!(packet.data(), b"abcdef");
         assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
+    fn parses_ffmpeg_xcolorrange_extension_and_ignores_empty_x_field() {
+        for (header_fields, expected_color_range) in [
+            ("W2 H2 F25:1 Ip C420jpeg X", FrameColorRange::Unspecified),
+            (
+                "W2 H2 F25:1 Ip C420jpeg XCOLORRANGE=FULL",
+                FrameColorRange::Jpeg,
+            ),
+            (
+                "W2 H2 F25:1 Ip C420jpeg XCOLORRANGE=LIMITED",
+                FrameColorRange::Mpeg,
+            ),
+            (
+                "W2 H2 F25:1 Ip C420jpeg XCOLORRANGE=BOGUS",
+                FrameColorRange::Unspecified,
+            ),
+        ] {
+            let input = format!("{Y4M_MAGIC} {header_fields}\nFRAME\nabcdef");
+            let mut demuxer = Yuv4MpegDemuxer::open(input.as_bytes()).unwrap();
+
+            assert_eq!(demuxer.info().color_range(), expected_color_range);
+            assert_eq!(demuxer.read_packet().unwrap().unwrap().data(), b"abcdef");
+            assert!(demuxer.read_packet().unwrap().is_none());
+        }
     }
 
     #[test]

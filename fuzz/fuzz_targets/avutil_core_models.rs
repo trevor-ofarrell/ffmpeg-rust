@@ -9250,6 +9250,63 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .iter()
         .all(|byte| *byte == 0));
 
+    let mut custom_padding_storage = payload.clone();
+    custom_padding_storage.resize(payload.len() + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+    let mut custom_padding_packet = Packet::with_buffer(
+        BufferRef::from_vec_with_len_and_release_callback(
+            custom_padding_storage,
+            payload.len(),
+            |_| {},
+        )
+        .unwrap(),
+        stream_index,
+    );
+    let custom_padding_ptr = custom_padding_packet.data_buffer().as_padded_ptr();
+    assert_eq!(custom_padding_packet.data(), payload.as_slice());
+    assert_eq!(
+        custom_padding_packet.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(custom_padding_packet
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0x5a));
+    assert!(custom_padding_packet.is_data_writable());
+
+    custom_padding_packet.make_refcounted().unwrap();
+    assert_eq!(
+        custom_padding_packet.data_buffer().as_padded_ptr(),
+        custom_padding_ptr
+    );
+    custom_padding_packet.make_writable().unwrap();
+    assert_eq!(
+        custom_padding_packet.data_buffer().as_padded_ptr(),
+        custom_padding_ptr
+    );
+    assert!(custom_padding_packet.is_data_writable());
+    assert!(custom_padding_packet
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0x5a));
+
+    let custom_padding_cloned = custom_padding_packet.clone();
+    assert!(custom_padding_cloned
+        .data_buffer()
+        .shares_storage(custom_padding_packet.data_buffer()));
+    assert_eq!(
+        custom_padding_cloned.data_buffer().as_padded_ptr(),
+        custom_padding_ptr
+    );
+    assert_eq!(custom_padding_cloned.data(), payload.as_slice());
+    assert!(!custom_padding_cloned.is_data_writable());
+    assert!(custom_padding_cloned
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0x5a));
+
     let shared_src = Packet::from_data(payload.clone()).unwrap();
     let mut shared_dst = Packet::default();
     shared_dst.ref_from(&shared_src);

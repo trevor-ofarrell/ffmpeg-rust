@@ -325,6 +325,29 @@ mod tests {
     }
 
     #[test]
+    fn derives_three_channel_layout_and_truncates_partial_packet_duration() {
+        let input = (0_u8..14).collect::<Vec<_>>();
+        let mut demuxer = PcmS16leDemuxer::open(&input, 48_000, 3, 1024).unwrap();
+
+        assert_eq!(demuxer.info().channels(), 3);
+        assert_eq!(
+            demuxer.info().channel_layout(),
+            Some(ChannelLayout::two_one())
+        );
+        assert_eq!(demuxer.info().bytes_per_sample_frame(), 6);
+        assert_eq!(demuxer.info().total_samples_per_channel(), 2);
+
+        let packet = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(packet.data(), input.as_slice());
+        assert_eq!(packet.pts(), Some(0));
+        assert_eq!(packet.dts(), Some(0));
+        assert_eq!(packet.duration(), 2);
+        assert_eq!(packet.side_data()[1].kind(), "pcm_channels");
+        assert_eq!(packet.side_data()[1].data(), b"3");
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
     fn rejects_invalid_parameters() {
         assert!(PcmS16leDemuxer::open(&[0, 0], 0, 2, 1).is_err());
         assert!(PcmS16leDemuxer::open(&[0, 0], 48_000, 0, 1).is_err());

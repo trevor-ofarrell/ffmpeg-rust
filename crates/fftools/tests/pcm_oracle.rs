@@ -16,9 +16,22 @@ fn pcm_s16le_framecrc_records_match_ffmpeg_oracle() {
 
 #[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn pcm_s16le_empty_framecrc_records_match_ffmpeg_oracle() {
+    compare_pcm_s16le_framecrc_records("48000", "2", &[]);
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
 fn pcm_s16le_partial_framecrc_records_match_ffmpeg_oracle() {
     let payload = (0_u8..6).collect::<Vec<_>>();
     compare_pcm_s16le_framecrc_records("48000", "2", &payload);
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn pcm_s16le_three_channel_partial_framecrc_records_match_ffmpeg_oracle() {
+    let payload = (0_u8..14).collect::<Vec<_>>();
+    compare_pcm_s16le_framecrc_records("48000", "3", &payload);
 }
 
 #[test]
@@ -92,7 +105,7 @@ fn compare_pcm_s16le_framecrc_records(sample_rate: &str, channels: &str, payload
         String::from_utf8(oracle_output.stdout).expect("oracle framecrc output should be UTF-8");
 
     assert_eq!(rust.output_format(), Some("framecrc"));
-    assert_eq!(rust.packet_count(), 1);
+    assert_eq!(rust.packet_count(), u64::from(!payload.is_empty()));
     assert_eq!(rust.byte_count(), u64::try_from(payload.len()).unwrap());
     assert!(rust.stderr().is_empty());
     assert_eq!(

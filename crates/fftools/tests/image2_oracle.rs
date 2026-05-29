@@ -44,6 +44,18 @@ fn image2_ppm_padded_width_growth_framecrc_records_match_ffmpeg_oracle() {
     );
 }
 
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn image2_ppm_wide_zero_padded_sequence_framecrc_records_match_ffmpeg_oracle() {
+    compare_image2_sequence_framecrc_records_from_start_with_width(
+        "ppm",
+        "1",
+        1,
+        20,
+        &[PPM_1X1_RED, PPM_1X1_GREEN],
+    );
+}
+
 fn compare_image2_file_output(extension: &str, frame_rate: &str, payload: &[u8]) {
     let oracle = oracle_ffmpeg();
     let input_path = write_temp_bytes("image2-single-input", extension, payload);
@@ -284,6 +296,22 @@ fn compare_image2_sequence_framecrc_records_from_start(
     start_number: u64,
     payloads: &[&[u8]],
 ) {
+    compare_image2_sequence_framecrc_records_from_start_with_width(
+        extension,
+        frame_rate,
+        start_number,
+        3,
+        payloads,
+    );
+}
+
+fn compare_image2_sequence_framecrc_records_from_start_with_width(
+    extension: &str,
+    frame_rate: &str,
+    start_number: u64,
+    frame_width: usize,
+    payloads: &[&[u8]],
+) {
     let oracle = oracle_ffmpeg();
     let input_dir = unique_temp_dir("image2-sequence-framecrc-input");
 
@@ -292,14 +320,19 @@ fn compare_image2_sequence_framecrc_records_from_start(
     for (index, payload) in payloads.iter().enumerate() {
         let frame_number = start_number + u64::try_from(index).expect("test index should fit u64");
         fs::write(
-            input_dir.join(sequence_file_name("in", frame_number, extension)),
+            input_dir.join(sequence_file_name_with_width(
+                "in",
+                frame_number,
+                frame_width,
+                extension,
+            )),
             payload,
         )
         .expect("temp image2 sequence framecrc input should be writable");
     }
 
     let input_pattern = input_dir
-        .join(format!("in-%03d.{extension}"))
+        .join(format!("in-%0{frame_width}d.{extension}"))
         .to_string_lossy()
         .into_owned();
 
@@ -441,6 +474,15 @@ fn unique_temp_dir(prefix: &str) -> PathBuf {
 
 fn sequence_file_name(prefix: &str, frame_number: u64, extension: &str) -> String {
     format!("{prefix}-{frame_number:03}.{extension}")
+}
+
+fn sequence_file_name_with_width(
+    prefix: &str,
+    frame_number: u64,
+    width: usize,
+    extension: &str,
+) -> String {
+    format!("{prefix}-{frame_number:0width$}.{extension}")
 }
 
 fn read_sequence_outputs(dir: &std::path::Path, extension: &str, count: usize) -> Vec<Vec<u8>> {

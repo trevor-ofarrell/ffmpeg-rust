@@ -1,5 +1,5 @@
 use avformat::Yuv4MpegDemuxer;
-use avutil::Rational;
+use avutil::{FrameColorRange, Rational};
 use fftools::ffmpeg_output;
 use std::{
     env, fs,
@@ -39,6 +39,25 @@ fn yuv4mpegpipe_truncated_frame_eof_records_match_ffmpeg_oracle() {
     let mut truncated_tail = y4m_file_bytes(2, 2, "25:1", &[first.as_slice()]);
     truncated_tail.extend_from_slice(b"FRAME\nabc");
     compare_yuv4mpegpipe_framecrc_records(&truncated_tail, 1, first.len());
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn yuv4mpegpipe_xcolorrange_metadata_matches_ffprobe_oracle() {
+    let first = [0, 1, 2, 3, 4, 5];
+    for (extra_header_fields, expected_color_range, expected_oracle_color_range) in [
+        ("X", FrameColorRange::Unspecified, "unknown"),
+        ("XCOLORRANGE=FULL", FrameColorRange::Jpeg, "pc"),
+        ("XCOLORRANGE=LIMITED", FrameColorRange::Mpeg, "tv"),
+        ("XCOLORRANGE=BOGUS", FrameColorRange::Unspecified, "unknown"),
+    ] {
+        compare_yuv4mpegpipe_color_range_metadata(
+            extra_header_fields,
+            &first,
+            expected_color_range,
+            expected_oracle_color_range,
+        );
+    }
 }
 
 fn compare_rawvideo_yuv4mpegpipe_file_output(size: &str, rate: &str, payload: &[u8]) {
@@ -184,6 +203,57 @@ fn compare_yuv4mpegpipe_framecrc_records(y4m: &[u8], packet_count: u64, payload_
     );
 }
 
+fn compare_yuv4mpegpipe_color_range_metadata(
+    extra_header_fields: &str,
+    frame: &[u8],
+    expected_color_range: FrameColorRange,
+    expected_oracle_color_range: &str,
+) {
+    let oracle = oracle_ffprobe();
+    let input =
+        y4m_file_bytes_with_extra_header_fields(2, 2, "25:1", extra_header_fields, &[frame]);
+    let input_path = write_temp_bytes("yuv420p-y4m-color-range-input", "y4m", &input);
+    let input_arg = input_path.to_string_lossy().into_owned();
+
+    let mut demuxer = Yuv4MpegDemuxer::open(&input).expect("Rust yuv4mpegpipe input should parse");
+    assert_eq!(demuxer.info().color_range(), expected_color_range);
+    let packet = demuxer
+        .read_packet()
+        .expect("Rust yuv4mpegpipe input should yield a packet")
+        .expect("Rust yuv4mpegpipe input should contain a frame");
+    assert_eq!(packet.data(), frame);
+    assert!(demuxer.read_packet().unwrap().is_none());
+
+    let oracle_output = Command::new(&oracle)
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=color_range",
+            "-of",
+            "default=nw=1:nk=1",
+            input_arg.as_str(),
+        ])
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", oracle.display()));
+
+    remove_temp_files(&[input_path]);
+
+    assert!(
+        oracle_output.status.success(),
+        "oracle ffprobe failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        oracle_output.status.code(),
+        String::from_utf8_lossy(&oracle_output.stdout),
+        String::from_utf8_lossy(&oracle_output.stderr)
+    );
+
+    let oracle_color_range =
+        String::from_utf8(oracle_output.stdout).expect("oracle color range should be UTF-8");
+    assert_eq!(oracle_color_range.trim(), expected_oracle_color_range);
+}
+
 fn oracle_ffmpeg() -> PathBuf {
     if let Ok(path) = env::var("FFMPEG_ORACLE") {
         let path = resolve_repo_relative_path(PathBuf::from(path));
@@ -210,6 +280,51 @@ fn oracle_ffmpeg() -> PathBuf {
     );
 }
 
+fn oracle_ffprobe() -> PathBuf {
+    if let Ok(path) = env::var("FFPROBE_ORACLE") {
+        let path = resolve_repo_relative_path(PathBuf::from(path));
+        assert!(
+            path.is_file(),
+            "FFPROBE_ORACLE must point to the pinned FFmpeg 8.1.1 binary, got `{}`",
+            path.display()
+        );
+        return path;
+    }
+
+    if let Ok(path) = env::var("FFMPEG_ORACLE") {
+        let path = resolve_repo_relative_path(PathBuf::from(path));
+        let candidate = ffprobe_sibling_path(&path);
+        if candidate.is_file() {
+            return candidate;
+        }
+    }
+
+    let root = repo_root();
+
+    for candidate in default_ffprobe_candidates(&root) {
+        if candidate.is_file() {
+            return candidate;
+        }
+    }
+
+    panic!(
+        "missing pinned FFmpeg oracle; set FFPROBE_ORACLE or install `{}`",
+        root.join("third_party/ffmpeg-oracle/build/bin/ffprobe")
+            .display()
+    );
+}
+
+fn ffprobe_sibling_path(ffmpeg_path: &Path) -> PathBuf {
+    let file_name = ffmpeg_path.file_name().and_then(|name| name.to_str());
+    let ffprobe_file_name = match file_name {
+        Some("ffmpeg.exe") => "ffprobe.exe",
+        Some("ffmpeg.cmd") => "ffprobe.cmd",
+        Some("ffmpeg") => "ffprobe",
+        _ => "ffprobe",
+    };
+    ffmpeg_path.with_file_name(ffprobe_file_name)
+}
+
 fn default_ffmpeg_candidates(root: &Path) -> Vec<PathBuf> {
     let bin = root.join("third_party/ffmpeg-oracle/build/bin");
     if cfg!(windows) {
@@ -223,6 +338,23 @@ fn default_ffmpeg_candidates(root: &Path) -> Vec<PathBuf> {
             bin.join("ffmpeg"),
             bin.join("ffmpeg.exe"),
             bin.join("ffmpeg.cmd"),
+        ]
+    }
+}
+
+fn default_ffprobe_candidates(root: &Path) -> Vec<PathBuf> {
+    let bin = root.join("third_party/ffmpeg-oracle/build/bin");
+    if cfg!(windows) {
+        vec![
+            bin.join("ffprobe.exe"),
+            bin.join("ffprobe.cmd"),
+            bin.join("ffprobe"),
+        ]
+    } else {
+        vec![
+            bin.join("ffprobe"),
+            bin.join("ffprobe.exe"),
+            bin.join("ffprobe.cmd"),
         ]
     }
 }
@@ -276,6 +408,23 @@ fn remove_temp_files(paths: &[PathBuf]) {
 fn y4m_file_bytes(width: u32, height: u32, frame_rate: &str, frames: &[&[u8]]) -> Vec<u8> {
     let mut bytes =
         format!("YUV4MPEG2 W{width} H{height} F{frame_rate} Ip C420jpeg\n").into_bytes();
+    for frame in frames {
+        bytes.extend_from_slice(b"FRAME\n");
+        bytes.extend_from_slice(frame);
+    }
+    bytes
+}
+
+fn y4m_file_bytes_with_extra_header_fields(
+    width: u32,
+    height: u32,
+    frame_rate: &str,
+    extra_header_fields: &str,
+    frames: &[&[u8]],
+) -> Vec<u8> {
+    let mut bytes =
+        format!("YUV4MPEG2 W{width} H{height} F{frame_rate} Ip C420jpeg {extra_header_fields}\n")
+            .into_bytes();
     for frame in frames {
         bytes.extend_from_slice(b"FRAME\n");
         bytes.extend_from_slice(frame);
