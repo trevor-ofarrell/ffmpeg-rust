@@ -1839,6 +1839,107 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     );
     assert_eq!(*replace_pool_pair_source_frees.lock().unwrap(), 1);
 
+    #[derive(Debug)]
+    struct PoolToken {
+        id: usize,
+        size: usize,
+    }
+
+    let same_pool_replace_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let same_pool_replace_frees = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let same_pool_replace_release_capture = Arc::clone(&same_pool_replace_releases);
+    let same_pool_replace_free_capture = Arc::clone(&same_pool_replace_frees);
+    let same_pool_replace_pool = BufferPool::with_callbacks(
+        3,
+        0,
+        BufferPoolCallbacks::with_allocation_callbacks(
+            |allocated_len| {
+                assert_eq!(allocated_len, 3);
+                Ok(BufferPoolAllocation::with_opaque(
+                    vec![1, 2, 3],
+                    PoolToken {
+                        id: 64,
+                        size: allocated_len,
+                    },
+                ))
+            },
+            move |allocation| {
+                let token = allocation
+                    .opaque_ref::<PoolToken>()
+                    .expect("same-pool replacement token should be preserved");
+                same_pool_replace_release_capture
+                    .lock()
+                    .unwrap()
+                    .push((token.id, allocation.into_vec()));
+            },
+        )
+        .with_pool_free(move || {
+            same_pool_replace_free_capture.lock().unwrap().push(64);
+        }),
+    )
+    .unwrap();
+    let mut same_pool_replace_source = same_pool_replace_pool.get().unwrap();
+    same_pool_replace_source
+        .make_mut()
+        .copy_from_slice(&[0x51, 0x52, 0x53]);
+    let mut same_pool_replace_destination = Some(same_pool_replace_pool.get().unwrap());
+    same_pool_replace_destination
+        .as_mut()
+        .unwrap()
+        .make_mut()
+        .copy_from_slice(&[0x31, 0x32, 0x33]);
+    BufferRef::replace(
+        &mut same_pool_replace_destination,
+        Some(&same_pool_replace_source),
+    );
+    let same_pool_replace_replaced = same_pool_replace_destination
+        .expect("same-pool replacement keeps destination");
+    assert!(same_pool_replace_replaced.shares_storage(&same_pool_replace_source));
+    assert_eq!(same_pool_replace_replaced.strong_count(), 2);
+    assert_eq!(same_pool_replace_pool.available_count().unwrap(), 1);
+    let same_pool_replace_reuse_dst = same_pool_replace_pool.get().unwrap();
+    assert_eq!(same_pool_replace_reuse_dst.as_slice(), &[0x31, 0x32, 0x33]);
+    assert_eq!(
+        same_pool_replace_reuse_dst
+            .pool_opaque_ref::<PoolToken>()
+            .map(|token| (token.id, token.size)),
+        Some((64, 3))
+    );
+    assert!(same_pool_replace_releases.lock().unwrap().is_empty());
+    assert_eq!(same_pool_replace_pool.available_count().unwrap(), 0);
+    drop(same_pool_replace_reuse_dst);
+    assert!(same_pool_replace_releases.lock().unwrap().is_empty());
+    assert_eq!(same_pool_replace_pool.available_count().unwrap(), 1);
+    drop(same_pool_replace_source);
+    assert_eq!(same_pool_replace_pool.available_count().unwrap(), 1);
+    drop(same_pool_replace_replaced);
+    assert_eq!(same_pool_replace_pool.available_count().unwrap(), 2);
+    let same_pool_replace_reuse_first = same_pool_replace_pool.get().unwrap();
+    let same_pool_replace_reuse_second = same_pool_replace_pool.get().unwrap();
+    assert_eq!(same_pool_replace_reuse_first.as_slice(), &[0x51, 0x52, 0x53]);
+    assert_eq!(
+        same_pool_replace_reuse_first
+            .pool_opaque_ref::<PoolToken>()
+            .map(|token| (token.id, token.size)),
+        Some((64, 3))
+    );
+    assert_eq!(same_pool_replace_reuse_second.as_slice(), &[0x31, 0x32, 0x33]);
+    assert_eq!(
+        same_pool_replace_reuse_second
+            .pool_opaque_ref::<PoolToken>()
+            .map(|token| (token.id, token.size)),
+        Some((64, 3))
+    );
+    assert_eq!(same_pool_replace_pool.available_count().unwrap(), 0);
+    drop(same_pool_replace_reuse_second);
+    drop(same_pool_replace_reuse_first);
+    drop(same_pool_replace_pool);
+    assert_eq!(
+        *same_pool_replace_releases.lock().unwrap(),
+        vec![(64, vec![0x51, 0x52, 0x53]), (64, vec![0x31, 0x32, 0x33])]
+    );
+    assert_eq!(*same_pool_replace_frees.lock().unwrap(), vec![64]);
+
     let replace_same_source = BufferRef::copy_from_slice(&payload);
     let mut replace_same_dst = Some(BufferRef::ref_from(&replace_same_source));
     BufferRef::replace(&mut replace_same_dst, Some(&replace_same_source));

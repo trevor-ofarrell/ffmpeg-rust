@@ -48,6 +48,20 @@ fn rawvideo_rgb24_framecrc_records_match_ffmpeg_oracle() {
 
 #[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn rawvideo_empty_rgb24_framecrc_has_no_packet_records() {
+    compare_rawvideo_frame_checksum_records_with_expected(
+        "rgb24",
+        "2x1",
+        "25",
+        &[],
+        "framecrc",
+        &["-c:v", "copy"],
+        0,
+    );
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
 fn rawvideo_rgb24_framehash_records_match_ffmpeg_oracle() {
     compare_rawvideo_frame_checksum_records(
         "rgb24",
@@ -384,6 +398,26 @@ fn compare_rawvideo_frame_checksum_records(
     output_format: &str,
     oracle_extra_args: &[&str],
 ) {
+    compare_rawvideo_frame_checksum_records_with_expected(
+        pixel_format,
+        size,
+        rate,
+        payload,
+        output_format,
+        oracle_extra_args,
+        2,
+    );
+}
+
+fn compare_rawvideo_frame_checksum_records_with_expected(
+    pixel_format: &str,
+    size: &str,
+    rate: &str,
+    payload: &[u8],
+    output_format: &str,
+    oracle_extra_args: &[&str],
+    expected_packet_count: u64,
+) {
     let oracle = oracle_ffmpeg();
     let input_path = write_temp_bytes(
         &format!("{pixel_format}-{output_format}-input"),
@@ -447,7 +481,7 @@ fn compare_rawvideo_frame_checksum_records(
         String::from_utf8(oracle_output.stdout).expect("oracle checksum output should be UTF-8");
 
     assert_eq!(rust.output_format(), Some(output_format));
-    assert_eq!(rust.packet_count(), 2);
+    assert_eq!(rust.packet_count(), expected_packet_count);
     assert_eq!(rust.byte_count(), u64::try_from(payload.len()).unwrap());
     assert!(rust.stderr().is_empty());
     assert_eq!(

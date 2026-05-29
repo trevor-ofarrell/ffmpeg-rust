@@ -641,6 +641,57 @@ mod tests {
     }
 
     #[test]
+    fn muxer_renders_empty_wav_header_and_round_trips_through_demuxer() {
+        let mut muxer = WavMuxer::new_pcm_s16le(1, 44_100).unwrap();
+        let bytes = muxer.finish().unwrap();
+
+        assert!(muxer.is_finished());
+        assert_eq!(muxer.packets(), 0);
+        assert_eq!(muxer.data_len(), 0);
+        assert_eq!(bytes.len(), WAV_HEADER_SIZE);
+        assert_eq!(&bytes[0..4], b"RIFF");
+        assert_eq!(u32::from_le_bytes(bytes[4..8].try_into().unwrap()), 70);
+        assert_eq!(&bytes[8..12], b"WAVE");
+        assert_eq!(&bytes[12..16], b"fmt ");
+        assert_eq!(u32::from_le_bytes(bytes[16..20].try_into().unwrap()), 16);
+        assert_eq!(u16::from_le_bytes(bytes[20..22].try_into().unwrap()), 1);
+        assert_eq!(u16::from_le_bytes(bytes[22..24].try_into().unwrap()), 1);
+        assert_eq!(
+            u32::from_le_bytes(bytes[24..28].try_into().unwrap()),
+            44_100
+        );
+        assert_eq!(
+            u32::from_le_bytes(bytes[28..32].try_into().unwrap()),
+            88_200
+        );
+        assert_eq!(u16::from_le_bytes(bytes[32..34].try_into().unwrap()), 2);
+        assert_eq!(u16::from_le_bytes(bytes[34..36].try_into().unwrap()), 16);
+        assert_eq!(&bytes[36..40], b"LIST");
+        assert_eq!(
+            u32::from_le_bytes(bytes[40..44].try_into().unwrap()),
+            WAV_INFO_LIST_CHUNK_SIZE
+        );
+        assert_eq!(&bytes[44..48], b"INFO");
+        assert_eq!(&bytes[48..52], b"ISFT");
+        assert_eq!(
+            u32::from_le_bytes(bytes[52..56].try_into().unwrap()),
+            WAV_ENCODER_NAME.len() as u32
+        );
+        assert_eq!(&bytes[56..70], WAV_ENCODER_NAME);
+        assert_eq!(&bytes[70..74], b"data");
+        assert_eq!(u32::from_le_bytes(bytes[74..78].try_into().unwrap()), 0);
+
+        let mut demuxer = WavDemuxer::open(&bytes).unwrap();
+        assert_eq!(demuxer.info().channels(), 1);
+        assert_eq!(demuxer.info().channel_layout(), Some(ChannelLayout::mono()));
+        assert_eq!(demuxer.info().sample_format(), SampleFormat::S16);
+        assert_eq!(demuxer.info().sample_rate(), 44_100);
+        assert_eq!(demuxer.info().data_size(), 0);
+        assert_eq!(demuxer.info().samples_per_channel(), 0);
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
     fn muxer_output_round_trips_through_demuxer() {
         let mut muxer = WavMuxer::new_pcm_s16le(1, 44_100).unwrap();
         muxer

@@ -197,7 +197,7 @@ pub fn parse_ffmpeg_args(args: &[String]) -> Result<ParsedCommand, CliParseError
         let arg = &args[index];
 
         if arg == "-i" {
-            let url = take_value(args, index, "-i", OptionValueKind::Generic)?;
+            let url = take_value(args, index, "-i")?;
             parsed.inputs.push(CliFile::new(
                 url.clone(),
                 take_pending(&mut pending_file_options),
@@ -218,7 +218,7 @@ pub fn parse_ffmpeg_args(args: &[String]) -> Result<ParsedCommand, CliParseError
                     CliOption::flag(option_name)
                 }
                 OptionArity::Value => {
-                    let value = take_value(args, index, arg, spec.value_kind)?;
+                    let value = take_value(args, index, arg)?;
                     validate_option_value(option_name, &value, spec.value_kind)?;
                     index += 2;
                     CliOption::value(option_name, value.clone())
@@ -307,23 +307,11 @@ fn validate_stream_specifier_name(name: &str, arg: &str) -> Result<(), CliParseE
     Ok(())
 }
 
-fn take_value(
-    args: &[String],
-    option_index: usize,
-    option: &str,
-    value_kind: OptionValueKind,
-) -> Result<String, CliParseError> {
+fn take_value(args: &[String], option_index: usize, option: &str) -> Result<String, CliParseError> {
     let value_index = option_index + 1;
     let value = args
         .get(value_index)
         .ok_or_else(|| CliParseError::new(format!("missing value for option `{option}`")))?;
-
-    if is_option_token(value) && !allows_option_like_value(value_kind, value) {
-        return Err(CliParseError::new(format!(
-            "missing value for option `{option}` before `{value}`"
-        )));
-    }
-
     Ok(value.clone())
 }
 
@@ -342,12 +330,51 @@ fn validate_option_value(
     }
 }
 
-fn allows_option_like_value(value_kind: OptionValueKind, value: &str) -> bool {
-    matches!(value_kind, OptionValueKind::LogLevel) && parse_log_level_directive(value).is_some()
-}
-
 fn is_option_token(value: &str) -> bool {
     value.starts_with('-') && value != "-"
+}
+
+pub(crate) fn find_version_or_buildconf_request_index(args: &[String]) -> Option<usize> {
+    let mut index = 0;
+
+    while index < args.len() {
+        let arg = &args[index];
+
+        if arg == "-version" || arg == "-buildconf" {
+            return Some(index);
+        }
+
+        if arg == "-i" {
+            if index + 1 >= args.len() {
+                return None;
+            }
+            index += 2;
+            continue;
+        }
+
+        if is_option_token(arg) {
+            let option_name = option_name(arg).ok()?;
+            if let Some(spec) = option_spec(option_name) {
+                match spec.arity {
+                    OptionArity::Flag => {
+                        index += 1;
+                        continue;
+                    }
+                    OptionArity::Value => {
+                        if index + 1 >= args.len() {
+                            return None;
+                        }
+                        index += 2;
+                        continue;
+                    }
+                }
+            }
+        }
+
+        index += 1;
+    }
+
+    None
 }
 
 fn take_pending(options: &mut Vec<CliOption>) -> Vec<CliOption> {
@@ -708,7 +735,34 @@ mod tests {
             parse_ffmpeg_args(&strings(&["-v", "-not-a-level", "-i", "in.wav", "out.wav"]))
                 .unwrap_err()
                 .message()
-                .contains("missing value")
+                .contains("invalid loglevel")
+        );
+    }
+
+    #[test]
+    fn standalone_version_and_buildconf_detection_skips_option_values() {
+        let version_value_args = strings(&["-f", "-version", "-i", "in.wav", "out.wav"]);
+        assert_eq!(
+            find_version_or_buildconf_request_index(&version_value_args),
+            None
+        );
+
+        let loglevel_value_args = strings(&["-loglevel", "-version", "-i", "in.wav", "out.wav"]);
+        assert_eq!(
+            find_version_or_buildconf_request_index(&loglevel_value_args),
+            None
+        );
+
+        let standalone_args = strings(&["-f", "avi", "-version"]);
+        assert_eq!(
+            find_version_or_buildconf_request_index(&standalone_args),
+            Some(2)
+        );
+
+        let buildconf_args = strings(&["-buildconf"]);
+        assert_eq!(
+            find_version_or_buildconf_request_index(&buildconf_args),
+            Some(0)
         );
     }
 
@@ -762,7 +816,8 @@ mod tests {
     #[test]
     fn rejects_missing_values_and_dangling_file_options() {
         assert!(parse_ffmpeg_args(&strings(&["-i"])).is_err());
-        assert!(parse_ffmpeg_args(&strings(&["-f", "-i", "in"])).is_err());
+        assert!(parse_ffmpeg_args(&strings(&["-f"])).is_err());
+        assert!(parse_ffmpeg_args(&strings(&["-v"])).is_err());
         assert!(parse_ffmpeg_args(&strings(&["-f", "lavfi"])).is_err());
     }
 

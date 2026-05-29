@@ -1,6 +1,6 @@
 #![no_main]
 
-use avformat::WavDemuxer;
+use avformat::{WavDemuxer, WavMuxer};
 use avutil::SampleFormat;
 use libfuzzer_sys::fuzz_target;
 
@@ -17,6 +17,8 @@ fuzz_target!(|data: &[u8]| {
     let duplicate_fmt = wav_with_duplicate_fmt_chunks();
     exercise_wav(&duplicate_fmt);
     exercise_duplicate_fmt_wav(&duplicate_fmt);
+    let empty_generated_wav = empty_generated_wav();
+    exercise_wav(&empty_generated_wav);
 });
 
 fn exercise_wav(input: &[u8]) {
@@ -76,6 +78,11 @@ fn exercise_duplicate_fmt_wav(input: &[u8]) {
     assert_eq!(packet.data().len(), 8);
     assert_eq!(packet.duration(), 4);
     assert!(demuxer.read_packet().unwrap().is_none());
+}
+
+fn empty_generated_wav() -> Vec<u8> {
+    let mut muxer = WavMuxer::new_pcm_s16le(1, 44_100).expect("empty WAV parameters are valid");
+    muxer.finish().expect("empty WAV should render")
 }
 
 fn wave_format_extensible_pcm_wav() -> Vec<u8> {

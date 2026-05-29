@@ -1,4 +1,4 @@
-use avformat::WavMuxer;
+use avformat::{WavDemuxer, WavMuxer};
 use avutil::Packet;
 use fftools::ffmpeg_output;
 use std::{
@@ -107,6 +107,16 @@ fn wav_pcm_s16le_duplicate_fmt_chunk_first_fmt_used_for_framecrc() {
     );
 
     compare_wav_framecrc(&path, payload.len());
+    remove_temp_file(&path);
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn wav_pcm_s16le_empty_file_output_matches_ffmpeg_oracle() {
+    let path = unique_temp_path("empty-pcm-s16le-file-output", "raw");
+    fs::write(&path, []).expect("empty raw PCM fixture should be writable");
+
+    compare_wav_file_output(&path);
     remove_temp_file(&path);
 }
 
@@ -226,6 +236,90 @@ fn compare_wav_md5(sample_path: &Path) {
     assert_eq!(rust.output_format(), Some("md5"));
     assert_eq!(rust.stdout().trim_end(), oracle_stdout.trim_end());
     assert!(rust.stderr().is_empty());
+}
+
+fn compare_wav_file_output(sample_path: &Path) {
+    assert!(
+        sample_path.is_file(),
+        "WAV oracle input must point to an existing raw PCM s16le file, got `{}`",
+        sample_path.display()
+    );
+
+    let oracle = oracle_ffmpeg();
+    let sample_arg = sample_path.to_string_lossy().into_owned();
+    let rust_output_path = unique_temp_path("generated-empty-pcm-s16le-rust-output", "wav");
+    let oracle_output_path = unique_temp_path("generated-empty-pcm-s16le-oracle-output", "wav");
+    let rust_output_arg = rust_output_path.to_string_lossy().into_owned();
+    let oracle_output_arg = oracle_output_path.to_string_lossy().into_owned();
+
+    let rust = ffmpeg_output(&strings(&[
+        "-f",
+        "s16le",
+        "-ar",
+        "44100",
+        "-ac",
+        "1",
+        "-i",
+        sample_arg.as_str(),
+        "-f",
+        "wav",
+        rust_output_arg.as_str(),
+    ]))
+    .expect("Rust WAV file-output path should execute");
+
+    let oracle_output = Command::new(&oracle)
+        .args([
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "s16le",
+            "-ar",
+            "44100",
+            "-ac",
+            "1",
+            "-i",
+            sample_arg.as_str(),
+            "-c:a",
+            "copy",
+            "-f",
+            "wav",
+            oracle_output_arg.as_str(),
+        ])
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", oracle.display()));
+
+    assert!(
+        oracle_output.status.success(),
+        "oracle file-output failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        oracle_output.status.code(),
+        String::from_utf8_lossy(&oracle_output.stdout),
+        String::from_utf8_lossy(&oracle_output.stderr)
+    );
+
+    let rust_bytes = fs::read(&rust_output_path).expect("Rust WAV output should be readable");
+    let oracle_bytes = fs::read(&oracle_output_path).expect("oracle WAV output should be readable");
+
+    remove_temp_file(&rust_output_path);
+    remove_temp_file(&oracle_output_path);
+
+    assert_eq!(rust.output_format(), Some("wav"));
+    assert_eq!(rust.packet_count(), 0);
+    assert!(rust.stdout().is_empty());
+    assert!(rust.stderr().is_empty());
+    assert_eq!(rust.byte_count(), u64::try_from(rust_bytes.len()).unwrap());
+    assert_eq!(rust_bytes, oracle_bytes);
+
+    let mut demuxer = WavDemuxer::open(&rust_bytes).expect("Rust WAV output should parse");
+    assert_eq!(demuxer.info().channels(), 1);
+    assert_eq!(
+        demuxer.info().channel_layout(),
+        Some(avutil::ChannelLayout::mono())
+    );
+    assert_eq!(demuxer.info().sample_rate(), 44_100);
+    assert_eq!(demuxer.info().data_size(), 0);
+    assert!(demuxer.read_packet().unwrap().is_none());
 }
 
 fn normalize_framecrc_records(output: &str) -> Vec<String> {

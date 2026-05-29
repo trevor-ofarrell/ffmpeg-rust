@@ -105,6 +105,35 @@ fn version_requests_warn_for_later_invalid_loglevel_but_still_succeed() {
 
 #[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn dash_prefixed_values_are_consumed_before_special_requests() {
+    compare_dash_prefixed_value_case(
+        "ffmpeg",
+        &["-f", "-version", "-i", "in.wav", "-f", "null", "-"],
+        "Unknown input format",
+        "input format",
+    );
+    compare_dash_prefixed_value_case(
+        "ffprobe",
+        &["-f", "-version", "-show_format", "in.wav"],
+        "Unknown input format",
+        "unsupported input format",
+    );
+    compare_dash_prefixed_value_case(
+        "ffmpeg",
+        &["-v", "-not-a-level", "-i", "in.wav", "out.wav"],
+        "Invalid loglevel",
+        "invalid loglevel",
+    );
+    compare_dash_prefixed_value_case(
+        "ffprobe",
+        &["-v", "-not-a-level", "-show_format", "in.wav"],
+        "Invalid loglevel",
+        "invalid loglevel",
+    );
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
 fn ffmpeg_repeated_diagnostics_match_default_repeat_summary_shape() {
     let input_pattern = invalid_jpeg_sequence_pattern();
     let input_pattern = input_pattern.to_string_lossy().into_owned();
@@ -400,6 +429,56 @@ fn compare_trailing_invalid_loglevel_warning(tool_name: &str, request: &str, val
         assert!(rust.stdout.starts_with(&format!("{tool_name} version")));
     } else {
         assert!(rust.stdout.starts_with("  configuration:\n"));
+    }
+}
+
+fn compare_dash_prefixed_value_case(
+    tool_name: &str,
+    args: &[&str],
+    oracle_snippet: &str,
+    rust_snippet: &str,
+) {
+    let oracle = oracle_tool(tool_name);
+    let oracle_output = run_oracle(&oracle, tool_name, args);
+    let oracle_combined = format!("{}{}", oracle_output.stdout, oracle_output.stderr);
+    assert!(
+        !oracle_output.status_success,
+        "oracle `{}` should reject {tool_name} args {:?}, got stdout:\n{}\nstderr:\n{}",
+        oracle.display(),
+        args,
+        oracle_output.stdout,
+        oracle_output.stderr
+    );
+    assert!(
+        oracle_combined.contains(oracle_snippet),
+        "oracle `{}` should mention `{oracle_snippet}` for args {:?}, got:\n{}",
+        oracle.display(),
+        args,
+        oracle_combined
+    );
+
+    match tool_name {
+        "ffmpeg" => {
+            let err = ffmpeg_output(&strings(args))
+                .expect_err("Rust ffmpeg should reject the dash-prefixed value case");
+            assert!(
+                err.message().contains(rust_snippet),
+                "Rust ffmpeg should mention `{rust_snippet}` for args {:?}, got: {}",
+                args,
+                err.message()
+            );
+        }
+        "ffprobe" => {
+            let err = ffprobe_output(&strings(args))
+                .expect_err("Rust ffprobe should reject the dash-prefixed value case");
+            assert!(
+                err.message().contains(rust_snippet),
+                "Rust ffprobe should mention `{rust_snippet}` for args {:?}, got: {}",
+                args,
+                err.message()
+            );
+        }
+        other => panic!("unsupported tool `{other}`"),
     }
 }
 

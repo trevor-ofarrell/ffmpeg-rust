@@ -4567,6 +4567,126 @@ mod tests {
     }
 
     #[test]
+    fn buffer_replace_with_same_pool_reuses_destination_spare_and_lifo_release() {
+        #[derive(Debug)]
+        struct PoolToken {
+            id: usize,
+            size: usize,
+        }
+
+        let releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let pool_frees = std::sync::Arc::new(std::sync::Mutex::new(Vec::<usize>::new()));
+        let release_capture = std::sync::Arc::clone(&releases);
+        let pool_free_capture = std::sync::Arc::clone(&pool_frees);
+        let pool = BufferPool::with_callbacks(
+            3,
+            0,
+            BufferPoolCallbacks::with_allocation_callbacks(
+                |allocated_len| {
+                    assert_eq!(allocated_len, 3);
+                    Ok(BufferPoolAllocation::with_opaque(
+                        vec![1, 2, 3],
+                        PoolToken {
+                            id: 64,
+                            size: allocated_len,
+                        },
+                    ))
+                },
+                move |allocation| {
+                    let token = allocation
+                        .opaque_ref::<PoolToken>()
+                        .expect("pool token should be preserved");
+                    release_capture
+                        .lock()
+                        .unwrap()
+                        .push((token.id, allocation.as_slice().to_vec()));
+                },
+            )
+            .with_pool_free(move || {
+                pool_free_capture.lock().unwrap().push(64);
+            }),
+        )
+        .unwrap();
+
+        let mut source = pool.get().unwrap();
+        source.make_mut().copy_from_slice(&[0x51, 0x52, 0x53]);
+        let mut destination = Some(pool.get().unwrap());
+        destination
+            .as_mut()
+            .unwrap()
+            .make_mut()
+            .copy_from_slice(&[0x31, 0x32, 0x33]);
+
+        BufferRef::replace(&mut destination, Some(&source));
+        let replaced = destination.expect("replace keeps destination");
+
+        assert!(replaced.shares_storage(&source));
+        assert_eq!(replaced.strong_count(), 2);
+        assert_eq!(replaced.as_slice(), &[0x51, 0x52, 0x53]);
+        assert_eq!(
+            replaced
+                .pool_opaque_ref::<PoolToken>()
+                .map(|token| (token.id, token.size)),
+            Some((64, 3))
+        );
+        assert!(releases.lock().unwrap().is_empty());
+        assert!(pool_frees.lock().unwrap().is_empty());
+        assert_eq!(pool.available_count().unwrap(), 1);
+
+        let destination_reuse = pool.get().unwrap();
+        assert_eq!(destination_reuse.as_slice(), &[0x31, 0x32, 0x33]);
+        assert_eq!(
+            destination_reuse
+                .pool_opaque_ref::<PoolToken>()
+                .map(|token| (token.id, token.size)),
+            Some((64, 3))
+        );
+        assert!(releases.lock().unwrap().is_empty());
+        assert!(pool_frees.lock().unwrap().is_empty());
+        assert_eq!(pool.available_count().unwrap(), 0);
+
+        drop(destination_reuse);
+        assert!(releases.lock().unwrap().is_empty());
+        assert!(pool_frees.lock().unwrap().is_empty());
+        assert_eq!(pool.available_count().unwrap(), 1);
+
+        drop(source);
+        assert!(releases.lock().unwrap().is_empty());
+        assert_eq!(pool.available_count().unwrap(), 1);
+
+        drop(replaced);
+        assert!(releases.lock().unwrap().is_empty());
+        assert_eq!(pool.available_count().unwrap(), 2);
+
+        let source_reuse = pool.get().unwrap();
+        let destination_reuse_again = pool.get().unwrap();
+        assert_eq!(source_reuse.as_slice(), &[0x51, 0x52, 0x53]);
+        assert_eq!(destination_reuse_again.as_slice(), &[0x31, 0x32, 0x33]);
+        assert_eq!(
+            source_reuse
+                .pool_opaque_ref::<PoolToken>()
+                .map(|token| (token.id, token.size)),
+            Some((64, 3))
+        );
+        assert_eq!(
+            destination_reuse_again
+                .pool_opaque_ref::<PoolToken>()
+                .map(|token| (token.id, token.size)),
+            Some((64, 3))
+        );
+        assert_eq!(pool.available_count().unwrap(), 0);
+
+        drop(destination_reuse_again);
+        drop(source_reuse);
+        drop(pool);
+        assert_eq!(
+            *releases.lock().unwrap(),
+            vec![(64, vec![0x51, 0x52, 0x53]), (64, vec![0x31, 0x32, 0x33])]
+        );
+        assert_eq!(*pool_frees.lock().unwrap(), vec![64]);
+    }
+
+    #[test]
     fn buffer_pool_rejects_shared_and_wrong_shape_buffers() {
         let pool = BufferPool::new(2, 1).unwrap();
         let buffer = pool.get().unwrap();

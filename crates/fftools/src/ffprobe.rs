@@ -465,9 +465,7 @@ pub fn run_ffprobe_tool(args: &[String]) -> i32 {
 }
 
 fn version_request_trailing_loglevel_warning(args: &[String]) -> Option<String> {
-    let request_index = args
-        .iter()
-        .position(|arg| arg == "-version" || arg == "-buildconf")?;
+    let request_index = crate::option_parser::find_version_or_buildconf_request_index(args)?;
     trailing_loglevel_warning(&args[request_index + 1..])
 }
 
@@ -489,22 +487,14 @@ fn trailing_loglevel_warning(args: &[String]) -> Option<String> {
 }
 
 pub fn ffprobe_output(args: &[String]) -> Result<String, FfprobeError> {
-    for (index, arg) in args.iter().enumerate() {
-        match arg.as_str() {
-            "-buildconf" => {
-                let banner = crate::buildconf_banner("ffprobe");
-                validate_ffprobe_prefix(&args[..index])
-                    .map_err(|err| err.with_banner(banner.clone()))?;
-                return Ok(banner);
-            }
-            "-version" => {
-                let banner = crate::version_banner("ffprobe");
-                validate_ffprobe_prefix(&args[..index])
-                    .map_err(|err| err.with_banner(banner.clone()))?;
-                return Ok(banner);
-            }
-            _ => {}
-        }
+    if let Some(index) = crate::option_parser::find_version_or_buildconf_request_index(args) {
+        let banner = match args[index].as_str() {
+            "-buildconf" => crate::buildconf_banner("ffprobe"),
+            "-version" => crate::version_banner("ffprobe"),
+            _ => unreachable!("helper only returns version/buildconf requests"),
+        };
+        validate_ffprobe_prefix(&args[..index]).map_err(|err| err.with_banner(banner.clone()))?;
+        return Ok(banner);
     }
 
     let command = parse_ffprobe_args(args)?;
@@ -546,7 +536,7 @@ fn validate_ffprobe_prefix(args: &[String]) -> Result<(), FfprobeError> {
                 index += 2;
             }
             "-v" | "-loglevel" => {
-                let value = take_log_level_value(args, index, arg)?;
+                let value = take_value(args, index, arg)?;
                 if crate::option_parser::parse_log_level_directive(value).is_none() {
                     return Err(FfprobeError::usage(format!(
                         "invalid loglevel `{value}` for `{arg}`"
@@ -693,7 +683,7 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
                 index += 2;
             }
             "-v" | "-loglevel" => {
-                let value = take_log_level_value(args, index, arg)?;
+                let value = take_value(args, index, arg)?;
                 crate::option_parser::apply_log_level_value(&mut log_config, value).ok_or_else(
                     || FfprobeError::usage(format!("invalid loglevel `{value}` for `{arg}`")),
                 )?;
@@ -743,31 +733,6 @@ fn take_value<'a>(
     let value = args
         .get(value_index)
         .ok_or_else(|| FfprobeError::usage(format!("missing value for option `{option}`")))?;
-    if value.starts_with('-') && value != "-" {
-        return Err(FfprobeError::usage(format!(
-            "missing value for option `{option}` before `{value}`"
-        )));
-    }
-    Ok(value)
-}
-
-fn take_log_level_value<'a>(
-    args: &'a [String],
-    option_index: usize,
-    option: &str,
-) -> Result<&'a str, FfprobeError> {
-    let value_index = option_index + 1;
-    let value = args
-        .get(value_index)
-        .ok_or_else(|| FfprobeError::usage(format!("missing value for option `{option}`")))?;
-    if value.starts_with('-')
-        && value != "-"
-        && crate::option_parser::parse_log_level_directive(value).is_none()
-    {
-        return Err(FfprobeError::usage(format!(
-            "missing value for option `{option}` before `{value}`"
-        )));
-    }
     Ok(value)
 }
 
@@ -2000,7 +1965,7 @@ mod tests {
         ]))
         .unwrap_err()
         .message()
-        .contains("missing value"));
+        .contains("invalid loglevel"));
     }
 
     #[test]
@@ -2029,6 +1994,15 @@ mod tests {
                 .message()
                 .contains("unsupported input format `matroska`")
         );
+        assert!(parse_ffprobe_args(&strings(&[
+            "-show_format",
+            "-f",
+            "-show_format",
+            "clip.bin"
+        ]))
+        .unwrap_err()
+        .message()
+        .contains("unsupported input format"));
         assert!(parse_ffprobe_args(&strings(&[
             "-show_format",
             "-f",

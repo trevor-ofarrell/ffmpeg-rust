@@ -330,9 +330,7 @@ pub fn run_ffmpeg_tool(args: &[String]) -> i32 {
 }
 
 fn version_request_trailing_loglevel_warning(args: &[String]) -> Option<String> {
-    let request_index = args
-        .iter()
-        .position(|arg| arg == "-version" || arg == "-buildconf")?;
+    let request_index = crate::option_parser::find_version_or_buildconf_request_index(args)?;
     trailing_loglevel_warning(&args[request_index + 1..])
 }
 
@@ -354,22 +352,14 @@ fn trailing_loglevel_warning(args: &[String]) -> Option<String> {
 }
 
 pub fn ffmpeg_output(args: &[String]) -> Result<FfmpegOutput, FfmpegError> {
-    for (index, arg) in args.iter().enumerate() {
-        match arg.as_str() {
-            "-buildconf" => {
-                let banner = buildconf_banner("ffmpeg");
-                validate_ffmpeg_prefix(&args[..index])
-                    .map_err(|err| err.with_banner(banner.clone()))?;
-                return Ok(FfmpegOutput::version(banner));
-            }
-            "-version" => {
-                let banner = version_banner("ffmpeg");
-                validate_ffmpeg_prefix(&args[..index])
-                    .map_err(|err| err.with_banner(banner.clone()))?;
-                return Ok(FfmpegOutput::version(banner));
-            }
-            _ => {}
-        }
+    if let Some(index) = crate::option_parser::find_version_or_buildconf_request_index(args) {
+        let banner = match args[index].as_str() {
+            "-buildconf" => buildconf_banner("ffmpeg"),
+            "-version" => version_banner("ffmpeg"),
+            _ => unreachable!("helper only returns version/buildconf requests"),
+        };
+        validate_ffmpeg_prefix(&args[..index]).map_err(|err| err.with_banner(banner.clone()))?;
+        return Ok(FfmpegOutput::version(banner));
     }
 
     if args.is_empty() {
