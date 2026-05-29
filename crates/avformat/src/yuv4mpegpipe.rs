@@ -525,6 +525,18 @@ mod tests {
     }
 
     #[test]
+    fn rejects_unsupported_chroma_modes_with_unsupported_error() {
+        for chroma in ["420mpeg2", "420paldv", "422", "444", "mono"] {
+            let input = format!("YUV4MPEG2 W2 H2 F25:1 Ip C{chroma}\n");
+            assert_eq!(
+                Yuv4MpegDemuxer::open(input.as_bytes()).unwrap_err().kind(),
+                AvErrorKind::Unsupported,
+                "chroma mode {chroma} should remain explicitly unsupported"
+            );
+        }
+    }
+
+    #[test]
     fn rejects_bad_frame_headers_and_truncated_payloads() {
         let truncated = b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg\nFRAME\nabc";
         let mut demuxer = Yuv4MpegDemuxer::open(truncated).unwrap();
@@ -545,6 +557,23 @@ mod tests {
         assert_eq!(
             demuxer.read_packet().unwrap_err().kind(),
             AvErrorKind::Unsupported
+        );
+    }
+
+    #[test]
+    fn preserves_frame_boundaries_before_rejecting_truncated_next_frame() {
+        let first = frame_bytes(6, 0x30);
+        let mut input = y4m_bytes("W2 H2 F25:1 Ip C420jpeg", &[&first]);
+        input.extend_from_slice(b"FRAME\nabcde");
+        let mut demuxer = Yuv4MpegDemuxer::open(&input).unwrap();
+
+        let packet = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(packet.data(), first.as_slice());
+        assert_eq!(packet.pts(), Some(0));
+        assert_eq!(packet.duration(), 1);
+        assert_eq!(
+            demuxer.read_packet().unwrap_err().kind(),
+            AvErrorKind::EndOfFile
         );
     }
 

@@ -4535,7 +4535,9 @@ unit_tests = [
   "yuv4mpegpipe::tests::defaults_missing_chroma_and_allows_clean_eof_after_header",
   "yuv4mpegpipe::tests::parses_ffmpeg_unspecified_sample_aspect_and_xyscss_extension",
   "yuv4mpegpipe::tests::rejects_bad_or_incomplete_stream_headers",
+  "yuv4mpegpipe::tests::rejects_unsupported_chroma_modes_with_unsupported_error",
   "yuv4mpegpipe::tests::rejects_bad_frame_headers_and_truncated_payloads",
+  "yuv4mpegpipe::tests::preserves_frame_boundaries_before_rejecting_truncated_next_frame",
 ]
 differential_tests = [
   "tests/differential/mappings.txt:avformat-yuv4mpegpipe-demuxer|oracle-rawvideo-yuv4mpegpipe-file-output",
@@ -4545,7 +4547,7 @@ differential_tests = [
 ]
 fate_tests = ["tests/fate/mappings.txt:avformat-yuv4mpegpipe-demuxer|local-avformat-yuv4mpegpipe-unit"]
 fuzz_targets = ["avformat_yuv4mpegpipe"]
-notes = "Initial YUV4MPEG2 demuxer parses progressive 4:2:0 C420jpeg headers, validates dimensions and frame size through shared VideoStreamParameters plus PixelFormat::Yuv420p while keeping frame rate/interlace, chroma, and frame-header checks local, treats FFmpeg's `A0:0` yuv4mpegpipe header as unspecified sample aspect, ignores YUV4MPEG2 `X*` extension fields including the pinned `XYSCSS=420JPEG` field, and emits one stream-0 packet per frame with incrementing PTS. The bounded yuv420p yuv4mpegpipe file-output oracle row parses pinned FFmpeg 8.1.1 y4m output with this demuxer after byte comparison, and the bounded YUV4MPEG2 input framecrc oracle row proves demuxed packet payload/timing through the Rust framecrc muxer against pinned FFmpeg streamcopy records. Build-checked cargo-fuzz target avformat_yuv4mpegpipe exercises demuxer opening, frame packet emission, and parsed stream invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Other chroma modes, interlaced modes, frame header overrides, broader CLI wiring, upstream FATE, and sustained fuzz execution are pending."
+notes = "Initial YUV4MPEG2 demuxer parses progressive 4:2:0 C420jpeg headers, validates dimensions and frame size through shared VideoStreamParameters plus PixelFormat::Yuv420p while keeping frame rate/interlace, chroma, and frame-header checks local, treats FFmpeg's `A0:0` yuv4mpegpipe header as unspecified sample aspect, ignores YUV4MPEG2 `X*` extension fields including the pinned `XYSCSS=420JPEG` field, emits one stream-0 packet per frame with incrementing PTS, rejects unsupported chroma identifiers such as 420mpeg2/420paldv/422/444/mono with a typed Unsupported error, and preserves an already complete frame packet before returning EndOfFile for a truncated following frame. The bounded yuv420p yuv4mpegpipe file-output oracle row parses pinned FFmpeg 8.1.1 y4m output with this demuxer after byte comparison, and the bounded YUV4MPEG2 input framecrc oracle row proves demuxed packet payload/timing through the Rust framecrc muxer against pinned FFmpeg streamcopy records. Build-checked cargo-fuzz target avformat_yuv4mpegpipe exercises demuxer opening, frame packet emission, and parsed stream invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Other chroma modes, interlaced modes, frame header overrides, broader CLI wiring, upstream FATE, and sustained fuzz execution are pending."
 blocked_reason = ""
 
 [[component]]
