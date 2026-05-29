@@ -2371,6 +2371,45 @@ mod tests {
             vec![(876, vec![81, 82, 83])]
         );
 
+        let readonly_realloc_shrink_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let readonly_realloc_shrink_capture =
+            std::sync::Arc::clone(&readonly_realloc_shrink_released);
+        let mut readonly_realloc_shrink =
+            Some(BufferRef::from_vec_with_opaque_release_callback_readonly(
+                vec![84, 85, 86, 87],
+                878usize,
+                move |opaque, storage| {
+                    readonly_realloc_shrink_capture
+                        .lock()
+                        .unwrap()
+                        .push((opaque, storage));
+                },
+            ));
+        let readonly_realloc_shrink_storage =
+            std::sync::Arc::as_ptr(&readonly_realloc_shrink.as_ref().unwrap().data);
+        BufferRef::realloc(&mut readonly_realloc_shrink, 2).unwrap();
+        let readonly_realloc_shrink =
+            readonly_realloc_shrink.expect("readonly shrink realloc result");
+        assert_ne!(
+            std::sync::Arc::as_ptr(&readonly_realloc_shrink.data),
+            readonly_realloc_shrink_storage
+        );
+        assert!(readonly_realloc_shrink.data.reallocatable);
+        assert!(!readonly_realloc_shrink.is_readonly());
+        assert!(readonly_realloc_shrink.is_writable());
+        assert_eq!(readonly_realloc_shrink.as_slice(), &[84, 85]);
+        assert!(readonly_realloc_shrink.opaque_ref::<usize>().is_none());
+        assert_eq!(
+            *readonly_realloc_shrink_released.lock().unwrap(),
+            vec![(878, vec![84, 85, 86, 87])]
+        );
+        drop(readonly_realloc_shrink);
+        assert_eq!(
+            *readonly_realloc_shrink_released.lock().unwrap(),
+            vec![(878, vec![84, 85, 86, 87])]
+        );
+
         let shared_readonly_released =
             std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
         let shared_readonly_capture = std::sync::Arc::clone(&shared_readonly_released);

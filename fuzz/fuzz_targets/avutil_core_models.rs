@@ -1488,6 +1488,52 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         vec![(payload_len, payload.clone())]
     );
 
+    let readonly_realloc_shrink_payload = if payload.is_empty() {
+        vec![0]
+    } else {
+        payload.clone()
+    };
+    let readonly_realloc_shrink_len = readonly_realloc_shrink_payload.len() - 1;
+    let readonly_realloc_shrink_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let readonly_realloc_shrink_capture = Arc::clone(&readonly_realloc_shrink_released);
+    let mut readonly_realloc_shrink =
+        Some(BufferRef::from_vec_with_opaque_release_callback_readonly(
+            readonly_realloc_shrink_payload.clone(),
+            readonly_realloc_shrink_payload.len(),
+            move |opaque, bytes| {
+                readonly_realloc_shrink_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        ));
+    BufferRef::realloc(&mut readonly_realloc_shrink, readonly_realloc_shrink_len).unwrap();
+    let readonly_realloc_shrink =
+        readonly_realloc_shrink.expect("readonly shrink realloc stays present");
+    assert_eq!(readonly_realloc_shrink.len(), readonly_realloc_shrink_len);
+    assert_eq!(
+        readonly_realloc_shrink.as_slice(),
+        &readonly_realloc_shrink_payload[..readonly_realloc_shrink_len]
+    );
+    assert!(readonly_realloc_shrink.is_writable());
+    assert!(!readonly_realloc_shrink.is_readonly());
+    assert!(readonly_realloc_shrink.opaque_ref::<usize>().is_none());
+    assert_eq!(
+        *readonly_realloc_shrink_released.lock().unwrap(),
+        vec![(
+            readonly_realloc_shrink_payload.len(),
+            readonly_realloc_shrink_payload.clone()
+        )]
+    );
+    drop(readonly_realloc_shrink);
+    assert_eq!(
+        *readonly_realloc_shrink_released.lock().unwrap(),
+        vec![(
+            readonly_realloc_shrink_payload.len(),
+            readonly_realloc_shrink_payload
+        )]
+    );
+
     let shared_readonly_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let shared_readonly_capture = Arc::clone(&shared_readonly_released);
     let shared_readonly_source = BufferRef::from_vec_with_opaque_release_callback_readonly(

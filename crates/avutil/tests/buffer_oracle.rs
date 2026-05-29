@@ -667,6 +667,57 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         release_fields(&readonly_realloc_released),
     );
 
+    let readonly_realloc_shrink_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let readonly_realloc_shrink_capture = Arc::clone(&readonly_realloc_shrink_released);
+    let mut readonly_realloc_shrink =
+        Some(BufferRef::from_vec_with_opaque_release_callback_readonly(
+            vec![93, 94, 95, 96],
+            890usize,
+            move |opaque, bytes| {
+                readonly_realloc_shrink_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        ));
+    let readonly_realloc_shrink_ptr = readonly_realloc_shrink
+        .as_ref()
+        .expect("readonly shrink realloc input")
+        .as_ptr();
+    BufferRef::realloc(&mut readonly_realloc_shrink, 2).unwrap();
+    let readonly_realloc_shrink = readonly_realloc_shrink.expect("readonly shrink realloc result");
+    rows.insert(
+        "buffer:readonly-realloc-shrink-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:readonly-realloc-shrink".to_string(),
+        buffer_prefix_fields(&readonly_realloc_shrink, 2),
+    );
+    rows.insert(
+        "buffer:readonly-realloc-shrink-opaque".to_string(),
+        vec![readonly_realloc_shrink
+            .opaque_ref::<usize>()
+            .copied()
+            .unwrap_or_default()
+            .to_string()],
+    );
+    rows.insert(
+        "buffer:readonly-realloc-shrink-replaced".to_string(),
+        vec![bool_field(
+            readonly_realloc_shrink_ptr != readonly_realloc_shrink.as_ptr(),
+        )],
+    );
+    rows.insert(
+        "buffer:readonly-realloc-shrink-release-before-unref".to_string(),
+        release_fields(&readonly_realloc_shrink_released),
+    );
+    drop(readonly_realloc_shrink);
+    rows.insert(
+        "buffer:readonly-realloc-shrink-release-after-unref".to_string(),
+        release_fields(&readonly_realloc_shrink_released),
+    );
+
     let readonly_shared_realloc_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let readonly_shared_realloc_capture = Arc::clone(&readonly_shared_realloc_released);
     let readonly_shared_realloc_src = BufferRef::from_vec_with_opaque_release_callback_readonly(
@@ -1968,6 +2019,36 @@ int main(void) {
     print_create_release("buffer:readonly-realloc-release-before-unref");
     av_buffer_unref(&readonly_realloc);
     print_create_release("buffer:readonly-realloc-release-after-unref");
+
+    reset_create_release();
+    static const uint8_t readonly_realloc_shrink_bytes[] = { 93, 94, 95, 96 };
+    uint8_t *readonly_realloc_shrink_data =
+        av_malloc(sizeof(readonly_realloc_shrink_bytes));
+    fail_if(!readonly_realloc_shrink_data,
+            "av_malloc readonly_realloc_shrink_data failed");
+    for (size_t i = 0; i < sizeof(readonly_realloc_shrink_bytes); i++)
+        readonly_realloc_shrink_data[i] = readonly_realloc_shrink_bytes[i];
+    last_create_release_size = sizeof(readonly_realloc_shrink_bytes);
+    AVBufferRef *readonly_realloc_shrink =
+        av_buffer_create(readonly_realloc_shrink_data,
+                         sizeof(readonly_realloc_shrink_bytes),
+                         test_create_free, (void *)(uintptr_t)890,
+                         AV_BUFFER_FLAG_READONLY);
+    fail_if(!readonly_realloc_shrink,
+            "av_buffer_create readonly shrink realloc failed");
+    uint8_t *readonly_realloc_shrink_before = readonly_realloc_shrink->data;
+    ret = av_buffer_realloc(&readonly_realloc_shrink, 2);
+    printf("buffer:readonly-realloc-shrink-ret|%d\n", ret);
+    print_buffer_prefix("buffer:readonly-realloc-shrink",
+                        readonly_realloc_shrink, 2);
+    printf("buffer:readonly-realloc-shrink-opaque|%llu\n",
+           (unsigned long long)(uintptr_t)
+               av_buffer_get_opaque(readonly_realloc_shrink));
+    printf("buffer:readonly-realloc-shrink-replaced|%d\n",
+           readonly_realloc_shrink_before != readonly_realloc_shrink->data);
+    print_create_release("buffer:readonly-realloc-shrink-release-before-unref");
+    av_buffer_unref(&readonly_realloc_shrink);
+    print_create_release("buffer:readonly-realloc-shrink-release-after-unref");
 
     reset_create_release();
     static const uint8_t readonly_shared_realloc_bytes[] = { 80, 81, 82 };
