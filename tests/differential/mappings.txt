@@ -107,6 +107,7 @@ fftools-version|oracle-ffprobe-version|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}
 fftools-version|oracle-double-dash-version-rejection|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|version_oracle|double_dash_version_is_not_a_success_version_request|--|--ignored
 fftools-version|oracle-hide-banner-version|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|version_oracle|hide_banner_version_matches_plain_version_surface|--|--ignored
 fftools-version|oracle-buildconf-surface|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|version_oracle|buildconf_reports_configuration_without_library_versions|--|--ignored
+fftools-version|oracle-version-buildconf-precedence|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|version_oracle|version_and_buildconf_args_follow_first_occurrence|--|--ignored
 fftools-option-parser|oracle-cli-loglevel-directives|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|version_oracle|loglevel_directive_acceptance_matches_oracle_for_version_requests|--|--ignored
 avutil-logging|oracle-cli-loglevel-directives|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|version_oracle|loglevel_directive_acceptance_matches_oracle_for_version_requests|--|--ignored
 fftools-option-parser|oracle-cli-repeat-diagnostics|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|version_oracle|ffmpeg_repeated_diagnostics_match_default_repeat_summary_shape|--|--ignored

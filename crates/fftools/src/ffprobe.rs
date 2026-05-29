@@ -447,14 +447,17 @@ pub fn run_ffprobe_tool(args: &[String]) -> i32 {
 }
 
 pub fn ffprobe_output(args: &[String]) -> Result<String, FfprobeError> {
-    if args.iter().any(|arg| arg == "-buildconf") {
-        return Ok(crate::buildconf_banner("ffprobe"));
-    }
-
-    if args.iter().any(|arg| arg == "-version") {
-        crate::option_parser::validate_loglevel_options(args)
-            .map_err(|err| FfprobeError::usage(format!("failed to parse options: {err}")))?;
-        return Ok(crate::version_banner("ffprobe"));
+    for arg in args {
+        match arg.as_str() {
+            "-buildconf" => return Ok(crate::buildconf_banner("ffprobe")),
+            "-version" => {
+                crate::option_parser::validate_loglevel_options(args).map_err(|err| {
+                    FfprobeError::usage(format!("failed to parse options: {err}"))
+                })?;
+                return Ok(crate::version_banner("ffprobe"));
+            }
+            _ => {}
+        }
     }
 
     let command = parse_ffprobe_args(args)?;
@@ -2063,6 +2066,18 @@ mod tests {
         let err = ffprobe_output(&strings(&["--version"])).unwrap_err();
 
         assert!(err.message().contains("unknown option"));
+    }
+
+    #[test]
+    fn ffprobe_version_vs_buildconf_follows_arg_order() {
+        let version_output = ffprobe_output(&strings(&["-version", "-buildconf"])).unwrap();
+        assert!(version_output.starts_with("ffprobe version"));
+        assert!(version_output.contains("libavutil"));
+
+        let buildconf_output = ffprobe_output(&strings(&["-buildconf", "-version"])).unwrap();
+        assert!(buildconf_output.starts_with("  configuration:\n"));
+        assert!(buildconf_output.contains("    --disable-gpl"));
+        assert!(!buildconf_output.contains("ffprobe version"));
     }
 
     #[test]

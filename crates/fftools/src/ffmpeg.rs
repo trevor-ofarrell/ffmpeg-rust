@@ -311,14 +311,16 @@ pub fn run_ffmpeg_tool(args: &[String]) -> i32 {
 }
 
 pub fn ffmpeg_output(args: &[String]) -> Result<FfmpegOutput, FfmpegError> {
-    if args.iter().any(|arg| arg == "-buildconf") {
-        return Ok(FfmpegOutput::version(buildconf_banner("ffmpeg")));
-    }
-
-    if args.iter().any(|arg| arg == "-version") {
-        parse_ffmpeg_args(args)
-            .map_err(|err| FfmpegError::usage(format!("failed to parse options: {err}")))?;
-        return Ok(FfmpegOutput::version(version_banner("ffmpeg")));
+    for arg in args {
+        match arg.as_str() {
+            "-buildconf" => return Ok(FfmpegOutput::version(buildconf_banner("ffmpeg"))),
+            "-version" => {
+                parse_ffmpeg_args(args)
+                    .map_err(|err| FfmpegError::usage(format!("failed to parse options: {err}")))?;
+                return Ok(FfmpegOutput::version(version_banner("ffmpeg")));
+            }
+            _ => {}
+        }
     }
 
     if args.is_empty() {
@@ -1752,6 +1754,20 @@ mod tests {
         assert!(output.stdout().starts_with("  configuration:\n"));
         assert!(output.stderr().is_empty());
         assert_eq!(output.output_format(), None);
+    }
+
+    #[test]
+    fn ffmpeg_version_vs_buildconf_follows_arg_order() {
+        let version_output = ffmpeg_output(&strings(&["-version", "-buildconf"])).unwrap();
+        assert!(version_output.stdout().starts_with("ffmpeg version"));
+        assert!(version_output.stdout().contains("libavutil"));
+        assert_eq!(version_output.output_format(), None);
+
+        let buildconf_output = ffmpeg_output(&strings(&["-buildconf", "-version"])).unwrap();
+        assert!(buildconf_output.stdout().starts_with("  configuration:\n"));
+        assert!(buildconf_output.stdout().contains("    --disable-gpl"));
+        assert!(!buildconf_output.stdout().contains("ffmpeg version"));
+        assert_eq!(buildconf_output.output_format(), None);
     }
 
     #[test]

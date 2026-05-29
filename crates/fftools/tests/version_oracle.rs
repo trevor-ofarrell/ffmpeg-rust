@@ -82,6 +82,13 @@ fn loglevel_directive_acceptance_matches_oracle_for_version_requests() {
 
 #[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn version_and_buildconf_args_follow_first_occurrence() {
+    compare_version_buildconf_precedence("ffmpeg");
+    compare_version_buildconf_precedence("ffprobe");
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
 fn ffmpeg_repeated_diagnostics_match_default_repeat_summary_shape() {
     let input_pattern = invalid_jpeg_sequence_pattern();
     let input_pattern = input_pattern.to_string_lossy().into_owned();
@@ -245,6 +252,75 @@ fn compare_double_dash_version_rejection(tool_name: &str) {
         "ffprobe" => {
             let err = ffprobe_output(&strings(&["--version"])).unwrap_err();
             assert!(err.message().contains("unknown option"));
+        }
+        other => panic!("unsupported tool `{other}`"),
+    }
+}
+
+fn compare_version_buildconf_precedence(tool_name: &str) {
+    let oracle = oracle_tool(tool_name);
+
+    let oracle_version_then_buildconf = run_oracle(&oracle, tool_name, &["-version", "-buildconf"]);
+    assert!(
+        oracle_version_then_buildconf.status_success,
+        "oracle `{}` should accept -version -buildconf, got stdout:\n{}\nstderr:\n{}",
+        oracle.display(),
+        oracle_version_then_buildconf.stdout,
+        oracle_version_then_buildconf.stderr
+    );
+    let oracle_version_output = format!(
+        "{}{}",
+        oracle_version_then_buildconf.stdout, oracle_version_then_buildconf.stderr
+    );
+    assert!(
+        oracle_version_output.starts_with(&format!("{tool_name} version ")),
+        "oracle `{}` should treat -version first when followed by -buildconf, got:\n{oracle_version_output}",
+        oracle.display()
+    );
+    assert!(
+        oracle_version_output.contains("libavutil"),
+        "oracle `{}` should print library versions for -version -buildconf, got:\n{oracle_version_output}",
+        oracle.display()
+    );
+
+    let oracle_buildconf_then_version = run_oracle(&oracle, tool_name, &["-buildconf", "-version"]);
+    assert!(
+        oracle_buildconf_then_version.status_success,
+        "oracle `{}` should accept -buildconf -version, got stdout:\n{}\nstderr:\n{}",
+        oracle.display(),
+        oracle_buildconf_then_version.stdout,
+        oracle_buildconf_then_version.stderr
+    );
+    let oracle_buildconf_output = format!(
+        "{}{}",
+        oracle_buildconf_then_version.stdout, oracle_buildconf_then_version.stderr
+    );
+    let normalized_oracle_buildconf =
+        normalized_buildconf_output(tool_name, &oracle_buildconf_output);
+    assert_buildconf_shape(tool_name, normalized_oracle_buildconf, "oracle");
+
+    match tool_name {
+        "ffmpeg" => {
+            let rust_version = ffmpeg_output(&strings(&["-version", "-buildconf"]))
+                .expect("ffmpeg version request should honor first occurrence semantics");
+            assert!(rust_version.stdout().starts_with("ffmpeg version"));
+            assert!(rust_version.stdout().contains("libavutil"));
+            assert_eq!(rust_version.output_format(), None);
+
+            let rust_buildconf = ffmpeg_output(&strings(&["-buildconf", "-version"]))
+                .expect("ffmpeg buildconf should honor first occurrence semantics");
+            assert_buildconf_shape(tool_name, rust_buildconf.stdout(), "Rust");
+            assert_eq!(rust_buildconf.output_format(), None);
+        }
+        "ffprobe" => {
+            let rust_version = ffprobe_output(&strings(&["-version", "-buildconf"]))
+                .expect("ffprobe version request should honor first occurrence semantics");
+            assert!(rust_version.starts_with("ffprobe version"));
+            assert!(rust_version.contains("libavutil"));
+
+            let rust_buildconf = ffprobe_output(&strings(&["-buildconf", "-version"]))
+                .expect("ffprobe buildconf should honor first occurrence semantics");
+            assert_buildconf_shape(tool_name, &rust_buildconf, "Rust");
         }
         other => panic!("unsupported tool `{other}`"),
     }
