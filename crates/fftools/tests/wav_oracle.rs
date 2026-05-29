@@ -36,6 +36,23 @@ fn wav_pcm_s16le_generated_framecrc_matches_ffmpeg_oracle() {
 
 #[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn wav_pcm_s16le_extensible_generated_framecrc_matches_ffmpeg_oracle() {
+    let payload = [
+        0x00, 0x00, 0x01, 0x00, 0xfe, 0xff, 0x7f, 0x00, 0x80, 0xff, 0x34, 0x12,
+    ];
+    let path = write_generated_extensible_wav(
+        "generated-extensible-pcm-s16le-framecrc",
+        2,
+        44_100,
+        &payload,
+    );
+
+    compare_wav_framecrc(&path, payload.len());
+    remove_temp_file(&path);
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
 fn wav_pcm_s16le_empty_data_framecrc_matches_ffmpeg_oracle() {
     let path = write_generated_wav("generated-empty-pcm-s16le-framecrc", 1, 44_100, &[]);
 
@@ -299,6 +316,53 @@ fn write_generated_wav(label: &str, channels: u16, sample_rate: u32, payload: &[
     let bytes = muxer.finish().expect("generated WAV should finish");
     fs::write(&path, bytes).expect("generated WAV fixture should be writable");
     path
+}
+
+fn write_generated_extensible_wav(
+    label: &str,
+    channels: u16,
+    sample_rate: u32,
+    payload: &[u8],
+) -> PathBuf {
+    let path = unique_temp_path(label, "wav");
+    let bytes = wav_extensible_bytes(channels, sample_rate, payload);
+    fs::write(&path, bytes).expect("generated extensible WAV fixture should be writable");
+    path
+}
+
+fn wav_extensible_bytes(channels: u16, sample_rate: u32, payload: &[u8]) -> Vec<u8> {
+    let block_align = channels * 2;
+    let byte_rate = sample_rate * u32::from(block_align);
+
+    let mut body = Vec::new();
+    body.extend_from_slice(b"fmt ");
+    body.extend_from_slice(&40_u32.to_le_bytes());
+    body.extend_from_slice(&0xFFFE_u16.to_le_bytes());
+    body.extend_from_slice(&channels.to_le_bytes());
+    body.extend_from_slice(&sample_rate.to_le_bytes());
+    body.extend_from_slice(&byte_rate.to_le_bytes());
+    body.extend_from_slice(&block_align.to_le_bytes());
+    body.extend_from_slice(&16_u16.to_le_bytes());
+    body.extend_from_slice(&22_u16.to_le_bytes());
+    body.extend_from_slice(&16_u16.to_le_bytes());
+    body.extend_from_slice(&3_u32.to_le_bytes());
+    body.extend_from_slice(&[
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B,
+        0x71,
+    ]);
+    body.extend_from_slice(b"data");
+    body.extend_from_slice(&(u32::try_from(payload.len()).unwrap()).to_le_bytes());
+    body.extend_from_slice(payload);
+    if payload.len() % 2 == 1 {
+        body.push(0);
+    }
+
+    let mut out = Vec::new();
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(u32::try_from(body.len() + 4).unwrap()).to_le_bytes());
+    out.extend_from_slice(b"WAVE");
+    out.extend_from_slice(&body);
+    out
 }
 
 fn unique_temp_path(label: &str, extension: &str) -> PathBuf {

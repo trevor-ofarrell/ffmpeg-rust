@@ -4,7 +4,9 @@ use avutil::{
 };
 
 const PCM_S16LE_FORMAT_TAG: u16 = 1;
+const WAV_FORMAT_EXTENSIBLE_FORMAT_TAG: u16 = 0xFFFE;
 const WAV_FMT_CHUNK_SIZE: u32 = 16;
+const WAV_FORMAT_EXTENSIBLE_CHUNK_SIZE: usize = 40;
 const WAV_ENCODER_NAME: &[u8; 14] = b"Lavf62.12.101\0";
 const WAV_INFO_LIST_CHUNK_SIZE: u32 = 4 + 8 + WAV_ENCODER_NAME.len() as u32;
 const WAV_INFO_LIST_TOTAL_SIZE: usize = 8 + WAV_INFO_LIST_CHUNK_SIZE as usize;
@@ -282,10 +284,33 @@ fn parse_fmt(data: &[u8]) -> AvResult<WavInfo> {
 
     let mut reader = ByteReader::new(data);
     let audio_format = reader.read_u16_le()?;
-    if audio_format != PCM_S16LE_FORMAT_TAG {
-        return Err(AvError::unsupported(format!(
-            "unsupported WAV audio format {audio_format}"
-        )));
+    match audio_format {
+        PCM_S16LE_FORMAT_TAG => {}
+        WAV_FORMAT_EXTENSIBLE_FORMAT_TAG => {
+            if data.len() < WAV_FORMAT_EXTENSIBLE_CHUNK_SIZE {
+                return Err(AvError::invalid_data(
+                    "WAV extensible fmt chunk is smaller than required 40 bytes",
+                ));
+            }
+
+            let cb_size = u16::from_le_bytes([data[16], data[17]]);
+            if cb_size < 22 {
+                return Err(AvError::invalid_data(
+                    "WAV extensible fmt chunk does not include required extension",
+                ));
+            }
+
+            if &data[24..40] != WAV_FORMAT_EXTENSIBLE_PCM_GUID.as_slice() {
+                return Err(AvError::unsupported(
+                    "unsupported WAV extensible sub-format",
+                ));
+            }
+        }
+        _ => {
+            return Err(AvError::unsupported(format!(
+                "unsupported WAV audio format {audio_format}"
+            )));
+        }
     }
 
     let channels = reader.read_u16_le()?;
@@ -300,6 +325,10 @@ fn parse_fmt(data: &[u8]) -> AvResult<WavInfo> {
         data_size: 0,
     })
 }
+
+const WAV_FORMAT_EXTENSIBLE_PCM_GUID: [u8; 16] = [
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71,
+];
 
 fn validate_pcm_s16le(info: &WavInfo) -> AvResult<()> {
     if info.sample_format() != SampleFormat::S16 {
@@ -448,6 +477,24 @@ mod tests {
         );
         assert!(WavDemuxer::open(&wav_without_data_chunk()).is_err());
         assert!(WavDemuxer::open(&wav_with_audio_format(3)).is_err());
+        assert!(WavDemuxer::open(&wav_with_short_extensible_fmt_chunk()).is_err());
+        assert!(WavDemuxer::open(&wav_with_small_extensible_cb_size()).is_err());
+        assert!(WavDemuxer::open(&wav_with_extensible_non_pcm_subformat()).is_err());
+    }
+
+    #[test]
+    fn parses_pcm_s16le_wav_extensible_format() {
+        let bytes = wav_bytes_extensible(1, 44_100, &[0x00, 0x00, 0x01, 0x00]);
+        let mut demuxer = WavDemuxer::open(&bytes).unwrap();
+
+        assert_eq!(demuxer.info().sample_format(), SampleFormat::S16);
+        assert_eq!(demuxer.info().sample_rate(), 44_100);
+        assert_eq!(demuxer.info().channels(), 1);
+
+        let packet = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(packet.data(), &[0x00, 0x00, 0x01, 0x00]);
+        assert_eq!(packet.duration(), 2);
+        assert!(demuxer.read_packet().unwrap().is_none());
     }
 
     #[test]
@@ -564,21 +611,24 @@ mod tests {
         assert_eq!(muxer.packets(), 1);
     }
 
-    fn wav_bytes(channels: u16, sample_rate: u32, data: &[u8]) -> Vec<u8> {
-        wav_bytes_inner(channels, sample_rate, 1, 16, data, &[])
-    }
-
     fn wav_bytes_with_unknown_chunk(channels: u16, sample_rate: u32, data: &[u8]) -> Vec<u8> {
         wav_bytes_inner(channels, sample_rate, 1, 16, data, b"JUNK\x03\0\0\0abc\0")
     }
 
     fn wav_without_data_chunk() -> Vec<u8> {
-        let mut body = fmt_chunk(1, 1, 48_000, 16);
+        wav_bytes_with_body(fmt_chunk(1, 1, 48_000, 16))
+    }
+
+    fn wav_bytes(channels: u16, sample_rate: u32, data: &[u8]) -> Vec<u8> {
+        wav_bytes_inner(channels, sample_rate, 1, 16, data, &[])
+    }
+
+    fn wav_bytes_with_body(body: Vec<u8>) -> Vec<u8> {
         let mut out = Vec::new();
         out.extend_from_slice(b"RIFF");
         out.extend_from_slice(&(u32::try_from(body.len() + 4).unwrap()).to_le_bytes());
         out.extend_from_slice(b"WAVE");
-        out.append(&mut body);
+        out.extend_from_slice(&body);
         out
     }
 
@@ -625,6 +675,38 @@ mod tests {
         out
     }
 
+    fn wav_with_extensible_non_pcm_subformat() -> Vec<u8> {
+        let mut bytes = wav_bytes_extensible(1, 44_100, &[0x00, 0x00, 0x01, 0x00]);
+        let guid_offset = 12 + 8 + (2 + 2 + 4 + 4 + 2 + 2 + 2 + 2 + 4);
+        bytes[guid_offset..guid_offset + 16].copy_from_slice(&[
+            0x02, 0, 0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xAA, 0, 0x38, 0x9B, 0x71,
+        ]);
+        bytes
+    }
+
+    fn wav_with_short_extensible_fmt_chunk() -> Vec<u8> {
+        let mut payload = wav_extensible_fmt_chunk(1, 44_100).split_off(8);
+        payload.truncate(38);
+        wav_with_fmt_payload(payload, &[0x00, 0x00])
+    }
+
+    fn wav_with_small_extensible_cb_size() -> Vec<u8> {
+        let mut payload = wav_extensible_fmt_chunk(1, 44_100).split_off(8);
+        payload[16..18].copy_from_slice(&21_u16.to_le_bytes());
+        wav_with_fmt_payload(payload, &[0x00, 0x00])
+    }
+
+    fn wav_with_fmt_payload(fmt_payload: Vec<u8>, data: &[u8]) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(b"fmt ");
+        body.extend_from_slice(&(u32::try_from(fmt_payload.len()).unwrap()).to_le_bytes());
+        body.extend_from_slice(&fmt_payload);
+        body.extend_from_slice(b"data");
+        body.extend_from_slice(&(u32::try_from(data.len()).unwrap()).to_le_bytes());
+        body.extend_from_slice(data);
+        wav_bytes_with_body(body)
+    }
+
     fn wav_bytes_inner(
         channels: u16,
         sample_rate: u32,
@@ -642,12 +724,19 @@ mod tests {
             body.push(0);
         }
 
-        let mut out = Vec::new();
-        out.extend_from_slice(b"RIFF");
-        out.extend_from_slice(&(u32::try_from(body.len() + 4).unwrap()).to_le_bytes());
-        out.extend_from_slice(b"WAVE");
-        out.extend_from_slice(&body);
-        out
+        wav_bytes_with_body(body)
+    }
+
+    fn wav_bytes_extensible(channels: u16, sample_rate: u32, data: &[u8]) -> Vec<u8> {
+        let mut body = wav_extensible_fmt_chunk(channels, sample_rate);
+        body.extend_from_slice(b"data");
+        body.extend_from_slice(&(u32::try_from(data.len()).unwrap()).to_le_bytes());
+        body.extend_from_slice(data);
+        if data.len() % 2 == 1 {
+            body.push(0);
+        }
+
+        wav_bytes_with_body(body)
     }
 
     fn fmt_chunk(
@@ -667,6 +756,26 @@ mod tests {
         chunk.extend_from_slice(&byte_rate.to_le_bytes());
         chunk.extend_from_slice(&block_align.to_le_bytes());
         chunk.extend_from_slice(&bits_per_sample.to_le_bytes());
+        chunk
+    }
+
+    fn wav_extensible_fmt_chunk(channels: u16, sample_rate: u32) -> Vec<u8> {
+        let block_align = channels * 2;
+        let byte_rate = sample_rate * u32::from(block_align);
+
+        let mut chunk = Vec::new();
+        chunk.extend_from_slice(b"fmt ");
+        chunk.extend_from_slice(&40_u32.to_le_bytes());
+        chunk.extend_from_slice(&WAV_FORMAT_EXTENSIBLE_FORMAT_TAG.to_le_bytes());
+        chunk.extend_from_slice(&channels.to_le_bytes());
+        chunk.extend_from_slice(&sample_rate.to_le_bytes());
+        chunk.extend_from_slice(&byte_rate.to_le_bytes());
+        chunk.extend_from_slice(&block_align.to_le_bytes());
+        chunk.extend_from_slice(&16_u16.to_le_bytes());
+        chunk.extend_from_slice(&22_u16.to_le_bytes());
+        chunk.extend_from_slice(&16_u16.to_le_bytes());
+        chunk.extend_from_slice(&3_u32.to_le_bytes());
+        chunk.extend_from_slice(&WAV_FORMAT_EXTENSIBLE_PCM_GUID);
         chunk
     }
 }

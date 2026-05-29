@@ -100,6 +100,9 @@ default_profile = "ffmpeg-8.1.1-default-native"
 # oracle rows are now mapped to `avutil-packet`, proving the Rust WAV demuxer
 # -> Packet -> md5 muxer path against pinned FFmpeg streamcopy output for both
 # a bounded generated PCM s16le WAV fixture and the installed FATE WAV sample.
+# Latest WAV extensible evidence: a generated WAVE_FORMAT_EXTENSIBLE PCM s16le
+# framecrc oracle row proves the bounded Rust WAV demuxer accepts the PCM
+# subformat GUID while preserving packet timing, size, and checksum parity.
 # Latest avutil-packet evidence: default-native ABI layout rows now prove
 # pinned FFmpeg 8.1.1 `AVPacketSideData`, `AVPacket`, and deprecated
 # `AVPacketList` sizes, alignments, field offsets, and field sizes through C
@@ -426,6 +429,7 @@ differential_tests = [
   "tests/differential/mappings.txt:avutil-packet|oracle-pcm-s16le-wav-file-output",
   "tests/differential/mappings.txt:avutil-packet|oracle-wav-generated-md5",
   "tests/differential/mappings.txt:avutil-packet|oracle-wav-generated-framecrc-records",
+  "tests/differential/mappings.txt:avutil-packet|oracle-wav-extensible-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-image2-file-output",
   "tests/differential/mappings.txt:avutil-packet|oracle-image2-sequence-file-output",
   "tests/differential/mappings.txt:avutil-packet|oracle-image2-single-framecrc-records",
@@ -449,6 +453,7 @@ differential_tests = [
   "pcm_oracle::pcm_s16le_wav_file_output_matches_ffmpeg_oracle",
   "wav_oracle::wav_pcm_s16le_generated_md5_matches_ffmpeg_oracle",
   "wav_oracle::wav_pcm_s16le_generated_framecrc_matches_ffmpeg_oracle",
+  "wav_oracle::wav_pcm_s16le_extensible_generated_framecrc_matches_ffmpeg_oracle",
   "image2_oracle::image2_ppm_single_file_output_matches_ffmpeg_oracle",
   "image2_oracle::image2_ppm_numbered_sequence_file_output_matches_ffmpeg_oracle",
   "image2_oracle::image2_ppm_single_framecrc_records_match_ffmpeg_oracle",
@@ -492,6 +497,10 @@ fuzz_targets = ["avutil_core_models"]
 # framecrc oracle row is now mapped to avutil-packet, validating the Rust WAV
 # demuxer -> Packet -> framecrc muxer path against pinned FFmpeg streamcopy
 # packet records for a bounded PCM s16le WAV fixture.
+# Latest WAVE_FORMAT_EXTENSIBLE media-integration update: the generated
+# extensible PCM s16le framecrc row is now mapped to avutil-packet, validating
+# the Rust WAV demuxer -> Packet -> framecrc muxer path against pinned FFmpeg
+# streamcopy packet records for that bounded extensible header.
 # Latest rawvideo to AVI media-integration update: the raw bgr24 to AVI oracle
 # row is now mapped to avutil-packet, validating the Rust rawvideo demuxer ->
 # Packet -> AVI muxer path against pinned FFmpeg rawvideo AVI packet semantics,
@@ -3762,11 +3771,13 @@ unit_tests = [
 ]
 differential_tests = [
   "tests/differential/mappings.txt:fftools-ffmpeg-wav-framecrc-null|oracle-wav-generated-framecrc-records",
+  "tests/differential/mappings.txt:fftools-ffmpeg-wav-framecrc-null|oracle-wav-extensible-framecrc-records",
   "wav_oracle::wav_pcm_s16le_generated_framecrc_matches_ffmpeg_oracle",
+  "wav_oracle::wav_pcm_s16le_extensible_generated_framecrc_matches_ffmpeg_oracle",
 ]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffmpeg-wav-framecrc-null|local-ffmpeg-unit"]
 fuzz_targets = []
-notes = "ffmpeg-rs command execution supports exactly one local seekable PCM s16le RIFF/WAVE input and one stdout pipe output with explicit -f null or -f framecrc. It detects WAV by RIFF/WAVE signature or .wav extension, accepts explicit -f wav/-f wave, and uses the Rust WAV demuxer and Rust null/framecrc muxers. The bounded generated PCM s16le WAV oracle row compares normalized framecrc streamcopy records against pinned FFmpeg 8.1.1 `-c:a copy -f framecrc`, proving packet count, byte count, DTS, PTS, duration, size, and checksum for that constrained CLI path. The local null output path and local unit coverage remain separate from upstream FATE parity. RF64/WAVE64, WAVE_FORMAT_EXTENSIBLE, non-PCM formats, packet chunking, broad CLI execution, broader upstream FATE coverage, and sustained fuzz execution remain pending. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
+notes = "ffmpeg-rs command execution supports exactly one local seekable PCM s16le RIFF/WAVE input, including bounded WAVE_FORMAT_EXTENSIBLE PCM s16le input, and one stdout pipe output with explicit -f null or -f framecrc. It detects WAV by RIFF/WAVE signature or .wav extension, accepts explicit -f wav/-f wave, and uses the Rust WAV demuxer and Rust null/framecrc muxers. The bounded generated canonical and extensible PCM s16le WAV oracle rows compare normalized framecrc streamcopy records against pinned FFmpeg 8.1.1 `-c:a copy -f framecrc`, proving packet count, byte count, DTS, PTS, duration, size, and checksum for that constrained CLI path. The local null output path and local unit coverage remain separate from upstream FATE parity. RF64/WAVE64, WAVE_FORMAT_EXTENSIBLE variants beyond PCM s16le, non-PCM formats, packet chunking, broad CLI execution, broader upstream FATE coverage, and sustained fuzz execution remain pending. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -4311,6 +4322,7 @@ differential_tests = [
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-mov-framecrc-records",
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-pcm-s16le-framecrc-records",
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-wav-generated-framecrc-records",
+  "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-wav-extensible-framecrc-records",
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-yuv4mpegpipe-framecrc-records",
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-yuv4mpegpipe-truncated-framecrc-records",
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-image2-single-framecrc-records",
@@ -4320,6 +4332,7 @@ differential_tests = [
   "mov_oracle::mov_rgb24_framecrc_records_match_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_framecrc_records_match_ffmpeg_oracle",
   "wav_oracle::wav_pcm_s16le_generated_framecrc_matches_ffmpeg_oracle",
+  "wav_oracle::wav_pcm_s16le_extensible_generated_framecrc_matches_ffmpeg_oracle",
   "yuv4mpegpipe_oracle::yuv4mpegpipe_yuv420p_framecrc_records_match_ffmpeg_oracle",
   "yuv4mpegpipe_oracle::yuv4mpegpipe_truncated_frame_eof_records_match_ffmpeg_oracle",
   "image2_oracle::image2_ppm_single_framecrc_records_match_ffmpeg_oracle",
@@ -4327,7 +4340,7 @@ differential_tests = [
 ]
 fate_tests = ["tests/fate/mappings.txt:avformat-framecrc-muxer|local-avformat-framecrc-unit"]
 fuzz_targets = ["avformat_packet_muxers"]
-notes = "Initial internal framecrc-style muxer records one FFmpeg-shaped comma-separated line per packet with stream index, PTS/DTS, duration, size, and the FFmpeg framecrc Adler-style checksum initialized at zero. The ignored rawvideo oracle row compares normalized rgb24 framecrc packet rows against pinned FFmpeg streamcopy output, proving bounded video record parity for packet count, PTS, DTS, duration, payload size, and checksum. The ignored generated AVI oracle row compares normalized RGB24 AVI input framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape after AVI demuxing including DIB scanline-padding payload sizes and checksums. The ignored generated MOV oracle row compares normalized rgb24 MOV input framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape after MOV demuxing for packet timing, payload sizes, and checksums. The ignored raw PCM oracle row compares normalized stereo pcm_s16le framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape for bounded audio packet timing, duration, payload size, and checksum. The ignored generated WAV oracle row compares normalized PCM s16le WAV input framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape after WAV demuxing. The ignored yuv4mpegpipe oracle rows compare normalized two-frame and truncated-tail yuv420p YUV4MPEG2 input framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape for bounded demuxed video packets and no-record/one-record EOF-truncation cases. The ignored image2 oracle rows compare normalized single-frame and two-frame PPM sequence framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape for bounded encoded-image packets. Header byte identity remains outside the current claim. Build-checked cargo-fuzz target avformat_packet_muxers covers per-packet record fields, checksum stability, render/finish stability, and post-finish rejection. Broader input differential rows, byte-identical headers, upstream FATE coverage, and sustained fuzz execution are pending."
+notes = "Initial internal framecrc-style muxer records one FFmpeg-shaped comma-separated line per packet with stream index, PTS/DTS, duration, size, and the FFmpeg framecrc Adler-style checksum initialized at zero. The ignored rawvideo oracle row compares normalized rgb24 framecrc packet rows against pinned FFmpeg streamcopy output, proving bounded video record parity for packet count, PTS, DTS, duration, payload size, and checksum. The ignored generated AVI oracle row compares normalized RGB24 AVI input framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape after AVI demuxing including DIB scanline-padding payload sizes and checksums. The ignored generated MOV oracle row compares normalized rgb24 MOV input framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape after MOV demuxing for packet timing, payload sizes, and checksums. The ignored raw PCM oracle row compares normalized stereo pcm_s16le framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape for bounded audio packet timing, duration, payload size, and checksum. The ignored generated WAV oracle rows compare normalized canonical and WAVE_FORMAT_EXTENSIBLE PCM s16le WAV input framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape after WAV demuxing. The ignored yuv4mpegpipe oracle rows compare normalized two-frame and truncated-tail yuv420p YUV4MPEG2 input framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape for bounded demuxed video packets and no-record/one-record EOF-truncation cases. The ignored image2 oracle rows compare normalized single-frame and two-frame PPM sequence framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape for bounded encoded-image packets. Header byte identity remains outside the current claim. Build-checked cargo-fuzz target avformat_packet_muxers covers per-packet record fields, checksum stability, render/finish stability, and post-finish rejection. Broader input differential rows, byte-identical headers, upstream FATE coverage, and sustained fuzz execution are pending."
 blocked_reason = ""
 
 [[component]]
@@ -4500,13 +4513,16 @@ unit_tests = [
   "wav::tests::parses_pcm_s16le_wav_and_returns_single_packet",
   "wav::tests::skips_unknown_chunks_and_odd_chunk_padding",
   "wav::tests::rejects_missing_or_invalid_required_chunks",
+  "wav::tests::parses_pcm_s16le_wav_extensible_format",
   "wav::tests::validates_pcm_s16le_format_consistency",
   "wav::tests::returns_no_packet_for_empty_data_chunk",
 ]
 differential_tests = [
   "tests/differential/mappings.txt:avformat-wav-demuxer|oracle-wav-empty-framecrc-records",
+  "tests/differential/mappings.txt:avformat-wav-demuxer|oracle-wav-extensible-framecrc-records",
   "crates/fftools/tests/wav_oracle.rs::wav_pcm_s16le_generated_md5_matches_ffmpeg_oracle",
   "crates/fftools/tests/wav_oracle.rs::wav_pcm_s16le_generated_framecrc_matches_ffmpeg_oracle",
+  "crates/fftools/tests/wav_oracle.rs::wav_pcm_s16le_extensible_generated_framecrc_matches_ffmpeg_oracle",
   "crates/fftools/tests/wav_oracle.rs::wav_pcm_s16le_empty_data_framecrc_matches_ffmpeg_oracle",
   "crates/fftools/tests/wav_oracle.rs::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
@@ -4516,8 +4532,9 @@ fate_tests = [
 ]
 fuzz_targets = ["avformat_wav"]
 # Latest update: empty PCM s16le WAV data chunks now produce no packets, matching pinned FFmpeg 8.1.1 framecrc and ffprobe packet behavior; the unit test, ignored oracle row, differential mapping, and avformat_wav deterministic fuzz invariant cover that zero-data boundary.
+# Latest update: WAVE_FORMAT_EXTENSIBLE PCM s16le fmt chunks with the PCM subformat GUID are accepted for the bounded demuxer path; malformed short extension chunks, too-small cbSize fields, and non-PCM subformat GUIDs are rejected, and the ignored framecrc oracle row matches pinned FFmpeg 8.1.1 packet records for a generated extensible fixture.
 # Previous invalid-input slice: RIFF sizes smaller than the mandatory WAVE form type are rejected as invalid data before chunk scanning; the unit test and avformat_wav deterministic fuzz fixture cover that malformed header.
-notes = "Initial RIFF/WAVE demuxer parses PCM s16le fmt/data chunks, rejects RIFF sizes too small to contain the WAVE form type, skips padded unknown chunks, validates stream parameters through the shared avformat AudioStreamParameters helper and SampleFormat::S16 sizing model, derives native or count-only ChannelLayoutSpec metadata where safe, emits one data packet for nonempty data chunks, and now emits no packets for empty data chunks. Build-checked cargo-fuzz target avformat_wav exercises demuxer opening, malformed RIFF-size rejection, packet emission, empty-data no-packet behavior, and parsed stream invariants, but actual local fuzz execution is still pending for this component. The ignored wav_oracle harness compares Rust WAV-to-MD5 output against pinned FFmpeg 8.1.1 streamcopy MD5 output for both a generated PCM s16le WAV fixture and FATE sample audio-reference/luckynight_2ch_44kHz_s16.wav, compares generated PCM s16le WAV-to-framecrc streamcopy records, and compares empty-data WAV-to-framecrc records against the same pinned oracle. tests/differential/mappings.txt exposes the generated and empty-data fixture rows through fate-runner with only an oracle prerequisite, and those rows passed locally through the pinned WSL oracle wrapper. tests/fate/upstream-mappings.txt exposes the sample-backed row without adding it to local smoke runs; the current local workspace has that exact FATE WAV sample installed under ignored third_party/fate-samples, and the sample-backed mapping passed locally through the pinned WSL oracle wrapper. RF64/WAVE64, WAVE_FORMAT_EXTENSIBLE, float/non-PCM formats, packet chunking, probing, broad CLI wiring, broader upstream FATE coverage, and actual cargo-fuzz execution remain pending. The local FATE-runner smoke mapping executes the wav unit filter only and does not count as upstream FATE parity."
+notes = "Initial RIFF/WAVE demuxer parses PCM s16le and WAVE_FORMAT_EXTENSIBLE PCM s16le fmt/data chunks, rejects RIFF sizes too small to contain the WAVE form type, rejects malformed extensible chunks and non-PCM extensible subformats, skips padded unknown chunks, validates stream parameters through the shared avformat AudioStreamParameters helper and SampleFormat::S16 sizing model, derives native or count-only ChannelLayoutSpec metadata where safe, emits one data packet for nonempty data chunks, and emits no packets for empty data chunks. Build-checked cargo-fuzz target avformat_wav exercises demuxer opening, malformed RIFF-size rejection, packet emission, empty-data no-packet behavior, WAVE_FORMAT_EXTENSIBLE PCM opening, and parsed stream invariants, but actual local fuzz execution is still pending for this component. The ignored wav_oracle harness compares Rust WAV-to-MD5 output against pinned FFmpeg 8.1.1 streamcopy MD5 output for both a generated PCM s16le WAV fixture and FATE sample audio-reference/luckynight_2ch_44kHz_s16.wav, compares generated canonical and WAVE_FORMAT_EXTENSIBLE PCM s16le WAV-to-framecrc streamcopy records, and compares empty-data WAV-to-framecrc records against the same pinned oracle. tests/differential/mappings.txt exposes the generated, extensible, and empty-data fixture rows through fate-runner with only an oracle prerequisite, and those rows passed locally through the pinned WSL oracle wrapper. tests/fate/upstream-mappings.txt exposes the sample-backed row without adding it to local smoke runs; the current local workspace has that exact FATE WAV sample installed under ignored third_party/fate-samples, and the sample-backed mapping passed locally through the pinned WSL oracle wrapper. RF64/WAVE64, WAVE_FORMAT_EXTENSIBLE variants beyond PCM s16le, float/non-PCM formats, packet chunking, probing, broad CLI wiring, broader upstream FATE coverage, and actual cargo-fuzz execution remain pending. The local FATE-runner smoke mapping executes the wav unit filter only and does not count as upstream FATE parity."
 blocked_reason = "The generated differential rows and the configured sample-backed WAV FATE row passed locally, but broader WAV coverage, full upstream FATE coverage beyond this one sample row, and actual cargo-fuzz execution remain pending."
 
 [[component]]

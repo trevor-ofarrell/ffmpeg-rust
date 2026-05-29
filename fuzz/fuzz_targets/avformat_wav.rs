@@ -11,6 +11,7 @@ fuzz_target!(|data: &[u8]| {
     exercise_wav(data);
     exercise_wav(VALID_WAV);
     exercise_wav(TOO_SMALL_RIFF_WAV);
+    exercise_wav(&wave_format_extensible_pcm_wav());
 });
 
 fn exercise_wav(input: &[u8]) {
@@ -39,13 +40,49 @@ fn exercise_wav(input: &[u8]) {
         return;
     }
 
-    let Ok(Some(packet)) = demuxer.read_packet() else {
-        return;
-    };
-    assert_eq!(packet.stream_index(), 0);
-    assert_eq!(packet.pts(), Some(0));
-    assert_eq!(packet.dts(), Some(0));
-    assert_eq!(packet.duration() as usize, info.samples_per_channel());
-    assert_eq!(packet.data().len(), info.data_size());
-    assert!(demuxer.read_packet().unwrap().is_none());
+    let mut seen = 0usize;
+    while let Ok(Some(packet)) = demuxer.read_packet() {
+        assert_eq!(packet.stream_index(), 0);
+        assert_eq!(packet.pts(), Some(0));
+        assert_eq!(packet.dts(), Some(0));
+        assert_eq!(
+            packet.duration() as usize,
+            packet.data().len() / usize::from(info.block_align())
+        );
+        seen = seen.saturating_add(packet.data().len());
+    }
+    assert_eq!(seen, info.data_size());
+}
+
+fn wave_format_extensible_pcm_wav() -> Vec<u8> {
+    let sample_rate: u32 = 44_100;
+    let channels: u16 = 2;
+    let block_align: u16 = 4;
+    let byte_rate: u32 = sample_rate * u32::from(block_align);
+    let data: &[u8] = &[0x00, 0x00, 0x01, 0x00];
+
+    let mut out = Vec::new();
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(60 + u32::try_from(data.len()).unwrap()).to_le_bytes());
+    out.extend_from_slice(b"WAVE");
+    out.extend_from_slice(b"fmt ");
+    out.extend_from_slice(&40_u32.to_le_bytes());
+    out.extend_from_slice(&0xFFFE_u16.to_le_bytes());
+    out.extend_from_slice(&channels.to_le_bytes());
+    out.extend_from_slice(&sample_rate.to_le_bytes());
+    out.extend_from_slice(&byte_rate.to_le_bytes());
+    out.extend_from_slice(&block_align.to_le_bytes());
+    out.extend_from_slice(&16_u16.to_le_bytes());
+    out.extend_from_slice(&22_u16.to_le_bytes());
+    out.extend_from_slice(&16_u16.to_le_bytes());
+    out.extend_from_slice(&3_u32.to_le_bytes());
+    out.extend_from_slice(&[
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B,
+        0x71,
+    ]);
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&(u32::try_from(data.len()).unwrap()).to_le_bytes());
+    out.extend_from_slice(data);
+
+    out
 }
