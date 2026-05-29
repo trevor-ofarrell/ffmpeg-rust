@@ -814,6 +814,7 @@ unit_tests = [
   "buffer::tests::custom_buffer_pool_preserves_buffer_opaque_and_runs_pool_free_last",
   "buffer::tests::custom_buffer_pool_readonly_allocation_reuses_as_writable_storage",
   "buffer::tests::custom_buffer_pool_offset_allocation_reuses_original_base_storage",
+  "buffer::tests::custom_buffer_pool_readonly_offset_allocation_reuses_base_storage_as_writable",
   "buffer::tests::custom_buffer_pool_releases_outstanding_storage_after_pool_drop",
   "buffer::tests::custom_buffer_pool_rejects_bad_allocator_shape_and_releases_storage",
   "buffer::tests::custom_buffer_pool_allocator_failure_preserves_pool_until_drop",
@@ -831,6 +832,13 @@ fate_tests = [
   "not_applicable: upstream FFmpeg FATE has no standalone AVBufferRef/AVBufferPool API target; covered by unit tests plus pinned libavutil differential oracle",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest readonly offset custom-pool allocation slice: pinned libavutil oracle
+# coverage now validates a custom `av_buffer_pool_init2()` allocator whose
+# returned readonly `AVBufferRef.data`/`size` describe an offset visible range
+# inside a larger backing allocation. The first checkout is readonly and offset,
+# while spare reuse recreates a writable ref from the original backing pointer
+# and pool size, keeps the pool opaque owner, and delays release of the full
+# backing bytes until pool uninit.
 # Latest offset custom-pool allocation slice: pinned libavutil oracle coverage
 # now validates a custom `av_buffer_pool_init2()` allocator whose returned
 # `AVBufferRef.data`/`size` describe an offset visible range inside a larger

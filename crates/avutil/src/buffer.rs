@@ -126,6 +126,18 @@ impl BufferPoolAllocation {
         })
     }
 
+    pub fn readonly_visible_range(bytes: Vec<u8>, offset: usize, len: usize) -> AvResult<Self> {
+        Self::validate_visible_range(bytes.len(), offset, len)?;
+        Ok(Self {
+            bytes,
+            opaque: None,
+            readonly: true,
+            visible_offset: offset,
+            visible_len: Some(len),
+            allow_oversized_recycle: true,
+        })
+    }
+
     pub fn with_opaque_visible_range<T>(
         bytes: Vec<u8>,
         offset: usize,
@@ -140,6 +152,26 @@ impl BufferPoolAllocation {
             bytes,
             opaque: Some(Box::new(opaque)),
             readonly: false,
+            visible_offset: offset,
+            visible_len: Some(len),
+            allow_oversized_recycle: true,
+        })
+    }
+
+    pub fn with_opaque_readonly_visible_range<T>(
+        bytes: Vec<u8>,
+        offset: usize,
+        len: usize,
+        opaque: T,
+    ) -> AvResult<Self>
+    where
+        T: Any + Send + Sync + 'static,
+    {
+        Self::validate_visible_range(bytes.len(), offset, len)?;
+        Ok(Self {
+            bytes,
+            opaque: Some(Box::new(opaque)),
+            readonly: true,
             visible_offset: offset,
             visible_len: Some(len),
             allow_oversized_recycle: true,
@@ -3478,6 +3510,74 @@ mod tests {
         assert_eq!(
             *releases.lock().unwrap(),
             vec![(88, vec![0xee, 0x31, 0x32, 0x33])]
+        );
+    }
+
+    #[test]
+    fn custom_buffer_pool_readonly_offset_allocation_reuses_base_storage_as_writable() {
+        #[derive(Debug)]
+        struct PoolToken {
+            id: usize,
+        }
+
+        let releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let release_capture = std::sync::Arc::clone(&releases);
+        let pool = BufferPool::with_callbacks(
+            3,
+            0,
+            BufferPoolCallbacks::with_allocation_callbacks(
+                |allocated_len| {
+                    assert_eq!(allocated_len, 3);
+                    BufferPoolAllocation::with_opaque_readonly_visible_range(
+                        vec![0xee, 0x31, 0x32, 0x33],
+                        1,
+                        3,
+                        PoolToken { id: 89 },
+                    )
+                },
+                move |allocation| {
+                    let id = allocation
+                        .opaque_ref::<PoolToken>()
+                        .map(|token| token.id)
+                        .unwrap_or_default();
+                    release_capture
+                        .lock()
+                        .unwrap()
+                        .push((id, allocation.into_vec()));
+                },
+            ),
+        )
+        .unwrap();
+
+        let first = pool.get().unwrap();
+        assert_eq!(first.offset(), 1);
+        assert_eq!(first.len(), 3);
+        assert_eq!(first.as_slice(), &[0x31, 0x32, 0x33]);
+        assert!(!first.is_writable());
+        assert_eq!(
+            first.pool_opaque_ref::<PoolToken>().map(|token| token.id),
+            Some(89)
+        );
+        drop(first);
+        assert!(releases.lock().unwrap().is_empty());
+        assert_eq!(pool.available_count().unwrap(), 1);
+
+        let mut reuse = pool.get().unwrap();
+        assert_eq!(reuse.offset(), 0);
+        assert_eq!(reuse.len(), 3);
+        assert_eq!(reuse.as_slice(), &[0xee, 0x31, 0x32]);
+        assert!(reuse.is_writable());
+        assert_eq!(
+            reuse.pool_opaque_ref::<PoolToken>().map(|token| token.id),
+            Some(89)
+        );
+        reuse.make_mut()[0] = 0xaa;
+        drop(reuse);
+        drop(pool);
+
+        assert_eq!(
+            *releases.lock().unwrap(),
+            vec![(89, vec![0xaa, 0x31, 0x32, 0x33])]
         );
     }
 

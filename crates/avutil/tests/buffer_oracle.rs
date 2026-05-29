@@ -1621,6 +1621,100 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     );
     drop(offset_pool_release_values);
 
+    let readonly_offset_pool_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let readonly_offset_pool_frees = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let readonly_offset_pool_release_capture = Arc::clone(&readonly_offset_pool_releases);
+    let readonly_offset_pool_free_capture = Arc::clone(&readonly_offset_pool_frees);
+    let readonly_offset_pool = BufferPool::with_callbacks(
+        3,
+        0,
+        BufferPoolCallbacks::with_allocation_callbacks(
+            |allocated_len| {
+                BufferPoolAllocation::with_opaque_readonly_visible_range(
+                    vec![0xee, 0x31, 0x32, 0x33],
+                    1,
+                    allocated_len,
+                    PoolToken {
+                        id: 89,
+                        size: allocated_len + 1,
+                    },
+                )
+            },
+            move |allocation| {
+                let token = allocation
+                    .opaque_ref::<PoolToken>()
+                    .expect("readonly offset pool token should be preserved");
+                readonly_offset_pool_release_capture
+                    .lock()
+                    .unwrap()
+                    .push((token.id, allocation.as_slice().to_vec()));
+            },
+        )
+        .with_pool_free(move || {
+            readonly_offset_pool_free_capture.lock().unwrap().push(89);
+        }),
+    )
+    .unwrap();
+    let readonly_offset_first = readonly_offset_pool.get().unwrap();
+    rows.insert(
+        "pool-readonly-offset:first".to_string(),
+        buffer_fields(&readonly_offset_first),
+    );
+    let readonly_offset_first_token = readonly_offset_first
+        .pool_opaque_ref::<PoolToken>()
+        .expect("readonly offset first pool token");
+    rows.insert(
+        "pool-readonly-offset:opaque-first".to_string(),
+        vec![
+            readonly_offset_first_token.id.to_string(),
+            readonly_offset_first_token.size.to_string(),
+        ],
+    );
+    drop(readonly_offset_first);
+    rows.insert(
+        "pool-readonly-offset:after-first-unref".to_string(),
+        vec![
+            readonly_offset_pool_releases
+                .lock()
+                .unwrap()
+                .len()
+                .to_string(),
+            readonly_offset_pool_frees.lock().unwrap().len().to_string(),
+        ],
+    );
+    let mut readonly_offset_reuse = readonly_offset_pool.get().unwrap();
+    rows.insert(
+        "pool-readonly-offset:reuse".to_string(),
+        buffer_fields(&readonly_offset_reuse),
+    );
+    let readonly_offset_reuse_token = readonly_offset_reuse
+        .pool_opaque_ref::<PoolToken>()
+        .expect("readonly offset reuse pool token");
+    rows.insert(
+        "pool-readonly-offset:opaque-reuse".to_string(),
+        vec![
+            readonly_offset_reuse_token.id.to_string(),
+            readonly_offset_reuse_token.size.to_string(),
+        ],
+    );
+    readonly_offset_reuse.make_mut()[0] = 0xaa;
+    drop(readonly_offset_reuse);
+    drop(readonly_offset_pool);
+    let readonly_offset_release_values = readonly_offset_pool_releases.lock().unwrap();
+    let readonly_offset_pool_free_values = readonly_offset_pool_frees.lock().unwrap();
+    rows.insert(
+        "pool-readonly-offset:uninit-release".to_string(),
+        vec![
+            readonly_offset_release_values.len().to_string(),
+            readonly_offset_release_values[0].0.to_string(),
+            hex(&readonly_offset_release_values[0].1),
+            readonly_offset_pool_free_values.len().to_string(),
+            readonly_offset_pool_free_values[0].to_string(),
+        ],
+    );
+    drop(readonly_offset_pool_free_values);
+    drop(readonly_offset_release_values);
+
     let readonly_pool_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let readonly_pool_frees = Arc::new(Mutex::new(Vec::<usize>::new()));
     let readonly_pool_release_capture = Arc::clone(&readonly_pool_releases);
@@ -2086,6 +2180,22 @@ static AVBufferRef *test_pool_alloc_offset(void *opaque, size_t size) {
         data[i + 1] = (uint8_t)(0x31 + i);
     ret = av_buffer_create(data, size + 1, test_pool_free, opaque, 0);
     fail_if(!ret, "av_buffer_create offset pool failed");
+    ret->data = data + 1;
+    ret->size = size;
+    return ret;
+}
+
+static AVBufferRef *test_pool_alloc_readonly_offset(void *opaque, size_t size) {
+    uint8_t *data = av_malloc(size + 1);
+    AVBufferRef *ret;
+    fail_if(!data, "av_malloc readonly offset pool data failed");
+    pool_alloc_count++;
+    data[0] = 0xee;
+    for (size_t i = 0; i < size; i++)
+        data[i + 1] = (uint8_t)(0x31 + i);
+    ret = av_buffer_create(data, size + 1, test_pool_free, opaque,
+                           AV_BUFFER_FLAG_READONLY);
+    fail_if(!ret, "av_buffer_create readonly offset pool failed");
     ret->data = data + 1;
     ret->size = size;
     return ret;
@@ -3217,6 +3327,46 @@ int main(void) {
            pool_release_count, last_pool_release_id);
     print_hex(last_pool_release, last_pool_release_size);
     printf("\n");
+
+    reset_pool_counters();
+    PoolOpaque readonly_offset_pool_opaque = { 89, 4 };
+    AVBufferPool *readonly_offset_pool =
+        av_buffer_pool_init2(3, &readonly_offset_pool_opaque,
+                             test_pool_alloc_readonly_offset,
+                             test_pool_owner_free);
+    fail_if(!readonly_offset_pool, "av_buffer_pool_init2 readonly offset failed");
+    AVBufferRef *readonly_offset_first =
+        av_buffer_pool_get(readonly_offset_pool);
+    fail_if(!readonly_offset_first,
+            "av_buffer_pool_get readonly offset first failed");
+    print_buffer("pool-readonly-offset:first", readonly_offset_first);
+    PoolOpaque *readonly_offset_first_opaque =
+        av_buffer_pool_buffer_get_opaque(readonly_offset_first);
+    fail_if(!readonly_offset_first_opaque,
+            "pool readonly offset first opaque missing");
+    printf("pool-readonly-offset:opaque-first|%" PRIuPTR "|%zu\n",
+           readonly_offset_first_opaque->id, readonly_offset_first_opaque->size);
+    av_buffer_unref(&readonly_offset_first);
+    printf("pool-readonly-offset:after-first-unref|%d|%d\n",
+           pool_release_count, pool_free_count);
+    AVBufferRef *readonly_offset_reuse =
+        av_buffer_pool_get(readonly_offset_pool);
+    fail_if(!readonly_offset_reuse,
+            "av_buffer_pool_get readonly offset reuse failed");
+    print_buffer("pool-readonly-offset:reuse", readonly_offset_reuse);
+    PoolOpaque *readonly_offset_reuse_opaque =
+        av_buffer_pool_buffer_get_opaque(readonly_offset_reuse);
+    fail_if(!readonly_offset_reuse_opaque,
+            "pool readonly offset reuse opaque missing");
+    printf("pool-readonly-offset:opaque-reuse|%" PRIuPTR "|%zu\n",
+           readonly_offset_reuse_opaque->id, readonly_offset_reuse_opaque->size);
+    readonly_offset_reuse->data[0] = 0xaa;
+    av_buffer_unref(&readonly_offset_reuse);
+    av_buffer_pool_uninit(&readonly_offset_pool);
+    printf("pool-readonly-offset:uninit-release|%d|%" PRIuPTR "|",
+           pool_release_count, last_pool_release_id);
+    print_hex(last_pool_release, last_pool_release_size);
+    printf("|%d|%" PRIuPTR "\n", pool_free_count, last_pool_free_id);
 
     reset_pool_counters();
     PoolOpaque readonly_pool_opaque = { 77, 3 };

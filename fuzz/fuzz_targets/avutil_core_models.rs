@@ -2381,6 +2381,88 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         vec![(payload_len + padding_len + 1, expected_offset_release)]
     );
 
+    let readonly_offset_pool_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let readonly_offset_pool_frees = Arc::new(Mutex::new(0usize));
+    let readonly_offset_release_capture = Arc::clone(&readonly_offset_pool_releases);
+    let readonly_offset_pool_free_capture = Arc::clone(&readonly_offset_pool_frees);
+    let readonly_offset_pool = BufferPool::with_callbacks(
+        payload_len,
+        padding_len,
+        BufferPoolCallbacks::with_allocation_callbacks(
+            move |allocated_len| {
+                let mut bytes = vec![0x31; allocated_len + 1];
+                bytes[0] = 0xee;
+                BufferPoolAllocation::with_opaque_readonly_visible_range(
+                    bytes,
+                    1,
+                    payload_len,
+                    allocated_len + 1,
+                )
+            },
+            move |allocation| {
+                let opaque = *allocation.opaque_ref::<usize>().unwrap();
+                readonly_offset_release_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, allocation.into_vec()));
+            },
+        )
+        .with_pool_free(move || {
+            *readonly_offset_pool_free_capture.lock().unwrap() += 1;
+        }),
+    )
+    .unwrap();
+    let readonly_offset_first = readonly_offset_pool.get().unwrap();
+    assert_eq!(readonly_offset_first.offset(), 1);
+    assert_eq!(readonly_offset_first.len(), payload_len);
+    assert!(readonly_offset_first.is_readonly());
+    assert!(!readonly_offset_first.is_writable());
+    assert_eq!(
+        readonly_offset_first.as_slice(),
+        vec![0x31; payload_len].as_slice()
+    );
+    assert_eq!(
+        readonly_offset_first.pool_opaque_ref::<usize>().copied(),
+        Some(payload_len + padding_len + 1)
+    );
+    drop(readonly_offset_first);
+    assert!(readonly_offset_pool_releases.lock().unwrap().is_empty());
+    assert_eq!(*readonly_offset_pool_frees.lock().unwrap(), 0);
+    assert_eq!(readonly_offset_pool.available_count().unwrap(), 1);
+
+    let mut readonly_offset_reuse = readonly_offset_pool.get().unwrap();
+    assert_eq!(readonly_offset_reuse.offset(), 0);
+    assert_eq!(readonly_offset_reuse.len(), payload_len);
+    assert!(!readonly_offset_reuse.is_readonly());
+    assert!(readonly_offset_reuse.is_writable());
+    let mut expected_readonly_offset_reuse = vec![0x31; payload_len];
+    if let Some(first) = expected_readonly_offset_reuse.first_mut() {
+        *first = 0xee;
+    }
+    assert_eq!(
+        readonly_offset_reuse.as_slice(),
+        expected_readonly_offset_reuse.as_slice()
+    );
+    assert_eq!(
+        readonly_offset_reuse.pool_opaque_ref::<usize>().copied(),
+        Some(payload_len + padding_len + 1)
+    );
+    if !readonly_offset_reuse.is_empty() {
+        readonly_offset_reuse.make_mut()[0] = 0xcc;
+    }
+    drop(readonly_offset_reuse);
+    drop(readonly_offset_pool);
+    let mut expected_readonly_offset_release = vec![0x31; payload_len + padding_len + 1];
+    expected_readonly_offset_release[0] = if payload_len > 0 { 0xcc } else { 0xee };
+    assert_eq!(
+        *readonly_offset_pool_releases.lock().unwrap(),
+        vec![(
+            payload_len + padding_len + 1,
+            expected_readonly_offset_release
+        )]
+    );
+    assert_eq!(*readonly_offset_pool_frees.lock().unwrap(), 1);
+
     let readonly_pool_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let readonly_pool_frees = Arc::new(Mutex::new(0usize));
     let readonly_release_capture = Arc::clone(&readonly_pool_releases);
