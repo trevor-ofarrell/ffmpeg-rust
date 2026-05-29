@@ -539,6 +539,40 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         ),
     );
 
+    let mut realloc_invalid = Some(BufferRef::from_vec(vec![91, 92, 93]));
+    let realloc_invalid_err = BufferRef::realloc(&mut realloc_invalid, usize::MAX).unwrap_err();
+    rows.insert(
+        "buffer:realloc-invalid-huge-ret".to_string(),
+        vec![realloc_invalid_err
+            .code()
+            .expect("huge realloc maps to ENOMEM")
+            .raw()
+            .to_string()],
+    );
+    rows.insert(
+        "buffer:realloc-invalid-huge".to_string(),
+        buffer_fields(
+            realloc_invalid
+                .as_ref()
+                .expect("huge realloc preserves dst"),
+        ),
+    );
+
+    let mut realloc_null_invalid = None;
+    let realloc_null_invalid_err =
+        BufferRef::realloc(&mut realloc_null_invalid, usize::MAX).unwrap_err();
+    rows.insert(
+        "buffer:realloc-null-invalid-huge".to_string(),
+        vec![
+            realloc_null_invalid_err
+                .code()
+                .expect("huge null realloc maps to ENOMEM")
+                .raw()
+                .to_string(),
+            bool_field(realloc_null_invalid.is_none()),
+        ],
+    );
+
     let offset_src = BufferRef::from_vec(vec![10, 11, 12, 13]);
     let offset_ref = offset_src.ref_slice(1, 2).unwrap();
     rows.insert(
@@ -1563,6 +1597,22 @@ int main(void) {
     printf("buffer:realloc-null-zero-ret|%d\n", ret);
     print_status("buffer:realloc-null-zero", realloc_null_zero);
     av_buffer_unref(&realloc_null_zero);
+
+    static const uint8_t realloc_invalid_bytes[] = { 91, 92, 93 };
+    AVBufferRef *realloc_invalid = av_buffer_allocz(3);
+    fail_if(!realloc_invalid, "av_buffer_allocz realloc_invalid failed");
+    fill_bytes(realloc_invalid, realloc_invalid_bytes,
+               sizeof(realloc_invalid_bytes));
+    ret = av_buffer_realloc(&realloc_invalid, SIZE_MAX);
+    printf("buffer:realloc-invalid-huge-ret|%d\n", ret);
+    print_buffer("buffer:realloc-invalid-huge", realloc_invalid);
+    av_buffer_unref(&realloc_invalid);
+
+    AVBufferRef *realloc_null_invalid = NULL;
+    ret = av_buffer_realloc(&realloc_null_invalid, SIZE_MAX);
+    printf("buffer:realloc-null-invalid-huge|%d|%d\n",
+           ret, realloc_null_invalid == NULL);
+    av_buffer_unref(&realloc_null_invalid);
 
     static const uint8_t offset_bytes[] = { 10, 11, 12, 13 };
     AVBufferRef *offset_src = av_buffer_allocz(4);

@@ -1,4 +1,4 @@
-use crate::{AvError, AvResult};
+use crate::{AvError, AvErrorCode, AvErrorKind, AvResult};
 use std::any::Any;
 use std::sync::{Arc, Mutex};
 
@@ -467,7 +467,7 @@ impl BufferRef {
         let total_len = checked_storage_len(data.len(), padding)?;
         let mut storage = Vec::new();
         storage.try_reserve_exact(total_len).map_err(|_| {
-            AvError::external(format!(
+            allocation_error(format!(
                 "failed to allocate {total_len} padded buffer bytes"
             ))
         })?;
@@ -612,7 +612,7 @@ impl BufferRef {
                 bytes
                     .try_reserve_exact(total_len - bytes.len())
                     .map_err(|_| {
-                        AvError::external(format!(
+                        allocation_error(format!(
                             "failed to allocate {total_len} resized buffer bytes"
                         ))
                     })?;
@@ -672,7 +672,7 @@ impl BufferRef {
                 .expect("in-place realloc requires owned storage");
             if len > bytes.len() {
                 bytes.try_reserve_exact(len - bytes.len()).map_err(|_| {
-                    AvError::external(format!("failed to allocate {len} reallocated buffer bytes"))
+                    allocation_error(format!("failed to allocate {len} reallocated buffer bytes"))
                 })?;
             }
             bytes.resize(len, 0);
@@ -1264,7 +1264,7 @@ fn allocate_zeroed_storage(len: usize, padding: usize) -> AvResult<Vec<u8>> {
 fn allocate_zeroed_len(total_len: usize) -> AvResult<Vec<u8>> {
     let mut data = Vec::new();
     data.try_reserve_exact(total_len).map_err(|_| {
-        AvError::external(format!(
+        allocation_error(format!(
             "failed to allocate {total_len} padded buffer bytes"
         ))
     })?;
@@ -1276,7 +1276,7 @@ fn resized_storage(visible: &[u8], len: usize, padding: usize) -> AvResult<Vec<u
     let total_len = checked_storage_len(len, padding)?;
     let mut storage = Vec::new();
     storage.try_reserve_exact(total_len).map_err(|_| {
-        AvError::external(format!(
+        allocation_error(format!(
             "failed to allocate {total_len} resized buffer bytes"
         ))
     })?;
@@ -1288,6 +1288,10 @@ fn resized_storage(visible: &[u8], len: usize, padding: usize) -> AvResult<Vec<u
 fn checked_storage_len(len: usize, padding: usize) -> AvResult<usize> {
     len.checked_add(padding)
         .ok_or_else(|| AvError::invalid_argument("buffer length plus padding overflows"))
+}
+
+fn allocation_error(message: impl Into<String>) -> AvError {
+    AvError::with_code(AvErrorKind::External, AvErrorCode::ENOMEM, message)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1334,7 +1338,7 @@ impl BufferSlice {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::AvErrorKind;
+    use crate::{AvErrorCode, AvErrorKind};
 
     #[test]
     fn buffer_ref_public_abi_and_flags_match_pinned_default_native_profile() {
@@ -2259,8 +2263,19 @@ mod tests {
         assert!(!shared_realloc.shares_storage(&shared_source));
 
         let mut failed = None;
-        assert!(BufferRef::realloc(&mut failed, usize::MAX).is_err());
+        let failed_err = BufferRef::realloc(&mut failed, usize::MAX).unwrap_err();
+        assert_eq!(failed_err.kind(), AvErrorKind::External);
+        assert_eq!(failed_err.code(), Some(AvErrorCode::ENOMEM));
         assert!(failed.is_none());
+
+        let mut failed_existing = Some(BufferRef::from_vec(vec![91, 92, 93]));
+        let failed_existing_ptr = failed_existing.as_ref().unwrap().as_ptr();
+        let failed_existing_err = BufferRef::realloc(&mut failed_existing, usize::MAX).unwrap_err();
+        assert_eq!(failed_existing_err.kind(), AvErrorKind::External);
+        assert_eq!(failed_existing_err.code(), Some(AvErrorCode::ENOMEM));
+        let failed_existing = failed_existing.expect("failed realloc preserves destination");
+        assert_eq!(failed_existing.as_slice(), &[91, 92, 93]);
+        assert_eq!(failed_existing.as_ptr(), failed_existing_ptr);
     }
 
     #[test]

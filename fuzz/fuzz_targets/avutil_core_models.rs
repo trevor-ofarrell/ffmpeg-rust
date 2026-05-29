@@ -1400,8 +1400,23 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         vec![(payload_len, payload.clone())]
     );
     let mut realloc_failed = None;
-    assert!(BufferRef::realloc(&mut realloc_failed, usize::MAX).is_err());
+    let realloc_failed_err = BufferRef::realloc(&mut realloc_failed, usize::MAX).unwrap_err();
+    assert_eq!(realloc_failed_err.kind(), AvErrorKind::External);
+    assert_eq!(realloc_failed_err.code(), Some(AvErrorCode::ENOMEM));
     assert!(realloc_failed.is_none());
+    let mut realloc_existing_failed = Some(BufferRef::copy_from_slice(&payload));
+    let realloc_existing_ptr = realloc_existing_failed.as_ref().unwrap().as_ptr();
+    let realloc_existing_failed_err =
+        BufferRef::realloc(&mut realloc_existing_failed, usize::MAX).unwrap_err();
+    assert_eq!(realloc_existing_failed_err.kind(), AvErrorKind::External);
+    assert_eq!(
+        realloc_existing_failed_err.code(),
+        Some(AvErrorCode::ENOMEM)
+    );
+    let realloc_existing_failed =
+        realloc_existing_failed.expect("failed existing realloc preserves destination");
+    assert_eq!(realloc_existing_failed.as_slice(), payload.as_slice());
+    assert_eq!(realloc_existing_failed.as_ptr(), realloc_existing_ptr);
 
     let offset_source = BufferRef::copy_from_slice(&payload);
     let offset_start = if offset_source.is_empty() {
