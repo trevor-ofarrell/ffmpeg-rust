@@ -34,6 +34,8 @@ $env:FFMPEG_ORACLE = ".\third_party\ffmpeg-oracle\build\bin\ffmpeg.cmd"
 cargo test -p fftools --test pcm_oracle -- --ignored
 ```
 
+The WAV oracle harness also has an empty-data framecrc row that proves a valid PCM s16le WAV with a zero-length `data` chunk produces no packet records, matching pinned FFmpeg.
+
 `crates/avutil/tests/channel_layout_oracle.rs` is an ignored oracle harness for `ffmpeg -layouts`. It compares the oracle's individual-channel names/descriptions and standard-layout decompositions against `avutil::Channel::ALL` and `avutil::ChannelLayout::known_layouts()`:
 
 ```sh

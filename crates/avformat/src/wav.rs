@@ -141,6 +141,11 @@ impl<'a> WavDemuxer<'a> {
             return Ok(None);
         }
 
+        if self.data.is_empty() {
+            self.consumed = true;
+            return Ok(None);
+        }
+
         self.consumed = true;
         let mut packet = Packet::new(self.data.to_vec(), 0);
         packet.set_pts(Some(0));
@@ -453,6 +458,15 @@ mod tests {
         assert!(WavDemuxer::open(&wav_with_bad_block_align()).is_err());
         assert!(WavDemuxer::open(&wav_with_bad_byte_rate()).is_err());
         assert!(WavDemuxer::open(&wav_bytes(2, 48_000, &[0, 1, 2])).is_err());
+    }
+
+    #[test]
+    fn returns_no_packet_for_empty_data_chunk() {
+        let bytes = wav_bytes(1, 44_100, &[]);
+        let mut demuxer = WavDemuxer::open(&bytes).unwrap();
+
+        assert_eq!(demuxer.info().samples_per_channel(), 0);
+        assert!(demuxer.read_packet().unwrap().is_none());
     }
 
     #[test]

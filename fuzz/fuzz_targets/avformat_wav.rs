@@ -34,6 +34,11 @@ fn exercise_wav(input: &[u8]) {
         info.data_size() / usize::from(info.block_align())
     );
 
+    if info.data_size() == 0 {
+        assert!(demuxer.read_packet().unwrap().is_none());
+        return;
+    }
+
     let Ok(Some(packet)) = demuxer.read_packet() else {
         return;
     };

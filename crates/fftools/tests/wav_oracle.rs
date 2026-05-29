@@ -35,6 +35,15 @@ fn wav_pcm_s16le_generated_framecrc_matches_ffmpeg_oracle() {
 }
 
 #[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn wav_pcm_s16le_empty_data_framecrc_matches_ffmpeg_oracle() {
+    let path = write_generated_wav("generated-empty-pcm-s16le-framecrc", 1, 44_100, &[]);
+
+    compare_wav_framecrc(&path, 0);
+    remove_temp_file(&path);
+}
+
+#[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle plus FATE_WAV_SAMPLE or FATE_SAMPLES"]
 fn wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample() {
     let sample = fate_wav_sample();
@@ -90,7 +99,7 @@ fn compare_wav_framecrc(sample_path: &Path, payload_len: usize) {
         String::from_utf8(oracle_output.stdout).expect("oracle framecrc output should be UTF-8");
 
     assert_eq!(rust.output_format(), Some("framecrc"));
-    assert_eq!(rust.packet_count(), 1);
+    assert_eq!(rust.packet_count(), u64::from(payload_len > 0));
     assert_eq!(rust.byte_count(), u64::try_from(payload_len).unwrap());
     assert!(rust.stderr().is_empty());
     assert_eq!(
