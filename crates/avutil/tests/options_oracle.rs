@@ -622,6 +622,32 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         state_fields(&string_no_shorthand),
     );
 
+    let mut string_invalid_separators = sample_options();
+    insert_row(
+        &mut rows,
+        "ret:set-from-string-invalid-separators",
+        [
+            ret_count(string_invalid_separators.set_avoptions_from_string(
+                "threads=7",
+                &[],
+                "",
+                ":",
+            )),
+            ret_count(string_invalid_separators.set_avoptions_from_string(
+                "threads=7",
+                &[],
+                "=",
+                "",
+            )),
+            ret_count(string_invalid_separators.set_avoptions_from_string(
+                "threads=7",
+                &[],
+                ":=",
+                ":",
+            )),
+        ],
+    );
+
     let mut string_escaped = sample_options();
     insert_row(
         &mut rows,
@@ -5706,6 +5732,9 @@ static void print_set_from_string_rows(void) {
     TestOptions ctx;
     int ret;
     int ret_empty_key;
+    int ret_invalid_separator_1;
+    int ret_invalid_separator_2;
+    int ret_invalid_separator_3;
 
     init_context(&ctx);
     ret = av_opt_set_from_string(&ctx,
@@ -5756,6 +5785,29 @@ static void print_set_from_string_rows(void) {
     ret = av_opt_set_from_string(&ctx, "12", NULL, "=", ":");
     printf("ret:set-from-string-no-shorthand|%d\n", ret);
     print_state("state:set-from-string-no-shorthand", &ctx);
+    av_opt_free(&ctx);
+    av_opt_free(&ctx.child);
+
+    init_context(&ctx);
+    ret_invalid_separator_1 = av_opt_set_from_string(&ctx,
+                                 "threads=7",
+                                 NULL,
+                                 "",
+                                 ":");
+    ret_invalid_separator_2 = av_opt_set_from_string(&ctx,
+                                 "threads=7",
+                                 NULL,
+                                 "=",
+                                 "");
+    ret_invalid_separator_3 = av_opt_set_from_string(&ctx,
+                                 "threads=7",
+                                 NULL,
+                                 ":=",
+                                 ":");
+    printf("ret:set-from-string-invalid-separators|%d|%d|%d\n",
+           ret_invalid_separator_1,
+           ret_invalid_separator_2,
+           ret_invalid_separator_3);
     av_opt_free(&ctx);
     av_opt_free(&ctx.child);
 

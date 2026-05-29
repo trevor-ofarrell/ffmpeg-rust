@@ -341,6 +341,28 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
             }
             17 => {
                 let shorthand = ["threads", "bitexact"];
+                let key_val_sep = match cursor.next().unwrap_or_default() % 11 {
+                    0 => "=",
+                    1 => "=",
+                    2 => "=",
+                    3 => "=",
+                    4 => "=",
+                    5 => "=",
+                    6 => "=",
+                    7 => "",
+                    8 => "=",
+                    9 => ":",
+                    _ => ":=",
+                };
+                let pairs_sep = match cursor.next().unwrap_or_default() % 7 {
+                    0 => ":",
+                    1 => ":",
+                    2 => ":",
+                    3 => ":",
+                    4 => ":",
+                    5 => "",
+                    _ => ":",
+                };
                 let opts = match cursor.next().unwrap_or_default() % 8 {
                     0 => "threads=7:quality=0.25:metadata=from-string",
                     1 => " 9 : yes : metadata = shorthand ",
@@ -351,11 +373,18 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                     6 => "metadata=' title : clip = one ':threads=15",
                     _ => "12",
                 };
-                let result = options.set_avoptions_from_string(opts, &shorthand, "=", ":");
+                let before = options.clone();
+                let result = options.set_avoptions_from_string(opts, &shorthand, key_val_sep, pairs_sep);
                 let empty_key_result =
                     options.set_avoptions_from_string("=7", &shorthand, "=", ":");
-                if let Ok(count) = result {
+                let separators_invalid = key_val_sep.is_empty();
+                if separators_invalid
+                {
+                    assert_eq!(result.err().and_then(|err| err.code()), Some(AvErrorCode::EINVAL));
+                    assert_eq!(options, before);
+                } else if let Ok(count) = result {
                     assert!(count <= 3);
+                    assert_option_set_invariants(&options);
                 }
                 assert!(empty_key_result.is_err());
                 let mut unclosed_quote_options = sample_options();

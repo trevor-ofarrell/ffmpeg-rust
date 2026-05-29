@@ -5674,10 +5674,9 @@ fn is_ffmpeg_token_whitespace(ch: char) -> bool {
 
 fn validate_avoption_string_separators(key_val_sep: &str, pairs_sep: &str) -> AvResult<()> {
     if key_val_sep.is_empty()
-        || pairs_sep.is_empty()
         || key_val_sep
             .chars()
-            .any(|ch| ch == '\0' || pairs_sep.contains(ch) || is_avoption_string_key_char(ch))
+            .any(|ch| ch == '\0' || is_avoption_string_key_char(ch))
         || pairs_sep
             .chars()
             .any(|ch| ch == '\0' || is_avoption_string_key_char(ch))
@@ -9122,6 +9121,34 @@ mod tests {
             .unwrap_err();
         assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
         assert_eq!(no_shorthand, sample_options());
+
+        let mut invalid_sep = sample_options();
+        let err = invalid_sep
+            .set_avoptions_from_string("threads=7", &[], "", ":")
+            .unwrap_err();
+        assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
+        assert_eq!(invalid_sep, sample_options());
+
+        let mut valid_sep = sample_options();
+        assert_eq!(
+            valid_sep
+                .set_avoptions_from_string("threads=7", &[], ":=", ":")
+                .unwrap(),
+            1
+        );
+        assert_eq!(valid_sep.get("threads"), Some(&OptionValue::Int(7)));
+
+        let mut valid_empty_pair_sep = sample_options();
+        assert_eq!(
+            valid_empty_pair_sep
+                .set_avoptions_from_string("threads=7", &[], "=", "")
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            valid_empty_pair_sep.get("threads"),
+            Some(&OptionValue::Int(7))
+        );
 
         let mut escaped = sample_options();
         assert_eq!(

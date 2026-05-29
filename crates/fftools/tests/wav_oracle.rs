@@ -94,6 +94,23 @@ fn wav_pcm_s16le_duplicate_data_chunk_last_data_empty() {
 }
 
 #[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn wav_pcm_s16le_duplicate_fmt_chunk_first_fmt_used_for_framecrc() {
+    let payload = [0x00, 0x00, 0x01, 0x00, 0x02, 0x00, 0x03, 0x00];
+    let path = write_generated_wav_with_duplicate_fmt_chunks(
+        "generated-pcm-s16le-duplicate-fmt-first-framecrc",
+        1,
+        44_100,
+        2,
+        48_000,
+        &payload,
+    );
+
+    compare_wav_framecrc(&path, payload.len());
+    remove_temp_file(&path);
+}
+
+#[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle plus FATE_WAV_SAMPLE or FATE_SAMPLES"]
 fn wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample() {
     let sample = fate_wav_sample();
@@ -365,6 +382,26 @@ fn write_generated_wav_with_duplicate_data_chunks(
     path
 }
 
+fn write_generated_wav_with_duplicate_fmt_chunks(
+    label: &str,
+    first_channels: u16,
+    first_sample_rate: u32,
+    second_channels: u16,
+    second_sample_rate: u32,
+    payload: &[u8],
+) -> PathBuf {
+    let path = unique_temp_path(label, "wav");
+    let bytes = wav_multiple_fmt_chunks_bytes(
+        first_channels,
+        first_sample_rate,
+        second_channels,
+        second_sample_rate,
+        payload,
+    );
+    fs::write(&path, bytes).expect("generated duplicate fmt WAV fixture should be writable");
+    path
+}
+
 fn write_generated_extensible_wav(
     label: &str,
     channels: u16,
@@ -440,6 +477,52 @@ fn wav_multiple_data_chunks_bytes(
     body.extend_from_slice(&(u32::try_from(second_payload.len()).unwrap()).to_le_bytes());
     body.extend_from_slice(second_payload);
     if second_payload.len() % 2 == 1 {
+        body.push(0);
+    }
+
+    let mut out = Vec::new();
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(u32::try_from(body.len() + 4).unwrap()).to_le_bytes());
+    out.extend_from_slice(b"WAVE");
+    out.extend_from_slice(&body);
+    out
+}
+
+fn wav_multiple_fmt_chunks_bytes(
+    first_channels: u16,
+    first_sample_rate: u32,
+    second_channels: u16,
+    second_sample_rate: u32,
+    payload: &[u8],
+) -> Vec<u8> {
+    let first_block_align = first_channels * 2;
+    let first_byte_rate = first_sample_rate * u32::from(first_block_align);
+    let second_block_align = second_channels * 2;
+    let second_byte_rate = second_sample_rate * u32::from(second_block_align);
+
+    let mut body = Vec::new();
+    body.extend_from_slice(b"fmt ");
+    body.extend_from_slice(&16_u32.to_le_bytes());
+    body.extend_from_slice(&1_u16.to_le_bytes());
+    body.extend_from_slice(&first_channels.to_le_bytes());
+    body.extend_from_slice(&first_sample_rate.to_le_bytes());
+    body.extend_from_slice(&first_byte_rate.to_le_bytes());
+    body.extend_from_slice(&first_block_align.to_le_bytes());
+    body.extend_from_slice(&16_u16.to_le_bytes());
+
+    body.extend_from_slice(b"fmt ");
+    body.extend_from_slice(&16_u32.to_le_bytes());
+    body.extend_from_slice(&1_u16.to_le_bytes());
+    body.extend_from_slice(&second_channels.to_le_bytes());
+    body.extend_from_slice(&second_sample_rate.to_le_bytes());
+    body.extend_from_slice(&second_byte_rate.to_le_bytes());
+    body.extend_from_slice(&second_block_align.to_le_bytes());
+    body.extend_from_slice(&16_u16.to_le_bytes());
+
+    body.extend_from_slice(b"data");
+    body.extend_from_slice(&(u32::try_from(payload.len()).unwrap()).to_le_bytes());
+    body.extend_from_slice(payload);
+    if payload.len() % 2 == 1 {
         body.push(0);
     }
 

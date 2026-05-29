@@ -653,6 +653,19 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
         "default-callback-quiet-context-at-quiet-line",
         escape_row_text(quiet_context.as_bytes()),
     );
+    rows.insert(
+        "default-callback-quiet-datetime-line",
+        escape_row_text(
+            quiet_logger
+                .records()
+                .last()
+                .unwrap()
+                .format_default_callback_line_null_context_with_flags(
+                    LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL,
+                )
+                .as_bytes(),
+        ),
+    );
     let default_repeat_skip = rust_default_callback_repeat_lines(LogFlags::SKIP_REPEATED);
     rows.insert(
         "default-callback-repeat-skip-line",
@@ -2742,11 +2755,28 @@ static void print_default_callback_row(const char *name, void *ptr, int flags,
     print_default_callback_level_row(name, ptr, AV_LOG_WARNING, flags, message);
 }
 
+static void print_default_callback_fixed_time_level_row(const char *name,
+                                                        const char *tz,
+                                                        int64_t time_us,
+                                                        int level,
+                                                        int flags,
+                                                        const char *message);
+
 static void print_default_callback_fixed_time_row(const char *name,
                                                   const char *tz,
                                                   int64_t time_us,
                                                   int flags,
                                                   const char *message) {
+    print_default_callback_fixed_time_level_row(name, tz, time_us,
+                                                AV_LOG_WARNING, flags, message);
+}
+
+static void print_default_callback_fixed_time_level_row(const char *name,
+                                                        const char *tz,
+                                                        int64_t time_us,
+                                                        int level,
+                                                        int flags,
+                                                        const char *message) {
     char captured[1024];
     FILE *capture = tmpfile();
     if (!capture) {
@@ -2773,7 +2803,7 @@ static void print_default_callback_fixed_time_row(const char *name,
     av_log_set_callback(av_log_default_callback);
     av_log_set_level(AV_LOG_TRACE);
     av_log_set_flags(flags);
-    av_log(NULL, AV_LOG_WARNING, "%s\n", message);
+    av_log(NULL, level, "%s\n", message);
     fflush(stderr);
 
     dup2(saved_stderr, fileno(stderr));
@@ -3083,6 +3113,10 @@ static void print_default_callback_rows(void) {
         "default-callback-quiet-context-at-quiet-line", &ctx,
         AV_LOG_QUIET, AV_LOG_QUIET, AV_LOG_PRINT_TIME | AV_LOG_PRINT_LEVEL,
         "quiet");
+    print_default_callback_fixed_time_level_row(
+        "default-callback-quiet-datetime-line", "UTC-5:30",
+        1704112705123456LL, AV_LOG_QUIET,
+        AV_LOG_PRINT_DATETIME | AV_LOG_PRINT_LEVEL, "quiet");
     print_default_callback_repeat_row("default-callback-repeat-skip-line", NULL,
                                       AV_LOG_SKIP_REPEATED);
     print_default_callback_repeat_row("default-callback-repeat-skip-level-line", NULL,

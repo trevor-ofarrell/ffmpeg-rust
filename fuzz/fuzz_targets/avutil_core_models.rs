@@ -3514,6 +3514,12 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
         ),
         "quiet-threshold\n"
     );
+    assert_eq!(
+        quiet_threshold_logger.records()[0].format_default_callback_line_null_context_with_flags(
+            LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL,
+        ),
+        "quiet-threshold\n"
+    );
 
     let mut once_logger = Logger::new(LogLevel::Warning);
     let mut once_state = LogOnceState::new();

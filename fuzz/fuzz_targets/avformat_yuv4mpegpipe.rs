@@ -13,11 +13,19 @@ const VALID_Y4M_XCOLORRANGE_LIMITED: &[u8] =
 const VALID_Y4M_XCOLORRANGE_BOGUS: &[u8] =
     b"YUV4MPEG2 W2 H2 F25:1 Ip A1:1 C420jpeg XCOLORRANGE=BOGUS\nFRAME\nabcdef";
 const BASE_Y4M_HEADER: &[u8] = b"YUV4MPEG2 W2 H2 F25:1 Ip A1:1 C420jpeg\n";
+const VALID_FRAME_VARIANTS: &[&[u8]] = &[
+    b"YUV4MPEG2 W2 H2 F25:1 Ip A1:1 C420jpeg\nFRAME\nabcdef",
+    b"YUV4MPEG2 W2 H2 F25:1 Ip A1:1 C420jpeg\nFRAMEI\nabcdef",
+    b"YUV4MPEG2 W2 H2 F25:1 Ip A1:1 C420jpeg\nFRAME Iu\nabcdef",
+    b"YUV4MPEG2 W2 H2 F25:1 Ip A1:1 C420jpeg\nFRAME XYZ\nabcdef",
+    b"YUV4MPEG2 W2 H2 F25:1 Ip A1:1 C420jpeg\nFRAME foo bar\nabcdef",
+];
 
 fuzz_target!(|data: &[u8]| {
     exercise_y4m(data);
     exercise_xcolorrange_y4m();
     exercise_truncated_tail_frame_header();
+    exercise_frame_variants();
     exercise_y4m(VALID_Y4M);
 });
 
@@ -77,6 +85,23 @@ fn exercise_xcolorrange_y4m() {
             .read_packet()
             .expect("valid yuv4mpegpipe seed should yield a packet")
             .expect("valid yuv4mpegpipe seed should contain a frame");
+        assert_eq!(packet.stream_index(), 0);
+        assert_eq!(packet.pts(), Some(0));
+        assert_eq!(packet.dts(), Some(0));
+        assert_eq!(packet.duration(), 1);
+        assert_eq!(packet.data(), b"abcdef");
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+}
+
+fn exercise_frame_variants() {
+    for input in VALID_FRAME_VARIANTS {
+        let mut demuxer =
+            Yuv4MpegDemuxer::open(input).expect("valid yuv4mpegpipe frame-variant seed should parse");
+        let packet = demuxer
+            .read_packet()
+            .expect("valid yuv4mpegpipe frame-variant seed should yield a packet")
+            .expect("valid yuv4mpegpipe frame-variant seed should contain a frame");
         assert_eq!(packet.stream_index(), 0);
         assert_eq!(packet.pts(), Some(0));
         assert_eq!(packet.dts(), Some(0));

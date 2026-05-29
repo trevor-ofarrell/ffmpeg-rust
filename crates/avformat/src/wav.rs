@@ -109,7 +109,12 @@ impl<'a> WavDemuxer<'a> {
             }
 
             match &chunk_id {
-                b"fmt " => fmt = Some(parse_fmt(reader.read_exact(chunk_size)?)?),
+                b"fmt " => {
+                    let parsed_fmt = parse_fmt(reader.read_exact(chunk_size)?)?;
+                    if fmt.is_none() {
+                        fmt = Some(parsed_fmt);
+                    }
+                }
                 b"data" => {
                     data = Some(&input[chunk_start..chunk_end]);
                     reader.skip(chunk_size)?;
@@ -458,6 +463,23 @@ mod tests {
     }
 
     #[test]
+    fn uses_first_fmt_chunk_when_multiple_fmt_chunks_are_present() {
+        let data = [0, 0, 1, 0, 2, 0, 3, 0];
+        let bytes = wav_bytes_with_duplicate_fmt_chunks(1, 44_100, 2, 48_000, &data);
+        let mut demuxer = WavDemuxer::open(&bytes).unwrap();
+
+        assert_eq!(demuxer.info().channels(), 1);
+        assert_eq!(demuxer.info().channel_layout(), Some(ChannelLayout::mono()));
+        assert_eq!(demuxer.info().sample_rate(), 44_100);
+        assert_eq!(demuxer.info().samples_per_channel(), 4);
+
+        let packet = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(packet.data(), &data);
+        assert_eq!(packet.duration(), 4);
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
     fn uses_last_data_chunk_when_multiple_data_chunks_are_present() {
         let first_payload = [0, 0, 1, 0, 2, 0, 3, 0];
         let second_payload = [0xAA, 0x00, 0xBB, 0x00];
@@ -637,6 +659,25 @@ mod tests {
 
     fn wav_bytes_with_unknown_chunk(channels: u16, sample_rate: u32, data: &[u8]) -> Vec<u8> {
         wav_bytes_inner(channels, sample_rate, 1, 16, data, b"JUNK\x03\0\0\0abc\0")
+    }
+
+    fn wav_bytes_with_duplicate_fmt_chunks(
+        first_channels: u16,
+        first_sample_rate: u32,
+        second_channels: u16,
+        second_sample_rate: u32,
+        data: &[u8],
+    ) -> Vec<u8> {
+        let mut body = fmt_chunk(1, first_channels, first_sample_rate, 16);
+        body.extend_from_slice(&fmt_chunk(1, second_channels, second_sample_rate, 16));
+        body.extend_from_slice(b"data");
+        body.extend_from_slice(&(u32::try_from(data.len()).unwrap()).to_le_bytes());
+        body.extend_from_slice(data);
+        if data.len() % 2 == 1 {
+            body.push(0);
+        }
+
+        wav_bytes_with_body(body)
     }
 
     fn wav_bytes_with_duplicate_data_chunks(

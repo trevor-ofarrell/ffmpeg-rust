@@ -111,7 +111,12 @@ impl<'a> Yuv4MpegDemuxer<'a> {
 
         let frame_header =
             read_required_line(self.input, &mut self.position, "YUV4MPEG2 frame header")?;
-        parse_frame_header(frame_header)?;
+        if let Err(err) = parse_frame_header(frame_header) {
+            if err.kind() == AvErrorKind::InvalidData && self.next_pts == 0 {
+                return Ok(None);
+            }
+            return Err(err);
+        }
 
         let frame_end = self
             .position
@@ -353,18 +358,10 @@ fn parse_color_range_extension(value: &str) -> Option<FrameColorRange> {
 }
 
 fn parse_frame_header(line: &str) -> AvResult<()> {
-    if line != FRAME_MAGIC && !line.starts_with("FRAME ") {
+    if !line.starts_with(FRAME_MAGIC) {
         return Err(AvError::invalid_data(
             "YUV4MPEG2 frame header missing FRAME",
         ));
-    }
-
-    for field in line[FRAME_MAGIC.len()..].split_ascii_whitespace() {
-        if !field.starts_with('X') {
-            return Err(AvError::unsupported(format!(
-                "unsupported YUV4MPEG2 frame field `{field}`"
-            )));
-        }
     }
 
     Ok(())
@@ -552,6 +549,17 @@ mod tests {
     }
 
     #[test]
+    fn parses_last_xcolorrange_extension() {
+        let input = b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg XCOLORRANGE=FULL XCOLORRANGE=LIMITED\nFRAME\nabcdef";
+        let demuxer = Yuv4MpegDemuxer::open(input).unwrap();
+        assert_eq!(demuxer.info().color_range(), FrameColorRange::Mpeg);
+
+        let input = b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg XCOLORRANGE=LIMITED XCOLORRANGE=FULL\nFRAME\nabcdef";
+        let demuxer = Yuv4MpegDemuxer::open(input).unwrap();
+        assert_eq!(demuxer.info().color_range(), FrameColorRange::Jpeg);
+    }
+
+    #[test]
     fn rejects_bad_or_incomplete_stream_headers() {
         assert_eq!(
             Yuv4MpegDemuxer::open(b"not y4m\n").unwrap_err().kind(),
@@ -592,16 +600,46 @@ mod tests {
 
         let bad_header = b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg\nFIELD\nabcdef";
         let mut demuxer = Yuv4MpegDemuxer::open(bad_header).unwrap();
-        assert_eq!(
-            demuxer.read_packet().unwrap_err().kind(),
-            AvErrorKind::InvalidData
-        );
+        assert_eq!(demuxer.read_packet().unwrap(), None);
 
         let unsupported_frame_field = b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg\nFRAME Iu\nabcdef";
         let mut demuxer = Yuv4MpegDemuxer::open(unsupported_frame_field).unwrap();
+        let first_packet = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(first_packet.data(), b"abcdef");
+        assert_eq!(demuxer.read_packet().unwrap(), None);
+    }
+
+    #[test]
+    fn parses_nonstandard_frame_header_fields_as_data() {
+        for frame_header in [
+            "FRAMEI",
+            "FRAME Iu",
+            "FRAME I",
+            "FRAME XYZ",
+            "FRAME foo bar",
+        ] {
+            let input = y4m_bytes_with_frame_header(
+                frame_header,
+                &[&frame_bytes(6, 0x10), &frame_bytes(6, 0x20)],
+            );
+            let mut demuxer = Yuv4MpegDemuxer::open(&input).unwrap();
+
+            let first = demuxer.read_packet().unwrap().unwrap();
+            let second = demuxer.read_packet().unwrap().unwrap();
+            assert_eq!(first.data(), frame_bytes(6, 0x10).as_slice());
+            assert_eq!(second.data(), frame_bytes(6, 0x20).as_slice());
+            assert_eq!(demuxer.read_packet().unwrap(), None);
+        }
+    }
+
+    #[test]
+    fn invalid_frame_header_after_payload_is_error() {
+        let input = b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg\nFRAME\nabcdef\nFIELD";
+        let mut demuxer = Yuv4MpegDemuxer::open(input).unwrap();
+        assert_eq!(demuxer.read_packet().unwrap().unwrap().data(), b"abcdef");
         assert_eq!(
             demuxer.read_packet().unwrap_err().kind(),
-            AvErrorKind::Unsupported
+            AvErrorKind::InvalidData
         );
     }
 
@@ -731,6 +769,16 @@ mod tests {
         let mut out = format!("{Y4M_MAGIC} {header_fields}\n").into_bytes();
         for frame in frames {
             out.extend_from_slice(b"FRAME\n");
+            out.extend_from_slice(frame);
+        }
+        out
+    }
+
+    fn y4m_bytes_with_frame_header(frame_header: &str, frames: &[&[u8]]) -> Vec<u8> {
+        let mut out = format!("{Y4M_MAGIC} W2 H2 F25:1 Ip C420jpeg\n").into_bytes();
+        for frame in frames {
+            out.extend_from_slice(frame_header.as_bytes());
+            out.extend_from_slice(b"\n");
             out.extend_from_slice(frame);
         }
         out

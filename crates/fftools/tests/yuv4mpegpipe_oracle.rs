@@ -60,6 +60,35 @@ fn yuv4mpegpipe_xcolorrange_metadata_matches_ffprobe_oracle() {
     }
 }
 
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn yuv4mpegpipe_flexible_frame_header_variants_match_ffmpeg_oracle() {
+    let payload = [0, 1, 2, 3, 4, 5];
+    let payload_ref = payload.as_slice();
+    let frame_crc_input_len = payload.len();
+    let frame_count = 1;
+
+    for frame_header in [
+        "FRAME",
+        "FRAMEI",
+        "FRAME I",
+        "FRAME Iu",
+        "FRAME XYZ",
+        "FRAME foo bar",
+    ] {
+        let y4m =
+            y4m_file_bytes_with_custom_frame_header(2, 2, "25:1", frame_header, &[payload_ref]);
+        compare_yuv4mpegpipe_framecrc_records(&y4m, frame_count, frame_crc_input_len);
+    }
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn yuv4mpegpipe_invalid_first_frame_marker_is_clean_eof() {
+    let input = b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg\nFIELD\nabcdef";
+    compare_yuv4mpegpipe_framecrc_records(input, 0, 0);
+}
+
 fn compare_rawvideo_yuv4mpegpipe_file_output(size: &str, rate: &str, payload: &[u8]) {
     let oracle = oracle_ffmpeg();
     let input_path = write_temp_bytes("yuv420p-y4m-input", "raw", payload);
@@ -427,6 +456,23 @@ fn y4m_file_bytes_with_extra_header_fields(
             .into_bytes();
     for frame in frames {
         bytes.extend_from_slice(b"FRAME\n");
+        bytes.extend_from_slice(frame);
+    }
+    bytes
+}
+
+fn y4m_file_bytes_with_custom_frame_header(
+    width: u32,
+    height: u32,
+    frame_rate: &str,
+    frame_header: &str,
+    frames: &[&[u8]],
+) -> Vec<u8> {
+    let mut bytes =
+        format!("YUV4MPEG2 W{width} H{height} F{frame_rate} Ip C420jpeg\n").into_bytes();
+    for frame in frames {
+        bytes.extend_from_slice(frame_header.as_bytes());
+        bytes.extend_from_slice(b"\n");
         bytes.extend_from_slice(frame);
     }
     bytes

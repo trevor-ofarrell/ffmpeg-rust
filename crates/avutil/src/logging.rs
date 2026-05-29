@@ -2186,6 +2186,12 @@ mod tests {
             "quiet\n"
         );
         assert_eq!(
+            quiet.format_default_callback_line_null_context_with_flags(
+                LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL
+            ),
+            "quiet\n"
+        );
+        assert_eq!(
             quiet.format_default_callback_line_context_with_flags(
                 &context,
                 LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL
