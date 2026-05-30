@@ -11969,6 +11969,57 @@ mod tests {
     }
 
     #[test]
+    fn packet_unpadded_offset_resize_helpers_preserve_visible_offset() {
+        let mut grow = Packet::with_buffer(
+            BufferRef::from_vec(vec![0xa0, 0xa1, 0xa2, 0x11, 0x22])
+                .into_ref_slice(3, 2)
+                .unwrap(),
+            0,
+        );
+        assert_eq!(grow.data_buffer().offset(), 3);
+        assert_eq!(grow.data_buffer().padding_len(), 0);
+
+        grow.grow_data(2).unwrap();
+
+        assert_eq!(grow.data(), &[0x11, 0x22, 0, 0]);
+        assert_eq!(grow.data_buffer().offset(), 3);
+        assert_eq!(
+            grow.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(grow
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+        assert!(grow.is_data_writable());
+
+        let mut shrink = Packet::with_buffer(
+            BufferRef::from_vec(vec![0xa0, 0xa1, 0xa2, 0x11, 0x22, 0x33, 0x44])
+                .into_ref_slice(3, 4)
+                .unwrap(),
+            0,
+        );
+        assert_eq!(shrink.data_buffer().offset(), 3);
+        assert_eq!(shrink.data_buffer().padding_len(), 0);
+
+        shrink.shrink_data(2).unwrap();
+
+        assert_eq!(shrink.data(), &[0x11, 0x22]);
+        assert_eq!(shrink.data_buffer().offset(), 3);
+        assert_eq!(
+            shrink.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(shrink
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+        assert!(shrink.is_data_writable());
+    }
+
+    #[test]
     fn packet_unpadded_offset_payload_helpers_add_padding_in_place() {
         let mut refcounted_storage = vec![0xa0, 0xa1, 0xa2, 0x11, 0x22];
         let mut refcounted = Packet::with_buffer(

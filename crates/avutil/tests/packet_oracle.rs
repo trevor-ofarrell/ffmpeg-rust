@@ -1928,11 +1928,46 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_prefix_fields(&grow_unrefcounted, 2),
     );
 
+    let mut grow_unrefcounted_offset = Packet::new(vec![0x11, 0x22], 0);
+    grow_unrefcounted_offset.grow_data(2).unwrap();
+    rows.insert(
+        "packet:payload-grow-unrefcounted-offset-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-grow-unrefcounted-offset-same-ptr".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-grow-unrefcounted-offset-offset".to_string(),
+        vec![grow_unrefcounted_offset.data_buffer().offset().to_string()],
+    );
+    rows.insert(
+        "packet:payload-grow-unrefcounted-offset".to_string(),
+        payload_prefix_fields(&grow_unrefcounted_offset, 2),
+    );
+
     let mut shrink_unrefcounted = Packet::new(vec![0xaa, 0xbb, 0xcc, 0xdd], 0);
     shrink_unrefcounted.shrink_data(2).unwrap();
     rows.insert(
         "packet:payload-shrink-unrefcounted".to_string(),
         payload_unowned_fields(&shrink_unrefcounted),
+    );
+
+    let mut shrink_unrefcounted_offset = Packet::with_buffer(
+        BufferRef::from_vec(vec![0xa0, 0xa1, 0xa2, 0x11, 0x22, 0x33, 0x44])
+            .into_ref_slice(3, 4)
+            .unwrap(),
+        0,
+    );
+    shrink_unrefcounted_offset.shrink_data(2).unwrap();
+    rows.insert(
+        "packet:payload-shrink-unrefcounted-offset-same-ptr".to_string(),
+        vec!["1".to_string()],
+    );
+    rows.insert(
+        "packet:payload-shrink-unrefcounted-offset".to_string(),
+        payload_unowned_fields(&shrink_unrefcounted_offset),
     );
 
     let src = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
@@ -7386,6 +7421,27 @@ static void exercise_payload_api(void) {
     av_packet_free(&pkt);
 
     pkt = new_packet();
+    uint8_t grow_offset_stack_data[3 + 2 + AV_INPUT_BUFFER_PADDING_SIZE];
+    memset(grow_offset_stack_data, 0x5a, sizeof(grow_offset_stack_data));
+    grow_offset_stack_data[0] = 0xa0;
+    grow_offset_stack_data[1] = 0xa1;
+    grow_offset_stack_data[2] = 0xa2;
+    grow_offset_stack_data[3] = 0x11;
+    grow_offset_stack_data[4] = 0x22;
+    pkt->data = grow_offset_stack_data + 3;
+    pkt->size = 2;
+    uint8_t *grow_offset_raw_ptr = pkt->data;
+    ret = av_grow_packet(pkt, 2);
+    printf("packet:payload-grow-unrefcounted-offset-ret|%d\n", ret);
+    fail_if(ret < 0, "av_grow_packet raw offset payload failed");
+    printf("packet:payload-grow-unrefcounted-offset-same-ptr|%d\n",
+           pkt->data == grow_offset_raw_ptr);
+    printf("packet:payload-grow-unrefcounted-offset-offset|%td\n",
+           pkt->buf ? pkt->data - pkt->buf->data : -1);
+    print_payload_prefix("packet:payload-grow-unrefcounted-offset", pkt, 2);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
     uint8_t *shrink_raw = av_mallocz(4 + AV_INPUT_BUFFER_PADDING_SIZE);
     fail_if(!shrink_raw, "av_mallocz raw shrink payload failed");
     shrink_raw[0] = 0xaa;
@@ -7398,6 +7454,25 @@ static void exercise_payload_api(void) {
     print_payload_unowned("packet:payload-shrink-unrefcounted", pkt);
     av_packet_free(&pkt);
     av_free(shrink_raw);
+
+    pkt = new_packet();
+    uint8_t shrink_offset_raw[3 + 4 + AV_INPUT_BUFFER_PADDING_SIZE];
+    memset(shrink_offset_raw, 0x5a, sizeof(shrink_offset_raw));
+    shrink_offset_raw[0] = 0xa0;
+    shrink_offset_raw[1] = 0xa1;
+    shrink_offset_raw[2] = 0xa2;
+    shrink_offset_raw[3] = 0x11;
+    shrink_offset_raw[4] = 0x22;
+    shrink_offset_raw[5] = 0x33;
+    shrink_offset_raw[6] = 0x44;
+    pkt->data = shrink_offset_raw + 3;
+    pkt->size = 4;
+    uint8_t *shrink_offset_raw_ptr = pkt->data;
+    av_shrink_packet(pkt, 2);
+    printf("packet:payload-shrink-unrefcounted-offset-same-ptr|%d\n",
+           pkt->data == shrink_offset_raw_ptr);
+    print_payload_unowned("packet:payload-shrink-unrefcounted-offset", pkt);
+    av_packet_free(&pkt);
 
     AVPacket *src = new_packet();
     fail_if(av_new_packet(src, 2) < 0, "av_new_packet writable src failed");

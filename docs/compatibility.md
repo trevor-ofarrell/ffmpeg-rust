@@ -10,6 +10,15 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  `av_grow_packet()` and `av_shrink_packet()` on raw no-buffer packets whose
+  `data` pointer starts at a nonzero offset inside caller storage. Grow copies
+  the visible prefix into zero-offset padded storage, while shrink preserves
+  the raw caller pointer, keeps `buf == NULL`, truncates visible bytes, and
+  zeroes the new input-padding window. Rust records the visible raw no-buffer
+  grow shape plus the safe explicit-owner unpadded offset resize path in unit
+  and `avutil_core_models` coverage. This strengthens `avutil-packet`; strict
+  completion remains 11/96 and the row remains `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   `av_packet_ref()` and `av_packet_clone()` on raw no-buffer packets whose
   `data` pointer starts at a nonzero offset inside caller storage copy the
   visible bytes into zero-offset padded refcounted destination storage while

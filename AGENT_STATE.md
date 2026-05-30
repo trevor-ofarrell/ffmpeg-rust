@@ -3,6 +3,53 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The
+tree started clean at `master...origin/master [ahead 5]`; required startup
+checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
+-- status --next 15` reporting 11/96 strict-complete components (11.5%) and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validating the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
+kept the next slice on top-priority `avutil-packet`; no subagents were needed.
+
+Current main-thread slice: pinned libavcodec rows now prove
+`av_grow_packet()` and `av_shrink_packet()` on raw `data`/`size` packets whose
+`data` pointer starts at a nonzero offset inside caller storage while
+`buf == NULL`. FFmpeg grow copies visible prefix bytes from the current data
+pointer into zero-offset padded writable storage; FFmpeg shrink preserves the
+raw caller data pointer, keeps no `AVBufferRef`, truncates visible bytes, and
+zeroes the new input-padding window. Rust mirrors the visible raw no-buffer
+grow shape through `Packet::new(...)`, while focused unit and
+`avutil_core_models` fixtures document the safe explicit-owner unpadded offset
+resize path that preserves visible offsets while allowing the backing
+allocation address to move when padding has to be installed. `avutil-packet`
+remains `fate_pass`, not `complete`; strict completion remains 11/96.
+
+Latest validation commands for this packet raw-offset resize slice passed:
+`cargo fmt --all`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil
+packet_unpadded_offset_resize_helpers_preserve_visible_offset -- --nocapture`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
+packet_oracle libavcodec_packet_core_lifecycle_matches_packet_model --
+--ignored --nocapture`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo check
+--manifest-path fuzz/Cargo.toml --bin avutil_core_models`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run --mappings
+tests/differential/mappings.txt --component avutil-packet --target
+oracle-libavcodec-packet-core --oracle-ffmpeg
+./third_party/ffmpeg-oracle/build/bin/ffmpeg`; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- run --component avutil-packet`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil --all-targets
+--all-features -- -D warnings`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy
+--manifest-path fuzz/Cargo.toml --bin avutil_core_models -- -D warnings`; and
+`RUST_MIN_STACK=33554432 CXXFLAGS='-O1' HOST_CXXFLAGS='-O1'
+CARGO_TARGET_DIR=target-wsl-fuzz LSAN_OPTIONS=detect_leaks=0
+ASAN_OPTIONS=detect_leaks=0 cargo fuzz run avutil_core_models -- -runs=1`.
+Final guards also passed: `cargo fmt --all -- --check`;
+`CARGO_TARGET_DIR=target-orch-fate cargo test -p fate-runner current_ledger`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- guard-runtime`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`; and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15`. The WSL fuzz smoke rebuilt the sanitizer binary in 5m29s in the stable
+`target-wsl-fuzz` cache and completed the three-file seed corpus.
+
+Current authoritative turn status: orchestrator workflow is active on WSL. The
 tree started clean at `master...origin/master [ahead 4]`; required startup
 checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
 -- status --next 15` reporting 11/96 strict-complete components (11.5%) and

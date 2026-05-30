@@ -260,6 +260,12 @@ default_profile = "ffmpeg-8.1.1-default-native"
 # AV_INPUT_BUFFER_PADDING_SIZE)`. Rust `Packet::grow_data` now enforces the
 # same boundary without attempting a huge allocation, and the unit plus
 # `avutil_core_models` fuzz-model invariants cover no-mutation behavior.
+# Latest avutil-packet evidence: `packet:payload-grow-unrefcounted-offset-*`
+# and `packet:payload-shrink-unrefcounted-offset*` rows now prove pinned
+# FFmpeg 8.1.1 raw no-buffer offset resize behavior: grow copies the visible
+# prefix from the current caller-storage data pointer into zero-offset padded
+# storage, while shrink preserves the raw data pointer, keeps `buf == NULL`,
+# truncates visible bytes, and zeroes the new input-padding window.
 # Latest avutil-packet evidence: `packet:payload-ref-unrefcounted-offset-*`
 # and `packet:payload-clone-unrefcounted-offset-*` rows now prove pinned FFmpeg
 # 8.1.1 `av_packet_ref()` and `av_packet_clone()` copy from a raw
@@ -644,6 +650,7 @@ unit_tests = [
   "packet::tests::packet_shrink_preserves_offset_payload_pointer_and_zeroes_tail",
   "packet::tests::packet_zero_size_payload_helpers_keep_ffmpeg_padding",
   "packet::tests::packet_unpadded_payload_helpers_add_padding_and_preserve_bytes",
+  "packet::tests::packet_unpadded_offset_resize_helpers_preserve_visible_offset",
   "packet::tests::packet_unpadded_offset_payload_helpers_add_padding_in_place",
   "packet::tests::packet_ref_from_shares_payload_and_copies_side_data",
   "packet::tests::packet_ref_from_replaces_destination_and_releases_old_refs",
@@ -763,6 +770,16 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: pinned libavcodec AVPacket payload oracle coverage now validates
+# `av_grow_packet()` and `av_shrink_packet()` on raw `data`/`size` packets whose
+# `data` pointer starts at a nonzero offset inside caller storage and whose
+# `buf` is NULL. FFmpeg grow copies the visible prefix into new zero-offset
+# padded storage, while shrink preserves the raw caller pointer, keeps no
+# `AVBufferRef`, truncates visible bytes, and zeroes the new padding window.
+# Rust `Packet::new(...)` models the visible raw no-buffer grow shape; focused
+# unit and avutil_core_models fixtures cover the safe explicit-owner unpadded
+# offset resize path that preserves visible offsets while allowing allocation
+# movement when padding must be installed.
 # Latest update: pinned libavcodec AVPacket payload oracle coverage now validates
 # `av_packet_ref()` and `av_packet_clone()` on raw `data`/`size` packets whose
 # `data` pointer starts at a nonzero offset inside caller storage and whose
