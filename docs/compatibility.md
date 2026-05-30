@@ -9,6 +9,14 @@
 
 ## Compatible Today
 
+- Latest orchestrated parallel evidence: main-thread packet oracle rows now
+  prove packet-owned raw numeric side-data types also accept negative values
+  `-1` and `INT_MIN`; a worker added `BufferRef` callback-owned visible-length
+  and opaque-release unit coverage; another worker fixed ffmpeg/ffprobe
+  `-version`/`-buildconf` requests after a standalone `--` option terminator
+  so they fail through normal parsing instead of printing banners. These rows
+  strengthen existing incomplete components; strict complete count remains
+  unchanged.
 - Latest orchestrated parallel evidence: xhigh worker lanes plus main-thread
   review added pinned oracle rows for packet-owned raw numeric side-data types,
   raw `pcm_s16le` 9-channel unspecified-layout framecrc timing, YUV4MPEG2

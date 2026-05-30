@@ -465,7 +465,7 @@ pub fn run_ffprobe_tool(args: &[String]) -> i32 {
 }
 
 fn version_request_trailing_loglevel_warning(args: &[String]) -> Option<String> {
-    let request_index = crate::option_parser::find_version_or_buildconf_request_index(args)?;
+    let request_index = ffprobe_version_or_buildconf_request_index(args)?;
     trailing_loglevel_warning(&args[request_index + 1..])
 }
 
@@ -473,8 +473,16 @@ fn trailing_loglevel_warning(args: &[String]) -> Option<String> {
     crate::option_parser::trailing_loglevel_warning(args)
 }
 
+fn ffprobe_version_or_buildconf_request_index(args: &[String]) -> Option<usize> {
+    let parse_args = args
+        .iter()
+        .position(|arg| arg == "--")
+        .map_or(args, |terminator| &args[..terminator]);
+    crate::option_parser::find_version_or_buildconf_request_index(parse_args)
+}
+
 pub fn ffprobe_output(args: &[String]) -> Result<String, FfprobeError> {
-    if let Some(index) = crate::option_parser::find_version_or_buildconf_request_index(args) {
+    if let Some(index) = ffprobe_version_or_buildconf_request_index(args) {
         let banner = match args[index].as_str() {
             "-buildconf" => crate::buildconf_banner("ffprobe"),
             "-version" => crate::version_banner("ffprobe"),
@@ -2171,6 +2179,17 @@ mod tests {
 
         assert!(buildconf_err.message().contains("unknown option"));
         assert_eq!(buildconf_err.banner(), Some(expected_buildconf.as_str()));
+    }
+
+    #[test]
+    fn ffprobe_version_or_buildconf_requests_are_ignored_after_option_terminator() {
+        let version_err = ffprobe_output(&strings(&["--", "-version"])).unwrap_err();
+        let buildconf_err = ffprobe_output(&strings(&["--", "-buildconf"])).unwrap_err();
+
+        assert!(version_err.message().contains("unknown option"));
+        assert!(buildconf_err.message().contains("unknown option"));
+        assert_eq!(version_err.banner(), None);
+        assert_eq!(buildconf_err.banner(), None);
     }
 
     #[test]

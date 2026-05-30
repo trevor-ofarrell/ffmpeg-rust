@@ -12204,6 +12204,34 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         SideData::new("bad\0kind", Vec::new()).unwrap_err().kind(),
         AvErrorKind::InvalidArgument
     );
+    let raw_negative_kind = PacketSideDataKind::from_ffmpeg_raw_value(-1);
+    assert_eq!(raw_negative_kind.ffmpeg_value(), Some(-1));
+    assert!(raw_negative_kind.ffmpeg_side_data_name().is_none());
+    let raw_min_kind = PacketSideDataKind::from_ffmpeg_raw_value(i32::MIN);
+    assert_eq!(raw_min_kind.ffmpeg_value(), Some(i32::MIN));
+    assert!(raw_min_kind.ffmpeg_side_data_name().is_none());
+    let mut raw_packet = Packet::default();
+    raw_packet
+        .try_add_side_data(
+            SideData::new_with_kind(raw_negative_kind.clone(), vec![0xf1]).unwrap(),
+        )
+        .unwrap();
+    raw_packet
+        .new_side_data(raw_min_kind.clone(), 1)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0xe0]);
+    assert_eq!(
+        raw_packet
+            .side_data_by_kind_id(&raw_negative_kind)
+            .unwrap()
+            .data(),
+        &[0xf1]
+    );
+    assert_eq!(
+        raw_packet.side_data_by_kind_id(&raw_min_kind).unwrap().data(),
+        &[0xe0]
+    );
 
     packet.push_side_data(SideData::new("ref_side_data", vec![0xbb, 0xcc]).unwrap());
     packet

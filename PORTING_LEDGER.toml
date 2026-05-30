@@ -623,12 +623,12 @@ fate_tests = [
 fuzz_targets = ["avutil_core_models"]
 # Latest AVPacket raw side-data update: pinned libavcodec rows now prove
 # packet-owned `av_packet_add_side_data()` and `av_packet_new_side_data()`
-# accept raw numeric side-data types at `AV_PKT_DATA_NB` and
-# `AV_PKT_DATA_NB + 1` before the packet-owned capacity ceiling is reached.
-# Rust preserves the raw integer through `PacketSideDataKind::Raw` while still
-# rejecting invalid display names at the safe SideData construction boundary.
-# The unit, oracle, and `avutil_core_models` deterministic fuzz fixture cover
-# the bounded behavior.
+# accept raw numeric side-data types at `AV_PKT_DATA_NB`,
+# `AV_PKT_DATA_NB + 1`, `-1`, and `INT_MIN` before the packet-owned capacity
+# ceiling is reached. Rust preserves the raw integer through
+# `PacketSideDataKind::Raw` while still rejecting invalid display names at the
+# safe SideData construction boundary. The unit, oracle, and
+# `avutil_core_models` deterministic fuzz fixture cover the bounded behavior.
 # Latest media evidence: raw pcm_s16le nine-channel, YUV4MPEG2 leading
 # whitespace before the first frame marker, and WAV duplicate-fmt unsupported
 # second-chunk rows are now mapped to avutil-packet, validating the current
@@ -966,6 +966,8 @@ unit_tests = [
   "buffer::tests::buffer_ref_wraps_owned_and_copied_bytes",
   "buffer::tests::callback_owned_buffer_releases_storage_after_last_reference",
   "buffer::tests::callback_owned_buffer_supports_visible_len_and_padding",
+  "buffer::tests::callback_owned_buffer_with_opaque_releases_visible_bytes_and_full_storage",
+  "buffer::tests::callback_owned_buffer_with_opaque_rejects_invalid_visible_len_without_release",
   "buffer::tests::callback_owned_buffer_rejects_invalid_visible_len_without_release",
   "buffer::tests::callback_owned_copy_on_write_releases_only_original_storage",
   "buffer::tests::readonly_buffer_copies_before_mutation_and_preserves_padding",
@@ -1051,6 +1053,13 @@ fate_tests = [
   "not_applicable: upstream FFmpeg FATE has no standalone AVBufferRef/AVBufferPool API target; covered by unit tests plus pinned libavutil differential oracle",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest delegated callback-owned slice: unit coverage now validates
+# `BufferRef::from_vec_with_len_and_opaque_release_callback` with a visible
+# length shorter than backing storage, typed opaque lookup, copy-on-write-safe
+# mutation, release callback delivery of the full backing bytes, and invalid
+# visible-length rejection without invoking the release callback. This is
+# implementation evidence only; the component remains differential_pass
+# pending broader oracle/lifetime closure.
 # Latest self-replace slice: pinned libavutil oracle coverage now validates
 # `av_buffer_replace(&buf, buf)` succeeds without changing the visible data
 # pointer, bytes, writability, or final single-reference shape.
@@ -2532,6 +2541,7 @@ unit_tests = [
   "ffmpeg::tests::ffmpeg_version_vs_buildconf_follows_arg_order",
   "ffmpeg::tests::ffmpeg_version_request_follows_value_option",
   "ffmpeg::tests::ffmpeg_buildconf_request_follows_value_option",
+  "ffmpeg::tests::ffmpeg_version_or_buildconf_requests_are_ignored_after_option_terminator",
   "ffprobe::tests::ffprobe_output_prints_version_banner",
   "ffprobe::tests::ffprobe_output_accepts_hide_banner_with_version",
   "ffprobe::tests::ffprobe_buildconf_output_prints_configuration",
@@ -2543,6 +2553,7 @@ unit_tests = [
   "ffprobe::tests::ffprobe_version_vs_buildconf_follows_arg_order",
   "ffprobe::tests::ffprobe_version_request_follows_value_option",
   "ffprobe::tests::ffprobe_buildconf_request_follows_value_option",
+  "ffprobe::tests::ffprobe_version_or_buildconf_requests_are_ignored_after_option_terminator",
   "option_parser::tests::treats_buildconf_as_global_flag",
   "option_parser::tests::double_dash_options_are_not_normalized_to_single_dash_options",
   "option_parser::tests::standalone_version_and_buildconf_detection_skips_option_values",
@@ -2577,6 +2588,10 @@ fate_tests = [
   "tests/fate/mappings.txt:fftools-version|local-buildconf-unit",
 ]
 fuzz_targets = []
+# Latest option-terminator slice: local unit coverage now proves `ffmpeg-rs`
+# and `ffprobe-rs` do not treat `-version` or `-buildconf` after a standalone
+# `--` option terminator as successful special requests. Those forms flow to
+# normal option parsing and fail without a banner in the current bounded model.
 # Latest invalid-loglevel prefix slice: pinned ffmpeg/ffprobe rows now prove
 # `-v foo -version`, `-loglevel foo -version`, `-v foo -buildconf`, and
 # `-loglevel foo -buildconf` fail before emitting a version/buildconf banner.

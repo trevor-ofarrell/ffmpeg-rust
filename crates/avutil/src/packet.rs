@@ -10811,6 +10811,34 @@ mod tests {
             packet.side_data_by_kind_id(&raw_new_kind).unwrap().data(),
             &[0x6a, 0x6b]
         );
+
+        let raw_negative_kind = PacketSideDataKind::from_ffmpeg_raw_value(-1);
+        assert!(packet
+            .try_add_side_data(
+                SideData::new_with_kind(raw_negative_kind.clone(), vec![0xf1]).unwrap()
+            )
+            .unwrap()
+            .is_none());
+        assert_eq!(packet.side_data().len(), 3);
+        assert_eq!(
+            packet
+                .side_data_by_kind_id(&raw_negative_kind)
+                .unwrap()
+                .data(),
+            &[0xf1]
+        );
+
+        let raw_min_kind = PacketSideDataKind::from_ffmpeg_raw_value(i32::MIN);
+        packet
+            .new_side_data(raw_min_kind.clone(), 1)
+            .unwrap()
+            .data_mut()
+            .copy_from_slice(&[0xe0]);
+        assert_eq!(packet.side_data().len(), 4);
+        assert_eq!(
+            packet.side_data_by_kind_id(&raw_min_kind).unwrap().data(),
+            &[0xe0]
+        );
     }
 
     #[test]

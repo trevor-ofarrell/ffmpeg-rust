@@ -3,6 +3,53 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active. The latest
+xhigh fast/full-access batch integrated main-thread `avutil-packet` evidence,
+Hypatia's `avutil-buffer` unit-evidence slice, and Euler's `fftools-version`
+option-terminator fix. Mendel was spawned as a read-only packet explorer but
+did not return before this validated integration slice; no write scope was
+assigned to that agent. No approval prompts were used.
+
+This batch added bounded strict-parity evidence for `avutil-packet` raw
+negative numeric packet side-data type preservation (`-1` and `INT_MIN`),
+`avutil-buffer` callback-owned visible-length/typed-opaque/full-release
+storage invariants, and `fftools-version`/`fftools-option-parser`
+`-- -version` / `-- -buildconf` rejection shape. No component was promoted to
+`complete`; strict completion remains 11/96 components, about 11.5%.
+
+Latest completed slice: negative raw packet side data, buffer callback-owned
+evidence, and option-terminator version/buildconf handling, ready to commit as
+`Pin negative side data and version terminator parity`.
+
+Latest validation commands for the current batch passed:
+`cargo test -p avutil --target-dir target-orch-packet
+packet_accepts_raw_ffmpeg_side_data_types_before_capacity`; `cargo test -p
+avutil --test packet_oracle --target-dir target-orch-packet
+libavcodec_packet_core_lifecycle_matches_packet_model -- --ignored`; `cargo
+check --manifest-path fuzz/Cargo.toml --target-dir target-orch-fuzz --target
+x86_64-pc-windows-msvc --bin avutil_core_models`; `cargo test -p fftools
+--target-dir target-orch-fftools
+version_or_buildconf_requests_are_ignored_after_option_terminator`; `cargo
+test -p fftools --target-dir target-orch-fftools version`; `cargo test -p
+avutil --target-dir target-orch-buffer callback_owned_buffer_with_opaque`;
+`cargo fmt --all -- --check`; `cargo clippy -p avutil --all-targets
+--all-features --target-dir target-orch-clippy-avutil -- -D warnings`; and
+`cargo clippy -p fftools --all-targets --all-features --target-dir
+target-orch-clippy-fftools -- -D warnings`.
+
+Latest failing or limited commands for this batch: one malformed local command,
+`cargo test -p fftools --target-dir target-orch-fftools
+version_or_buildconf_requests_are_ignored_after_option_terminator version`,
+failed because Cargo accepts only one test-name filter before `--`; the
+corrected focused filters passed. Sanitizer-backed WSL `cargo fuzz run` smokes
+were not rerun for this slice; Windows fuzz build/check passed.
+
+Current focus component: `avutil-packet` remains the top priority incomplete
+component (`fate_pass`). Next 3 concrete actions: identify the next missing
+AVPacket completion requirement, add a bounded oracle/fuzz/FATE evidence row
+without broad stubs, and use parallel xhigh workers only after ownership is
+cleanly partitioned.
+
+Current authoritative turn status: orchestrator workflow is active. The latest
 xhigh fast/full-access worker batch has been reviewed, integrated, validated,
 and closed: Jason (`avformat-pcm-s16le-demuxer` 9-channel raw PCM),
 Tesla (`avformat-yuv4mpegpipe-demuxer` leading whitespace before first frame),

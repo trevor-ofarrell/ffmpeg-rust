@@ -2530,6 +2530,35 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:side-new-raw-type".to_string(),
         side_data_summary_fields(&raw_packet),
     );
+
+    let raw_negative_kind = PacketSideDataKind::from_ffmpeg_raw_value(-1);
+    let raw_negative_added = raw_packet
+        .try_add_side_data(SideData::new_with_kind(raw_negative_kind, vec![0xf1]).unwrap())
+        .unwrap();
+    assert!(raw_negative_added.is_none());
+    rows.insert(
+        "packet:side-add-raw-negative-type-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:side-add-raw-negative-type".to_string(),
+        side_data_summary_fields(&raw_packet),
+    );
+
+    let raw_min_kind = PacketSideDataKind::from_ffmpeg_raw_value(i32::MIN);
+    raw_packet
+        .new_side_data(raw_min_kind, 1)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0xe0]);
+    rows.insert(
+        "packet:side-new-raw-min-type-ret".to_string(),
+        vec!["1".to_string()],
+    );
+    rows.insert(
+        "packet:side-new-raw-min-type".to_string(),
+        side_data_summary_fields(&raw_packet),
+    );
 }
 
 fn insert_side_data_capacity_rows(rows: &mut BTreeMap<String, Vec<String>>) {
@@ -4872,6 +4901,25 @@ static void exercise_side_data_api(void) {
     sd[0] = 0x6a;
     sd[1] = 0x6b;
     print_side_data_summary("packet:side-new-raw-type", pkt);
+
+    owned = av_mallocz(1 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!owned, "av_mallocz negative raw packet side data failed");
+    owned[0] = 0xf1;
+    ret = av_packet_add_side_data(pkt, (enum AVPacketSideDataType)-1,
+                                  owned, 1);
+    if (ret < 0)
+        av_free(owned);
+    printf("packet:side-add-raw-negative-type-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_add_side_data negative raw type failed");
+    print_side_data_summary("packet:side-add-raw-negative-type", pkt);
+
+    sd = av_packet_new_side_data(pkt,
+                                 (enum AVPacketSideDataType)INT_MIN,
+                                 1);
+    printf("packet:side-new-raw-min-type-ret|%d\n", sd != NULL);
+    fail_if(!sd, "av_packet_new_side_data INT_MIN raw type failed");
+    sd[0] = 0xe0;
+    print_side_data_summary("packet:side-new-raw-min-type", pkt);
     av_packet_free(&pkt);
 }
 

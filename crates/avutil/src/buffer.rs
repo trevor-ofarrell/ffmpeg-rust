@@ -1668,6 +1668,54 @@ mod tests {
     }
 
     #[test]
+    fn callback_owned_buffer_with_opaque_releases_visible_bytes_and_full_storage() {
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let capture = std::sync::Arc::clone(&released);
+
+        {
+            let mut buffer = BufferRef::from_vec_with_len_and_opaque_release_callback(
+                vec![10, 11, 12, 13],
+                3,
+                901usize,
+                move |opaque, bytes| {
+                    capture.lock().unwrap().push((opaque, bytes));
+                },
+            )
+            .unwrap();
+
+            assert_eq!(buffer.len(), 3);
+            assert_eq!(buffer.allocated_len(), 4);
+            assert_eq!(buffer.as_slice(), &[10, 11, 12]);
+            assert_eq!(buffer.padding_slice(), &[13]);
+            assert_eq!(buffer.opaque_ref::<usize>().copied(), Some(901));
+            buffer.make_mut()[1] = 42;
+            assert_eq!(buffer.as_slice(), &[10, 42, 12]);
+        }
+
+        assert_eq!(*released.lock().unwrap(), vec![(901, vec![10, 42, 12, 13])]);
+    }
+
+    #[test]
+    fn callback_owned_buffer_with_opaque_rejects_invalid_visible_len_without_release() {
+        let released = std::sync::Arc::new(std::sync::Mutex::new(0usize));
+        let capture = std::sync::Arc::clone(&released);
+        assert_eq!(
+            BufferRef::from_vec_with_len_and_opaque_release_callback(
+                vec![1],
+                2,
+                902usize,
+                move |_opaque, _bytes| {
+                    *capture.lock().unwrap() += 1;
+                },
+            )
+            .unwrap_err()
+            .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(*released.lock().unwrap(), 0);
+    }
+
+    #[test]
     fn callback_owned_copy_on_write_releases_only_original_storage() {
         let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
         let capture = std::sync::Arc::clone(&released);
