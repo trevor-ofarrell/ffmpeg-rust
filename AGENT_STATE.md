@@ -3,6 +3,56 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active with xhigh
+fast/full-access subagents. The tree started clean at `master...origin/master
+[ahead 62]`; strict completion remains 11/96 components, about 11.5%. Three
+subagents were used: Arendt the 2nd returned a read-only packet audit whose
+proposed packet-owned remove API was rejected because FFmpeg 8.1.1 has no
+`av_packet_remove_side_data()` API, Gibbs the 2nd produced a scoped
+`avutil-buffer` oracle slice that is integrated in this dirty batch, and Plato
+the 2nd was closed after timeout with no scoped frame changes in the tree.
+
+Current main-thread slice: packet-owned raw side-data lookup evidence. The
+packet oracle now includes `av_packet_get_side_data()` rows proving raw
+side-data types inserted at `AV_PKT_DATA_NB`, `AV_PKT_DATA_NB + 1`, `-1`, and
+`INT_MIN` can be found after the corresponding add/new operations. This is
+evidence strengthening only; no component was promoted to `complete`.
+
+Integrated worker slice: `avutil-buffer` shared-unref oracle evidence. The
+buffer oracle now proves `av_buffer_unref()` on one reference of a shared
+`AVBufferRef` pair nulls only that destination and leaves the source live with
+refcount 1 and writable single-reference state.
+
+Latest validation commands for this slice passed: `cargo fmt --all -- --check`;
+`cargo test -p avutil --test packet_oracle --target-dir
+target-orch-packet-oracle libavcodec_packet_core_lifecycle_matches_packet_model
+-- --ignored`; `cargo test -p avutil --test buffer_oracle --target-dir
+target-orch-buffer-oracle libavutil_buffer_refs_match_current_model -- --ignored
+--exact`; `cargo test -p avutil --target-dir target-orch-packet
+packet_accepts_raw_ffmpeg_side_data_types_before_capacity`; `cargo test -p
+avutil --target-dir target-orch-buffer
+buffer_ref_replace_and_unref_handle_nullable_c_api_shape`; `cargo test -p
+fate-runner --target-dir target-orch-fate current_ledger`; `cargo run -p
+fate-runner --target-dir target-orch-fate-run -- status --next 12`; `cargo run
+-p fate-runner --target-dir target-orch-fate-run-changed -- run --changed
+--dry-run`; pinned differential mapping runs for `avutil-packet` target
+`oracle-libavcodec-packet-core` and `avutil-buffer` target
+`oracle-libavutil-buffer`; `cargo clippy -p avutil --all-targets
+--all-features --target-dir target-orch-clippy-avutil -- -D warnings`; `cargo
+run -p xtask --target-dir target-orch-xtask-guard -- guard-runtime`; `cargo run
+-p xtask --target-dir target-orch-xtask-doctor -- oracle-doctor`; and `git diff
+--check` with CRLF conversion warnings only.
+
+Latest failing or limited commands for this slice: no validation failures. The
+packet explorer recommendation was rejected after checking the pinned headers
+because the suggested packet-owned remove API does not exist.
+
+Current focus component: `avutil-packet` remains the top priority incomplete
+component (`fate_pass`). Next 3 concrete actions: commit this coherent packet
+and buffer oracle-evidence slice, inspect the next missing AVPacket completion
+requirement, then delegate only disjoint xhigh/full-access worker scopes for the
+next unblocked evidence lane.
+
+Current authoritative turn status: orchestrator workflow is active with xhigh
 fast/full-access subagents. Two workers were used this turn: the options worker
 timed out without producing scoped file changes and was closed, and the logging
 worker returned a patch that was reviewed and rejected because it broadened the

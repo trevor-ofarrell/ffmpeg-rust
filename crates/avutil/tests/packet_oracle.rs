@@ -2503,7 +2503,7 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     let raw_add_kind =
         PacketSideDataKind::from_ffmpeg_raw_value(PacketSideDataKind::KNOWN.len() as i32);
     let raw_added = raw_packet
-        .try_add_side_data(SideData::new_with_kind(raw_add_kind, vec![0x7e]).unwrap())
+        .try_add_side_data(SideData::new_with_kind(raw_add_kind.clone(), vec![0x7e]).unwrap())
         .unwrap();
     assert!(raw_added.is_none());
     rows.insert(
@@ -2514,11 +2514,15 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:side-add-raw-type".to_string(),
         side_data_summary_fields(&raw_packet),
     );
+    rows.insert(
+        "packet:side-get-raw-type".to_string(),
+        side_data_lookup_fields(raw_packet.side_data_by_kind_id(&raw_add_kind)),
+    );
 
     let raw_new_kind =
         PacketSideDataKind::from_ffmpeg_raw_value(PacketSideDataKind::KNOWN.len() as i32 + 1);
     raw_packet
-        .new_side_data(raw_new_kind, 2)
+        .new_side_data(raw_new_kind.clone(), 2)
         .unwrap()
         .data_mut()
         .copy_from_slice(&[0x6a, 0x6b]);
@@ -2530,10 +2534,14 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:side-new-raw-type".to_string(),
         side_data_summary_fields(&raw_packet),
     );
+    rows.insert(
+        "packet:side-get-new-raw-type".to_string(),
+        side_data_lookup_fields(raw_packet.side_data_by_kind_id(&raw_new_kind)),
+    );
 
     let raw_negative_kind = PacketSideDataKind::from_ffmpeg_raw_value(-1);
     let raw_negative_added = raw_packet
-        .try_add_side_data(SideData::new_with_kind(raw_negative_kind, vec![0xf1]).unwrap())
+        .try_add_side_data(SideData::new_with_kind(raw_negative_kind.clone(), vec![0xf1]).unwrap())
         .unwrap();
     assert!(raw_negative_added.is_none());
     rows.insert(
@@ -2544,10 +2552,14 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:side-add-raw-negative-type".to_string(),
         side_data_summary_fields(&raw_packet),
     );
+    rows.insert(
+        "packet:side-get-raw-negative-type".to_string(),
+        side_data_lookup_fields(raw_packet.side_data_by_kind_id(&raw_negative_kind)),
+    );
 
     let raw_min_kind = PacketSideDataKind::from_ffmpeg_raw_value(i32::MIN);
     raw_packet
-        .new_side_data(raw_min_kind, 1)
+        .new_side_data(raw_min_kind.clone(), 1)
         .unwrap()
         .data_mut()
         .copy_from_slice(&[0xe0]);
@@ -2558,6 +2570,10 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:side-new-raw-min-type".to_string(),
         side_data_summary_fields(&raw_packet),
+    );
+    rows.insert(
+        "packet:side-get-raw-min-type".to_string(),
+        side_data_lookup_fields(raw_packet.side_data_by_kind_id(&raw_min_kind)),
     );
 }
 
@@ -4938,6 +4954,8 @@ static void exercise_side_data_api(void) {
     printf("packet:side-add-raw-type-ret|%d\n", ret);
     fail_if(ret < 0, "av_packet_add_side_data raw type failed");
     print_side_data_summary("packet:side-add-raw-type", pkt);
+    print_side_data_lookup("packet:side-get-raw-type", pkt,
+                           (enum AVPacketSideDataType)AV_PKT_DATA_NB);
 
     sd = av_packet_new_side_data(pkt,
                                  (enum AVPacketSideDataType)(AV_PKT_DATA_NB + 1),
@@ -4947,6 +4965,8 @@ static void exercise_side_data_api(void) {
     sd[0] = 0x6a;
     sd[1] = 0x6b;
     print_side_data_summary("packet:side-new-raw-type", pkt);
+    print_side_data_lookup("packet:side-get-new-raw-type", pkt,
+                           (enum AVPacketSideDataType)(AV_PKT_DATA_NB + 1));
 
     owned = av_mallocz(1 + AV_INPUT_BUFFER_PADDING_SIZE);
     fail_if(!owned, "av_mallocz negative raw packet side data failed");
@@ -4958,6 +4978,8 @@ static void exercise_side_data_api(void) {
     printf("packet:side-add-raw-negative-type-ret|%d\n", ret);
     fail_if(ret < 0, "av_packet_add_side_data negative raw type failed");
     print_side_data_summary("packet:side-add-raw-negative-type", pkt);
+    print_side_data_lookup("packet:side-get-raw-negative-type", pkt,
+                           (enum AVPacketSideDataType)-1);
 
     sd = av_packet_new_side_data(pkt,
                                  (enum AVPacketSideDataType)INT_MIN,
@@ -4966,6 +4988,8 @@ static void exercise_side_data_api(void) {
     fail_if(!sd, "av_packet_new_side_data INT_MIN raw type failed");
     sd[0] = 0xe0;
     print_side_data_summary("packet:side-new-raw-min-type", pkt);
+    print_side_data_lookup("packet:side-get-raw-min-type", pkt,
+                           (enum AVPacketSideDataType)INT_MIN);
     av_packet_free(&pkt);
 }
 

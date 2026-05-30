@@ -622,6 +622,11 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest packet-owned raw lookup update: pinned libavcodec rows now prove
+# `av_packet_get_side_data()` finds packet-owned raw side-data types at
+# `AV_PKT_DATA_NB`, `AV_PKT_DATA_NB + 1`, `-1`, and `INT_MIN` after add/new
+# insertion. Existing Rust unit and `avutil_core_models` checks cover the
+# matching `Packet::side_data_by_kind_id` lookups.
 # Latest standalone AVPacketSideData raw-type update: pinned libavcodec rows
 # now prove standalone `av_packet_side_data_add()` accepts raw type `-1`,
 # `av_packet_side_data_new()` accepts raw type `INT_MIN`, lookup finds both,
@@ -1060,6 +1065,10 @@ fate_tests = [
   "not_applicable: upstream FFmpeg FATE has no standalone AVBufferRef/AVBufferPool API target; covered by unit tests plus pinned libavutil differential oracle",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest delegated shared-unref slice: pinned libavutil oracle rows now validate
+# `av_buffer_unref()` on one member of a shared AVBufferRef pair. The unreffed
+# destination becomes NULL, while the source remains live with refcount 1 and
+# writable state restored for the remaining single reference.
 # Latest delegated callback-owned slice: unit coverage now validates
 # `BufferRef::from_vec_with_len_and_opaque_release_callback` with a visible
 # length shorter than backing storage, typed opaque lookup, copy-on-write-safe

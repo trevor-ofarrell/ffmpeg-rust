@@ -9,6 +9,16 @@
 
 ## Compatible Today
 
+- Latest delegated `avutil-buffer` evidence: pinned libavutil rows now prove
+  `av_buffer_unref()` on one reference of a shared `AVBufferRef` pair nulls
+  only that destination reference while leaving the source live with refcount
+  `1` and writable as the remaining single reference. This strengthens
+  `avutil-buffer`; strict complete count remains unchanged.
+- Latest main-thread packet evidence: packet-owned raw side-data oracle rows
+  now prove `av_packet_get_side_data()` finds raw types inserted at
+  `AV_PKT_DATA_NB`, `AV_PKT_DATA_NB + 1`, `-1`, and `INT_MIN`. Rust already
+  models the same lookups through `Packet::side_data_by_kind_id`; this slice
+  pins the missing FFmpeg lookup rows without promoting `avutil-packet`.
 - Latest main-thread packet evidence: standalone `AVPacketSideData` array
   oracle rows now prove raw negative side-data types are accepted by the
   standalone helper API: `av_packet_side_data_add()` accepts `-1`,

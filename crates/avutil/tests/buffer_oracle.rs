@@ -1193,6 +1193,18 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         vec![bool_field(unref_null_input.is_none())],
     );
 
+    let unref_shared_src = BufferRef::from_vec(vec![9, 8, 7]);
+    let mut unref_shared_dst = Some(BufferRef::ref_from(&unref_shared_src));
+    BufferRef::unref(&mut unref_shared_dst);
+    rows.insert(
+        "buffer:unref-shared-dst-null".to_string(),
+        vec![bool_field(unref_shared_dst.is_none())],
+    );
+    rows.insert(
+        "buffer:unref-shared-src".to_string(),
+        buffer_status_fields(&unref_shared_src),
+    );
+
     let mut realloc_null = None;
     BufferRef::realloc(&mut realloc_null, 4).unwrap();
     rows.insert("buffer:realloc-null-ret".to_string(), vec!["0".to_string()]);
@@ -4306,6 +4318,15 @@ int main(void) {
     av_buffer_unref(NULL);
     av_buffer_unref(&unref_null_input);
     printf("buffer:unref-null-input|%d\n", unref_null_input == NULL);
+
+    AVBufferRef *unref_shared_src = av_buffer_allocz(3);
+    fail_if(!unref_shared_src, "av_buffer_allocz unref_shared_src failed");
+    AVBufferRef *unref_shared_dst = av_buffer_ref(unref_shared_src);
+    fail_if(!unref_shared_dst, "av_buffer_ref unref_shared_src failed");
+    av_buffer_unref(&unref_shared_dst);
+    printf("buffer:unref-shared-dst-null|%d\n", unref_shared_dst == NULL);
+    print_status("buffer:unref-shared-src", unref_shared_src);
+    av_buffer_unref(&unref_shared_src);
 
     AVBufferRef *realloc_null = NULL;
     ret = av_buffer_realloc(&realloc_null, 4);
