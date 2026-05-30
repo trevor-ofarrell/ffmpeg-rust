@@ -9,6 +9,13 @@
 
 ## Compatible Today
 
+- Latest main-thread packet evidence: pinned libavcodec rows now prove the
+  public `AVContainerFifo` all-drain equivalent for a mixed move/ref packet
+  queue releases the move-written payload and `opaque_ref` once, preserves the
+  ref-written source until that source drops, leaves the FIFO empty, and keeps
+  empty clear as a no-op. Rust covers the same lifecycle through
+  `PacketFifo::clear()` unit coverage and the deterministic `avutil_core_models`
+  fuzz fixture; `avutil-packet` remains `fate_pass`.
 - Latest main-thread buffer evidence: Rust unit coverage and the deterministic
   `avutil_core_models` fuzz target now pin `BufferPool::recycle()` rejection
   side effects. Caller-owned wrong-shape and readonly refs are consumed and

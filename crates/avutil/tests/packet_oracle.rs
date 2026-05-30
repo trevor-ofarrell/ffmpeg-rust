@@ -2324,6 +2324,89 @@ fn insert_packet_fifo_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:fifo-read-empty-ref-preserve-dst".to_string(),
         packet_fields(&empty_ref_preserve_dst),
     );
+
+    fifo.clear();
+    rows.insert(
+        "packet:fifo-clear-empty-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+
+    let clear_payload_releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+    let clear_opaque_releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+    let clear_ref_releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+    let clear_payload_capture = std::sync::Arc::clone(&clear_payload_releases);
+    let clear_opaque_capture = std::sync::Arc::clone(&clear_opaque_releases);
+    let clear_ref_capture = std::sync::Arc::clone(&clear_ref_releases);
+
+    let mut move_storage = vec![0xab, 0xbb];
+    move_storage.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0);
+    let move_buffer =
+        BufferRef::from_vec_with_len_and_release_callback(move_storage, 2, move |data| {
+            clear_payload_capture.lock().unwrap().push(data);
+        })
+        .unwrap();
+    let mut clear_move_src = Packet::with_buffer(move_buffer, 11);
+    clear_move_src.set_pts(Some(99));
+    clear_move_src.set_opaque_ref(Some(BufferRef::from_vec_with_release_callback(
+        vec![0xcc],
+        move |data| {
+            clear_opaque_capture.lock().unwrap().push(data);
+        },
+    )));
+
+    let mut ref_storage = vec![0xe1, 0xe2];
+    ref_storage.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0);
+    let ref_buffer =
+        BufferRef::from_vec_with_len_and_release_callback(ref_storage, 2, move |data| {
+            clear_ref_capture.lock().unwrap().push(data);
+        })
+        .unwrap();
+    let clear_ref_src = Packet::with_buffer(ref_buffer, 22);
+
+    fifo.write_move(&mut clear_move_src).unwrap();
+    fifo.write_ref(&clear_ref_src).unwrap();
+    rows.insert(
+        "packet:fifo-clear-mixed-before".to_string(),
+        vec![
+            fifo.can_read().to_string(),
+            clear_payload_releases.lock().unwrap().len().to_string(),
+            clear_opaque_releases.lock().unwrap().len().to_string(),
+            clear_ref_releases.lock().unwrap().len().to_string(),
+        ],
+    );
+    fifo.clear();
+    let clear_payload_release_rows = clear_payload_releases.lock().unwrap().clone();
+    let clear_opaque_release_rows = clear_opaque_releases.lock().unwrap().clone();
+    let clear_ref_release_rows = clear_ref_releases.lock().unwrap().clone();
+    rows.insert(
+        "packet:fifo-clear-mixed-after".to_string(),
+        vec![
+            fifo.can_read().to_string(),
+            clear_payload_release_rows.len().to_string(),
+            hex_or_dash(&clear_payload_release_rows[0][..2]),
+            clear_opaque_release_rows.len().to_string(),
+            hex_or_dash(&clear_opaque_release_rows[0]),
+            clear_ref_release_rows.len().to_string(),
+        ],
+    );
+    rows.insert(
+        "packet:fifo-clear-mixed-ref-src".to_string(),
+        packet_fields(&clear_ref_src),
+    );
+    let err = fifo.peek(0).unwrap_err();
+    rows.insert(
+        "packet:fifo-clear-mixed-empty-peek-ret".to_string(),
+        vec![err.code().unwrap().raw().to_string()],
+    );
+    drop(clear_ref_src);
+    let clear_ref_release_rows = clear_ref_releases.lock().unwrap().clone();
+    rows.insert(
+        "packet:fifo-clear-mixed-ref-release-after-drop".to_string(),
+        vec![
+            clear_ref_release_rows.len().to_string(),
+            hex_or_dash(&clear_ref_release_rows[0][..2]),
+        ],
+    );
 }
 
 fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
@@ -4920,6 +5003,20 @@ static int fifo_release_payload_first = -1;
 static int fifo_release_payload_second = -1;
 static int fifo_release_opaque_count = 0;
 static int fifo_release_opaque_first = -1;
+static int fifo_release_ref_payload_count = 0;
+static int fifo_release_ref_payload_first = -1;
+static int fifo_release_ref_payload_second = -1;
+
+static void reset_fifo_release_counters(void) {
+    fifo_release_payload_count = 0;
+    fifo_release_payload_first = -1;
+    fifo_release_payload_second = -1;
+    fifo_release_opaque_count = 0;
+    fifo_release_opaque_first = -1;
+    fifo_release_ref_payload_count = 0;
+    fifo_release_ref_payload_first = -1;
+    fifo_release_ref_payload_second = -1;
+}
 
 static void free_fifo_payload(void *opaque, uint8_t *data) {
     (void)opaque;
@@ -4933,6 +5030,14 @@ static void free_fifo_opaque_ref(void *opaque, uint8_t *data) {
     (void)opaque;
     fifo_release_opaque_count++;
     fifo_release_opaque_first = data ? data[0] : -1;
+    av_free(data);
+}
+
+static void free_fifo_ref_payload(void *opaque, uint8_t *data) {
+    (void)opaque;
+    fifo_release_ref_payload_count++;
+    fifo_release_ref_payload_first = data ? data[0] : -1;
+    fifo_release_ref_payload_second = data ? data[1] : -1;
     av_free(data);
 }
 
@@ -6276,6 +6381,7 @@ static void exercise_packet_fifo_api(void) {
     av_packet_free(&unknown_flags_dst);
     av_packet_free(&unknown_flags_src);
 
+    reset_fifo_release_counters();
     AVPacket *free_queued_src = new_packet();
     uint8_t *free_queued_payload =
         av_mallocz(2 + AV_INPUT_BUFFER_PADDING_SIZE);
@@ -6407,6 +6513,87 @@ static void exercise_packet_fifo_api(void) {
     print_packet("packet:fifo-read-empty-ref-preserve-dst",
                  empty_ref_preserve_dst);
     av_packet_free(&empty_ref_preserve_dst);
+
+    av_container_fifo_drain(fifo, 0);
+    printf("packet:fifo-clear-empty-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+
+    reset_fifo_release_counters();
+    AVPacket *clear_move_src = new_packet();
+    uint8_t *clear_move_payload =
+        av_mallocz(2 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!clear_move_payload, "fifo clear move payload allocation failed");
+    clear_move_payload[0] = 0xab;
+    clear_move_payload[1] = 0xbb;
+    clear_move_src->buf = av_buffer_create(
+        clear_move_payload,
+        2 + AV_INPUT_BUFFER_PADDING_SIZE,
+        free_fifo_payload,
+        NULL,
+        0);
+    fail_if(!clear_move_src->buf, "fifo clear move payload buffer failed");
+    clear_move_src->data = clear_move_payload;
+    clear_move_src->size = 2;
+    clear_move_src->stream_index = 11;
+    clear_move_src->pts = 99;
+    uint8_t *clear_move_opaque = av_mallocz(1);
+    fail_if(!clear_move_opaque, "fifo clear move opaque allocation failed");
+    clear_move_opaque[0] = 0xcc;
+    clear_move_src->opaque_ref = av_buffer_create(
+        clear_move_opaque,
+        1,
+        free_fifo_opaque_ref,
+        NULL,
+        0);
+    fail_if(!clear_move_src->opaque_ref,
+            "fifo clear move opaque_ref buffer failed");
+
+    AVPacket *clear_ref_src = new_packet();
+    uint8_t *clear_ref_payload =
+        av_mallocz(2 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!clear_ref_payload, "fifo clear ref payload allocation failed");
+    clear_ref_payload[0] = 0xe1;
+    clear_ref_payload[1] = 0xe2;
+    clear_ref_src->buf = av_buffer_create(
+        clear_ref_payload,
+        2 + AV_INPUT_BUFFER_PADDING_SIZE,
+        free_fifo_ref_payload,
+        NULL,
+        0);
+    fail_if(!clear_ref_src->buf, "fifo clear ref payload buffer failed");
+    clear_ref_src->data = clear_ref_payload;
+    clear_ref_src->size = 2;
+    clear_ref_src->stream_index = 22;
+
+    fail_if(av_container_fifo_write(fifo, clear_move_src, 0) < 0,
+            "fifo clear move write failed");
+    fail_if(av_container_fifo_write(fifo, clear_ref_src,
+                                    AV_CONTAINER_FIFO_FLAG_REF) < 0,
+            "fifo clear ref write failed");
+    printf("packet:fifo-clear-mixed-before|%zu|%d|%d|%d\n",
+           av_container_fifo_can_read(fifo),
+           fifo_release_payload_count,
+           fifo_release_opaque_count,
+           fifo_release_ref_payload_count);
+    av_container_fifo_drain(fifo, av_container_fifo_can_read(fifo));
+    printf("packet:fifo-clear-mixed-after|%zu|%d|%02x%02x|%d|%02x|%d\n",
+           av_container_fifo_can_read(fifo),
+           fifo_release_payload_count,
+           fifo_release_payload_first & 0xff,
+           fifo_release_payload_second & 0xff,
+           fifo_release_opaque_count,
+           fifo_release_opaque_first & 0xff,
+           fifo_release_ref_payload_count);
+    print_packet("packet:fifo-clear-mixed-ref-src", clear_ref_src);
+    peek = NULL;
+    ret = av_container_fifo_peek(fifo, (void **)&peek, 0);
+    printf("packet:fifo-clear-mixed-empty-peek-ret|%d\n", ret);
+    av_packet_free(&clear_move_src);
+    av_packet_free(&clear_ref_src);
+    printf("packet:fifo-clear-mixed-ref-release-after-drop|%d|%02x%02x\n",
+           fifo_release_ref_payload_count,
+           fifo_release_ref_payload_first & 0xff,
+           fifo_release_ref_payload_second & 0xff);
 
     av_packet_free(&first);
     av_packet_free(&second);

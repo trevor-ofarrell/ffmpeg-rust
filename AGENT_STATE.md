@@ -3,6 +3,57 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active with xhigh
+fast/full-access subagents and no approval prompts. After committing
+`858968bf Pin buffer recycle rejection lifecycles`, the tree was clean at
+`master...origin/master [ahead 67]`; strict completion remains 11/96
+components, about 11.5%. The main thread then implemented Nash the 2nd's
+recommended `avutil-packet` `PacketFifo::clear` lifecycle slice. No worker
+edited files in this dirty packet slice.
+
+Current main-thread slice: pinned libavcodec oracle rows now cover the public
+`AVContainerFifo` all-drain equivalent for a mixed move/ref packet queue. The
+rows prove all-draining an empty FIFO is a no-op, all-draining a mixed queue
+releases the move-written payload storage and `opaque_ref` storage exactly once,
+preserves the ref-written source packet and its payload while that source stays
+alive, leaves the FIFO empty, and releases the ref source only when that source
+drops. Rust `PacketFifo::clear()` now has direct unit coverage for the same
+lifecycle plus deterministic `avutil_core_models` fuzz coverage.
+`avutil-packet` remains `fate_pass`, not `complete`.
+
+Latest validation commands for this packet slice passed: `cargo fmt --all --
+--check`; `cargo test -p avutil --target-dir target-orch-packet-clear
+packet_fifo_clear_releases_moved_packets_and_preserves_ref_sources --
+--nocapture`; `cargo check --manifest-path fuzz\\Cargo.toml --target-dir
+target-orch-fuzz-packet-clear --target x86_64-pc-windows-msvc --bin
+avutil_core_models`; `cargo test -p avutil --test packet_oracle --target-dir
+target-orch-packet-clear-oracle
+libavcodec_packet_core_lifecycle_matches_packet_model -- --ignored
+--nocapture`; `cargo run -p fate-runner --target-dir
+target-orch-fate-packet-clear-run -- run --mappings
+tests\\differential\\mappings.txt --component avutil-packet --target
+oracle-libavcodec-packet-core --oracle-ffmpeg
+./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd`; `cargo clippy -p avutil
+--all-targets --all-features --target-dir
+target-orch-clippy-avutil-packet-clear -- -D warnings`; and WSL `cargo fuzz run
+avutil_core_models -- -runs=1`.
+
+Latest failing or limited commands for this packet slice: the first focused
+unit run panicked because the test kept an extra cloned `BufferRef` alive while
+expecting the ref-written source release callback to fire; the panic poisoned
+the release mutex and caused a secondary callback panic during unwinding on
+Windows. The test and fuzz fixture now drop the clone before asserting final
+release, and the focused unit plus oracle/fuzz gates pass. No behavior failure
+remains.
+
+Current focus component: `avutil-packet` remains the top priority incomplete
+component (`fate_pass`), followed by `avutil-buffer` (`differential_pass`),
+`avutil-frame` (`differential_pass`), `avutil-logging` (`fate_pass`), and
+`avutil-options` (`fate_pass`). Next 3 concrete actions: run final ledger and
+runtime guards for this packet slice, commit it if clean, then use the next
+clean-tree window to delegate disjoint lanes such as `avutil-logging` callback
+ABI audit/implementation or `avutil-frame` PAL8 palette propagation.
+
+Current authoritative turn status: orchestrator workflow is active with xhigh
 fast/full-access subagents and no approval prompts. The tree started at
 `master...origin/master [ahead 66]`; strict completion remains 11/96
 components, about 11.5%. The main thread reserved the dirty buffer files and
