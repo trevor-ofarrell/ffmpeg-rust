@@ -1678,6 +1678,21 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_fields(&new_packet_reset),
     );
 
+    let mut new_packet_reset_zero = packet_with_common_props();
+    new_packet_reset_zero.alloc_new_packet_payload(0).unwrap();
+    rows.insert(
+        "packet:payload-new-packet-reset-zero-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-new-packet-reset-zero".to_string(),
+        packet_fields(&new_packet_reset_zero),
+    );
+    rows.insert(
+        "packet:payload-new-packet-reset-zero-payload".to_string(),
+        payload_fields(&new_packet_reset_zero),
+    );
+
     let mut new_packet_invalid = packet_with_common_props();
     let invalid_ret = new_packet_invalid
         .alloc_new_packet_payload(AV_PACKET_MAX_PAYLOAD_SIZE + 1)
@@ -6580,6 +6595,14 @@ static void exercise_payload_api(void) {
     pkt->data[2] = 0x30;
     print_packet("packet:payload-new-packet-reset", pkt);
     print_payload("packet:payload-new-packet-reset-payload", pkt);
+    av_packet_free(&pkt);
+
+    pkt = packet_with_common_props();
+    ret = av_new_packet(pkt, 0);
+    printf("packet:payload-new-packet-reset-zero-ret|%d\n", ret);
+    fail_if(ret < 0, "av_new_packet reset zero payload failed");
+    print_packet("packet:payload-new-packet-reset-zero", pkt);
+    print_payload("packet:payload-new-packet-reset-zero-payload", pkt);
     av_packet_free(&pkt);
 
     pkt = packet_with_common_props();

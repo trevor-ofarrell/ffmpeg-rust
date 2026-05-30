@@ -10,6 +10,15 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  `av_new_packet(pkt, 0)` on a pre-populated packet succeeds, resets metadata,
+  side data, flags, stream index, opaque pointer metadata, `opaque_ref`, and
+  packet `time_base`, and installs zero visible payload bytes with FFmpeg input
+  padding and writable refcounted storage. Rust mirrors this through
+  `Packet::alloc_new_packet_payload(0)`, focused unit coverage, the mapped
+  packet oracle, and a deterministic `avutil_core_models` fixture. This
+  strengthens `avutil-packet`; strict completion remains 11/96 and the row
+  remains `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   zero-size `AV_PKT_DATA_NEW_EXTRADATA` side data survives `av_grow_packet()`
   and `av_shrink_packet()`, with payload, timestamps, stream index, flags,
   opaque metadata, `opaque_ref`, and `time_base` preserved after deterministic

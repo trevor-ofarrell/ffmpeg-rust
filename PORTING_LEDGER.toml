@@ -551,6 +551,7 @@ unit_tests = [
   "frame::tests::frame_add_side_data_with_flags_matches_array_insert_semantics",
   "packet::tests::packet_from_data_and_zeroed_constructors_add_input_padding",
   "packet::tests::packet_alloc_new_packet_payload_resets_metadata_and_checks_size",
+  "packet::tests::packet_alloc_new_packet_payload_zero_resets_metadata",
   "packet::tests::packet_grow_and_shrink_data_preserve_payload_and_padding",
   "packet::tests::packet_make_writable_detaches_shared_payload_with_padding",
   "packet::tests::packet_make_writable_preserves_metadata_and_detaches_shared_payloads",
@@ -675,6 +676,13 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: pinned libavcodec AVPacket payload oracle coverage now validates
+# `av_new_packet(pkt, 0)` on a pre-populated packet through
+# packet:payload-new-packet-reset-zero-* rows. FFmpeg returns success, resets
+# payload-owned and property fields to defaults, installs zero visible bytes
+# with input padding, and leaves writable refcounted storage; Rust
+# `Packet::alloc_new_packet_payload(0)`, unit coverage, and avutil_core_models
+# fuzz-smoke invariants cover the same reset-plus-zero-size path.
 # Latest update: pinned libavcodec AVPacket oracle coverage now validates
 # zero-size AV_PKT_DATA_NEW_EXTRADATA preservation through av_grow_packet() and
 # av_shrink_packet(). Rust unit tests and avutil_core_models fuzz-smoke

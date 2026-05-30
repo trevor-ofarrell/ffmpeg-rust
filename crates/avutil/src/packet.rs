@@ -12046,6 +12046,48 @@ mod tests {
     }
 
     #[test]
+    fn packet_alloc_new_packet_payload_zero_resets_metadata() {
+        let mut packet = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
+        packet.set_pts(Some(90_000));
+        packet.set_dts(Some(45_000));
+        packet.set_duration(180_000).unwrap();
+        packet.set_pos(Some(1_234)).unwrap();
+        packet.stream_index = 7;
+        packet.set_flag(PacketFlags::KEY, true);
+        packet.set_flag(PacketFlags::CORRUPT, true);
+        packet
+            .set_time_base(Rational::new(1, 90_000).unwrap())
+            .unwrap();
+        packet.push_side_data(SideData::new_extradata(vec![0x11, 0x22]).unwrap());
+        packet.set_opaque_address(0x1234);
+        packet.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad])));
+
+        packet.alloc_new_packet_payload(0).unwrap();
+
+        assert!(packet.data().is_empty());
+        assert_eq!(
+            packet.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(packet
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+        assert!(packet.is_data_writable());
+        assert_eq!(packet.stream_index(), 0);
+        assert_eq!(packet.pts(), None);
+        assert_eq!(packet.dts(), None);
+        assert_eq!(packet.duration(), 0);
+        assert_eq!(packet.pos(), None);
+        assert!(packet.flags().is_empty());
+        assert!(packet.side_data().is_empty());
+        assert!(packet.opaque().is_none());
+        assert!(packet.opaque_ref().is_none());
+        assert_eq!(packet.time_base(), Rational::ZERO);
+    }
+
+    #[test]
     fn packet_make_writable_detaches_shared_payload_with_padding() {
         let src = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
         let mut dst = Packet::default();

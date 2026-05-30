@@ -9516,6 +9516,42 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert!(new_packet_reset.opaque_ref().is_none());
     assert_eq!(new_packet_reset.time_base(), Rational::ZERO);
 
+    let mut new_packet_zero_reset = Packet::new(vec![0x77, 0x88], 7);
+    new_packet_zero_reset.set_pts(Some(90_000));
+    new_packet_zero_reset.set_dts(Some(45_000));
+    new_packet_zero_reset.set_duration(180_000).unwrap();
+    new_packet_zero_reset.set_pos(Some(1_234)).unwrap();
+    new_packet_zero_reset.set_flag(PacketFlags::KEY, true);
+    new_packet_zero_reset.set_flag(PacketFlags::CORRUPT, true);
+    new_packet_zero_reset
+        .set_time_base(Rational::new(1, 90_000).unwrap())
+        .unwrap();
+    new_packet_zero_reset.push_side_data(SideData::new_extradata(vec![0x11, 0x22]).unwrap());
+    new_packet_zero_reset.set_opaque_address(0x1234);
+    new_packet_zero_reset.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad])));
+    new_packet_zero_reset.alloc_new_packet_payload(0).unwrap();
+    assert!(new_packet_zero_reset.data().is_empty());
+    assert_eq!(
+        new_packet_zero_reset.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(new_packet_zero_reset
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    assert!(new_packet_zero_reset.is_data_writable());
+    assert_eq!(new_packet_zero_reset.stream_index(), 0);
+    assert_eq!(new_packet_zero_reset.pts(), None);
+    assert_eq!(new_packet_zero_reset.dts(), None);
+    assert_eq!(new_packet_zero_reset.duration(), 0);
+    assert_eq!(new_packet_zero_reset.pos(), None);
+    assert!(new_packet_zero_reset.flags().is_empty());
+    assert!(new_packet_zero_reset.side_data().is_empty());
+    assert!(new_packet_zero_reset.opaque().is_none());
+    assert!(new_packet_zero_reset.opaque_ref().is_none());
+    assert_eq!(new_packet_zero_reset.time_base(), Rational::ZERO);
+
     let mut invalid_new_packet = Packet::from_data(vec![0x33, 0x44]).unwrap();
     invalid_new_packet.set_pts(Some(12));
     invalid_new_packet.set_duration(34).unwrap();

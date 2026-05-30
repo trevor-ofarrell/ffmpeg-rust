@@ -3,6 +3,67 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The
+tree started clean at `master...origin/master [ahead 7]`; required startup
+checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
+-- status --next 15` reporting 11/96 strict-complete components (11.5%) and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validating the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
+kept the next slice on top-priority `avutil-packet`; no subagents were needed.
+
+Current main-thread slice: pinned libavcodec rows now prove
+`av_new_packet(pkt, 0)` on a pre-populated packet succeeds, resets payload and
+property fields to FFmpeg defaults, clears side data, opaque pointer metadata,
+`opaque_ref`, flags, stream index, and packet `time_base`, and leaves zero
+visible payload bytes with FFmpeg input padding plus writable refcounted
+storage. Rust mirrors this through `Packet::alloc_new_packet_payload(0)`,
+focused unit coverage, mapped packet oracle rows, and deterministic
+`avutil_core_models` invariants. `avutil-packet` remains `fate_pass`, not
+`complete`; strict completion remains 11/96.
+
+Latest validation commands for this packet zero-size `av_new_packet()` reset
+slice passed: `cargo fmt --all`; `CARGO_TARGET_DIR=target-orch-avutil cargo
+test -p avutil --lib packet_alloc_new_packet_payload_zero_resets_metadata --
+--nocapture`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
+packet_oracle libavcodec_packet_core_lifecycle_matches_packet_model --
+--ignored --nocapture`; `cargo check --manifest-path fuzz/Cargo.toml
+--target-dir target-wsl-fuzz --bin avutil_core_models`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run --mappings
+tests/differential/mappings.txt --component avutil-packet --target
+oracle-libavcodec-packet-core --oracle-ffmpeg
+./third_party/ffmpeg-oracle/build/bin/ffmpeg`; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- run --component avutil-packet`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil --all-targets
+--all-features -- -D warnings`; `cargo clippy --manifest-path fuzz/Cargo.toml
+--target-dir target-wsl-fuzz --bin avutil_core_models -- -D warnings`;
+`RUST_MIN_STACK=33554432 CXXFLAGS='-O1' HOST_CXXFLAGS='-O1'
+CARGO_TARGET_DIR=target-wsl-fuzz LSAN_OPTIONS=detect_leaks=0
+ASAN_OPTIONS=detect_leaks=0 cargo fuzz run avutil_core_models -- -runs=1`;
+`cargo fmt --all -- --check`; `CARGO_TARGET_DIR=target-orch-fate cargo test
+-p fate-runner current_ledger`; `CARGO_TARGET_DIR=target-orch-fate cargo run
+-p xtask -- guard-runtime`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p
+xtask -- oracle-doctor`; and `CARGO_TARGET_DIR=target-orch-fate cargo run -p
+fate-runner -- status --next 15`.
+
+Latest failing or limited command for this slice: no behavior failure. The
+first `cargo check --manifest-path fuzz/Cargo.toml --target-dir
+target-wsl-fuzz --bin avutil_core_models` caught a private-field access in the
+new deterministic fixture; the fixture was corrected to use the public packet
+constructor, and the rerun passed. The WSL fuzz smoke intentionally used
+`LSAN_OPTIONS=detect_leaks=0 ASAN_OPTIONS=detect_leaks=0` because this
+environment previously hit the local LeakSanitizer `does not work under ptrace`
+fatal condition after successful corpus execution. The sanitizer binary relink
+took about 5.5 minutes in the stable `target-wsl-fuzz` cache and then completed
+the one-input corpus smoke.
+
+Current focus component: `avutil-packet` remains the top priority incomplete
+component (`fate_pass`), followed by `avutil-buffer` (`differential_pass`),
+`avutil-frame` (`differential_pass`), `avutil-logging` (`fate_pass`), and
+`avutil-options` (`fate_pass`). Next 3 concrete actions after this slice:
+commit if final diff review is clean; then continue `avutil-packet` strict
+evidence or delegate a disjoint `avutil-buffer` / `avutil-options` bounded row
+from a clean tree.
+
+Current authoritative turn status: orchestrator workflow is active on WSL. The
 tree started clean at `master...origin/master [ahead 6]`; required startup
 checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
 -- status --next 15` reporting 11/96 strict-complete components (11.5%) and
