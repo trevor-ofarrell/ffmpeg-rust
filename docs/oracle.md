@@ -114,6 +114,18 @@ the cargo-fuzz sandbox/tooling layer without usable completion output; unit,
 oracle, FATE-runner, and clippy gates cover the slice until a later warmed fuzz
 smoke can be recorded.
 
+The latest packet signed-duration fixture extends `avutil_core_models` with
+negative `AVPacket.duration` behavior. `Packet::set_duration` accepts signed
+values, `Packet::rescale_ts` preserves nonpositive duration while rescaling
+valid PTS/DTS, and copy/ref/clone/move lifecycles carry the negative duration
+field. The pinned libavcodec oracle emits matching
+`packet:rescale-negative-duration`,
+`packet:copy-props-negative-duration`, `packet:ref-negative-duration`,
+`packet:clone-negative-duration`, and `packet:move-negative-duration-*` rows.
+A bounded WSL one-input cargo-fuzz smoke for this slice timed out during
+cargo-fuzz build/link before target execution, so clippy/build coverage is
+recorded for the deterministic fixture until a later warmed smoke can run.
+
 The latest packet custom-padding fixture extends `avutil_core_models` with the
 deterministic `Packet::grow_data(0)` and no-op `Packet::shrink_data()` boundary:
 zero growth preserves visible payload and the backing pointer while zeroing

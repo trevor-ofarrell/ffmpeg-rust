@@ -5398,12 +5398,6 @@ impl Packet {
     }
 
     pub fn set_duration(&mut self, duration: i64) -> AvResult<()> {
-        if duration < 0 {
-            return Err(AvError::invalid_argument(
-                "packet duration must not be negative",
-            ));
-        }
-
         self.duration = duration;
         Ok(())
     }
@@ -5682,10 +5676,10 @@ impl Packet {
         } else {
             rescale_q(self.dts, src, dst)?
         };
-        let duration = if self.duration == 0 {
-            0
-        } else {
+        let duration = if self.duration > 0 {
             rescale_q(self.duration, src, dst)?
+        } else {
+            self.duration
         };
 
         self.pts = pts;
@@ -6540,7 +6534,7 @@ mod tests {
     }
 
     #[test]
-    fn packet_rejects_negative_duration_position_and_invalid_side_data_kind() {
+    fn packet_accepts_signed_duration_rejects_negative_position_and_invalid_side_data_kind() {
         let mut packet = Packet::new(Vec::new(), 0);
         packet.set_duration(5).unwrap();
         packet.set_pos(Some(9)).unwrap();
@@ -6548,8 +6542,8 @@ mod tests {
             .set_time_base(Rational::new(1, 1_000).unwrap())
             .unwrap();
 
-        assert!(packet.set_duration(-1).is_err());
-        assert_eq!(packet.duration(), 5);
+        packet.set_duration(-1).unwrap();
+        assert_eq!(packet.duration(), -1);
         assert!(packet.set_pos(Some(-1)).is_err());
         assert_eq!(packet.pos(), Some(9));
         assert_eq!(
@@ -14741,6 +14735,24 @@ mod tests {
         assert_eq!(negative_ts.time_base(), src);
         assert!(negative_ts.flags().contains(PacketFlags::CORRUPT));
         assert_eq!(negative_ts.data(), &[0xde, 0xad]);
+
+        let mut negative_duration = Packet::from_data(vec![0x71, 0x72]).unwrap();
+        negative_duration.set_pts(Some(90_000));
+        negative_duration.set_dts(Some(45_000));
+        negative_duration.set_duration(-45_000).unwrap();
+        negative_duration.set_pos(Some(777)).unwrap();
+        negative_duration.set_time_base(src).unwrap();
+        negative_duration.set_flag(PacketFlags::DISPOSABLE, true);
+
+        negative_duration.rescale_ts(src, dst).unwrap();
+
+        assert_eq!(negative_duration.pts(), Some(1_000));
+        assert_eq!(negative_duration.dts(), Some(500));
+        assert_eq!(negative_duration.duration(), -45_000);
+        assert_eq!(negative_duration.pos(), Some(777));
+        assert_eq!(negative_duration.time_base(), src);
+        assert!(negative_duration.flags().contains(PacketFlags::DISPOSABLE));
+        assert_eq!(negative_duration.data(), &[0x71, 0x72]);
     }
 
     #[test]
@@ -14811,5 +14823,49 @@ mod tests {
         assert_eq!(packet.pts(), Some(i64::MAX));
         assert_eq!(packet.dts(), Some(9));
         assert_eq!(packet.duration(), 8);
+    }
+
+    #[test]
+    fn packet_negative_duration_copies_refs_clones_and_moves() {
+        let mut source = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
+        source.set_pts(Some(90_000));
+        source.set_dts(Some(45_000));
+        source.set_duration(-17).unwrap();
+        source.set_pos(Some(321)).unwrap();
+        source
+            .set_time_base(Rational::new(1, 90_000).unwrap())
+            .unwrap();
+        source.set_flag(PacketFlags::KEY, true);
+        source.push_side_data(SideData::new_extradata(vec![0x11]).unwrap());
+        source.set_opaque(Some(PacketOpaque::new(0x1234).unwrap()));
+        source.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad])));
+
+        let mut copied = Packet::from_data(vec![0x99]).unwrap();
+        copied.copy_props_from(&source);
+        assert_eq!(copied.data(), &[0x99]);
+        assert_eq!(copied.duration(), -17);
+        assert_eq!(copied.pts(), source.pts());
+        assert_eq!(copied.dts(), source.dts());
+        assert_eq!(copied.side_data()[0].data(), &[0x11]);
+
+        let mut referenced = Packet::default();
+        referenced.ref_from(&source);
+        assert_eq!(referenced.data(), source.data());
+        assert_eq!(referenced.duration(), -17);
+        assert!(!referenced.is_data_writable());
+
+        let cloned = source.clone();
+        assert_eq!(cloned.data(), source.data());
+        assert_eq!(cloned.duration(), -17);
+        assert!(!cloned.is_data_writable());
+
+        let mut moved_source = source.clone();
+        moved_source.set_duration(-29).unwrap();
+        let mut moved = Packet::default();
+        moved.move_ref_from(&mut moved_source);
+        assert_eq!(moved.duration(), -29);
+        assert_eq!(moved.data(), &[0xaa, 0xbb]);
+        assert_eq!(moved_source.duration(), 0);
+        assert!(moved_source.is_empty());
     }
 }

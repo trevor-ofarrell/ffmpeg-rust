@@ -10930,13 +10930,12 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(packet.pts(), pts);
     assert_eq!(packet.dts(), dts);
 
-    let duration = i64::from(cursor.next().unwrap_or_default());
+    let duration = small_i64_from(cursor.next(), cursor.next());
     packet.set_duration(duration).unwrap();
     assert_eq!(packet.duration(), duration);
-    assert_eq!(
-        packet.set_duration(-1).unwrap_err().kind(),
-        AvErrorKind::InvalidArgument
-    );
+    packet.set_duration(-1).unwrap();
+    assert_eq!(packet.duration(), -1);
+    packet.set_duration(duration).unwrap();
     assert_eq!(packet.duration(), duration);
 
     let pos = if cursor.next().unwrap_or_default().is_multiple_of(3) {
@@ -10980,10 +10979,10 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     );
     assert_eq!(
         packet.duration(),
-        if original_timing.2 == 0 {
-            0
-        } else {
+        if original_timing.2 > 0 {
             rescale_q(original_timing.2, rescale_src, rescale_dst).unwrap()
+        } else {
+            original_timing.2
         }
     );
     assert_eq!(packet.time_base(), rescale_src);
@@ -11078,6 +11077,30 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .flags()
         .contains(PacketFlags::CORRUPT));
     assert_eq!(negative_ts_rescale_packet.data(), &[0xde, 0xad]);
+
+    let mut negative_duration_rescale_packet = Packet::from_data(vec![0x71, 0x72]).unwrap();
+    negative_duration_rescale_packet.set_pts(Some(90_000));
+    negative_duration_rescale_packet.set_dts(Some(45_000));
+    negative_duration_rescale_packet
+        .set_duration(-45_000)
+        .unwrap();
+    negative_duration_rescale_packet.set_pos(Some(777)).unwrap();
+    negative_duration_rescale_packet
+        .set_time_base(rescale_src)
+        .unwrap();
+    negative_duration_rescale_packet.set_flag(PacketFlags::DISPOSABLE, true);
+    negative_duration_rescale_packet
+        .rescale_ts(rescale_src, rescale_dst)
+        .unwrap();
+    assert_eq!(negative_duration_rescale_packet.pts(), Some(1_000));
+    assert_eq!(negative_duration_rescale_packet.dts(), Some(500));
+    assert_eq!(negative_duration_rescale_packet.duration(), -45_000);
+    assert_eq!(negative_duration_rescale_packet.pos(), Some(777));
+    assert_eq!(negative_duration_rescale_packet.time_base(), rescale_src);
+    assert!(negative_duration_rescale_packet
+        .flags()
+        .contains(PacketFlags::DISPOSABLE));
+    assert_eq!(negative_duration_rescale_packet.data(), &[0x71, 0x72]);
 
     let mut near_inf_rescale_packet = Packet::from_data(vec![0x51, 0x52, 0x53]).unwrap();
     let near_inf_src = Rational::new(1, 48_000).unwrap();

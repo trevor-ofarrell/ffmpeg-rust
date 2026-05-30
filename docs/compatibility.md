@@ -10,6 +10,15 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  `AVPacket.duration` is signed packet state. `av_packet_rescale_ts()` rescales
+  valid PTS/DTS while preserving negative duration unchanged, and
+  `av_packet_copy_props()`, `av_packet_ref()`, `av_packet_clone()`, and
+  `av_packet_move_ref()` carry negative duration through the normal lifecycle.
+  Rust mirrors this through focused unit coverage, the mapped packet oracle,
+  and a deterministic `avutil_core_models` fixture. This strengthens
+  `avutil-packet`; strict completion remains 11/96 and the row remains
+  `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   `av_packet_make_refcounted()` and unique-writable
   `av_packet_make_writable()` are no-ops for refcounted packets whose
   `AVBufferRef` has no logical trailing input-padding capacity. Rust now

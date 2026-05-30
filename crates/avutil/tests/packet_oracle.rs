@@ -304,10 +304,62 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         packet_fields(&rescaled_negative_near_inf_rounding),
     );
 
+    let mut rescaled_negative_duration = Packet::new(vec![0x71, 0x72], 9);
+    rescaled_negative_duration.set_pts(Some(90_000));
+    rescaled_negative_duration.set_dts(Some(45_000));
+    rescaled_negative_duration.set_duration(-45_000).unwrap();
+    rescaled_negative_duration.set_pos(Some(777)).unwrap();
+    rescaled_negative_duration.set_flag(PacketFlags::DISPOSABLE, true);
+    rescaled_negative_duration
+        .set_time_base(Rational::new(1, 90_000).unwrap())
+        .unwrap();
+    rescaled_negative_duration
+        .rescale_ts(
+            Rational::new(1, 90_000).unwrap(),
+            Rational::new(1, 1_000).unwrap(),
+        )
+        .unwrap();
+    rows.insert(
+        "packet:rescale-negative-duration".to_string(),
+        packet_fields(&rescaled_negative_duration),
+    );
+
     let src = packet_with_common_props();
     let mut copied = Packet::new(vec![0x99, 0x88], 1);
     copied.copy_props_from(&src);
     rows.insert("packet:copy-props".to_string(), packet_fields(&copied));
+
+    let mut negative_duration_src = packet_with_common_props();
+    negative_duration_src.set_duration(-17).unwrap();
+    let mut negative_duration_copy = Packet::from_data(vec![0x77]).unwrap();
+    negative_duration_copy.copy_props_from(&negative_duration_src);
+    rows.insert(
+        "packet:copy-props-negative-duration".to_string(),
+        packet_fields(&negative_duration_copy),
+    );
+    let mut negative_duration_ref = Packet::default();
+    negative_duration_ref.ref_from(&negative_duration_src);
+    rows.insert(
+        "packet:ref-negative-duration".to_string(),
+        packet_fields(&negative_duration_ref),
+    );
+    let negative_duration_clone = negative_duration_src.clone();
+    rows.insert(
+        "packet:clone-negative-duration".to_string(),
+        packet_fields(&negative_duration_clone),
+    );
+    let mut negative_duration_move_src = packet_with_common_props();
+    negative_duration_move_src.set_duration(-29).unwrap();
+    let mut negative_duration_move_dst = Packet::default();
+    negative_duration_move_dst.move_ref_from(&mut negative_duration_move_src);
+    rows.insert(
+        "packet:move-negative-duration-dst".to_string(),
+        packet_fields(&negative_duration_move_dst),
+    );
+    rows.insert(
+        "packet:move-negative-duration-src".to_string(),
+        packet_fields(&negative_duration_move_src),
+    );
 
     let empty_src = Packet::default();
     let mut copy_empty_dst = Packet::from_data(vec![0x12, 0x34]).unwrap();
@@ -8722,6 +8774,21 @@ int main(void) {
     print_packet("packet:rescale-negative-near-inf-rounding", pkt);
     av_packet_free(&pkt);
 
+    pkt = new_packet();
+    fail_if(av_new_packet(pkt, 2) < 0, "av_new_packet negative duration rescale failed");
+    pkt->data[0] = 0x71;
+    pkt->data[1] = 0x72;
+    pkt->pts = 90000;
+    pkt->dts = 45000;
+    pkt->duration = -45000;
+    pkt->pos = 777;
+    pkt->stream_index = 9;
+    pkt->flags = AV_PKT_FLAG_DISPOSABLE;
+    pkt->time_base = (AVRational){ 1, 90000 };
+    av_packet_rescale_ts(pkt, (AVRational){ 1, 90000 }, (AVRational){ 1, 1000 });
+    print_packet("packet:rescale-negative-duration", pkt);
+    av_packet_free(&pkt);
+
     AVPacket *src = packet_with_common_props();
     AVPacket *dst = new_packet();
     fail_if(av_new_packet(dst, 2) < 0, "av_new_packet copy dst failed");
@@ -8731,6 +8798,45 @@ int main(void) {
     fail_if(av_packet_copy_props(dst, src) < 0, "av_packet_copy_props failed");
     print_packet("packet:copy-props", dst);
     av_packet_free(&dst);
+
+    AVPacket *negative_duration_src = packet_with_common_props();
+    negative_duration_src->duration = -17;
+    AVPacket *negative_duration_copy = new_packet();
+    fail_if(av_new_packet(negative_duration_copy, 1) < 0,
+            "av_new_packet negative duration copy dst failed");
+    negative_duration_copy->data[0] = 0x77;
+    fail_if(av_packet_copy_props(negative_duration_copy,
+                                 negative_duration_src) < 0,
+            "av_packet_copy_props negative duration failed");
+    print_packet("packet:copy-props-negative-duration",
+                 negative_duration_copy);
+
+    AVPacket *negative_duration_ref = new_packet();
+    fail_if(av_packet_ref(negative_duration_ref, negative_duration_src) < 0,
+            "av_packet_ref negative duration failed");
+    print_packet("packet:ref-negative-duration", negative_duration_ref);
+
+    AVPacket *negative_duration_clone =
+        av_packet_clone(negative_duration_src);
+    fail_if(!negative_duration_clone, "av_packet_clone negative duration failed");
+    print_packet("packet:clone-negative-duration", negative_duration_clone);
+
+    AVPacket *negative_duration_move_src = packet_with_common_props();
+    negative_duration_move_src->duration = -29;
+    AVPacket *negative_duration_move_dst = new_packet();
+    av_packet_move_ref(negative_duration_move_dst,
+                       negative_duration_move_src);
+    print_packet("packet:move-negative-duration-dst",
+                 negative_duration_move_dst);
+    print_packet("packet:move-negative-duration-src",
+                 negative_duration_move_src);
+
+    av_packet_free(&negative_duration_move_dst);
+    av_packet_free(&negative_duration_move_src);
+    av_packet_free(&negative_duration_clone);
+    av_packet_free(&negative_duration_ref);
+    av_packet_free(&negative_duration_copy);
+    av_packet_free(&negative_duration_src);
 
     AVPacket *empty_src = new_packet();
     AVPacket *copy_empty_dst = new_packet();
