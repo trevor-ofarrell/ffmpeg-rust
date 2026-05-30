@@ -3,7 +3,7 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The
-tree started clean at `master...origin/master [ahead 15]`; required startup
+tree started clean at `master...origin/master [ahead 16]`; required startup
 checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
 -- status --next 15` reporting 11/96 strict-complete components (11.5%) and
 `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
@@ -11,19 +11,20 @@ validating the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
 kept the next slice on top-priority `avutil-packet`; no subagents were needed.
 
 Current main-thread slice: pinned libavcodec rows now prove
-`av_packet_move_ref()` transfers an `AVPacket` `data` pointer that starts at a
-nonzero offset inside `buf->data` into the destination, keeps the destination
-at the same offset with the same visible payload bytes and dirty FFmpeg
-input-padding bytes, preserves writability because ownership is moved rather
-than shared, and resets the source packet to defaults. Rust mirrors this
-through `Packet::move_ref_from()`/`BufferRef` ownership transfer, focused
-packet unit coverage, mapped packet oracle rows, and a deterministic
-`avutil_core_models` fixture. `avutil-packet` remains `fate_pass`, not
+`av_packet_copy_props()` preserves a destination `AVPacket` `data` pointer that
+starts at a nonzero offset inside `buf->data`, keeps the destination at the
+same offset with the same visible payload bytes, dirty FFmpeg input-padding
+bytes, and writability, and copies timestamps, flags, side data, opaque pointer
+metadata, `opaque_ref`, stream index, and `time_base` from the source. Rust
+mirrors this through `Packet::copy_props_from()` leaving the destination
+`BufferRef` untouched, focused packet unit coverage, mapped packet oracle rows,
+and a deterministic `avutil_core_models` fixture. `avutil-packet` remains
+`fate_pass`, not
 `complete`; strict completion remains 11/96.
 
-Latest validation commands for this packet offset-move slice passed:
+Latest validation commands for this packet offset-copy-props slice passed:
 `cargo fmt --all`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil
-packet_offset_payload_move_preserves_pointer_offset_and_resets_source --
+packet_offset_payload_copy_props_preserves_pointer_offset_and_padding --
 --nocapture`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo check --manifest-path
 fuzz/Cargo.toml --bin avutil_core_models`; `CARGO_TARGET_DIR=target-orch-avutil
 cargo test -p avutil --test packet_oracle
@@ -46,15 +47,15 @@ guard-runtime`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask --
 oracle-doctor`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner --
 status --next 15`; and `git diff --check` with CRLF warnings only. The WSL
 fuzz smoke used local leak detection disabled, rebuilt the sanitizer binary in
-4m21s in the stable `target-wsl-fuzz` cache, and completed the seed corpus.
+4m32s in the stable `target-wsl-fuzz` cache, and completed the three-file seed
+corpus.
 
 Current focus component: `avutil-packet` remains the top priority incomplete
 component (`fate_pass`), followed by `avutil-buffer` (`differential_pass`),
 `avutil-frame` (`differential_pass`), `avutil-logging` (`fate_pass`), and
-`avutil-options` (`fate_pass`). Next concrete action after this slice: commit
-if final diff review is clean, then continue `avutil-packet` strict evidence or
-move to a disjoint `avutil-buffer` / `avutil-options` bounded row from a clean
-tree.
+`avutil-options` (`fate_pass`). Next concrete action after this slice: continue
+`avutil-packet` strict evidence or move to a disjoint `avutil-buffer` /
+`avutil-options` bounded row from a clean tree.
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The
 tree started clean at `master...origin/master [ahead 14]`; required startup

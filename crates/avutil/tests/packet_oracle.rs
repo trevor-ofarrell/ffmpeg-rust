@@ -2204,6 +2204,36 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_fields(&offset_helper),
     );
 
+    let mut offset_copy_storage = vec![0xa0, 0xa1, 0xa2, 0x11, 0x22];
+    offset_copy_storage.resize(3 + 2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+    let mut offset_copy_dst = Packet::with_buffer(
+        BufferRef::from_vec(offset_copy_storage)
+            .into_ref_slice(3, 2)
+            .unwrap(),
+        5,
+    );
+    let offset_copy_src = packet_with_common_props();
+    let offset_copy_ptr = offset_copy_dst.data_buffer().as_padded_ptr();
+    offset_copy_dst.copy_props_from(&offset_copy_src);
+    rows.insert(
+        "packet:payload-copy-props-offset-padding-same-ptr".to_string(),
+        vec![
+            u8::from(offset_copy_dst.data_buffer().as_padded_ptr() == offset_copy_ptr).to_string(),
+        ],
+    );
+    rows.insert(
+        "packet:payload-copy-props-offset-padding-offset".to_string(),
+        vec![offset_copy_dst.data_buffer().offset().to_string()],
+    );
+    rows.insert(
+        "packet:payload-copy-props-offset-padding".to_string(),
+        payload_fields(&offset_copy_dst),
+    );
+    rows.insert(
+        "packet:payload-copy-props-offset-padding-props".to_string(),
+        packet_fields(&offset_copy_dst),
+    );
+
     let mut offset_ref_storage = vec![0xa0, 0xa1, 0xa2, 0x11, 0x22];
     offset_ref_storage.resize(3 + 2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
     let offset_ref_src = Packet::with_buffer(
@@ -8324,6 +8354,22 @@ int main(void) {
     print_payload("packet:payload-make-writable-offset-padding",
                   offset_helper);
     av_packet_free(&offset_helper);
+
+    AVPacket *offset_copy_src = packet_with_common_props();
+    AVPacket *offset_copy_dst = packet_with_offset_padding();
+    uint8_t *offset_copy_ptr = offset_copy_dst->data;
+    fail_if(av_packet_copy_props(offset_copy_dst, offset_copy_src) < 0,
+            "av_packet_copy_props offset padding failed");
+    printf("packet:payload-copy-props-offset-padding-same-ptr|%d\n",
+           offset_copy_dst->data == offset_copy_ptr);
+    printf("packet:payload-copy-props-offset-padding-offset|%td\n",
+           offset_copy_dst->data - offset_copy_dst->buf->data);
+    print_payload("packet:payload-copy-props-offset-padding",
+                  offset_copy_dst);
+    print_packet("packet:payload-copy-props-offset-padding-props",
+                 offset_copy_dst);
+    av_packet_free(&offset_copy_dst);
+    av_packet_free(&offset_copy_src);
 
     AVPacket *offset_ref = packet_with_offset_padding();
     AVPacket *offset_ref_dst = new_packet();

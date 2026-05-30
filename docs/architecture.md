@@ -168,6 +168,14 @@ The latest cropping oracle rows extend that bounded `Frame::apply_cropping` mode
 
 Read-only refcounted packet payload rows cover the bounded `AV_BUFFER_FLAG_READONLY` split: `av_packet_make_refcounted()` treats the existing buffer as refcounted and leaves its data pointer/non-writable state unchanged, while `av_packet_make_writable()` allocates new writable padded storage and preserves visible payload bytes.
 
+Offset-backed packet rows now cover property-only copying as well as
+ref/clone/move and resize helpers: `av_packet_copy_props()` preserves the
+destination `pkt->data` pointer when it starts inside `pkt->buf->data`, keeps
+dirty input padding and writability unchanged, and copies timestamps, flags,
+side data, opaque metadata, `opaque_ref`, stream index, and `time_base` from
+the source. `Packet::copy_props_from` mirrors that by leaving the
+destination `BufferRef` untouched while replacing packet properties.
+
 Zero-size side-data replacement is pinned for both packet-owned and standalone
 helper surfaces: `av_packet_add_side_data()` and
 `av_packet_side_data_add()` replace an existing `AV_PKT_DATA_NEW_EXTRADATA`

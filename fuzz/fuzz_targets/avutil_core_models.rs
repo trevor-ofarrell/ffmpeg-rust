@@ -9946,6 +9946,69 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .iter()
         .all(|byte| *byte == 0x5a));
 
+    let mut offset_copy_src = Packet::new(vec![0xaa, 0xbb], 7);
+    offset_copy_src.set_pts(Some(123));
+    offset_copy_src.set_dts(Some(111));
+    offset_copy_src.set_duration(12).unwrap();
+    offset_copy_src.set_pos(Some(456)).unwrap();
+    offset_copy_src.set_flag(PacketFlags::KEY, true);
+    offset_copy_src.set_flag(PacketFlags::DISPOSABLE, true);
+    offset_copy_src
+        .set_time_base(Rational::new(1, 1_000).unwrap())
+        .unwrap();
+    offset_copy_src
+        .push_side_data(SideData::new_extradata(vec![0x33, 0x44]).unwrap());
+    offset_copy_src.set_opaque(Some(PacketOpaque::new(0x1234).unwrap()));
+    offset_copy_src.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad])));
+
+    let mut offset_copy_storage = vec![0xa0, 0xa1, 0xa2];
+    offset_copy_storage.extend_from_slice(&payload);
+    offset_copy_storage.resize(3 + payload.len() + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+    let mut offset_copy_dst = Packet::with_buffer(
+        BufferRef::from_vec(offset_copy_storage)
+            .into_ref_slice(3, payload.len())
+            .unwrap(),
+        stream_index,
+    );
+    let offset_copy_ptr = offset_copy_dst.data_buffer().as_padded_ptr();
+    offset_copy_dst.copy_props_from(&offset_copy_src);
+    assert_eq!(offset_copy_dst.data(), payload.as_slice());
+    assert_eq!(offset_copy_dst.data_buffer().offset(), 3);
+    assert_eq!(
+        offset_copy_dst.data_buffer().as_padded_ptr(),
+        offset_copy_ptr
+    );
+    assert!(offset_copy_dst.is_data_writable());
+    assert!(offset_copy_dst
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0x5a));
+    assert_eq!(offset_copy_dst.stream_index(), 7);
+    assert_eq!(offset_copy_dst.pts(), Some(123));
+    assert_eq!(offset_copy_dst.dts(), Some(111));
+    assert_eq!(offset_copy_dst.duration(), 12);
+    assert_eq!(offset_copy_dst.pos(), Some(456));
+    assert_eq!(offset_copy_dst.time_base(), Rational::new(1, 1_000).unwrap());
+    assert!(offset_copy_dst.flags().contains(PacketFlags::KEY));
+    assert!(offset_copy_dst.flags().contains(PacketFlags::DISPOSABLE));
+    assert_eq!(
+        offset_copy_dst
+            .side_data_by_kind("new_extradata")
+            .unwrap()
+            .data(),
+        &[0x33, 0x44]
+    );
+    assert_eq!(offset_copy_dst.opaque_address(), Some(0x1234));
+    assert_eq!(
+        offset_copy_dst.opaque_ref().unwrap().as_slice(),
+        &[0xde, 0xad]
+    );
+    assert!(offset_copy_dst
+        .opaque_ref()
+        .unwrap()
+        .shares_storage(offset_copy_src.opaque_ref().unwrap()));
+
     let mut offset_ref_storage = vec![0xa0, 0xa1, 0xa2];
     offset_ref_storage.extend_from_slice(&payload);
     offset_ref_storage.resize(3 + payload.len() + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);

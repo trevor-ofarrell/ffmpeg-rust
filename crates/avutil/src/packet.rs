@@ -12445,6 +12445,59 @@ mod tests {
     }
 
     #[test]
+    fn packet_offset_payload_copy_props_preserves_pointer_offset_and_padding() {
+        let mut src = Packet::new(vec![0xaa, 0xbb], 7);
+        src.set_pts(Some(123));
+        src.set_dts(Some(111));
+        src.set_duration(12).unwrap();
+        src.set_pos(Some(456)).unwrap();
+        src.set_flag(PacketFlags::KEY, true);
+        src.set_flag(PacketFlags::DISPOSABLE, true);
+        src.set_time_base(Rational::new(1, 1_000).unwrap()).unwrap();
+        src.push_side_data(SideData::new_extradata(vec![0x33, 0x44]).unwrap());
+        src.set_opaque(Some(PacketOpaque::new(0x1234).unwrap()));
+        src.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad])));
+
+        let mut storage = vec![0xa0, 0xa1, 0xa2, 0x11, 0x22];
+        storage.resize(3 + 2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+        let mut dst = Packet::with_buffer(
+            BufferRef::from_vec(storage).into_ref_slice(3, 2).unwrap(),
+            5,
+        );
+        let payload_ptr = dst.data_buffer().as_padded_ptr();
+
+        dst.copy_props_from(&src);
+
+        assert_eq!(dst.data(), &[0x11, 0x22]);
+        assert_eq!(dst.data_buffer().offset(), 3);
+        assert_eq!(dst.data_buffer().as_padded_ptr(), payload_ptr);
+        assert!(dst.is_data_writable());
+        assert!(dst
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0x5a));
+        assert_eq!(dst.stream_index(), 7);
+        assert_eq!(dst.pts(), Some(123));
+        assert_eq!(dst.dts(), Some(111));
+        assert_eq!(dst.duration(), 12);
+        assert_eq!(dst.pos(), Some(456));
+        assert_eq!(dst.time_base(), Rational::new(1, 1_000).unwrap());
+        assert!(dst.flags().contains(PacketFlags::KEY));
+        assert!(dst.flags().contains(PacketFlags::DISPOSABLE));
+        assert_eq!(
+            dst.side_data_by_kind("new_extradata").unwrap().data(),
+            &[0x33, 0x44]
+        );
+        assert_eq!(dst.opaque_address(), Some(0x1234));
+        assert_eq!(dst.opaque_ref().unwrap().as_slice(), &[0xde, 0xad]);
+        assert!(dst
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(src.opaque_ref().unwrap()));
+    }
+
+    #[test]
     fn packet_zero_grow_sanitizes_padding_but_noop_shrink_preserves_it() {
         let mut grow_storage = vec![0x11, 0x22];
         grow_storage.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
