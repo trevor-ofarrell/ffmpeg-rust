@@ -2,6 +2,59 @@
 
 ## Current Status
 
+Current authoritative turn status: orchestrator workflow is active on WSL. The
+tree started clean at `master...origin/master`; required startup checks passed:
+`cargo run -p fate-runner -- status --next 15` reported 11/96 strict-complete
+components (11.5%), and `cargo run -p xtask -- oracle-doctor` validated the
+pinned FFmpeg 8.1.1 oracle and ABI versions. Three read-only scouts returned
+bounded future lanes for `avutil-packet`, `avutil-buffer`, and
+`avutil-logging`/`avutil-options`; no worker edited files.
+
+Current main-thread slice: pinned libavcodec packet FIFO rows now prove
+`av_container_fifo_drain(fifo, 1)` on a mixed move/ref packet FIFO releases the
+drained move-written payload and `opaque_ref` immediately, keeps the
+ref-written packet queued, then delays ref-source payload release until the
+queued ref is drained and the original source drops. Rust mirrors this with
+`PacketFifo::drain(1)` unit coverage and a deterministic `avutil_core_models`
+fixture. `avutil-packet` remains `fate_pass`, not `complete`; strict
+completion remains 11/96.
+
+Latest validation commands for this packet FIFO partial-drain slice passed so
+far: `cargo fmt --all`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p
+avutil --lib packet_fifo_partial_drain_releases_only_removed_entries --
+--nocapture`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
+packet_oracle libavcodec_packet_core_lifecycle_matches_packet_model --
+--ignored --nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p
+fate-runner -- run --mappings tests/differential/mappings.txt --component
+avutil-packet --target oracle-libavcodec-packet-core --oracle-ffmpeg
+./third_party/ffmpeg-oracle/build/bin/ffmpeg`; `CARGO_TARGET_DIR=target-orch-avutil
+cargo test -p avutil --lib packet_fifo -- --nocapture`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run --component
+avutil-packet`; `cargo check --manifest-path fuzz/Cargo.toml --target-dir
+target-wsl-fuzz --bin avutil_core_models`; `CARGO_TARGET_DIR=target-orch-avutil
+cargo clippy -p avutil --all-targets --all-features -- -D warnings`; `cargo
+clippy --manifest-path fuzz/Cargo.toml --target-dir target-wsl-fuzz --bin
+avutil_core_models -- -D warnings`; `cargo fmt --all -- --check`; and
+`RUST_MIN_STACK=33554432 CXXFLAGS='-O1' HOST_CXXFLAGS='-O1'
+CARGO_TARGET_DIR=target-wsl-fuzz LSAN_OPTIONS=detect_leaks=0
+ASAN_OPTIONS=detect_leaks=0 cargo fuzz run avutil_core_models -- -runs=1`.
+
+Latest failing or limited command for this slice: default `RUST_MIN_STACK=33554432
+CXXFLAGS='-O1' HOST_CXXFLAGS='-O1' CARGO_TARGET_DIR=target-wsl-fuzz cargo fuzz
+run avutil_core_models -- -runs=1` completed the seed corpus, then exited 1
+because LeakSanitizer reported its known `does not work under ptrace` fatal
+condition and wrote an empty-input artifact. The leak-disabled rerun above
+passed and is recorded only as target-logic smoke, not full leak-sanitizer
+evidence.
+
+Current focus component: `avutil-packet` remains the top priority incomplete
+component (`fate_pass`), followed by `avutil-buffer` (`differential_pass`),
+`avutil-frame` (`differential_pass`), `avutil-logging` (`fate_pass`), and
+`avutil-options` (`fate_pass`). Next 3 concrete actions after this slice:
+finish final ledger/runtime/status guards and commit if clean; then consider
+the read-only scout's empty/repeated `av_packet_free_side_data()` packet slice,
+or delegate the disjoint low-risk AVOption state-pinning row.
+
 Current authoritative turn status: orchestrator workflow is active with xhigh
 fast/full-access subagents and no approval prompts. The tree started at
 `master...origin/master [ahead 71]`; strict completion remains 11/96

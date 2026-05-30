@@ -9,6 +9,15 @@
 
 ## Compatible Today
 
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
+  `av_container_fifo_drain(fifo, 1)` on a mixed move/ref packet FIFO releases
+  only the drained move-written packet's payload and `opaque_ref`, leaves the
+  ref-written packet queued, and delays ref-source payload release until the
+  queued reference is drained and the original source drops. Rust mirrors this
+  with `PacketFifo::drain(1)`, unit coverage, the mapped packet oracle, and a
+  deterministic `avutil_core_models` fixture. This strengthens
+  `avutil-packet`; strict completion remains 11/96 and the row remains
+  `fate_pass`.
 - Latest orchestrated frame/buffer evidence: pinned libavutil rows now prove
   full PAL8 `AVFrame` palette side-plane behavior (`data[1]` with
   `linesize[1] == 0`) across get-buffer, ref, make-writable, copy, and crop

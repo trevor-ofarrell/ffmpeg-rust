@@ -2542,6 +2542,91 @@ fn insert_packet_fifo_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:fifo-after-drain-all-can-read".to_string(),
         vec![fifo.can_read().to_string()],
     );
+
+    let drain_payload_releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+    let drain_opaque_releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+    let drain_ref_releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+    let drain_payload_capture = std::sync::Arc::clone(&drain_payload_releases);
+    let drain_opaque_capture = std::sync::Arc::clone(&drain_opaque_releases);
+    let drain_ref_capture = std::sync::Arc::clone(&drain_ref_releases);
+
+    let mut drain_move_storage = vec![0xd1, 0xd2];
+    drain_move_storage.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0);
+    let drain_move_buffer =
+        BufferRef::from_vec_with_len_and_release_callback(drain_move_storage, 2, move |data| {
+            drain_payload_capture.lock().unwrap().push(data);
+        })
+        .unwrap();
+    let mut drain_move_src = Packet::with_buffer(drain_move_buffer, 33);
+    drain_move_src.set_pts(Some(3_300));
+    drain_move_src.set_opaque_ref(Some(BufferRef::from_vec_with_release_callback(
+        vec![0xd3],
+        move |data| {
+            drain_opaque_capture.lock().unwrap().push(data);
+        },
+    )));
+
+    let mut drain_ref_storage = vec![0xe3, 0xe4];
+    drain_ref_storage.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0);
+    let drain_ref_buffer =
+        BufferRef::from_vec_with_len_and_release_callback(drain_ref_storage, 2, move |data| {
+            drain_ref_capture.lock().unwrap().push(data);
+        })
+        .unwrap();
+    let drain_ref_src = Packet::with_buffer(drain_ref_buffer, 44);
+
+    fifo.write_move(&mut drain_move_src).unwrap();
+    fifo.write_ref(&drain_ref_src).unwrap();
+    rows.insert(
+        "packet:fifo-drain-one-release-before".to_string(),
+        vec![
+            fifo.can_read().to_string(),
+            drain_payload_releases.lock().unwrap().len().to_string(),
+            drain_opaque_releases.lock().unwrap().len().to_string(),
+            drain_ref_releases.lock().unwrap().len().to_string(),
+        ],
+    );
+    fifo.drain(1).unwrap();
+    rows.insert(
+        "packet:fifo-drain-one-release-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    let drain_payload_rows = drain_payload_releases.lock().unwrap().clone();
+    let drain_opaque_rows = drain_opaque_releases.lock().unwrap().clone();
+    let drain_ref_rows = drain_ref_releases.lock().unwrap().clone();
+    rows.insert(
+        "packet:fifo-drain-one-release-after".to_string(),
+        vec![
+            fifo.can_read().to_string(),
+            drain_payload_rows.len().to_string(),
+            hex_or_dash(&drain_payload_rows[0][..2]),
+            drain_opaque_rows.len().to_string(),
+            hex_or_dash(&drain_opaque_rows[0]),
+            drain_ref_rows.len().to_string(),
+        ],
+    );
+    rows.insert(
+        "packet:fifo-drain-one-release-peek".to_string(),
+        packet_fields(fifo.peek(0).unwrap()),
+    );
+    fifo.drain(1).unwrap();
+    rows.insert(
+        "packet:fifo-drain-one-release-after-rest".to_string(),
+        vec![
+            fifo.can_read().to_string(),
+            drain_ref_releases.lock().unwrap().len().to_string(),
+        ],
+    );
+    drop(drain_ref_src);
+    let drain_ref_rows = drain_ref_releases.lock().unwrap().clone();
+    rows.insert(
+        "packet:fifo-drain-one-release-ref-after-drop".to_string(),
+        vec![
+            drain_ref_rows.len().to_string(),
+            hex_or_dash(&drain_ref_rows[0][..2]),
+        ],
+    );
+
     let err = fifo.peek(0).unwrap_err();
     rows.insert(
         "packet:fifo-peek-empty-ret".to_string(),
@@ -6934,6 +7019,88 @@ static void exercise_packet_fifo_api(void) {
     av_container_fifo_drain(fifo, 1);
     printf("packet:fifo-after-drain-all-can-read|%zu\n",
            av_container_fifo_can_read(fifo));
+
+    reset_fifo_release_counters();
+    AVPacket *drain_move_src = new_packet();
+    uint8_t *drain_move_payload =
+        av_mallocz(2 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!drain_move_payload, "fifo drain move payload allocation failed");
+    drain_move_payload[0] = 0xd1;
+    drain_move_payload[1] = 0xd2;
+    drain_move_src->buf = av_buffer_create(
+        drain_move_payload,
+        2 + AV_INPUT_BUFFER_PADDING_SIZE,
+        free_fifo_payload,
+        NULL,
+        0);
+    fail_if(!drain_move_src->buf, "fifo drain move payload buffer failed");
+    drain_move_src->data = drain_move_payload;
+    drain_move_src->size = 2;
+    drain_move_src->stream_index = 33;
+    drain_move_src->pts = 3300;
+    uint8_t *drain_move_opaque = av_mallocz(1);
+    fail_if(!drain_move_opaque, "fifo drain move opaque allocation failed");
+    drain_move_opaque[0] = 0xd3;
+    drain_move_src->opaque_ref = av_buffer_create(
+        drain_move_opaque,
+        1,
+        free_fifo_opaque_ref,
+        NULL,
+        0);
+    fail_if(!drain_move_src->opaque_ref,
+            "fifo drain move opaque_ref buffer failed");
+
+    AVPacket *drain_ref_src = new_packet();
+    uint8_t *drain_ref_payload =
+        av_mallocz(2 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!drain_ref_payload, "fifo drain ref payload allocation failed");
+    drain_ref_payload[0] = 0xe3;
+    drain_ref_payload[1] = 0xe4;
+    drain_ref_src->buf = av_buffer_create(
+        drain_ref_payload,
+        2 + AV_INPUT_BUFFER_PADDING_SIZE,
+        free_fifo_ref_payload,
+        NULL,
+        0);
+    fail_if(!drain_ref_src->buf, "fifo drain ref payload buffer failed");
+    drain_ref_src->data = drain_ref_payload;
+    drain_ref_src->size = 2;
+    drain_ref_src->stream_index = 44;
+
+    fail_if(av_container_fifo_write(fifo, drain_move_src, 0) < 0,
+            "fifo drain move write failed");
+    fail_if(av_container_fifo_write(fifo, drain_ref_src,
+                                    AV_CONTAINER_FIFO_FLAG_REF) < 0,
+            "fifo drain ref write failed");
+    printf("packet:fifo-drain-one-release-before|%zu|%d|%d|%d\n",
+           av_container_fifo_can_read(fifo),
+           fifo_release_payload_count,
+           fifo_release_opaque_count,
+           fifo_release_ref_payload_count);
+    av_container_fifo_drain(fifo, 1);
+    printf("packet:fifo-drain-one-release-ret|%d\n", 0);
+    printf("packet:fifo-drain-one-release-after|%zu|%d|%02x%02x|%d|%02x|%d\n",
+           av_container_fifo_can_read(fifo),
+           fifo_release_payload_count,
+           fifo_release_payload_first & 0xff,
+           fifo_release_payload_second & 0xff,
+           fifo_release_opaque_count,
+           fifo_release_opaque_first & 0xff,
+           fifo_release_ref_payload_count);
+    peek = NULL;
+    ret = av_container_fifo_peek(fifo, (void **)&peek, 0);
+    fail_if(ret < 0 || !peek, "fifo drain one release peek failed");
+    print_packet("packet:fifo-drain-one-release-peek", peek);
+    av_container_fifo_drain(fifo, 1);
+    printf("packet:fifo-drain-one-release-after-rest|%zu|%d\n",
+           av_container_fifo_can_read(fifo),
+           fifo_release_ref_payload_count);
+    av_packet_free(&drain_move_src);
+    av_packet_free(&drain_ref_src);
+    printf("packet:fifo-drain-one-release-ref-after-drop|%d|%02x%02x\n",
+           fifo_release_ref_payload_count,
+           fifo_release_ref_payload_first & 0xff,
+           fifo_release_ref_payload_second & 0xff);
 
     peek = NULL;
     ret = av_container_fifo_peek(fifo, (void **)&peek, 0);

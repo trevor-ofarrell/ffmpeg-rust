@@ -11133,6 +11133,77 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         vec![fifo_clear_ref_storage]
     );
 
+    let fifo_drain_payload_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let fifo_drain_opaque_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let fifo_drain_ref_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let fifo_drain_payload_capture = Arc::clone(&fifo_drain_payload_releases);
+    let fifo_drain_opaque_capture = Arc::clone(&fifo_drain_opaque_releases);
+    let fifo_drain_ref_capture = Arc::clone(&fifo_drain_ref_releases);
+    let mut fifo_drain_move_storage = vec![0xd1, 0xd2];
+    fifo_drain_move_storage.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0);
+    let mut fifo_drain_move = Packet::with_buffer(
+        BufferRef::from_vec_with_len_and_release_callback(
+            fifo_drain_move_storage.clone(),
+            2,
+            move |data| {
+                fifo_drain_payload_capture.lock().unwrap().push(data);
+            },
+        )
+        .unwrap(),
+        33,
+    );
+    fifo_drain_move.set_opaque_ref(Some(BufferRef::from_vec_with_release_callback(
+        vec![0xd3],
+        move |data| {
+            fifo_drain_opaque_capture.lock().unwrap().push(data);
+        },
+    )));
+    let mut fifo_drain_ref_storage = vec![0xe3, 0xe4];
+    fifo_drain_ref_storage.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0);
+    let fifo_drain_ref = Packet::with_buffer(
+        BufferRef::from_vec_with_len_and_release_callback(
+            fifo_drain_ref_storage.clone(),
+            2,
+            move |data| {
+                fifo_drain_ref_capture.lock().unwrap().push(data);
+            },
+        )
+        .unwrap(),
+        44,
+    );
+    let fifo_drain_ref_payload = fifo_drain_ref.data_buffer().clone();
+    let mut drain_fifo = PacketFifo::new();
+    drain_fifo.write_move(&mut fifo_drain_move).unwrap();
+    drain_fifo.write_ref(&fifo_drain_ref).unwrap();
+    assert!(fifo_drain_move.is_empty());
+    assert_eq!(drain_fifo.can_read(), 2);
+    drain_fifo.drain(1).unwrap();
+    assert_eq!(drain_fifo.can_read(), 1);
+    assert_eq!(
+        *fifo_drain_payload_releases.lock().unwrap(),
+        vec![fifo_drain_move_storage]
+    );
+    assert_eq!(
+        *fifo_drain_opaque_releases.lock().unwrap(),
+        vec![vec![0xd3]]
+    );
+    assert!(fifo_drain_ref_releases.lock().unwrap().is_empty());
+    assert_eq!(drain_fifo.peek(0).unwrap().data(), &[0xe3, 0xe4]);
+    assert!(drain_fifo
+        .peek(0)
+        .unwrap()
+        .data_buffer()
+        .shares_storage(&fifo_drain_ref_payload));
+    drain_fifo.drain(1).unwrap();
+    assert_eq!(drain_fifo.can_read(), 0);
+    assert!(fifo_drain_ref_releases.lock().unwrap().is_empty());
+    drop(fifo_drain_ref_payload);
+    drop(fifo_drain_ref);
+    assert_eq!(
+        *fifo_drain_ref_releases.lock().unwrap(),
+        vec![fifo_drain_ref_storage]
+    );
+
     let bridge_payload_len = usize::from(cursor.next().unwrap_or_default() % 16);
     let bridge_payload = payload_from(cursor, bridge_payload_len);
     let frame_side_data =

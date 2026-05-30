@@ -550,6 +550,7 @@ unit_tests = [
   "packet::tests::packet_fifo_drop_releases_queued_moved_payload_and_opaque_ref",
   "packet::tests::packet_fifo_option_take_matches_av_container_fifo_free_lifecycle",
   "packet::tests::packet_fifo_clear_releases_moved_packets_and_preserves_ref_sources",
+  "packet::tests::packet_fifo_partial_drain_releases_only_removed_entries",
   "packet::tests::packet_time_base_defaults_copies_resets_and_rescale_preserves",
 ]
 differential_tests = [
@@ -642,6 +643,12 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest packet FIFO partial-drain update: pinned libavcodec rows now prove
+# `av_container_fifo_drain(fifo, 1)` on a mixed move/ref packet queue releases
+# the drained move-written payload and `opaque_ref` immediately, keeps the
+# ref-written packet queued, and delays ref-source payload release until the
+# queued ref is drained and the original source drops. Rust unit coverage and
+# the deterministic `avutil_core_models` fixture mirror that release ordering.
 # Latest packet FIFO nullable-free update: pinned libavcodec rows now prove
 # `av_container_fifo_free(&fifo)` with `fifo == NULL` is a no-op, and freeing
 # an empty packet FIFO nulls the pointer while preserving zero readable entries.

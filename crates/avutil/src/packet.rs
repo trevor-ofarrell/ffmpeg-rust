@@ -13180,6 +13180,78 @@ mod tests {
     }
 
     #[test]
+    fn packet_fifo_partial_drain_releases_only_removed_entries() {
+        let payload_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+        let opaque_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+        let ref_payload_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+
+        let payload_capture = Arc::clone(&payload_releases);
+        let opaque_capture = Arc::clone(&opaque_releases);
+        let ref_payload_capture = Arc::clone(&ref_payload_releases);
+
+        let mut move_storage = vec![0xd1, 0xd2];
+        move_storage.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0);
+        let move_buffer = BufferRef::from_vec_with_len_and_release_callback(
+            move_storage.clone(),
+            2,
+            move |data| {
+                payload_capture.lock().unwrap().push(data);
+            },
+        )
+        .unwrap();
+        let mut move_src = Packet::with_buffer(move_buffer, 33);
+        move_src.set_pts(Some(3_300));
+        move_src.set_opaque_ref(Some(BufferRef::from_vec_with_release_callback(
+            vec![0xd3],
+            move |data| {
+                opaque_capture.lock().unwrap().push(data);
+            },
+        )));
+
+        let mut ref_storage = vec![0xe3, 0xe4];
+        ref_storage.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0);
+        let ref_buffer = BufferRef::from_vec_with_len_and_release_callback(
+            ref_storage.clone(),
+            2,
+            move |data| {
+                ref_payload_capture.lock().unwrap().push(data);
+            },
+        )
+        .unwrap();
+        let ref_src = Packet::with_buffer(ref_buffer, 44);
+        let ref_payload = ref_src.data_buffer().clone();
+
+        let mut fifo = PacketFifo::new();
+        fifo.write_move(&mut move_src).unwrap();
+        fifo.write_ref(&ref_src).unwrap();
+        assert!(move_src.is_empty());
+        assert_eq!(fifo.can_read(), 2);
+        assert!(payload_releases.lock().unwrap().is_empty());
+        assert!(opaque_releases.lock().unwrap().is_empty());
+        assert!(ref_payload_releases.lock().unwrap().is_empty());
+
+        fifo.drain(1).unwrap();
+        assert_eq!(fifo.can_read(), 1);
+        assert_eq!(*payload_releases.lock().unwrap(), vec![move_storage]);
+        assert_eq!(*opaque_releases.lock().unwrap(), vec![vec![0xd3]]);
+        assert!(ref_payload_releases.lock().unwrap().is_empty());
+        assert_eq!(fifo.peek(0).unwrap().data(), &[0xe3, 0xe4]);
+        assert!(fifo
+            .peek(0)
+            .unwrap()
+            .data_buffer()
+            .shares_storage(&ref_payload));
+        assert!(ref_src.data_buffer().shares_storage(&ref_payload));
+
+        fifo.drain(1).unwrap();
+        assert_eq!(fifo.can_read(), 0);
+        assert!(ref_payload_releases.lock().unwrap().is_empty());
+        drop(ref_payload);
+        drop(ref_src);
+        assert_eq!(*ref_payload_releases.lock().unwrap(), vec![ref_storage]);
+    }
+
+    #[test]
     fn packet_copy_props_preserves_destination_payload() {
         let mut src = Packet::new(vec![1, 2, 3], 4);
         src.set_pts(Some(12));
