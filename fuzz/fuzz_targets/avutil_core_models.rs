@@ -10347,6 +10347,50 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         &new_side_data_replacement[..strict_shrink_len]
     );
 
+    let mut empty_side_free = Packet::default();
+    empty_side_free.clear_side_data();
+    assert!(empty_side_free.side_data().is_empty());
+    empty_side_free.clear_side_data();
+    assert!(empty_side_free.side_data().is_empty());
+
+    let mut repeated_side_free = Packet::from_data(vec![0xaa, 0xbb, 0xcc]).unwrap();
+    repeated_side_free.set_pts(Some(90_000));
+    repeated_side_free.set_dts(Some(45_000));
+    repeated_side_free.set_duration(180_000).unwrap();
+    repeated_side_free.set_pos(Some(1_234)).unwrap();
+    repeated_side_free.set_flag(PacketFlags::KEY, true);
+    repeated_side_free.set_flag(PacketFlags::CORRUPT, true);
+    repeated_side_free
+        .set_time_base(Rational::new(1, 90_000).unwrap())
+        .unwrap();
+    repeated_side_free.push_side_data(SideData::new_extradata(vec![0x11, 0x22, 0x33]).unwrap());
+    repeated_side_free.set_opaque_address(0x1234);
+    repeated_side_free.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad, 0xbe])));
+    let repeated_payload_ref = repeated_side_free.data_buffer().clone();
+    let repeated_opaque_ref = repeated_side_free.opaque_ref().unwrap().clone();
+    repeated_side_free.clear_side_data();
+    repeated_side_free.clear_side_data();
+    assert!(repeated_side_free.side_data().is_empty());
+    assert_eq!(repeated_side_free.data(), &[0xaa, 0xbb, 0xcc]);
+    assert!(repeated_side_free
+        .data_buffer()
+        .shares_storage(&repeated_payload_ref));
+    assert_eq!(repeated_side_free.pts(), Some(90_000));
+    assert_eq!(repeated_side_free.dts(), Some(45_000));
+    assert_eq!(repeated_side_free.duration(), 180_000);
+    assert_eq!(repeated_side_free.pos(), Some(1_234));
+    assert!(repeated_side_free.flags().contains(PacketFlags::KEY));
+    assert!(repeated_side_free.flags().contains(PacketFlags::CORRUPT));
+    assert_eq!(
+        repeated_side_free.time_base(),
+        Rational::new(1, 90_000).unwrap()
+    );
+    assert_eq!(repeated_side_free.opaque_address(), Some(0x1234));
+    assert!(repeated_side_free
+        .opaque_ref()
+        .unwrap()
+        .shares_storage(&repeated_opaque_ref));
+
     let mut duplicate_packet = Packet::default();
     duplicate_packet
         .push_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x11]).unwrap());

@@ -643,6 +643,12 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest packet-owned free-side-data no-op update: pinned libavcodec rows now
+# prove `av_packet_free_side_data()` on an empty packet leaves side data empty,
+# and a repeated call after clearing a populated packet remains a no-op while
+# preserving payload, timestamps, flags, opaque pointer metadata, `opaque_ref`,
+# stream index, and packet `time_base`. Rust unit coverage and the
+# deterministic `avutil_core_models` fixture mirror the idempotent clear shape.
 # Latest packet FIFO partial-drain update: pinned libavcodec rows now prove
 # `av_container_fifo_drain(fifo, 1)` on a mixed move/ref packet queue releases
 # the drained move-written payload and `opaque_ref` immediately, keeps the

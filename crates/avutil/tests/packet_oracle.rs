@@ -2819,11 +2819,30 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         side_data_summary_fields(&packet),
     );
 
+    let mut empty_free = Packet::default();
+    empty_free.clear_side_data();
+    rows.insert(
+        "packet:side-free-empty".to_string(),
+        side_data_summary_fields(&empty_free),
+    );
+
     let mut preserved = packet_with_common_props();
     preserved.clear_side_data();
     rows.insert(
         "packet:side-free-preserves-fields".to_string(),
         packet_fields(&preserved),
+    );
+
+    let mut repeat = packet_with_common_props();
+    repeat.clear_side_data();
+    repeat.clear_side_data();
+    rows.insert(
+        "packet:side-free-repeat".to_string(),
+        side_data_summary_fields(&repeat),
+    );
+    rows.insert(
+        "packet:side-free-repeat-fields".to_string(),
+        packet_fields(&repeat),
     );
 
     let mut packet = Packet::default();
@@ -5535,9 +5554,21 @@ static void exercise_side_data_api(void) {
     print_side_data_summary("packet:side-free", pkt);
     av_packet_free(&pkt);
 
+    pkt = new_packet();
+    av_packet_free_side_data(pkt);
+    print_side_data_summary("packet:side-free-empty", pkt);
+    av_packet_free(&pkt);
+
     pkt = packet_with_common_props();
     av_packet_free_side_data(pkt);
     print_packet("packet:side-free-preserves-fields", pkt);
+    av_packet_free(&pkt);
+
+    pkt = packet_with_common_props();
+    av_packet_free_side_data(pkt);
+    av_packet_free_side_data(pkt);
+    print_side_data_summary("packet:side-free-repeat", pkt);
+    print_packet("packet:side-free-repeat-fields", pkt);
     av_packet_free(&pkt);
 
     pkt = new_packet();

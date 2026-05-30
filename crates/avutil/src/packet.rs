@@ -10659,6 +10659,12 @@ mod tests {
 
     #[test]
     fn packet_side_data_take_remove_and_clear_are_scoped() {
+        let mut empty = Packet::default();
+        empty.clear_side_data();
+        assert!(empty.side_data().is_empty());
+        empty.clear_side_data();
+        assert!(empty.side_data().is_empty());
+
         let mut packet = Packet::new(Vec::new(), 0);
         packet.push_side_data(SideData::new("palette", vec![0]).unwrap());
         packet.push_side_data(SideData::new("skip_samples", vec![1]).unwrap());
@@ -10693,6 +10699,7 @@ mod tests {
         let payload_ref = preserved.data_buffer().clone();
         let opaque_ref = preserved.opaque_ref().unwrap().clone();
 
+        preserved.clear_side_data();
         preserved.clear_side_data();
 
         assert!(preserved.side_data().is_empty());
