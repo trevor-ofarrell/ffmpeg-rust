@@ -75,7 +75,7 @@ Preferred parallel lanes after the current dirty slice is committed:
 - FATE/oracle mapping expansion
 - isolated fuzz corpus and harness strengthening
 
-Each worker should use a unique target directory such as `target-par-<component>` to avoid Cargo artifact contention. If separate git worktrees or branches are available, prefer one per worker. Merge worker output serially: review diffs, run narrow tests, run required oracle/FATE/fuzz gates, update ledger/state/docs centrally, then commit.
+Use unique Cargo target directories only while parallel workers are active or when a check would otherwise contend for the same build artifacts. Reuse stable per-lane directories such as `target-par-avutil-options`, `target-par-avutil-logging`, `target-orch-avutil`, `target-orch-fate`, and `target-wsl-fuzz` instead of creating a fresh `target-*` directory for every status, diff, guard, or check step. After a worker or temporary check completes, remove its temporary `target-*` directory unless an active process still needs it or the directory is intentionally kept as a stable warm cache. If separate git worktrees or branches are available, prefer one per worker. Merge worker output serially: review diffs, run narrow tests, run required oracle/FATE/fuzz gates, update ledger/state/docs centrally, then commit.
 
 ## Non-Negotiable Rules
 

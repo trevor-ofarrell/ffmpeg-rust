@@ -3696,12 +3696,14 @@ mod tests {
         assert_eq!(logger.records().len(), 1);
 
         let mut filtered_first = LogOnceState::new();
+        let record_count_before_filtered = logger.records().len();
         assert!(!logger.log_once(
             &mut filtered_first,
             LogRecord::new(LogLevel::Info, "ffmpeg", "filtered first"),
             LogLevel::Error,
         ));
         assert_eq!(filtered_first.raw(), 1);
+        assert_eq!(logger.records().len(), record_count_before_filtered);
         assert!(logger.log_once(
             &mut filtered_first,
             LogRecord::new(LogLevel::Info, "ffmpeg", "second visible"),

@@ -9160,6 +9160,15 @@ mod tests {
         assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
         assert_eq!(whitespace_shorthand, sample_options());
 
+        let mut empty_opts = sample_options();
+        assert_eq!(
+            empty_opts
+                .set_avoptions_from_string("", &["threads", "bitexact"], "=", ":")
+                .unwrap(),
+            0
+        );
+        assert_eq!(empty_opts, sample_options());
+
         let mut invalid_sep = sample_options();
         let err = invalid_sep
             .set_avoptions_from_string("threads=7", &[], "", ":")

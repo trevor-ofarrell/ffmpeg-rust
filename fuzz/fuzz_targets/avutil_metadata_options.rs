@@ -480,12 +480,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                 );
                 let mut trailing_pair_separator = sample_options();
                 assert_eq!(
-                    trailing_pair_separator.set_avoptions_from_string(
-                        "threads=7:",
-                        &[],
-                        "=",
-                        ":",
-                    ),
+                    trailing_pair_separator.set_avoptions_from_string("threads=7:", &[], "=", ":",),
                     Ok(1)
                 );
                 assert_eq!(
@@ -496,6 +491,12 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                     trailing_pair_separator.get("quality"),
                     Some(&OptionValue::Float(0.5))
                 );
+                let mut empty_opts = sample_options();
+                assert_eq!(
+                    empty_opts.set_avoptions_from_string("", &["threads", "bitexact"], "=", ":",),
+                    Ok(0)
+                );
+                assert_eq!(empty_opts, sample_options());
                 assert_option_set_invariants(&options);
             }
             18 => {

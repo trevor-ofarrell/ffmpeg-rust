@@ -3779,18 +3779,21 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     assert_eq!(once_logger.records().len(), 1);
     assert_eq!(once_logger.records()[0].level(), LogLevel::Warning);
     let mut filtered_once_state = LogOnceState::new();
+    let record_count_before_filtered = once_logger.records().len();
     assert!(!once_logger.log_once(
         &mut filtered_once_state,
         LogRecord::new(LogLevel::Info, "ffmpeg", "hidden-once"),
         LogLevel::Error,
     ));
     assert_eq!(filtered_once_state.raw(), 1);
+    assert_eq!(once_logger.records().len(), record_count_before_filtered);
     assert!(once_logger.log_once(
         &mut filtered_once_state,
         LogRecord::new(LogLevel::Info, "ffmpeg", "visible-once"),
         LogLevel::Error,
     ));
     assert_eq!(once_logger.records()[1].level(), LogLevel::Error);
+    assert_eq!(once_logger.records()[1].message(), "visible-once");
     let mut preseeded_once_state = LogOnceState::from_raw(7);
     assert!(once_logger.log_once(
         &mut preseeded_once_state,

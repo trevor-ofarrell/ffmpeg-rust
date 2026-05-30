@@ -201,6 +201,8 @@ fn expected_rows() -> BTreeMap<&'static str, i32> {
         ("log-once-preseed-state", 1),
         ("log-once-preseed-count", 3),
         ("log-once-preseed-level", LogLevel::Error.as_ffmpeg_value()),
+        ("log-once-filtered-first-state", 1),
+        ("log-once-filtered-second-state", 1),
     ]
     .into_iter()
     .collect::<BTreeMap<_, _>>();
@@ -1164,6 +1166,13 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
     rows.insert(
         "custom-callback-restore-message",
         escape_row_text(lifecycle.restored.as_bytes()),
+    );
+    rows.insert("log-once-filtered-first-line", String::new());
+    let filtered_second_line = LogRecord::new(LogLevel::Error, "ignored", "visible-once\n")
+        .format_default_callback_line_null_context_with_flags(LogFlags::PRINT_LEVEL);
+    rows.insert(
+        "log-once-filtered-second-line",
+        escape_row_text(filtered_second_line.as_bytes()),
     );
 
     let (plain, _) = rust_format_line(LogLevel::Warning, "plain", LogFlags::empty(), true, 128);
@@ -3078,6 +3087,50 @@ static void print_default_callback_threshold_row(const char *name,
     ROW_STR_NORMALIZED_DEFAULT_CALLBACK(name, captured);
 }
 
+static void print_default_callback_log_once_row(const char *name,
+                                                int *state,
+                                                int threshold,
+                                                int initial_level,
+                                                int subsequent_level,
+                                                int flags,
+                                                const char *message) {
+    char captured[1024];
+    FILE *capture = tmpfile();
+    if (!capture) {
+        ROW_STR(name, "<tmpfile-error>");
+        return;
+    }
+
+    setenv("AV_LOG_FORCE_NOCOLOR", "1", 1);
+    unsetenv("AV_LOG_FORCE_COLOR");
+
+    fflush(stderr);
+    int saved_stderr = dup(fileno(stderr));
+    if (saved_stderr < 0 || dup2(fileno(capture), fileno(stderr)) < 0) {
+        if (saved_stderr >= 0)
+            close(saved_stderr);
+        fclose(capture);
+        ROW_STR(name, "<stderr-redirect-error>");
+        return;
+    }
+
+    av_log_set_callback(av_log_default_callback);
+    av_log_set_level(threshold);
+    av_log_set_flags(flags);
+    av_log_once(NULL, initial_level, subsequent_level, state, "%s\n", message);
+    fflush(stderr);
+
+    dup2(saved_stderr, fileno(stderr));
+    close(saved_stderr);
+
+    rewind(capture);
+    size_t len = fread(captured, 1, sizeof(captured) - 1, capture);
+    captured[len] = '\0';
+    fclose(capture);
+
+    ROW_STR_NORMALIZED_DEFAULT_CALLBACK(name, captured);
+}
+
 static void print_default_callback_repeat_row(const char *name, void *ptr, int flags) {
     char captured[2048];
     FILE *capture = tmpfile();
@@ -3835,6 +3888,17 @@ int main(int argc, char **argv) {
     ROW("log-once-preseed-state", preseed_state);
     ROW("log-once-preseed-count", captured_count);
     ROW("log-once-preseed-level", captured_level);
+    int filtered_state = 0;
+    print_default_callback_log_once_row(
+        "log-once-filtered-first-line", &filtered_state,
+        AV_LOG_WARNING, AV_LOG_INFO, AV_LOG_ERROR, AV_LOG_PRINT_LEVEL,
+        "hidden-once");
+    ROW("log-once-filtered-first-state", filtered_state);
+    print_default_callback_log_once_row(
+        "log-once-filtered-second-line", &filtered_state,
+        AV_LOG_WARNING, AV_LOG_INFO, AV_LOG_ERROR, AV_LOG_PRINT_LEVEL,
+        "visible-once");
+    ROW("log-once-filtered-second-state", filtered_state);
     av_log_set_callback(av_log_default_callback);
     return 0;
 }

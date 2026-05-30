@@ -658,6 +658,22 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         state_fields(&string_whitespace_shorthand),
     );
 
+    let mut string_empty_opts = sample_options();
+    insert_row(
+        &mut rows,
+        "ret:set-from-string-empty-opts",
+        [ret_count(string_empty_opts.set_avoptions_from_string(
+            "",
+            &["threads", "bitexact"],
+            "=",
+            ":",
+        ))],
+    );
+    rows.insert(
+        "state:set-from-string-empty-opts".to_string(),
+        state_fields(&string_empty_opts),
+    );
+
     let mut string_invalid_separators = sample_options();
     insert_row(
         &mut rows,
@@ -5941,6 +5957,13 @@ static void print_set_from_string_rows(void) {
     ret = av_opt_set_from_string(&ctx, " ", shorthand, "=", ":");
     printf("ret:set-from-string-whitespace-shorthand|%d\n", ret);
     print_state("state:set-from-string-whitespace-shorthand", &ctx);
+    av_opt_free(&ctx);
+    av_opt_free(&ctx.child);
+
+    init_context(&ctx);
+    ret = av_opt_set_from_string(&ctx, "", shorthand, "=", ":");
+    printf("ret:set-from-string-empty-opts|%d\n", ret);
+    print_state("state:set-from-string-empty-opts", &ctx);
     av_opt_free(&ctx);
     av_opt_free(&ctx.child);
 

@@ -857,6 +857,10 @@ fn insert_side_data_payload_layout_rows(rows: &mut BTreeMap<String, Vec<String>>
         "packet:payload-layout-palette".to_string(),
         payload_layout_fields(&palette, &[]),
     );
+    rows.insert(
+        "packet:payload-layout-new-extradata".to_string(),
+        payload_layout_fields(&[0x01, 0x64, 0x00, 0x1f, 0xff, 0xe1, 0xaa, 0xbb], &[]),
+    );
 
     rows.insert(
         "packet:payload-layout-replaygain".to_string(),
@@ -4448,6 +4452,11 @@ static void print_side_data_payload_layouts(void) {
         palette[i] = (uint8_t)(i & 0xff);
     print_payload_layout_bytes("packet:payload-layout-palette",
                                palette, sizeof(palette));
+    uint8_t new_extradata[] = {
+        0x01, 0x64, 0x00, 0x1f, 0xff, 0xe1, 0xaa, 0xbb
+    };
+    print_payload_layout_bytes("packet:payload-layout-new-extradata",
+                               new_extradata, sizeof(new_extradata));
 
     AVReplayGain replaygain;
     memset(&replaygain, 0, sizeof(replaygain));
