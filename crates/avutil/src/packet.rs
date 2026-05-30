@@ -13397,6 +13397,46 @@ mod tests {
     }
 
     #[test]
+    fn packet_zero_size_side_data_survives_lifecycle() {
+        fn zero_side_data_is_present(packet: &Packet) {
+            assert_eq!(packet.side_data().len(), 1);
+            let side_data = packet
+                .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+                .expect("zero-size side data should remain present");
+            assert!(side_data.data().is_empty());
+        }
+
+        let mut src = Packet::default();
+        src.new_side_data(PacketSideDataKind::NewExtradata, 0)
+            .unwrap();
+        zero_side_data_is_present(&src);
+
+        let mut copied = Packet::new(vec![0x7a], 12);
+        copied.push_side_data(
+            SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xee]).unwrap(),
+        );
+        copied.copy_props_from(&src);
+        zero_side_data_is_present(&copied);
+        assert_eq!(copied.data(), &[0x7a]);
+
+        let mut referenced = Packet::default();
+        referenced.ref_from(&src);
+        zero_side_data_is_present(&referenced);
+
+        let cloned = src.clone();
+        zero_side_data_is_present(&cloned);
+
+        let mut moved_src = src;
+        let mut moved_dst = Packet::default();
+        moved_dst.push_side_data(
+            SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xee]).unwrap(),
+        );
+        moved_dst.move_ref_from(&mut moved_src);
+        zero_side_data_is_present(&moved_dst);
+        assert!(moved_src.side_data().is_empty());
+    }
+
+    #[test]
     fn packet_copy_props_replaces_old_opaque_ref_and_preserves_payload() {
         let released = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
         let capture_old = Arc::clone(&released);

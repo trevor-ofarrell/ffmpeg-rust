@@ -3,6 +3,11 @@ target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
 # Latest main-thread packet evidence: pinned libavcodec rows now prove
+# zero-size `AV_PKT_DATA_NEW_EXTRADATA` side-data survives `av_packet_copy_props`,
+# `av_packet_ref`, `av_packet_clone`, and `av_packet_move_ref` lifecycles with
+# lookup still present at size zero. This is evidence-strengthening only; no
+# status was promoted.
+# Latest main-thread packet evidence: pinned libavcodec rows now prove
 # packet-owned `av_packet_add_side_data()` and standalone
 # `av_packet_side_data_add()` replace an existing `AV_PKT_DATA_NEW_EXTRADATA`
 # entry with a zero-size caller-owned entry while keeping lookup present and
@@ -545,6 +550,7 @@ unit_tests = [
   "packet::tests::packet_copy_props_preserves_destination_payload",
   "packet::tests::packet_copy_props_copies_side_data_without_aliasing",
   "packet::tests::packet_copy_props_replaces_old_opaque_ref_and_preserves_payload",
+  "packet::tests::packet_zero_size_side_data_survives_lifecycle",
   "packet::tests::packet_opaque_address_tracks_nullable_raw_pointer_metadata",
   "packet::tests::packet_opaque_ref_copy_props_shares_and_clear_releases_last_reference",
   "packet::tests::packet_opaque_ref_move_take_and_unref_release_lifecycle",
@@ -1049,6 +1055,12 @@ notes = "FATE pass for the current bounded AVPacket helper surface under the sel
 # `packet:array-add-zero-replace*` behavior. Both add APIs replace an existing
 # `AV_PKT_DATA_NEW_EXTRADATA` entry with a zero-size caller-owned entry, retain
 # one present side-data record, and return present lookup with size zero.
+# Latest zero-size lifecycle slice: pinned libavcodec rows validate
+# `packet:copy-props-zero-side*`, `packet:ref-zero-side*`,
+# `packet:clone-zero-side*`, and `packet:move-zero-*` behavior. Copy, ref,
+# clone, and move-ref preserve a zero-size `AV_PKT_DATA_NEW_EXTRADATA` record
+# with lookup present and size zero, while move-ref resets the source side-data
+# list.
 blocked_reason = ""
 
 [[component]]

@@ -145,7 +145,10 @@ helper surfaces: `av_packet_add_side_data()` and
 entry with a zero-size caller-owned entry, keep exactly one matching record,
 and keep lookup present with size zero. Rust models that with ordinary empty
 `SideData` payloads on `Packet::add_side_data` and
-`PacketSideDataList::add_side_data`.
+`PacketSideDataList::add_side_data`. Zero-size packet-owned side data is also
+pinned through `av_packet_copy_props()`, `av_packet_ref()`,
+`av_packet_clone()`, and `av_packet_move_ref()`: copy/ref/clone/move preserve
+the present zero-size lookup, and move-ref resets the source side-data list.
 
 `PacketFifo` models the bounded packet-specialized `AVContainerFifo` surface exposed by `av_container_fifo_alloc_avpacket()`. It supports move writes that reset the source packet, ref writes that preserve the source while sharing refcounted payload and `opaque_ref` storage, raw flag transfers through `PacketFifoFlags` with `AV_CONTAINER_FIFO_FLAG_REF == 1` and `AV_CONTAINER_FIFO_FLAG_USER == 1 << 16`, USER-only transfers that retain move semantics, REF|USER transfers that retain reference semantics, move/ref reads that drain one queued packet, move/ref reads into pre-populated destinations that replace old packet state, failed empty move/ref reads that preserve pre-populated destinations, non-mutating peek by offset, can-read counts, zero-count drain as a no-op, valid positive drain including partial mixed move/ref drain release ordering, queued move-written packet release on FIFO clear/drop/free, mixed move/ref queue clear behavior where moved storage is released and ref-written source storage stays alive until the source drops, and typed `EINVAL` errors for invalid offset, invalid drain, and empty read paths.
 

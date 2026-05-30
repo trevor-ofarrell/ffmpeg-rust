@@ -403,6 +403,71 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         side_data_summary_fields(&move_duplicate_src),
     );
 
+    let mut zero_side_src = Packet::default();
+    zero_side_src
+        .new_side_data(PacketSideDataKind::NewExtradata, 0)
+        .expect("zero-size source side data should be retained");
+
+    let mut zero_copy_dst = Packet::new(vec![0x7a], 12);
+    zero_copy_dst
+        .push_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xee]).unwrap());
+    zero_copy_dst.copy_props_from(&zero_side_src);
+    rows.insert(
+        "packet:copy-props-zero-side".to_string(),
+        side_data_summary_fields(&zero_copy_dst),
+    );
+    rows.insert(
+        "packet:copy-props-zero-side-lookup".to_string(),
+        side_data_lookup_fields(
+            zero_copy_dst.side_data_by_kind_id(&PacketSideDataKind::NewExtradata),
+        ),
+    );
+
+    let mut zero_ref_dst = Packet::default();
+    zero_ref_dst.ref_from(&zero_side_src);
+    rows.insert(
+        "packet:ref-zero-side".to_string(),
+        side_data_summary_fields(&zero_ref_dst),
+    );
+    rows.insert(
+        "packet:ref-zero-side-lookup".to_string(),
+        side_data_lookup_fields(
+            zero_ref_dst.side_data_by_kind_id(&PacketSideDataKind::NewExtradata),
+        ),
+    );
+
+    let zero_cloned = zero_side_src.clone();
+    rows.insert(
+        "packet:clone-zero-side".to_string(),
+        side_data_summary_fields(&zero_cloned),
+    );
+    rows.insert(
+        "packet:clone-zero-side-lookup".to_string(),
+        side_data_lookup_fields(
+            zero_cloned.side_data_by_kind_id(&PacketSideDataKind::NewExtradata),
+        ),
+    );
+
+    let mut zero_move_src = zero_side_src;
+    let mut zero_move_dst = Packet::default();
+    zero_move_dst
+        .push_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xee]).unwrap());
+    zero_move_dst.move_ref_from(&mut zero_move_src);
+    rows.insert(
+        "packet:move-zero-dst-side".to_string(),
+        side_data_summary_fields(&zero_move_dst),
+    );
+    rows.insert(
+        "packet:move-zero-dst-side-lookup".to_string(),
+        side_data_lookup_fields(
+            zero_move_dst.side_data_by_kind_id(&PacketSideDataKind::NewExtradata),
+        ),
+    );
+    rows.insert(
+        "packet:move-zero-src-side".to_string(),
+        side_data_summary_fields(&zero_move_src),
+    );
+
     insert_packet_unknown_flag_rows(&mut rows);
 
     let mut referenced = Packet::default();
@@ -7561,6 +7626,56 @@ int main(void) {
                             duplicate_move_src);
     av_packet_free(&duplicate_move_dst);
     av_packet_free(&duplicate_move_src);
+
+    AVPacket *zero_side_src = new_packet();
+    uint8_t *zero_side = av_packet_new_side_data(
+        zero_side_src, AV_PKT_DATA_NEW_EXTRADATA, 0);
+    fail_if(!zero_side, "zero-size lifecycle source side data failed");
+
+    AVPacket *zero_copy_dst = new_packet();
+    fail_if(av_new_packet(zero_copy_dst, 1) < 0,
+            "av_new_packet zero side copy dst failed");
+    zero_copy_dst->data[0] = 0x7a;
+    uint8_t *zero_copy_old_side = av_packet_new_side_data(
+        zero_copy_dst, AV_PKT_DATA_PALETTE, 1);
+    fail_if(!zero_copy_old_side, "zero side copy old side data failed");
+    zero_copy_old_side[0] = 0xee;
+    fail_if(av_packet_copy_props(zero_copy_dst, zero_side_src) < 0,
+            "av_packet_copy_props zero side failed");
+    print_side_data_summary("packet:copy-props-zero-side", zero_copy_dst);
+    print_side_data_lookup("packet:copy-props-zero-side-lookup",
+                           zero_copy_dst, AV_PKT_DATA_NEW_EXTRADATA);
+
+    AVPacket *zero_ref_dst = new_packet();
+    fail_if(av_packet_ref(zero_ref_dst, zero_side_src) < 0,
+            "av_packet_ref zero side failed");
+    print_side_data_summary("packet:ref-zero-side", zero_ref_dst);
+    print_side_data_lookup("packet:ref-zero-side-lookup", zero_ref_dst,
+                           AV_PKT_DATA_NEW_EXTRADATA);
+
+    AVPacket *zero_cloned = av_packet_clone(zero_side_src);
+    fail_if(!zero_cloned, "av_packet_clone zero side failed");
+    print_side_data_summary("packet:clone-zero-side", zero_cloned);
+    print_side_data_lookup("packet:clone-zero-side-lookup", zero_cloned,
+                           AV_PKT_DATA_NEW_EXTRADATA);
+
+    AVPacket *zero_move_src = zero_side_src;
+    AVPacket *zero_move_dst = new_packet();
+    uint8_t *zero_move_old_side = av_packet_new_side_data(
+        zero_move_dst, AV_PKT_DATA_PALETTE, 1);
+    fail_if(!zero_move_old_side, "zero side move old side data failed");
+    zero_move_old_side[0] = 0xee;
+    av_packet_move_ref(zero_move_dst, zero_move_src);
+    print_side_data_summary("packet:move-zero-dst-side", zero_move_dst);
+    print_side_data_lookup("packet:move-zero-dst-side-lookup",
+                           zero_move_dst, AV_PKT_DATA_NEW_EXTRADATA);
+    print_side_data_summary("packet:move-zero-src-side", zero_move_src);
+
+    av_packet_free(&zero_move_dst);
+    av_packet_free(&zero_move_src);
+    av_packet_free(&zero_cloned);
+    av_packet_free(&zero_ref_dst);
+    av_packet_free(&zero_copy_dst);
 
     AVPacket *unknown_flags_src = new_packet();
     fail_if(av_new_packet(unknown_flags_src, 2) < 0,

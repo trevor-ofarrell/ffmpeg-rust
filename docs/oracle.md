@@ -135,6 +135,15 @@ two-byte entries with a zero-size caller-owned entry and keep lookup present
 with size zero. A warmed WSL one-input run with local leak detection disabled
 passed after rebuilding `avutil_core_models`.
 
+The latest packet zero-size side-data lifecycle fixture extends
+`avutil_core_models` with `Packet::copy_props_from`, `Packet::ref_from`,
+`Packet` clone, and `Packet::move_ref_from` preservation of an empty
+`AV_PKT_DATA_NEW_EXTRADATA` record. It mirrors pinned rows where
+`av_packet_copy_props()`, `av_packet_ref()`, `av_packet_clone()`, and
+`av_packet_move_ref()` keep lookup present with size zero, with move-ref
+resetting the source side-data list. A warmed WSL one-input run with local leak
+detection disabled passed after rebuilding `avutil_core_models`.
+
 The latest PAL8/buffer lifecycle fixture extends `avutil_core_models` with full PAL8 frame palette side-plane construction, make-writable detachment, copy/crop preservation, and threaded `BufferRef` clone/drop release timing. WSL `cargo fuzz run avutil_core_models -- -runs=1` passed after a long sanitizer rebuild in `target-wsl-pal8-buffer-fuzz-o1`.
 
 The latest orchestrated WSL fuzz evidence for the packet/options/WAV/image2
@@ -271,6 +280,11 @@ The newest zero-size side-data replacement rows prove packet-owned
 `av_packet_add_side_data()` and standalone `av_packet_side_data_add()` replace
 an existing `AV_PKT_DATA_NEW_EXTRADATA` entry with a zero-size caller-owned
 entry, keep the side-data count at one, and keep lookup present with size zero.
+
+The newest zero-size side-data lifecycle rows prove `av_packet_copy_props()`,
+`av_packet_ref()`, `av_packet_clone()`, and `av_packet_move_ref()` preserve a
+zero-size `AV_PKT_DATA_NEW_EXTRADATA` record with lookup present and size zero;
+the move-ref row also proves the source side-data list resets.
 
 The newest packet FIFO partial-drain rows prove `av_container_fifo_drain(fifo, 1)` on a mixed move/ref packet FIFO releases the drained move-written packet's payload buffer and `opaque_ref` buffer immediately, keeps the ref-written packet queued, then delays ref-source payload release until the queued ref is drained and the original source drops. Rust `PacketFifo::drain` plus `avutil_core_models` mirror that release ordering.
 

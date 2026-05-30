@@ -10459,6 +10459,57 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .side_data_by_kind_id(&PacketSideDataKind::Palette)
         .is_none());
 
+    let mut zero_lifecycle_src = Packet::default();
+    zero_lifecycle_src
+        .new_side_data(PacketSideDataKind::NewExtradata, 0)
+        .unwrap();
+    assert_eq!(zero_lifecycle_src.side_data().len(), 1);
+    assert!(zero_lifecycle_src
+        .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+        .unwrap()
+        .data()
+        .is_empty());
+    let mut zero_lifecycle_copy = Packet::from_data(vec![0x7a]).unwrap();
+    zero_lifecycle_copy.push_side_data(
+        SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xee]).unwrap(),
+    );
+    zero_lifecycle_copy.copy_props_from(&zero_lifecycle_src);
+    assert_eq!(zero_lifecycle_copy.data(), &[0x7a]);
+    assert_eq!(zero_lifecycle_copy.side_data().len(), 1);
+    assert!(zero_lifecycle_copy
+        .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+        .unwrap()
+        .data()
+        .is_empty());
+    let mut zero_lifecycle_ref = Packet::default();
+    zero_lifecycle_ref.ref_from(&zero_lifecycle_src);
+    assert_eq!(zero_lifecycle_ref.side_data().len(), 1);
+    assert!(zero_lifecycle_ref
+        .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+        .unwrap()
+        .data()
+        .is_empty());
+    let zero_lifecycle_clone = zero_lifecycle_src.clone();
+    assert_eq!(zero_lifecycle_clone.side_data().len(), 1);
+    assert!(zero_lifecycle_clone
+        .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+        .unwrap()
+        .data()
+        .is_empty());
+    let mut zero_lifecycle_move_src = zero_lifecycle_src;
+    let mut zero_lifecycle_move_dst = Packet::default();
+    zero_lifecycle_move_dst.push_side_data(
+        SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xee]).unwrap(),
+    );
+    zero_lifecycle_move_dst.move_ref_from(&mut zero_lifecycle_move_src);
+    assert_eq!(zero_lifecycle_move_dst.side_data().len(), 1);
+    assert!(zero_lifecycle_move_dst
+        .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+        .unwrap()
+        .data()
+        .is_empty());
+    assert!(zero_lifecycle_move_src.side_data().is_empty());
+
     let mut side_data_list = PacketSideDataList::new();
     let mut zero_side_data_list = PacketSideDataList::new();
     let zero_list_entry = zero_side_data_list
