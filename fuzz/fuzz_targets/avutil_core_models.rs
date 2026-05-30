@@ -10009,6 +10009,94 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .unwrap()
         .shares_storage(offset_copy_src.opaque_ref().unwrap()));
 
+    let mut offset_writable_storage = vec![0xa0, 0xa1, 0xa2];
+    offset_writable_storage.extend_from_slice(&payload);
+    offset_writable_storage.resize(3 + payload.len() + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+    let mut offset_writable_src = Packet::with_buffer(
+        BufferRef::from_vec(offset_writable_storage)
+            .into_ref_slice(3, payload.len())
+            .unwrap(),
+        7,
+    );
+    offset_writable_src.set_pts(Some(123));
+    offset_writable_src.set_dts(Some(111));
+    offset_writable_src.set_duration(12).unwrap();
+    offset_writable_src.set_pos(Some(456)).unwrap();
+    offset_writable_src.set_flag(PacketFlags::KEY, true);
+    offset_writable_src.set_flag(PacketFlags::DISPOSABLE, true);
+    offset_writable_src
+        .set_time_base(Rational::new(1, 1_000).unwrap())
+        .unwrap();
+    offset_writable_src
+        .push_side_data(SideData::new_extradata(vec![0x33, 0x44]).unwrap());
+    offset_writable_src.set_opaque(Some(PacketOpaque::new(0x1234).unwrap()));
+    offset_writable_src.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad])));
+    let mut offset_writable_dst = Packet::default();
+    offset_writable_dst
+        .try_ref_from(&offset_writable_src)
+        .unwrap();
+    let offset_writable_ptr = offset_writable_dst.data_buffer().as_padded_ptr();
+    assert_eq!(offset_writable_src.data_buffer().offset(), 3);
+    assert_eq!(offset_writable_dst.data_buffer().offset(), 3);
+    assert!(offset_writable_dst
+        .data_buffer()
+        .shares_storage(offset_writable_src.data_buffer()));
+    assert!(!offset_writable_src.is_data_writable());
+    assert!(!offset_writable_dst.is_data_writable());
+    offset_writable_dst.make_writable().unwrap();
+    assert_eq!(offset_writable_src.data(), payload.as_slice());
+    assert_eq!(offset_writable_dst.data(), payload.as_slice());
+    assert_eq!(offset_writable_src.data_buffer().offset(), 3);
+    assert_eq!(offset_writable_dst.data_buffer().offset(), 0);
+    assert_ne!(
+        offset_writable_dst.data_buffer().as_padded_ptr(),
+        offset_writable_ptr
+    );
+    assert!(!offset_writable_dst
+        .data_buffer()
+        .shares_storage(offset_writable_src.data_buffer()));
+    assert!(offset_writable_src.is_data_writable());
+    assert!(offset_writable_dst.is_data_writable());
+    assert!(offset_writable_src
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0x5a));
+    assert!(offset_writable_dst
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    assert_eq!(offset_writable_dst.stream_index(), 7);
+    assert_eq!(offset_writable_dst.pts(), Some(123));
+    assert_eq!(offset_writable_dst.dts(), Some(111));
+    assert_eq!(offset_writable_dst.duration(), 12);
+    assert_eq!(offset_writable_dst.pos(), Some(456));
+    assert_eq!(
+        offset_writable_dst.time_base(),
+        Rational::new(1, 1_000).unwrap()
+    );
+    assert!(offset_writable_dst.flags().contains(PacketFlags::KEY));
+    assert!(offset_writable_dst
+        .flags()
+        .contains(PacketFlags::DISPOSABLE));
+    assert_eq!(
+        offset_writable_dst
+            .side_data_by_kind("new_extradata")
+            .unwrap()
+            .data(),
+        &[0x33, 0x44]
+    );
+    assert_eq!(offset_writable_dst.opaque_address(), Some(0x1234));
+    assert_eq!(
+        offset_writable_dst.opaque_ref().unwrap().as_slice(),
+        &[0xde, 0xad]
+    );
+    assert!(offset_writable_dst
+        .opaque_ref()
+        .unwrap()
+        .shares_storage(offset_writable_src.opaque_ref().unwrap()));
+
     let mut offset_ref_storage = vec![0xa0, 0xa1, 0xa2];
     offset_ref_storage.extend_from_slice(&payload);
     offset_ref_storage.resize(3 + payload.len() + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);

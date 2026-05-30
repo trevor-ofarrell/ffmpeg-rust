@@ -2234,6 +2234,57 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         packet_fields(&offset_copy_dst),
     );
 
+    let mut offset_writable_storage = vec![0xa0, 0xa1, 0xa2, 0x11, 0x22];
+    offset_writable_storage.resize(3 + 2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+    let mut offset_writable_src = Packet::with_buffer(
+        BufferRef::from_vec(offset_writable_storage)
+            .into_ref_slice(3, 2)
+            .unwrap(),
+        7,
+    );
+    set_common_packet_props(&mut offset_writable_src);
+    let mut offset_writable_dst = Packet::default();
+    offset_writable_dst
+        .try_ref_from(&offset_writable_src)
+        .unwrap();
+    let offset_writable_ptr = offset_writable_dst.data_buffer().as_padded_ptr();
+    offset_writable_dst.make_writable().unwrap();
+    rows.insert(
+        "packet:payload-make-writable-shared-offset-padding-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-writable-shared-offset-padding-same-ptr".to_string(),
+        vec![
+            u8::from(offset_writable_dst.data_buffer().as_padded_ptr() == offset_writable_ptr)
+                .to_string(),
+        ],
+    );
+    rows.insert(
+        "packet:payload-make-writable-shared-offset-padding-src-offset".to_string(),
+        vec![offset_writable_src.data_buffer().offset().to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-writable-shared-offset-padding-dst-offset".to_string(),
+        vec![offset_writable_dst.data_buffer().offset().to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-writable-shared-offset-padding-src".to_string(),
+        packet_fields(&offset_writable_src),
+    );
+    rows.insert(
+        "packet:payload-make-writable-shared-offset-padding-dst".to_string(),
+        packet_fields(&offset_writable_dst),
+    );
+    rows.insert(
+        "packet:payload-make-writable-shared-offset-padding-src-payload".to_string(),
+        payload_fields(&offset_writable_src),
+    );
+    rows.insert(
+        "packet:payload-make-writable-shared-offset-padding-dst-payload".to_string(),
+        payload_fields(&offset_writable_dst),
+    );
+
     let mut offset_ref_storage = vec![0xa0, 0xa1, 0xa2, 0x11, 0x22];
     offset_ref_storage.resize(3 + 2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
     let offset_ref_src = Packet::with_buffer(
@@ -8370,6 +8421,34 @@ int main(void) {
                  offset_copy_dst);
     av_packet_free(&offset_copy_dst);
     av_packet_free(&offset_copy_src);
+
+    AVPacket *offset_writable_src = packet_with_offset_padding();
+    set_common_packet_props(offset_writable_src);
+    AVPacket *offset_writable_dst = new_packet();
+    fail_if(av_packet_ref(offset_writable_dst, offset_writable_src) < 0,
+            "av_packet_ref shared offset writable dst failed");
+    uint8_t *offset_writable_ptr = offset_writable_dst->data;
+    int offset_shared_writable_ret = av_packet_make_writable(offset_writable_dst);
+    printf("packet:payload-make-writable-shared-offset-padding-ret|%d\n",
+           offset_shared_writable_ret);
+    fail_if(offset_shared_writable_ret < 0,
+            "av_packet_make_writable shared offset padding failed");
+    printf("packet:payload-make-writable-shared-offset-padding-same-ptr|%d\n",
+           offset_writable_dst->data == offset_writable_ptr);
+    printf("packet:payload-make-writable-shared-offset-padding-src-offset|%td\n",
+           offset_writable_src->data - offset_writable_src->buf->data);
+    printf("packet:payload-make-writable-shared-offset-padding-dst-offset|%td\n",
+           offset_writable_dst->data - offset_writable_dst->buf->data);
+    print_packet("packet:payload-make-writable-shared-offset-padding-src",
+                 offset_writable_src);
+    print_packet("packet:payload-make-writable-shared-offset-padding-dst",
+                 offset_writable_dst);
+    print_payload("packet:payload-make-writable-shared-offset-padding-src-payload",
+                  offset_writable_src);
+    print_payload("packet:payload-make-writable-shared-offset-padding-dst-payload",
+                  offset_writable_dst);
+    av_packet_free(&offset_writable_dst);
+    av_packet_free(&offset_writable_src);
 
     AVPacket *offset_ref = packet_with_offset_padding();
     AVPacket *offset_ref_dst = new_packet();
