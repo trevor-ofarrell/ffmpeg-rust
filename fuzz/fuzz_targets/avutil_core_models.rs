@@ -13056,6 +13056,51 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             .data()
             .is_empty());
     }
+    let mut zero_side_resize = Packet::new(vec![0xaa, 0xbb, 0xcc], 7);
+    zero_side_resize.set_pts(Some(90_000));
+    zero_side_resize.set_dts(Some(45_000));
+    zero_side_resize.set_duration(180_000).unwrap();
+    zero_side_resize.set_pos(Some(1_234)).unwrap();
+    zero_side_resize.set_flag(PacketFlags::KEY, true);
+    zero_side_resize.set_flag(PacketFlags::CORRUPT, true);
+    zero_side_resize
+        .set_time_base(Rational::new(1, 90_000).unwrap())
+        .unwrap();
+    zero_side_resize.set_opaque(Some(PacketOpaque::new(0x1234).unwrap()));
+    zero_side_resize.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad, 0xbe])));
+    zero_side_resize
+        .new_side_data(PacketSideDataKind::NewExtradata, 0)
+        .unwrap();
+    zero_side_resize.grow_data(2).unwrap();
+    zero_side_resize.make_data_writable()[3..5].copy_from_slice(&[0xdd, 0xee]);
+    assert_eq!(
+        zero_side_resize.data(),
+        &[0xaa, 0xbb, 0xcc, 0xdd, 0xee]
+    );
+    zero_side_resize.shrink_data(2).unwrap();
+    assert_eq!(zero_side_resize.data(), &[0xaa, 0xbb]);
+    assert_eq!(zero_side_resize.stream_index(), 7);
+    assert_eq!(zero_side_resize.pts(), Some(90_000));
+    assert_eq!(zero_side_resize.dts(), Some(45_000));
+    assert_eq!(zero_side_resize.duration(), 180_000);
+    assert_eq!(zero_side_resize.pos(), Some(1_234));
+    assert!(zero_side_resize.flags().contains(PacketFlags::KEY));
+    assert!(zero_side_resize.flags().contains(PacketFlags::CORRUPT));
+    assert_eq!(
+        zero_side_resize.time_base(),
+        Rational::new(1, 90_000).unwrap()
+    );
+    assert_eq!(zero_side_resize.opaque_address(), Some(0x1234));
+    assert_eq!(
+        zero_side_resize.opaque_ref().unwrap().as_slice(),
+        &[0xde, 0xad, 0xbe]
+    );
+    assert_eq!(zero_side_resize.side_data().len(), 1);
+    assert!(zero_side_resize
+        .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+        .unwrap()
+        .data()
+        .is_empty());
     assert!(!packet.shrink_side_data("missing_side_data", 0).unwrap());
     packet.push_side_data(SideData::new("other_side_data", vec![0xaa]).unwrap());
     let taken = packet.take_side_data("fuzz_side_data").unwrap();

@@ -10863,6 +10863,52 @@ mod tests {
     }
 
     #[test]
+    fn packet_zero_size_side_data_survives_resize_helpers() {
+        fn assert_resized_packet(packet: &Packet, expected_data: &[u8]) {
+            assert_eq!(packet.data(), expected_data);
+            assert_eq!(packet.stream_index(), 7);
+            assert_eq!(packet.pts(), Some(90_000));
+            assert_eq!(packet.dts(), Some(45_000));
+            assert_eq!(packet.duration(), 180_000);
+            assert_eq!(packet.pos(), Some(1_234));
+            assert!(packet.flags().contains(PacketFlags::KEY));
+            assert!(packet.flags().contains(PacketFlags::CORRUPT));
+            assert_eq!(packet.time_base(), Rational::new(1, 90_000).unwrap());
+            assert_eq!(packet.opaque_address(), Some(0x1234));
+            assert_eq!(packet.opaque_ref().unwrap().as_slice(), &[0xde, 0xad, 0xbe]);
+            assert_eq!(packet.side_data().len(), 1);
+            assert!(packet
+                .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+                .unwrap()
+                .data()
+                .is_empty());
+        }
+
+        let mut packet = Packet::new(vec![0xaa, 0xbb, 0xcc], 7);
+        packet.set_pts(Some(90_000));
+        packet.set_dts(Some(45_000));
+        packet.set_duration(180_000).unwrap();
+        packet.set_pos(Some(1_234)).unwrap();
+        packet.set_flag(PacketFlags::KEY, true);
+        packet.set_flag(PacketFlags::CORRUPT, true);
+        packet
+            .set_time_base(Rational::new(1, 90_000).unwrap())
+            .unwrap();
+        packet.set_opaque(Some(PacketOpaque::new(0x1234).unwrap()));
+        packet.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad, 0xbe])));
+        packet
+            .new_side_data(PacketSideDataKind::NewExtradata, 0)
+            .unwrap();
+
+        packet.grow_data(2).unwrap();
+        packet.make_data_writable()[3..5].copy_from_slice(&[0xdd, 0xee]);
+        assert_resized_packet(&packet, &[0xaa, 0xbb, 0xcc, 0xdd, 0xee]);
+
+        packet.shrink_data(2).unwrap();
+        assert_resized_packet(&packet, &[0xaa, 0xbb]);
+    }
+
+    #[test]
     fn packet_add_side_data_replaces_first_matching_kind() {
         let mut packet = Packet::new(Vec::new(), 0);
         packet.push_side_data(SideData::new("palette", vec![0]).unwrap());

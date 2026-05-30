@@ -1815,6 +1815,39 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_fields(&shrink_edges),
     );
 
+    let mut zero_side_resize = packet_with_common_props();
+    zero_side_resize.clear_side_data();
+    zero_side_resize
+        .new_side_data(PacketSideDataKind::NewExtradata, 0)
+        .unwrap();
+    zero_side_resize.grow_data(2).unwrap();
+    zero_side_resize.make_data_writable()[3..5].copy_from_slice(&[0xdd, 0xee]);
+    rows.insert(
+        "packet:payload-grow-zero-side-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-grow-zero-side".to_string(),
+        packet_fields(&zero_side_resize),
+    );
+    rows.insert(
+        "packet:payload-grow-zero-side-lookup".to_string(),
+        side_data_lookup_fields(
+            zero_side_resize.side_data_by_kind_id(&PacketSideDataKind::NewExtradata),
+        ),
+    );
+    zero_side_resize.shrink_data(2).unwrap();
+    rows.insert(
+        "packet:payload-shrink-zero-side".to_string(),
+        packet_fields(&zero_side_resize),
+    );
+    rows.insert(
+        "packet:payload-shrink-zero-side-lookup".to_string(),
+        side_data_lookup_fields(
+            zero_side_resize.side_data_by_kind_id(&PacketSideDataKind::NewExtradata),
+        ),
+    );
+
     let shared_grow_src = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
     let mut shared_grow_dst = Packet::default();
     shared_grow_dst.ref_from(&shared_grow_src);
@@ -6672,6 +6705,25 @@ static void exercise_payload_api(void) {
     print_payload("packet:payload-shrink-oversize", pkt);
     av_shrink_packet(pkt, 0);
     print_payload("packet:payload-shrink-zero", pkt);
+    av_packet_free(&pkt);
+
+    pkt = packet_with_common_props();
+    av_packet_free_side_data(pkt);
+    uint8_t *zero_resize_side = av_packet_new_side_data(
+        pkt, AV_PKT_DATA_NEW_EXTRADATA, 0);
+    fail_if(!zero_resize_side, "av_packet_new_side_data resize zero side failed");
+    ret = av_grow_packet(pkt, 2);
+    printf("packet:payload-grow-zero-side-ret|%d\n", ret);
+    fail_if(ret < 0, "av_grow_packet zero side failed");
+    pkt->data[3] = 0xdd;
+    pkt->data[4] = 0xee;
+    print_packet("packet:payload-grow-zero-side", pkt);
+    print_side_data_lookup("packet:payload-grow-zero-side-lookup",
+                           pkt, AV_PKT_DATA_NEW_EXTRADATA);
+    av_shrink_packet(pkt, 2);
+    print_packet("packet:payload-shrink-zero-side", pkt);
+    print_side_data_lookup("packet:payload-shrink-zero-side-lookup",
+                           pkt, AV_PKT_DATA_NEW_EXTRADATA);
     av_packet_free(&pkt);
 
     AVPacket *shared_grow_src = new_packet();
