@@ -1163,3 +1163,10 @@ The legacy/full-range 8-bit planar YUV `av_frame_apply_cropping()` slice was che
 The packet side-data name boundary slice was checked against pinned FFmpeg 8.1.1 `libavcodec/packet.h` and `av_packet_side_data_name()`. The oracle row records that invalid enum values `INT_MIN` and `-1`, sentinel `AV_PKT_DATA_NB`, `AV_PKT_DATA_NB + 1`, and `INT_MAX` return NULL; the Rust model exposes the same bounded surface through `PacketSideDataKind::from_ffmpeg_value()` and `ffmpeg_side_data_name_for_value()`.
 
 The standalone packet side-data duplicate slice now pins `av_packet_side_data_get()`, `av_packet_side_data_add()`, `av_packet_side_data_remove()`, and `av_packet_side_data_free()` on empty and duplicate-type arrays: empty lookup/remove/free preserve empty state; duplicate lookup returns the first matching entry, add replaces the first matching entry, remove scans from the end, removes the last matching entry, swap-fills with the previous tail, and free resets the duplicate-rich array. The standalone flag rows also prove FFmpeg ignores nonzero flags for `av_packet_side_data_new()` and `av_packet_side_data_add()` while retaining first-match replacement and ownership-transfer behavior.
+
+The packet side-data padding rows `packet:side-new-padding` and
+`packet:array-new-padding` read the `AV_INPUT_BUFFER_PADDING_SIZE` bytes after
+the visible `AV_PKT_DATA_NEW_EXTRADATA` payload allocated by
+`av_packet_new_side_data()` and standalone `av_packet_side_data_new()`. The
+pinned FFmpeg 8.1.1 oracle reports those trailing bytes as zero, while ordinary
+summary and lookup rows still compare only the public visible side-data size.

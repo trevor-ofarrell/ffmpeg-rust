@@ -3661,6 +3661,10 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         side_data_summary_fields(&packet),
     );
     rows.insert(
+        "packet:side-new-padding".to_string(),
+        side_data_padding_fields(packet.side_data_by_kind("new_extradata")),
+    );
+    rows.insert(
         "packet:side-get".to_string(),
         side_data_lookup_fields(packet.side_data_by_kind("new_extradata")),
     );
@@ -4142,6 +4146,10 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:array-new".to_string(),
         side_data_list_summary_fields(&list),
+    );
+    rows.insert(
+        "packet:array-new-padding".to_string(),
+        side_data_padding_fields(list.get(&PacketSideDataKind::NewExtradata)),
     );
     rows.insert(
         "packet:array-get".to_string(),
@@ -4904,6 +4912,32 @@ fn side_data_lookup_fields(side_data: Option<&SideData>) -> Vec<String> {
     }
 }
 
+fn side_data_padding_fields(side_data: Option<&SideData>) -> Vec<String> {
+    match side_data {
+        Some(side_data) => {
+            let padding = side_data.padding_slice();
+            assert!(
+                padding.len() >= AV_INPUT_BUFFER_PADDING_SIZE,
+                "packet side data should have FFmpeg input padding for oracle comparison"
+            );
+            vec![
+                "1".to_string(),
+                side_data.len().to_string(),
+                hex_or_dash(side_data.data()),
+                AV_INPUT_BUFFER_PADDING_SIZE.to_string(),
+                hex_or_dash(&padding[..AV_INPUT_BUFFER_PADDING_SIZE]),
+            ]
+        }
+        None => vec![
+            "0".to_string(),
+            "0".to_string(),
+            "-".to_string(),
+            "0".to_string(),
+            "-".to_string(),
+        ],
+    }
+}
+
 fn payload_fields(packet: &Packet) -> Vec<String> {
     let padding = packet.data_buffer().padding_slice();
     assert!(
@@ -5327,6 +5361,38 @@ static void print_side_data_array_lookup(const char *name,
     const AVPacketSideData *entry = av_packet_side_data_get(sd, nb_sd, type);
     printf("%s|%d|%zu|", name, entry != NULL, entry ? entry->size : 0);
     print_hex_or_dash(entry ? entry->data : NULL, entry ? (int)entry->size : 0);
+    printf("\n");
+}
+
+static void print_packet_side_data_padding(const char *name,
+                                           const AVPacket *pkt,
+                                           enum AVPacketSideDataType type) {
+    size_t size = 0;
+    uint8_t *data = av_packet_get_side_data(pkt, type, &size);
+    if (!data) {
+        printf("%s|0|0|-|0|-\n", name);
+        return;
+    }
+    printf("%s|1|%zu|", name, size);
+    print_hex_or_dash(data, (int)size);
+    printf("|%d|", AV_INPUT_BUFFER_PADDING_SIZE);
+    print_hex_or_dash(data + size, AV_INPUT_BUFFER_PADDING_SIZE);
+    printf("\n");
+}
+
+static void print_side_data_array_padding(const char *name,
+                                          const AVPacketSideData *sd,
+                                          int nb_sd,
+                                          enum AVPacketSideDataType type) {
+    const AVPacketSideData *entry = av_packet_side_data_get(sd, nb_sd, type);
+    if (!entry) {
+        printf("%s|0|0|-|0|-\n", name);
+        return;
+    }
+    printf("%s|1|%zu|", name, entry->size);
+    print_hex_or_dash(entry->data, (int)entry->size);
+    printf("|%d|", AV_INPUT_BUFFER_PADDING_SIZE);
+    print_hex_or_dash(entry->data + entry->size, AV_INPUT_BUFFER_PADDING_SIZE);
     printf("\n");
 }
 
@@ -6680,6 +6746,8 @@ static void exercise_side_data_api(void) {
     sd[2] = 0x33;
     sd[3] = 0x44;
     print_side_data_summary("packet:side-new", pkt);
+    print_packet_side_data_padding("packet:side-new-padding", pkt,
+                                   AV_PKT_DATA_NEW_EXTRADATA);
     print_side_data_lookup("packet:side-get", pkt, AV_PKT_DATA_NEW_EXTRADATA);
 
     int ret = av_packet_shrink_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, 2);
@@ -6959,6 +7027,8 @@ static void exercise_side_data_array_api(void) {
     entry->data[2] = 0x33;
     entry->data[3] = 0x44;
     print_side_data_array_summary("packet:array-new", sd, nb_sd);
+    print_side_data_array_padding("packet:array-new-padding", sd, nb_sd,
+                                  AV_PKT_DATA_NEW_EXTRADATA);
     print_side_data_array_lookup("packet:array-get", sd, nb_sd,
                                  AV_PKT_DATA_NEW_EXTRADATA);
 

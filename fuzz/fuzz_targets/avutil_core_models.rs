@@ -11227,6 +11227,10 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         typed_side_data_packet.side_data()[0].kind_id(),
         &typed_side_data_kind
     );
+    assert_eq!(typed_side_data_packet.side_data()[0].padding_len(), 0);
+    assert!(typed_side_data_packet.side_data()[0]
+        .padding_slice()
+        .is_empty());
     assert_eq!(
         typed_side_data_packet.side_data()[0].kind(),
         typed_side_data_kind.name()
@@ -11273,6 +11277,8 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .unwrap();
     assert_eq!(zero_entry.kind_id(), &PacketSideDataKind::NewExtradata);
     assert!(zero_entry.data().is_empty());
+    assert_eq!(zero_entry.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+    assert!(zero_entry.padding_slice().iter().all(|byte| *byte == 0));
     assert_eq!(zero_side_data_packet.side_data().len(), 1);
     let mut zero_add_side_data_packet = Packet::default();
     assert!(zero_add_side_data_packet
@@ -11303,9 +11309,12 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .new_side_data(typed_side_data_kind.clone(), new_side_data_payload.len())
         .unwrap();
     assert!(new_entry.data().iter().all(|byte| *byte == 0));
+    assert_eq!(new_entry.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+    assert!(new_entry.padding_slice().iter().all(|byte| *byte == 0));
     new_entry
         .data_mut()
         .copy_from_slice(new_side_data_payload.as_slice());
+    assert!(new_entry.padding_slice().iter().all(|byte| *byte == 0));
     assert_eq!(new_side_data_packet.side_data().len(), 1);
     assert_eq!(
         new_side_data_packet
@@ -11324,9 +11333,12 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         )
         .unwrap();
     assert!(new_entry.data().iter().all(|byte| *byte == 0));
+    assert_eq!(new_entry.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+    assert!(new_entry.padding_slice().iter().all(|byte| *byte == 0));
     new_entry
         .data_mut()
         .copy_from_slice(new_side_data_replacement.as_slice());
+    assert!(new_entry.padding_slice().iter().all(|byte| *byte == 0));
     assert_eq!(new_side_data_packet.side_data().len(), 1);
     assert_eq!(
         new_side_data_packet
@@ -11371,6 +11383,14 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             .data(),
         &new_side_data_replacement[..strict_shrink_len]
     );
+    let shrunk_side_data = new_side_data_packet
+        .side_data_by_kind_id(&typed_side_data_kind)
+        .unwrap();
+    assert_eq!(shrunk_side_data.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+    assert!(shrunk_side_data
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
 
     let mut empty_side_free = Packet::default();
     empty_side_free.clear_side_data();
@@ -11527,6 +11547,11 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .unwrap();
     assert_eq!(zero_list_entry.kind_id(), &PacketSideDataKind::NewExtradata);
     assert!(zero_list_entry.data().is_empty());
+    assert_eq!(zero_list_entry.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+    assert!(zero_list_entry
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
     assert_eq!(zero_side_data_list.len(), 1);
     let mut zero_add_side_data_list = PacketSideDataList::new();
     assert!(zero_add_side_data_list
@@ -11556,9 +11581,12 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     let list_entry = side_data_list
         .new_side_data(typed_side_data_kind.clone(), typed_side_data_payload.len())
         .unwrap();
+    assert_eq!(list_entry.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+    assert!(list_entry.padding_slice().iter().all(|byte| *byte == 0));
     list_entry
         .data_mut()
         .copy_from_slice(typed_side_data_payload.as_slice());
+    assert!(list_entry.padding_slice().iter().all(|byte| *byte == 0));
     assert_eq!(side_data_list.len(), 1);
     assert_eq!(
         side_data_list.get(&typed_side_data_kind).unwrap().data(),
@@ -11592,7 +11620,10 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     let flags_entry = side_data_list
         .new_side_data_with_flags(flags_kind.clone(), 2, 1)
         .unwrap();
+    assert_eq!(flags_entry.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+    assert!(flags_entry.padding_slice().iter().all(|byte| *byte == 0));
     flags_entry.data_mut().copy_from_slice(&[0xc2, 0x58]);
+    assert!(flags_entry.padding_slice().iter().all(|byte| *byte == 0));
     assert_eq!(side_data_list.len(), 3);
     let mut caller_owned = Some(SideData::new_with_kind(flags_kind.clone(), vec![0x5a]).unwrap());
     let replaced_flags = side_data_list
@@ -11629,6 +11660,14 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .new_side_data(PacketSideDataKind::Palette, 2)
         .unwrap();
     assert_eq!(duplicate_list_new_entry.data(), &[0, 0]);
+    assert_eq!(
+        duplicate_list_new_entry.padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(duplicate_list_new_entry
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
     duplicate_list_new_entry
         .data_mut()
         .copy_from_slice(&[0x66, 0x77]);

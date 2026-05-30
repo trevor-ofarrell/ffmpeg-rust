@@ -4360,6 +4360,7 @@ impl<'a> PacketLcevc<'a> {
 pub struct SideData {
     kind: PacketSideDataKind,
     data: Vec<u8>,
+    visible_len: usize,
 }
 
 impl SideData {
@@ -4596,13 +4597,51 @@ impl SideData {
     }
 
     pub fn new_with_kind(kind: PacketSideDataKind, data: Vec<u8>) -> AvResult<Self> {
+        Self::validate_kind(&kind)?;
+        Ok(Self {
+            kind,
+            visible_len: data.len(),
+            data,
+        })
+    }
+
+    fn new_zeroed_with_padding(
+        kind: PacketSideDataKind,
+        size: usize,
+        padding: usize,
+    ) -> AvResult<Self> {
+        Self::validate_kind(&kind)?;
+        let storage_len = size.checked_add(padding).ok_or_else(|| {
+            AvError::with_code(
+                AvErrorKind::External,
+                AvErrorCode::ENOMEM,
+                "cannot allocate packet side data",
+            )
+        })?;
+        let mut data = Vec::new();
+        data.try_reserve_exact(storage_len).map_err(|_| {
+            AvError::with_code(
+                AvErrorKind::External,
+                AvErrorCode::ENOMEM,
+                "cannot allocate packet side data",
+            )
+        })?;
+        data.resize(storage_len, 0);
+        Ok(Self {
+            kind,
+            data,
+            visible_len: size,
+        })
+    }
+
+    fn validate_kind(kind: &PacketSideDataKind) -> AvResult<()> {
         match &kind {
             PacketSideDataKind::Unknown(name) | PacketSideDataKind::Raw { name, .. } => {
                 validate_packet_side_data_kind(name.clone())?;
             }
             _ => {}
         }
-        Ok(Self { kind, data })
+        Ok(())
     }
 
     pub fn from_frame_side_data(side_data: &FrameSideData) -> AvResult<Self> {
@@ -4616,7 +4655,7 @@ impl SideData {
             .kind
             .frame_side_data_kind()
             .ok_or_else(packet_frame_side_data_map_error)?;
-        FrameSideData::new_with_kind(kind, self.data.clone())
+        FrameSideData::new_with_kind(kind, self.data().to_vec())
     }
 
     pub fn add_to_frame<'a>(
@@ -4645,15 +4684,27 @@ impl SideData {
     }
 
     pub fn data(&self) -> &[u8] {
-        &self.data
+        &self.data[..self.visible_len]
     }
 
     pub fn data_mut(&mut self) -> &mut [u8] {
-        &mut self.data
+        &mut self.data[..self.visible_len]
+    }
+
+    pub fn as_padded_slice(&self) -> &[u8] {
+        &self.data
+    }
+
+    pub fn padding_len(&self) -> usize {
+        self.data.len() - self.visible_len
+    }
+
+    pub fn padding_slice(&self) -> &[u8] {
+        &self.data[self.visible_len..]
     }
 
     pub fn len(&self) -> usize {
-        self.data.len()
+        self.visible_len
     }
 
     pub fn is_empty(&self) -> bool {
@@ -4989,7 +5040,7 @@ impl SideData {
     }
 
     pub fn shrink(&mut self, len: usize) -> AvResult<()> {
-        if len > self.data.len() {
+        if len > self.visible_len {
             return Err(AvError::with_code(
                 AvErrorKind::External,
                 AvErrorCode::ENOMEM,
@@ -4997,7 +5048,14 @@ impl SideData {
             ));
         }
 
-        self.data.truncate(len);
+        let padding = self.padding_len();
+        if padding == 0 {
+            self.data.truncate(len);
+        } else {
+            self.data.resize(len + padding, 0);
+            self.data[len..].fill(0);
+        }
+        self.visible_len = len;
         Ok(())
     }
 }
@@ -5054,16 +5112,8 @@ impl PacketSideDataList {
         size: usize,
         _flags: i32,
     ) -> AvResult<&mut SideData> {
-        let mut data = Vec::new();
-        data.try_reserve_exact(size).map_err(|_| {
-            AvError::with_code(
-                AvErrorKind::External,
-                AvErrorCode::ENOMEM,
-                "cannot allocate packet side data",
-            )
-        })?;
-        data.resize(size, 0);
-        let side_data = SideData::new_with_kind(kind, data)?;
+        let side_data =
+            SideData::new_zeroed_with_padding(kind, size, AV_INPUT_BUFFER_PADDING_SIZE)?;
         Ok(self.add_or_replace(side_data).1)
     }
 
@@ -5442,16 +5492,8 @@ impl Packet {
         size: usize,
     ) -> AvResult<&mut SideData> {
         self.ensure_side_data_capacity_for(&kind)?;
-        let mut data = Vec::new();
-        data.try_reserve_exact(size).map_err(|_| {
-            AvError::with_code(
-                AvErrorKind::External,
-                AvErrorCode::ENOMEM,
-                "cannot allocate packet side data",
-            )
-        })?;
-        data.resize(size, 0);
-        let side_data = SideData::new_with_kind(kind, data)?;
+        let side_data =
+            SideData::new_zeroed_with_padding(kind, size, AV_INPUT_BUFFER_PADDING_SIZE)?;
         Ok(self.add_or_replace_side_data(side_data).1)
     }
 
@@ -10781,6 +10823,53 @@ mod tests {
         assert_eq!(packet.side_data()[1].kind(), "skip_samples");
         assert_eq!(packet.side_data()[2].kind(), "palette");
         assert_eq!(packet.side_data()[2].data(), &[0xcc]);
+    }
+
+    #[test]
+    fn packet_new_side_data_allocations_track_zero_padding() {
+        let caller_owned = SideData::new_extradata(vec![0x11, 0x22, 0x33]).unwrap();
+        assert_eq!(caller_owned.data(), &[0x11, 0x22, 0x33]);
+        assert_eq!(caller_owned.as_padded_slice(), &[0x11, 0x22, 0x33]);
+        assert_eq!(caller_owned.padding_len(), 0);
+        assert!(caller_owned.padding_slice().is_empty());
+
+        let mut packet = Packet::default();
+        {
+            let entry = packet
+                .new_side_data(PacketSideDataKind::NewExtradata, 3)
+                .unwrap();
+            assert_eq!(entry.data(), &[0, 0, 0]);
+            assert_eq!(
+                entry.as_padded_slice().len(),
+                3 + AV_INPUT_BUFFER_PADDING_SIZE
+            );
+            assert_eq!(entry.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+            assert!(entry.padding_slice().iter().all(|byte| *byte == 0));
+            entry.data_mut().copy_from_slice(&[0xaa, 0xbb, 0xcc]);
+            assert!(entry.padding_slice().iter().all(|byte| *byte == 0));
+        }
+
+        packet
+            .shrink_side_data_by_kind_id(&PacketSideDataKind::NewExtradata, 1)
+            .unwrap();
+        let entry = packet
+            .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+            .unwrap();
+        assert_eq!(entry.data(), &[0xaa]);
+        assert_eq!(
+            entry.as_padded_slice().len(),
+            1 + AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert_eq!(entry.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+        assert!(entry.padding_slice().iter().all(|byte| *byte == 0));
+
+        let mut list = PacketSideDataList::new();
+        let entry = list
+            .new_side_data(PacketSideDataKind::NewExtradata, 2)
+            .unwrap();
+        assert_eq!(entry.data(), &[0, 0]);
+        assert_eq!(entry.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+        assert!(entry.padding_slice().iter().all(|byte| *byte == 0));
     }
 
     #[test]

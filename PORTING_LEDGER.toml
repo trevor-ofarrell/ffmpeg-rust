@@ -3,6 +3,12 @@ target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
 # Latest main-thread packet evidence: pinned FFmpeg oracle rows now prove
+# `av_packet_new_side_data()` and standalone `av_packet_side_data_new()`
+# allocate `AV_INPUT_BUFFER_PADDING_SIZE` zero bytes after the visible
+# side-data payload. Rust now preserves visible side-data length separately
+# from hidden allocation padding for the packet/list `new_side_data` helpers.
+# This is evidence-strengthening only; no status was promoted.
+# Latest main-thread packet evidence: pinned FFmpeg oracle rows now prove
 # generated MOV `ffprobe -show_packets` fields, YUV4MPEG2 color-range remux
 # packet transfer, empty rawvideo/WAV packet streams, and empty-last duplicate
 # WAV data chunks are now mapped to `avutil-packet` differential coverage.
@@ -658,6 +664,7 @@ unit_tests = [
   "packet::tests::packet_shrink_side_data_by_kind_id_reports_ffmpeg_errors",
   "packet::tests::packet_side_data_take_remove_and_clear_are_scoped",
   "packet::tests::packet_new_side_data_zeroes_and_replaces_first_matching_kind",
+  "packet::tests::packet_new_side_data_allocations_track_zero_padding",
   "packet::tests::packet_new_side_data_accepts_zero_size",
   "packet::tests::packet_zero_size_side_data_rejects_oversize_shrink",
   "packet::tests::packet_zero_size_side_data_survives_payload_helpers",
