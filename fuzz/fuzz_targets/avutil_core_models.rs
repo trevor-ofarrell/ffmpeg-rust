@@ -11212,6 +11212,27 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     packet.set_flag(PacketFlags::KEY, false);
     assert_eq!(packet.flags().unknown_bits(), raw_flags & !PacketFlags::all().bits());
 
+    let mut unknown_lifecycle_source = Packet::from_data(vec![0x5a, 0x6b]).unwrap();
+    unknown_lifecycle_source.set_pts(Some(321));
+    unknown_lifecycle_source.set_dts(Some(123));
+    unknown_lifecycle_source.set_duration(17).unwrap();
+    unknown_lifecycle_source.set_pos(Some(99)).unwrap();
+    unknown_lifecycle_source.set_flags(retained);
+    let mut unknown_lifecycle_copy = Packet::from_data(vec![0xee]).unwrap();
+    unknown_lifecycle_copy.copy_props_from(&unknown_lifecycle_source);
+    assert_eq!(unknown_lifecycle_copy.flags().bits(), raw_flags);
+    assert_eq!(unknown_lifecycle_copy.data(), &[0xee]);
+    let mut unknown_lifecycle_ref = Packet::default();
+    unknown_lifecycle_ref.ref_from(&unknown_lifecycle_source);
+    assert_eq!(unknown_lifecycle_ref.flags().bits(), raw_flags);
+    let unknown_lifecycle_clone = unknown_lifecycle_source.clone();
+    assert_eq!(unknown_lifecycle_clone.flags().bits(), raw_flags);
+    let mut unknown_lifecycle_move_src = unknown_lifecycle_source.clone();
+    let mut unknown_lifecycle_move_dst = Packet::default();
+    unknown_lifecycle_move_dst.move_ref_from(&mut unknown_lifecycle_move_src);
+    assert_eq!(unknown_lifecycle_move_dst.flags().bits(), raw_flags);
+    assert!(unknown_lifecycle_move_src.flags().is_empty());
+
     let typed_side_data_kind = packet_side_data_kind_from(cursor.next());
     let typed_side_data_len = usize::from(cursor.next().unwrap_or_default() % 16);
     let typed_side_data_payload = payload_from(cursor, typed_side_data_len);

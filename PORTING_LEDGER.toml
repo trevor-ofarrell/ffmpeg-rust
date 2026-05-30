@@ -2,6 +2,11 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest main-thread packet evidence: focused unit and deterministic
+# `avutil_core_models` coverage now mirror the existing pinned libavcodec
+# `packet:flags-unknown-*` rows, proving unknown raw `AVPacket.flags` bits
+# survive copy-props, ref, clone, and move lifecycles while move resets the
+# source. This is evidence-strengthening only; no status was promoted.
 # Latest main-thread packet evidence: pinned FFmpeg oracle rows now prove
 # `av_packet_new_side_data()` and standalone `av_packet_side_data_new()`
 # allocate `AV_INPUT_BUFFER_PADDING_SIZE` zero bytes after the visible
@@ -571,6 +576,7 @@ unit_tests = [
   "packet::tests::packet_tracks_timestamps_position_flags_and_side_data",
   "packet::tests::packet_flag_values_match_ffmpeg_8_1_1_header",
   "packet::tests::packet_flags_can_be_cleared",
+  "packet::tests::packet_unknown_flags_survive_lifecycle_helpers",
   "packet::tests::packet_accepts_signed_duration_rejects_negative_position_and_invalid_side_data_kind",
   "packet::tests::packet_rescales_valid_timestamps_and_duration",
   "packet::tests::packet_rescale_ignores_unknown_timestamps",
@@ -1045,9 +1051,10 @@ fuzz_targets = ["avutil_core_models"]
 # AVPacket.flags retains unknown raw bits such as 0x4000 through copy-props,
 # ref, clone, and move operations, with move resetting the source. Rust
 # PacketFlags::from_bits_retain/known_bits/unknown_bits plus Packet::set_flags
-# unit, oracle, and fuzz-build evidence cover the bounded surface. A fresh WSL
-# avutil_core_models sanitizer rebuild exceeded this turn's timeout; Windows
-# fuzz build/clippy passed and other changed WSL fuzz smokes completed.
+# lifecycle unit coverage, oracle rows, and deterministic `avutil_core_models`
+# fixtures cover the bounded surface. Earlier WSL sanitizer rebuild attempts
+# exceeded timeout for this slice, so fuzz build/clippy evidence was recorded
+# until a later warmed smoke can run.
 # Latest image2 media update: single-image nonzero `-start_number` framecrc
 # rows are mapped to avutil-packet, validating that the Rust image2 demuxer ->
 # Packet -> framecrc path preserves one encoded-image packet with unshifted

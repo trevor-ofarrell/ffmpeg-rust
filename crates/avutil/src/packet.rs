@@ -6576,6 +6576,50 @@ mod tests {
     }
 
     #[test]
+    fn packet_unknown_flags_survive_lifecycle_helpers() {
+        let raw_flags = PacketFlags::from_bits_retain(
+            PacketFlags::KEY.bits() | PacketFlags::DISPOSABLE.bits() | 0x4000,
+        );
+        let assert_raw_flags = |packet: &Packet| {
+            assert_eq!(packet.flags().bits(), raw_flags.bits());
+            assert!(packet.flags().contains(PacketFlags::KEY));
+            assert!(packet.flags().contains(PacketFlags::DISPOSABLE));
+            assert_eq!(packet.flags().unknown_bits(), 0x4000);
+        };
+
+        let mut source = Packet::from_data(vec![0x5a, 0x6b]).unwrap();
+        source.set_pts(Some(321));
+        source.set_dts(Some(123));
+        source.set_duration(17).unwrap();
+        source.set_pos(Some(99)).unwrap();
+        source.set_flags(raw_flags);
+        assert_raw_flags(&source);
+
+        let mut copied = Packet::from_data(vec![0xee]).unwrap();
+        copied.copy_props_from(&source);
+        assert_eq!(copied.data(), &[0xee]);
+        assert_raw_flags(&copied);
+
+        let mut referenced = Packet::default();
+        referenced.ref_from(&source);
+        assert_raw_flags(&referenced);
+        assert!(referenced.data_buffer().shares_storage(source.data_buffer()));
+
+        let cloned = source.clone();
+        assert_raw_flags(&cloned);
+        assert!(cloned.data_buffer().shares_storage(source.data_buffer()));
+
+        let mut moved_src = source.clone();
+        let mut moved_dst = Packet::default();
+        moved_dst.move_ref_from(&mut moved_src);
+        assert_raw_flags(&moved_dst);
+        assert!(moved_src.flags().is_empty());
+        assert_eq!(moved_src.pts(), None);
+        assert_eq!(moved_src.dts(), None);
+        assert_eq!(moved_src.duration(), 0);
+    }
+
+    #[test]
     fn packet_accepts_signed_duration_rejects_negative_position_and_invalid_side_data_kind() {
         let mut packet = Packet::new(Vec::new(), 0);
         packet.set_duration(5).unwrap();
