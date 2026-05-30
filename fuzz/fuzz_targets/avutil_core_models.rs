@@ -9938,6 +9938,42 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .iter()
         .all(|byte| *byte == 0));
 
+    let mut grow_offset_storage = vec![0xa0, 0xa1, 0xa2];
+    grow_offset_storage.extend_from_slice(&payload);
+    grow_offset_storage.extend_from_slice(&[0xcc, 0xdd]);
+    grow_offset_storage.resize(
+        3 + payload.len() + 2 + AV_INPUT_BUFFER_PADDING_SIZE,
+        0x5a,
+    );
+    let mut grow_offset_packet = Packet::with_buffer(
+        BufferRef::from_vec(grow_offset_storage)
+            .into_ref_slice(3, payload.len())
+            .unwrap(),
+        stream_index,
+    );
+    let grow_offset_ptr = grow_offset_packet.data_buffer().as_padded_ptr();
+    grow_offset_packet.grow_data(2).unwrap();
+    let mut expected_grown_offset_payload = payload.clone();
+    expected_grown_offset_payload.extend_from_slice(&[0xcc, 0xdd]);
+    assert_eq!(
+        grow_offset_packet.data(),
+        expected_grown_offset_payload.as_slice()
+    );
+    assert_eq!(grow_offset_packet.data_buffer().offset(), 3);
+    assert_eq!(
+        grow_offset_packet.data_buffer().as_padded_ptr(),
+        grow_offset_ptr
+    );
+    assert_eq!(
+        grow_offset_packet.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(grow_offset_packet
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+
     let mut shrink_custom_storage = payload.clone();
     shrink_custom_storage.resize(payload.len() + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
     let mut shrink_custom_packet = Packet::with_buffer(

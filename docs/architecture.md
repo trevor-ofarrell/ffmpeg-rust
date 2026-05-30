@@ -77,7 +77,9 @@ zero-growth preserves the offset data pointer and visible bytes when enough
 padded capacity already exists, while zeroing the dirty padding window. The
 shared `BufferRef::resize_with_padding` path preserves unique owned offsets for
 that packet-compatible case instead of normalizing the visible slice to offset
-zero.
+zero. Positive growth with enough existing capacity also preserves that offset
+data pointer, exposes the deterministic tail bytes that were already present in
+the backing buffer, and zeroes the new padding window.
 
 `Packet::alloc_new_packet_payload` models the `av_new_packet()` reset path. Pinned rows cover both positive-size reset and zero-size reset on a pre-populated packet: metadata, side data, opaque metadata, `opaque_ref`, flags, stream index, and packet time base reset to defaults before writable padded payload storage is installed.
 

@@ -3,6 +3,56 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The
+tree started clean at `master...origin/master [ahead 10]`; required startup
+checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
+-- status --next 15` reporting 11/96 strict-complete components (11.5%) and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validating the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
+kept the next slice on top-priority `avutil-packet`; no subagents were needed.
+
+Current main-thread slice: pinned libavcodec rows now prove positive
+`av_grow_packet()` preserves `pkt->data` when it points at a nonzero offset
+inside `pkt->buf->data` and enough backing capacity already exists, exposes the
+existing tail bytes as newly visible payload, and zeroes the new FFmpeg
+input-padding window. Rust mirrors this through `Packet::grow_data(2)`, the
+offset-preserving `BufferRef::resize_with_padding` path added previously,
+focused unit coverage, mapped packet oracle rows, and a deterministic
+`avutil_core_models` fixture. `avutil-packet` remains `fate_pass`, not
+`complete`; strict completion remains 11/96.
+
+Latest validation commands for this packet positive offset-grow slice passed:
+`cargo fmt --all`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil
+packet_grow_preserves_offset_pointer_and_exposes_tail_bytes -- --nocapture`;
+`CARGO_TARGET_DIR=target-wsl-fuzz cargo check --manifest-path fuzz/Cargo.toml
+--bin avutil_core_models`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p
+avutil --test packet_oracle libavcodec_packet_core_lifecycle_matches_packet_model
+-- --ignored --nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p
+fate-runner -- run --mappings tests/differential/mappings.txt --component
+avutil-packet --target oracle-libavcodec-packet-core --oracle-ffmpeg
+./third_party/ffmpeg-oracle/build/bin/ffmpeg`; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- run --component avutil-packet`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil --all-targets
+--all-features -- -D warnings`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy
+--manifest-path fuzz/Cargo.toml --bin avutil_core_models -- -D warnings`; and
+`RUST_MIN_STACK=33554432 CXXFLAGS='-O1' HOST_CXXFLAGS='-O1'
+CARGO_TARGET_DIR=target-wsl-fuzz LSAN_OPTIONS=detect_leaks=0
+ASAN_OPTIONS=detect_leaks=0 cargo fuzz run avutil_core_models -- -runs=1`.
+Final guards also passed: `cargo fmt --all -- --check`;
+`CARGO_TARGET_DIR=target-orch-fate cargo test -p fate-runner current_ledger`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- guard-runtime`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15`; and `git diff --check` with CRLF warnings only.
+
+Current focus component: `avutil-packet` remains the top priority incomplete
+component (`fate_pass`), followed by `avutil-buffer` (`differential_pass`),
+`avutil-frame` (`differential_pass`), `avutil-logging` (`fate_pass`), and
+`avutil-options` (`fate_pass`). Next concrete action after this slice: commit
+if final diff review is clean, then continue `avutil-packet` strict evidence or
+move to a disjoint `avutil-buffer` / `avutil-options` bounded row from a clean
+tree.
+
+Current authoritative turn status: orchestrator workflow is active on WSL. The
 tree started clean at `master...origin/master [ahead 9]`; required startup
 checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
 -- status --next 15` reporting 11/96 strict-complete components (11.5%) and

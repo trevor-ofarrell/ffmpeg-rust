@@ -2186,6 +2186,33 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_fields(&grow_zero_offset),
     );
 
+    let mut grow_offset_storage = vec![0xa0, 0xa1, 0xa2, 0x11, 0x22, 0xcc, 0xdd];
+    grow_offset_storage.resize(3 + 4 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+    let mut grow_offset = Packet::with_buffer(
+        BufferRef::from_vec(grow_offset_storage)
+            .into_ref_slice(3, 2)
+            .unwrap(),
+        0,
+    );
+    let grow_offset_ptr = grow_offset.data_buffer().as_padded_ptr();
+    grow_offset.grow_data(2).unwrap();
+    rows.insert(
+        "packet:payload-grow-offset-padding-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-grow-offset-padding-same-ptr".to_string(),
+        vec![u8::from(grow_offset.data_buffer().as_padded_ptr() == grow_offset_ptr).to_string()],
+    );
+    rows.insert(
+        "packet:payload-grow-offset-padding-offset".to_string(),
+        vec![grow_offset.data_buffer().offset().to_string()],
+    );
+    rows.insert(
+        "packet:payload-grow-offset-padding".to_string(),
+        payload_fields(&grow_offset),
+    );
+
     let mut shrink_custom_storage = vec![0x33, 0x44];
     shrink_custom_storage.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
     let mut shrink_custom = Packet::with_buffer(
@@ -5684,6 +5711,30 @@ static AVPacket *packet_with_offset_padding(void) {
     return pkt;
 }
 
+static AVPacket *packet_with_offset_grow_capacity(void) {
+    AVPacket *pkt = new_packet();
+    uint8_t *data = av_malloc(3 + 4 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!data, "offset grow packet allocation failed");
+    data[0] = 0xa0;
+    data[1] = 0xa1;
+    data[2] = 0xa2;
+    data[3] = 0x11;
+    data[4] = 0x22;
+    data[5] = 0xcc;
+    data[6] = 0xdd;
+    memset(data + 7, 0x5a, AV_INPUT_BUFFER_PADDING_SIZE);
+    pkt->buf = av_buffer_create(
+        data,
+        3 + 4 + AV_INPUT_BUFFER_PADDING_SIZE,
+        free_custom_padding_packet,
+        NULL,
+        0);
+    fail_if(!pkt->buf, "offset grow packet buffer creation failed");
+    pkt->data = data + 3;
+    pkt->size = 2;
+    return pkt;
+}
+
 static int fifo_release_payload_count = 0;
 static int fifo_release_payload_first = -1;
 static int fifo_release_payload_second = -1;
@@ -8061,6 +8112,18 @@ int main(void) {
     print_payload("packet:payload-grow-zero-offset-padding",
                   grow_zero_offset);
     av_packet_free(&grow_zero_offset);
+
+    AVPacket *grow_offset = packet_with_offset_grow_capacity();
+    uint8_t *grow_offset_ptr = grow_offset->data;
+    int grow_offset_ret = av_grow_packet(grow_offset, 2);
+    printf("packet:payload-grow-offset-padding-ret|%d\n", grow_offset_ret);
+    fail_if(grow_offset_ret < 0, "av_grow_packet offset padding failed");
+    printf("packet:payload-grow-offset-padding-same-ptr|%d\n",
+           grow_offset->data == grow_offset_ptr);
+    printf("packet:payload-grow-offset-padding-offset|%td\n",
+           grow_offset->data - grow_offset->buf->data);
+    print_payload("packet:payload-grow-offset-padding", grow_offset);
+    av_packet_free(&grow_offset);
 
     pkt = new_packet();
     uint8_t *shrink_custom = av_mallocz(2 + AV_INPUT_BUFFER_PADDING_SIZE);

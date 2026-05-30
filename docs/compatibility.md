@@ -10,6 +10,15 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  positive `av_grow_packet()` on an `AVPacket` whose `data` points at an
+  offset inside `buf->data` preserves that offset data pointer when enough
+  capacity already exists, exposes the existing tail bytes as newly visible
+  payload, and zeroes the new input-padding window. Rust mirrors this through
+  `Packet::grow_data(2)`, focused unit coverage, the mapped packet oracle, and
+  a deterministic `avutil_core_models` fixture. This strengthens
+  `avutil-packet`; strict completion remains 11/96 and the row remains
+  `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   `av_grow_packet(pkt, 0)` on an `AVPacket` whose `data` points at an offset
   inside `buf->data` preserves that offset data pointer and visible payload
   when enough padded capacity already exists, while zeroing dirty input padding.
