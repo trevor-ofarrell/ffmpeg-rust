@@ -10244,6 +10244,42 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     );
     assert_eq!(capacity_list.get(&extra_list_kind).unwrap().data(), &[0]);
 
+    let raw_negative_array_kind = PacketSideDataKind::from_ffmpeg_raw_value(-1);
+    let raw_min_array_kind = PacketSideDataKind::from_ffmpeg_raw_value(i32::MIN);
+    let mut raw_array_list = PacketSideDataList::new();
+    assert!(raw_array_list
+        .try_add_side_data(
+            SideData::new_with_kind(raw_negative_array_kind.clone(), vec![0xf1]).unwrap(),
+        )
+        .unwrap()
+        .is_none());
+    raw_array_list
+        .new_side_data(raw_min_array_kind.clone(), 1)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0xe0]);
+    assert_eq!(
+        raw_array_list
+            .get(&raw_negative_array_kind)
+            .unwrap()
+            .data(),
+        &[0xf1]
+    );
+    assert_eq!(
+        raw_array_list.get(&raw_min_array_kind).unwrap().data(),
+        &[0xe0]
+    );
+    let removed_raw_min = raw_array_list.remove_kind(&raw_min_array_kind).unwrap();
+    assert_eq!(removed_raw_min.data(), &[0xe0]);
+    assert!(raw_array_list.get(&raw_min_array_kind).is_none());
+    assert_eq!(
+        raw_array_list
+            .get(&raw_negative_array_kind)
+            .unwrap()
+            .data(),
+        &[0xf1]
+    );
+
     let mut packet_fifo = PacketFifo::new();
     assert_eq!(packet_fifo.can_read(), 0);
     assert!(packet_fifo.is_empty());

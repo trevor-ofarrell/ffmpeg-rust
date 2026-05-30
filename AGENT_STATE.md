@@ -2,6 +2,52 @@
 
 ## Current Status
 
+Current authoritative turn status: orchestrator workflow is active with xhigh
+fast/full-access subagents. Two workers were used this turn: the options worker
+timed out without producing scoped file changes and was closed, and the logging
+worker returned a patch that was reviewed and rejected because it broadened the
+installed callback into a mixed behavior that is not the repository's pinned
+custom-callback oracle surface. No worker changes are integrated in the current
+dirty slice, and no approval prompts were used.
+
+Current slice: main-thread `avutil-packet` evidence for standalone
+`AVPacketSideData` arrays with negative raw type values. The Rust
+`PacketSideDataList` model, packet oracle, and deterministic fuzz fixture now
+cover adding raw type `-1`, creating raw type `INT_MIN`, looking both up, and
+removing `INT_MIN` while preserving the `-1` entry. No component was promoted;
+strict completion remains 11/96 components, about 11.5%.
+
+Latest validation commands for this slice passed: `cargo fmt --all`;
+`cargo fmt --all -- --check`; `cargo test -p avutil --target-dir
+target-orch-packet packet_side_data_list_accepts_negative_raw_ffmpeg_types`;
+`cargo test -p avutil --test packet_oracle --target-dir
+target-orch-packet-oracle libavcodec_packet_core_lifecycle_matches_packet_model
+-- --ignored`; `cargo check --manifest-path fuzz/Cargo.toml --target-dir
+target-orch-fuzz --target x86_64-pc-windows-msvc --bin avutil_core_models`;
+`cargo test -p fate-runner --target-dir target-orch-fate current_ledger`;
+`cargo clippy -p avutil --all-targets --all-features --target-dir
+target-orch-clippy-avutil -- -D warnings`; `cargo run -p fate-runner
+--target-dir target-orch-fate-run -- status --next 12`; `cargo run -p
+fate-runner --target-dir target-orch-fate-run-changed -- run --changed
+--dry-run`; `cargo run -p fate-runner --target-dir target-orch-fate-map -- run
+--mappings tests/differential/mappings.txt --component avutil-packet --target
+oracle-libavcodec-packet-core --oracle-ffmpeg
+./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd`; `cargo run -p xtask
+--target-dir target-orch-xtask-guard -- guard-runtime`; and `cargo run -p
+xtask --target-dir target-orch-xtask-doctor -- oracle-doctor`; `cargo run -p
+fate-runner --target-dir target-orch-fate-local -- run --component
+avutil-packet`; and `git diff --check` with CRLF conversion warnings only.
+
+Latest failing or limited commands for this slice: no validation failures. The
+logging worker's returned patch was intentionally not integrated after review;
+the options worker was closed after timeout with no scoped dirty files.
+
+Current focus component: `avutil-packet` remains the top priority incomplete
+component (`fate_pass`). Next 3 concrete actions: run the final focused gates
+for this standalone side-data slice, commit the coherent packet-only evidence,
+then choose the next unblocked AVPacket/frame/buffer completion gap and
+delegate only disjoint xhigh worker scopes.
+
 Current authoritative turn status: orchestrator workflow is active. The latest
 xhigh fast/full-access batch integrated main-thread `avutil-packet` evidence,
 Hypatia's `avutil-buffer` unit-evidence slice, and Euler's `fftools-version`

@@ -11147,6 +11147,33 @@ mod tests {
     }
 
     #[test]
+    fn packet_side_data_list_accepts_negative_raw_ffmpeg_types() {
+        let mut list = PacketSideDataList::new();
+        let raw_negative_kind = PacketSideDataKind::from_ffmpeg_raw_value(-1);
+        assert!(list
+            .try_add_side_data(
+                SideData::new_with_kind(raw_negative_kind.clone(), vec![0xf1]).unwrap()
+            )
+            .unwrap()
+            .is_none());
+        assert_eq!(list.get(&raw_negative_kind).unwrap().data(), &[0xf1]);
+
+        let raw_min_kind = PacketSideDataKind::from_ffmpeg_raw_value(i32::MIN);
+        list.new_side_data(raw_min_kind.clone(), 1)
+            .unwrap()
+            .data_mut()
+            .copy_from_slice(&[0xe0]);
+        assert_eq!(list.entries().len(), 2);
+        assert_eq!(list.get(&raw_min_kind).unwrap().data(), &[0xe0]);
+
+        let removed = list.remove_kind(&raw_min_kind).unwrap();
+        assert_eq!(removed.data(), &[0xe0]);
+        assert_eq!(list.entries().len(), 1);
+        assert_eq!(list.get(&raw_negative_kind).unwrap().data(), &[0xf1]);
+        assert!(list.get(&raw_min_kind).is_none());
+    }
+
+    #[test]
     fn packet_side_data_maps_global_frame_side_data() {
         let expected = [
             (

@@ -2845,6 +2845,52 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         side_data_list_summary_fields(&list),
     );
 
+    let mut raw_list = PacketSideDataList::new();
+    let raw_negative_kind = PacketSideDataKind::from_ffmpeg_raw_value(-1);
+    let raw_negative_added = raw_list
+        .try_add_side_data(SideData::new_with_kind(raw_negative_kind.clone(), vec![0xf1]).unwrap())
+        .unwrap();
+    assert!(raw_negative_added.is_none());
+    rows.insert(
+        "packet:array-add-raw-negative-type-ret".to_string(),
+        vec!["1".to_string()],
+    );
+    rows.insert(
+        "packet:array-add-raw-negative-type".to_string(),
+        side_data_list_summary_fields(&raw_list),
+    );
+    rows.insert(
+        "packet:array-get-raw-negative-type".to_string(),
+        side_data_lookup_fields(raw_list.get(&raw_negative_kind)),
+    );
+
+    let raw_min_kind = PacketSideDataKind::from_ffmpeg_raw_value(i32::MIN);
+    raw_list
+        .new_side_data(raw_min_kind.clone(), 1)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0xe0]);
+    rows.insert(
+        "packet:array-new-raw-min-type-ret".to_string(),
+        vec!["1".to_string()],
+    );
+    rows.insert(
+        "packet:array-new-raw-min-type".to_string(),
+        side_data_list_summary_fields(&raw_list),
+    );
+    rows.insert(
+        "packet:array-get-raw-min-type".to_string(),
+        side_data_lookup_fields(raw_list.get(&raw_min_kind)),
+    );
+    let removed = raw_list
+        .remove_kind(&raw_min_kind)
+        .expect("raw INT_MIN array side data should be removable");
+    assert_eq!(removed.data(), &[0xe0]);
+    rows.insert(
+        "packet:array-remove-raw-min-type".to_string(),
+        side_data_list_summary_fields(&raw_list),
+    );
+
     let mut capacity_list = PacketSideDataList::new();
     for (index, kind) in PacketSideDataKind::KNOWN.iter().enumerate() {
         let added = capacity_list
@@ -5123,6 +5169,39 @@ static void exercise_side_data_array_api(void) {
         av_free(owned);
     fail_if(!entry, "av_packet_side_data_add zero failed");
     print_side_data_array_summary("packet:array-add-zero", sd, nb_sd);
+    av_packet_side_data_free(&sd, &nb_sd);
+
+    owned = av_mallocz(1 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!owned, "av_mallocz array negative raw type failed");
+    owned[0] = 0xf1;
+    entry = av_packet_side_data_add(&sd, &nb_sd,
+                                    (enum AVPacketSideDataType)-1,
+                                    owned, 1, 0);
+    printf("packet:array-add-raw-negative-type-ret|%d\n", entry != NULL);
+    if (!entry)
+        av_free(owned);
+    fail_if(!entry, "av_packet_side_data_add negative raw type failed");
+    print_side_data_array_summary("packet:array-add-raw-negative-type",
+                                  sd, nb_sd);
+    print_side_data_array_lookup("packet:array-get-raw-negative-type",
+                                 sd, nb_sd,
+                                 (enum AVPacketSideDataType)-1);
+
+    entry = av_packet_side_data_new(&sd, &nb_sd,
+                                    (enum AVPacketSideDataType)INT_MIN,
+                                    1, 0);
+    printf("packet:array-new-raw-min-type-ret|%d\n", entry != NULL);
+    fail_if(!entry, "av_packet_side_data_new INT_MIN raw type failed");
+    entry->data[0] = 0xe0;
+    print_side_data_array_summary("packet:array-new-raw-min-type",
+                                  sd, nb_sd);
+    print_side_data_array_lookup("packet:array-get-raw-min-type",
+                                 sd, nb_sd,
+                                 (enum AVPacketSideDataType)INT_MIN);
+    av_packet_side_data_remove(sd, &nb_sd,
+                               (enum AVPacketSideDataType)INT_MIN);
+    print_side_data_array_summary("packet:array-remove-raw-min-type",
+                                  sd, nb_sd);
     av_packet_side_data_free(&sd, &nb_sd);
 
     for (int type = 0; type < AV_PKT_DATA_NB; type++) {

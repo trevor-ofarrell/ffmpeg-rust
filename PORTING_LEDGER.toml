@@ -497,6 +497,7 @@ unit_tests = [
   "packet::tests::packet_side_data_list_matches_standalone_array_lifecycle",
   "packet::tests::packet_side_data_list_duplicate_lookup_add_and_remove_match_standalone_array_semantics",
   "packet::tests::packet_side_data_list_accepts_entries_beyond_packet_owned_limit",
+  "packet::tests::packet_side_data_list_accepts_negative_raw_ffmpeg_types",
   "packet::tests::packet_side_data_maps_global_frame_side_data",
   "packet::tests::packet_side_data_list_adds_from_frame_side_data_with_flags",
   "packet::tests::packet_side_data_adds_to_frame_with_flags",
@@ -621,6 +622,12 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest standalone AVPacketSideData raw-type update: pinned libavcodec rows
+# now prove standalone `av_packet_side_data_add()` accepts raw type `-1`,
+# `av_packet_side_data_new()` accepts raw type `INT_MIN`, lookup finds both,
+# and remove can delete the `INT_MIN` entry while preserving the `-1` entry.
+# Rust `PacketSideDataList` unit, oracle, and `avutil_core_models`
+# deterministic fuzz fixtures cover the bounded behavior.
 # Latest AVPacket raw side-data update: pinned libavcodec rows now prove
 # packet-owned `av_packet_add_side_data()` and `av_packet_new_side_data()`
 # accept raw numeric side-data types at `AV_PKT_DATA_NB`,

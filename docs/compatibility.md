@@ -9,6 +9,14 @@
 
 ## Compatible Today
 
+- Latest main-thread packet evidence: standalone `AVPacketSideData` array
+  oracle rows now prove raw negative side-data types are accepted by the
+  standalone helper API: `av_packet_side_data_add()` accepts `-1`,
+  `av_packet_side_data_new()` accepts `INT_MIN`, lookup finds both, and
+  removing the `INT_MIN` entry preserves the `-1` entry. Rust
+  `PacketSideDataList` unit coverage and `avutil_core_models` deterministic
+  fuzz checks mirror the bounded behavior. This strengthens `avutil-packet`;
+  strict complete count remains unchanged.
 - Latest orchestrated parallel evidence: main-thread packet oracle rows now
   prove packet-owned raw numeric side-data types also accept negative values
   `-1` and `INT_MIN`; a worker added `BufferRef` callback-owned visible-length
