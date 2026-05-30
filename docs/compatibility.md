@@ -10,6 +10,14 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  `av_packet_make_refcounted()` and `av_packet_make_writable()` are no-ops for
+  a unique writable `AVPacket` whose `data` points at an offset inside
+  `buf->data` with existing input-padding capacity: the offset pointer, visible
+  bytes, writability, and dirty padding are preserved. Rust mirrors this
+  through focused unit coverage, the mapped packet oracle, and a deterministic
+  `avutil_core_models` fixture. This strengthens `avutil-packet`; strict
+  completion remains 11/96 and the row remains `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   `av_shrink_packet(pkt, 2)` on an `AVPacket` whose `data` points at an offset
   inside `buf->data` preserves that offset data pointer, keeps the visible
   prefix, and zeroes the new input-padding window over the truncated tail.

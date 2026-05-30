@@ -81,7 +81,10 @@ zero. Positive growth with enough existing capacity also preserves that offset
 data pointer, exposes the deterministic tail bytes that were already present in
 the backing buffer, and zeroes the new padding window. Shrinking the same
 offset-backed shape preserves the offset data pointer, keeps the visible prefix,
-and zeroes the new padding window covering the truncated tail bytes.
+and zeroes the new padding window covering the truncated tail bytes. The
+refcounted/writable helper no-op path for a unique writable offset-backed
+packet preserves the same offset pointer and leaves dirty padding bytes
+unchanged.
 
 `Packet::alloc_new_packet_payload` models the `av_new_packet()` reset path. Pinned rows cover both positive-size reset and zero-size reset on a pre-populated packet: metadata, side data, opaque metadata, `opaque_ref`, flags, stream index, and packet time base reset to defaults before writable padded payload storage is installed.
 

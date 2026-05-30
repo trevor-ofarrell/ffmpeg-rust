@@ -9908,6 +9908,44 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .iter()
         .all(|byte| *byte == 0));
 
+    let mut offset_helper_storage = vec![0xa0, 0xa1, 0xa2];
+    offset_helper_storage.extend_from_slice(&payload);
+    offset_helper_storage.resize(3 + payload.len() + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+    let mut offset_helper_packet = Packet::with_buffer(
+        BufferRef::from_vec(offset_helper_storage)
+            .into_ref_slice(3, payload.len())
+            .unwrap(),
+        stream_index,
+    );
+    let offset_helper_ptr = offset_helper_packet.data_buffer().as_padded_ptr();
+    offset_helper_packet.make_refcounted().unwrap();
+    assert_eq!(offset_helper_packet.data(), payload.as_slice());
+    assert_eq!(offset_helper_packet.data_buffer().offset(), 3);
+    assert_eq!(
+        offset_helper_packet.data_buffer().as_padded_ptr(),
+        offset_helper_ptr
+    );
+    assert!(offset_helper_packet.is_data_writable());
+    assert!(offset_helper_packet
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0x5a));
+
+    offset_helper_packet.make_writable().unwrap();
+    assert_eq!(offset_helper_packet.data(), payload.as_slice());
+    assert_eq!(offset_helper_packet.data_buffer().offset(), 3);
+    assert_eq!(
+        offset_helper_packet.data_buffer().as_padded_ptr(),
+        offset_helper_ptr
+    );
+    assert!(offset_helper_packet.is_data_writable());
+    assert!(offset_helper_packet
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0x5a));
+
     let mut grow_zero_offset_storage = vec![0xa0, 0xa1, 0xa2];
     grow_zero_offset_storage.extend_from_slice(&payload);
     grow_zero_offset_storage.resize(
