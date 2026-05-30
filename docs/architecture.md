@@ -234,6 +234,9 @@ detaching the shared empty `opaque_ref`.
 Resize helper rows prove `av_grow_packet()` and `av_shrink_packet()` preserve
 the same empty user buffer while resizing packet payload bytes and keeping
 packet metadata intact.
+Reset helper rows prove `av_packet_free_side_data()` preserves that empty user
+buffer while clearing only side data, while `av_packet_unref()` clears it with
+the rest of the packet reset state.
 
 `PacketFifo` models the bounded packet-specialized `AVContainerFifo` surface exposed by `av_container_fifo_alloc_avpacket()`. It supports move writes that reset the source packet, ref writes that preserve the source while sharing refcounted payload and `opaque_ref` storage, raw flag transfers through `PacketFifoFlags` with `AV_CONTAINER_FIFO_FLAG_REF == 1` and `AV_CONTAINER_FIFO_FLAG_USER == 1 << 16`, USER-only transfers that retain move semantics, REF|USER transfers that retain reference semantics, move/ref reads that drain one queued packet, move/ref reads into pre-populated destinations that replace old packet state, failed empty move/ref reads that preserve pre-populated destinations, non-mutating peek by offset, can-read counts, zero-count drain as a no-op, valid positive drain including partial mixed move/ref drain release ordering, queued move-written packet release on FIFO clear/drop/free, mixed move/ref queue clear behavior where moved storage is released and ref-written source storage stays alive until the source drops, and typed `EINVAL` errors for invalid offset, invalid drain, and empty read paths.
 

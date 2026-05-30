@@ -10033,6 +10033,29 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert!(zero_opaque_resize.opaque_ref().unwrap().is_writable());
     assert_eq!(zero_opaque_resize.opaque_ref().unwrap().strong_count(), 1);
 
+    let mut zero_opaque_side_free = Packet::from_data(vec![0x31]).unwrap();
+    zero_opaque_side_free.set_opaque(Some(PacketOpaque::new(0xabcd).unwrap()));
+    zero_opaque_side_free.set_opaque_ref(Some(BufferRef::from_vec(Vec::new())));
+    zero_opaque_side_free
+        .push_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x66]).unwrap());
+    zero_opaque_side_free.clear_side_data();
+    assert!(zero_opaque_side_free.side_data().is_empty());
+    assert_eq!(zero_opaque_side_free.data(), &[0x31]);
+    assert_eq!(zero_opaque_side_free.opaque_address(), Some(0xabcd));
+    assert_eq!(zero_opaque_side_free.opaque_ref().unwrap().len(), 0);
+    assert!(zero_opaque_side_free.opaque_ref().unwrap().is_writable());
+    assert_eq!(
+        zero_opaque_side_free.opaque_ref().unwrap().strong_count(),
+        1
+    );
+
+    let mut zero_opaque_unref = zero_opaque_side_free;
+    zero_opaque_unref.unref();
+    assert!(zero_opaque_unref.is_empty());
+    assert!(zero_opaque_unref.opaque().is_none());
+    assert!(zero_opaque_unref.opaque_ref().is_none());
+    assert_eq!(zero_opaque_unref.time_base(), Rational::ZERO);
+
     let mut raw_offset_grow_model = Packet::new(vec![0x11, 0x22], stream_index);
     raw_offset_grow_model.grow_data(2).unwrap();
     assert_eq!(raw_offset_grow_model.data(), &[0x11, 0x22, 0, 0]);

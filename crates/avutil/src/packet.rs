@@ -14485,6 +14485,60 @@ mod tests {
     }
 
     #[test]
+    fn packet_zero_size_opaque_ref_reset_helpers_match_ffmpeg_shape() {
+        let mut side_free = Packet::from_data(vec![0x31]).unwrap();
+        side_free.set_pts(Some(111));
+        side_free.set_dts(Some(77));
+        side_free.set_duration(33).unwrap();
+        side_free.set_pos(Some(44)).unwrap();
+        side_free.set_flag(PacketFlags::TRUSTED, true);
+        side_free.set_flag(PacketFlags::DISPOSABLE, true);
+        side_free
+            .set_time_base(Rational::new(1, 48_000).unwrap())
+            .unwrap();
+        side_free.set_opaque(Some(PacketOpaque::new(0xabcd).unwrap()));
+        side_free.set_opaque_ref(Some(BufferRef::from_vec(Vec::new())));
+        side_free.push_side_data(
+            SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x66]).unwrap(),
+        );
+
+        side_free.clear_side_data();
+
+        assert!(side_free.side_data().is_empty());
+        assert_eq!(side_free.data(), &[0x31]);
+        assert_eq!(side_free.pts(), Some(111));
+        assert_eq!(side_free.dts(), Some(77));
+        assert_eq!(side_free.duration(), 33);
+        assert_eq!(side_free.pos(), Some(44));
+        assert_eq!(
+            side_free.flags(),
+            PacketFlags::from_bits_retain(
+                PacketFlags::TRUSTED.bits() | PacketFlags::DISPOSABLE.bits()
+            )
+        );
+        assert_eq!(side_free.opaque_address(), Some(0xabcd));
+        assert_eq!(side_free.time_base(), Rational::new(1, 48_000).unwrap());
+        assert_eq!(side_free.opaque_ref().unwrap().len(), 0);
+        assert!(side_free.opaque_ref().unwrap().is_writable());
+        assert_eq!(side_free.opaque_ref().unwrap().strong_count(), 1);
+
+        let mut unref = side_free.clone();
+        unref.unref();
+
+        assert!(unref.is_empty());
+        assert!(unref.side_data().is_empty());
+        assert!(unref.opaque().is_none());
+        assert!(unref.opaque_ref().is_none());
+        assert_eq!(unref.pts(), None);
+        assert_eq!(unref.dts(), None);
+        assert_eq!(unref.duration(), 0);
+        assert_eq!(unref.pos(), None);
+        assert_eq!(unref.stream_index(), 0);
+        assert_eq!(unref.flags(), PacketFlags::empty());
+        assert_eq!(unref.time_base(), Rational::ZERO);
+    }
+
+    #[test]
     fn packet_time_base_defaults_copies_resets_and_rescale_preserves() {
         let mut src = Packet::new(vec![1, 2], 0);
         assert_eq!(src.time_base(), Rational::ZERO);

@@ -515,6 +515,22 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         packet_fields(&zero_opaque_move_src),
     );
 
+    let mut zero_opaque_side_free = packet_with_zero_opaque_ref();
+    zero_opaque_side_free
+        .push_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x66]).unwrap());
+    zero_opaque_side_free.clear_side_data();
+    rows.insert(
+        "packet:opaque-ref-zero-free-side".to_string(),
+        packet_fields(&zero_opaque_side_free),
+    );
+
+    let mut zero_opaque_unref = packet_with_zero_opaque_ref();
+    zero_opaque_unref.unref();
+    rows.insert(
+        "packet:opaque-ref-zero-unref".to_string(),
+        packet_fields(&zero_opaque_unref),
+    );
+
     insert_packet_unknown_flag_rows(&mut rows);
 
     let mut referenced = Packet::default();
@@ -8809,6 +8825,20 @@ int main(void) {
     print_packet("packet:opaque-ref-zero-move-src", zero_opaque_move_src);
     av_packet_free(&zero_opaque_move_dst);
     av_packet_free(&zero_opaque_move_src);
+
+    AVPacket *zero_opaque_side_free = packet_with_zero_opaque_ref();
+    uint8_t *zero_opaque_side = av_packet_new_side_data(
+        zero_opaque_side_free, AV_PKT_DATA_PALETTE, 1);
+    fail_if(!zero_opaque_side, "zero opaque_ref free_side_data side data failed");
+    zero_opaque_side[0] = 0x66;
+    av_packet_free_side_data(zero_opaque_side_free);
+    print_packet("packet:opaque-ref-zero-free-side", zero_opaque_side_free);
+    av_packet_free(&zero_opaque_side_free);
+
+    AVPacket *zero_opaque_unref = packet_with_zero_opaque_ref();
+    av_packet_unref(zero_opaque_unref);
+    print_packet("packet:opaque-ref-zero-unref", zero_opaque_unref);
+    av_packet_free(&zero_opaque_unref);
 
     AVPacket *unknown_flags_src = new_packet();
     fail_if(av_new_packet(unknown_flags_src, 2) < 0,

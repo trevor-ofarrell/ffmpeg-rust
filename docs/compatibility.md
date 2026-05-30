@@ -10,6 +10,13 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  zero-size `AVPacket.opaque_ref` survives `av_packet_free_side_data()` while
+  side data is cleared, and is removed by `av_packet_unref()` with the rest of
+  the packet reset state. Rust mirrors this through focused unit coverage, the
+  mapped packet oracle, and a deterministic `avutil_core_models` fixture. This
+  strengthens `avutil-packet`; strict completion remains 11/96 and the row
+  remains `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   zero-size `AVPacket.opaque_ref` survives `av_grow_packet()` and
   `av_shrink_packet()` while preserving packet metadata, the empty user-buffer
   owner, and deterministic post-grow payload bytes. Rust mirrors this through

@@ -207,6 +207,12 @@ The latest packet zero `opaque_ref` resize fixture covers
 `packet:payload-shrink-zero-opaque` rows keep the empty user buffer singly
 owned while payload bytes are grown, caller-initialized, and then shrunk.
 
+The latest packet zero `opaque_ref` reset fixture covers scoped clearing:
+`packet:opaque-ref-zero-free-side` proves `av_packet_free_side_data()` clears
+only side data while preserving the empty user buffer, and
+`packet:opaque-ref-zero-unref` proves `av_packet_unref()` clears that user
+buffer with the rest of the packet reset state.
+
 The latest packet payload reset fixture extends `avutil_core_models` with the deterministic `Packet::alloc_new_packet_payload(0)` reset path for `av_new_packet(pkt, 0)` parity: a pre-populated packet becomes an empty writable padded packet with default metadata, no side data, no opaque pointer metadata, no `opaque_ref`, empty flags, stream index zero, and packet time base zero.
 
 The latest `avutil_core_models` pixel-format fuzz evidence includes a saved-crash replay and warmed 4096-run WSL sanitizer execution after fixing a stale no-byte-stride invariant. The harness now treats absent fixed byte stride as valid for planar formats or the modeled bit-packed single-plane formats (`monow`, `monob`, `rgb4`, `bgr4`, and `uyyvyy411`), and separately recognizes planar GBRA formats as alpha-bearing. This narrows bounded pixel-format fuzz coverage but does not replace full `AVPixFmtDescriptor`, FATE media, conversion, or hardware-device parity.
