@@ -2204,6 +2204,40 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_fields(&offset_helper),
     );
 
+    let mut offset_clone_storage = vec![0xa0, 0xa1, 0xa2, 0x11, 0x22];
+    offset_clone_storage.resize(3 + 2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+    let offset_clone = Packet::with_buffer(
+        BufferRef::from_vec(offset_clone_storage)
+            .into_ref_slice(3, 2)
+            .unwrap(),
+        0,
+    );
+    let offset_cloned = offset_clone.clone();
+    rows.insert(
+        "packet:payload-clone-offset-padding-same-ptr".to_string(),
+        vec![u8::from(
+            offset_cloned.data_buffer().as_padded_ptr()
+                == offset_clone.data_buffer().as_padded_ptr(),
+        )
+        .to_string()],
+    );
+    rows.insert(
+        "packet:payload-clone-offset-padding-src-offset".to_string(),
+        vec![offset_clone.data_buffer().offset().to_string()],
+    );
+    rows.insert(
+        "packet:payload-clone-offset-padding-clone-offset".to_string(),
+        vec![offset_cloned.data_buffer().offset().to_string()],
+    );
+    rows.insert(
+        "packet:payload-clone-offset-padding-src".to_string(),
+        payload_fields(&offset_clone),
+    );
+    rows.insert(
+        "packet:payload-clone-offset-padding-clone".to_string(),
+        payload_fields(&offset_cloned),
+    );
+
     let mut grow_zero_offset_storage = vec![0xa0, 0xa1, 0xa2, 0x11, 0x22];
     grow_zero_offset_storage.resize(3 + 2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
     let mut grow_zero_offset = Packet::with_buffer(
@@ -8221,6 +8255,22 @@ int main(void) {
     print_payload("packet:payload-make-writable-offset-padding",
                   offset_helper);
     av_packet_free(&offset_helper);
+
+    AVPacket *offset_clone = packet_with_offset_padding();
+    AVPacket *offset_cloned = av_packet_clone(offset_clone);
+    fail_if(!offset_cloned, "av_packet_clone offset padding failed");
+    printf("packet:payload-clone-offset-padding-same-ptr|%d\n",
+           offset_cloned->data == offset_clone->data);
+    printf("packet:payload-clone-offset-padding-src-offset|%td\n",
+           offset_clone->data - offset_clone->buf->data);
+    printf("packet:payload-clone-offset-padding-clone-offset|%td\n",
+           offset_cloned->data - offset_cloned->buf->data);
+    print_payload("packet:payload-clone-offset-padding-src",
+                  offset_clone);
+    print_payload("packet:payload-clone-offset-padding-clone",
+                  offset_cloned);
+    av_packet_free(&offset_cloned);
+    av_packet_free(&offset_clone);
 
     AVPacket *grow_zero_offset = packet_with_offset_padding();
     uint8_t *grow_zero_offset_ptr = grow_zero_offset->data;
