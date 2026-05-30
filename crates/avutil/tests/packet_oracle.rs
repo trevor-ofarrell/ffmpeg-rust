@@ -707,6 +707,17 @@ fn insert_packet_unknown_flag_rows(rows: &mut BTreeMap<String, Vec<String>>) {
 
 fn packet_with_zero_opaque_ref() -> Packet {
     let mut packet = Packet::from_data(vec![0x31]).unwrap();
+    set_zero_opaque_ref_props(&mut packet);
+    packet
+}
+
+fn packet_with_raw_zero_opaque_ref() -> Packet {
+    let mut packet = Packet::new(vec![0x31], 0);
+    set_zero_opaque_ref_props(&mut packet);
+    packet
+}
+
+fn set_zero_opaque_ref_props(packet: &mut Packet) {
     packet.set_pts(Some(111));
     packet.set_dts(Some(77));
     packet.set_duration(33).unwrap();
@@ -718,7 +729,6 @@ fn packet_with_zero_opaque_ref() -> Packet {
         .unwrap();
     packet.set_opaque(Some(PacketOpaque::new(0xabcd).unwrap()));
     packet.set_opaque_ref(Some(BufferRef::from_vec(Vec::new())));
-    packet
 }
 
 fn opaque_ref_pair_fields(left: &Packet, right: &Packet) -> Vec<String> {
@@ -2700,6 +2710,39 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:payload-shrink-oversize-custom-padding".to_string(),
         payload_fields(&shrink_custom),
+    );
+
+    let mut zero_opaque_refcounted = packet_with_raw_zero_opaque_ref();
+    zero_opaque_refcounted.make_refcounted().unwrap();
+    rows.insert(
+        "packet:payload-make-refcounted-zero-opaque-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-refcounted-zero-opaque".to_string(),
+        packet_fields(&zero_opaque_refcounted),
+    );
+
+    let zero_opaque_writable_src = packet_with_zero_opaque_ref();
+    let mut zero_opaque_writable_dst = Packet::default();
+    zero_opaque_writable_dst.ref_from(&zero_opaque_writable_src);
+    zero_opaque_writable_dst.make_writable().unwrap();
+    zero_opaque_writable_dst.make_data_writable()[0] = 0xcc;
+    rows.insert(
+        "packet:payload-make-writable-zero-opaque-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-writable-zero-opaque-src".to_string(),
+        packet_fields(&zero_opaque_writable_src),
+    );
+    rows.insert(
+        "packet:payload-make-writable-zero-opaque-dst".to_string(),
+        packet_fields(&zero_opaque_writable_dst),
+    );
+    rows.insert(
+        "packet:payload-make-writable-zero-opaque-sharing".to_string(),
+        opaque_ref_pair_fields(&zero_opaque_writable_src, &zero_opaque_writable_dst),
     );
 
     let shared_refcounted_src = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
@@ -6135,11 +6178,7 @@ static AVPacket *packet_with_duplicate_side_data(void) {
     return pkt;
 }
 
-static AVPacket *packet_with_zero_opaque_ref(void) {
-    AVPacket *pkt = new_packet();
-    fail_if(av_new_packet(pkt, 1) < 0,
-            "av_new_packet zero opaque_ref source failed");
-    pkt->data[0] = 0x31;
+static void set_zero_opaque_ref_props(AVPacket *pkt) {
     pkt->pts = 111;
     pkt->dts = 77;
     pkt->duration = 33;
@@ -6149,6 +6188,14 @@ static AVPacket *packet_with_zero_opaque_ref(void) {
     pkt->opaque = (void *)(uintptr_t)0xabcd;
     pkt->opaque_ref = av_buffer_alloc(0);
     fail_if(!pkt->opaque_ref, "av_buffer_alloc zero opaque_ref failed");
+}
+
+static AVPacket *packet_with_zero_opaque_ref(void) {
+    AVPacket *pkt = new_packet();
+    fail_if(av_new_packet(pkt, 1) < 0,
+            "av_new_packet zero opaque_ref source failed");
+    pkt->data[0] = 0x31;
+    set_zero_opaque_ref_props(pkt);
     return pkt;
 }
 
@@ -9026,6 +9073,40 @@ int main(void) {
     av_shrink_packet(pkt, 9);
     print_payload("packet:payload-shrink-oversize-custom-padding", pkt);
     av_packet_free(&pkt);
+
+    pkt = new_packet();
+    uint8_t zero_opaque_refcounted_raw[1] = { 0x31 };
+    pkt->data = zero_opaque_refcounted_raw;
+    pkt->size = 1;
+    set_zero_opaque_ref_props(pkt);
+    int zero_opaque_refcounted_ret = av_packet_make_refcounted(pkt);
+    printf("packet:payload-make-refcounted-zero-opaque-ret|%d\n",
+           zero_opaque_refcounted_ret);
+    fail_if(zero_opaque_refcounted_ret < 0,
+            "av_packet_make_refcounted zero opaque_ref failed");
+    print_packet("packet:payload-make-refcounted-zero-opaque", pkt);
+    av_packet_free(&pkt);
+
+    AVPacket *zero_opaque_writable_src = packet_with_zero_opaque_ref();
+    AVPacket *zero_opaque_writable_dst = new_packet();
+    fail_if(av_packet_ref(zero_opaque_writable_dst,
+                          zero_opaque_writable_src) < 0,
+            "av_packet_ref zero opaque_ref make_writable dst failed");
+    int zero_opaque_writable_ret =
+        av_packet_make_writable(zero_opaque_writable_dst);
+    printf("packet:payload-make-writable-zero-opaque-ret|%d\n",
+           zero_opaque_writable_ret);
+    fail_if(zero_opaque_writable_ret < 0,
+            "av_packet_make_writable zero opaque_ref failed");
+    zero_opaque_writable_dst->data[0] = 0xcc;
+    print_packet("packet:payload-make-writable-zero-opaque-src",
+                 zero_opaque_writable_src);
+    print_packet("packet:payload-make-writable-zero-opaque-dst",
+                 zero_opaque_writable_dst);
+    print_opaque_ref_pair("packet:payload-make-writable-zero-opaque-sharing",
+                          zero_opaque_writable_src, zero_opaque_writable_dst);
+    av_packet_free(&zero_opaque_writable_dst);
+    av_packet_free(&zero_opaque_writable_src);
 
     dst = new_packet();
     fail_if(av_packet_ref(dst, src) < 0, "av_packet_ref failed");

@@ -10,6 +10,15 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  zero-size `AVPacket.opaque_ref` survives `av_packet_make_refcounted()` and
+  `av_packet_make_writable()`. The refcounted path keeps the single empty user
+  buffer owner writable while making raw packet payload storage refcounted;
+  the writable path detaches only shared payload bytes and leaves the empty
+  `opaque_ref` shared and non-writable. Rust mirrors this through focused unit
+  coverage, the mapped packet oracle, and a deterministic `avutil_core_models`
+  fixture. This strengthens `avutil-packet`; strict completion remains 11/96
+  and the row remains `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   zero-size `AVPacket.opaque_ref` buffer behavior through
   `av_packet_copy_props()`, `av_packet_ref()`, `av_packet_clone()`, and
   `av_packet_move_ref()`. Copy-props/ref/clone share the same empty

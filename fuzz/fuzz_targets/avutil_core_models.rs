@@ -9973,6 +9973,50 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert!(zero_opaque_move_dst.opaque_ref().unwrap().is_writable());
     assert_eq!(zero_opaque_move_dst.opaque_ref().unwrap().strong_count(), 1);
 
+    let mut zero_opaque_refcounted = Packet::new(vec![0x31], stream_index);
+    zero_opaque_refcounted.set_opaque(Some(PacketOpaque::new(0xabcd).unwrap()));
+    zero_opaque_refcounted.set_opaque_ref(Some(BufferRef::from_vec(Vec::new())));
+    zero_opaque_refcounted.make_refcounted().unwrap();
+    assert_eq!(zero_opaque_refcounted.data(), &[0x31]);
+    assert_eq!(zero_opaque_refcounted.opaque_ref().unwrap().len(), 0);
+    assert!(zero_opaque_refcounted
+        .opaque_ref()
+        .unwrap()
+        .is_writable());
+    assert_eq!(
+        zero_opaque_refcounted.opaque_ref().unwrap().strong_count(),
+        1
+    );
+
+    let mut zero_opaque_writable_src = Packet::from_data(vec![0x31]).unwrap();
+    zero_opaque_writable_src.set_opaque(Some(PacketOpaque::new(0xabcd).unwrap()));
+    zero_opaque_writable_src.set_opaque_ref(Some(BufferRef::from_vec(Vec::new())));
+    let mut zero_opaque_writable_dst = Packet::default();
+    zero_opaque_writable_dst.ref_from(&zero_opaque_writable_src);
+    zero_opaque_writable_dst.make_writable().unwrap();
+    zero_opaque_writable_dst.make_data_writable()[0] = 0xcc;
+    assert_eq!(zero_opaque_writable_src.data(), &[0x31]);
+    assert_eq!(zero_opaque_writable_dst.data(), &[0xcc]);
+    assert!(zero_opaque_writable_dst
+        .opaque_ref()
+        .unwrap()
+        .shares_storage(zero_opaque_writable_src.opaque_ref().unwrap()));
+    assert_eq!(
+        zero_opaque_writable_src
+            .opaque_ref()
+            .unwrap()
+            .strong_count(),
+        2
+    );
+    assert!(!zero_opaque_writable_src
+        .opaque_ref()
+        .unwrap()
+        .is_writable());
+    assert!(!zero_opaque_writable_dst
+        .opaque_ref()
+        .unwrap()
+        .is_writable());
+
     let mut raw_offset_grow_model = Packet::new(vec![0x11, 0x22], stream_index);
     raw_offset_grow_model.grow_data(2).unwrap();
     assert_eq!(raw_offset_grow_model.data(), &[0x11, 0x22, 0, 0]);

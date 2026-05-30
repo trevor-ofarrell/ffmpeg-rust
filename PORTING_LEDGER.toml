@@ -219,6 +219,12 @@ default_profile = "ffmpeg-8.1.1-default-native"
 # Latest delegated evidence: low-level `av_log_format_line2(NULL, ...)` with
 # `AV_LOG_QUIET`, `AV_LOG_PRINT_LEVEL`, and `print_prefix=0` still emits the
 # plain message and leaves the prefix state false.
+# Latest avutil-packet evidence:
+# `packet:payload-make-refcounted-zero-opaque-*` and
+# `packet:payload-make-writable-zero-opaque-*` rows now prove zero-size
+# `AVPacket.opaque_ref` survives payload helper calls. `make_refcounted`
+# preserves the single empty owner, while `make_writable` detaches only the
+# packet payload and leaves the empty user buffer shared and non-writable.
 # Latest avutil-packet evidence: `packet:opaque-ref-zero-*` rows now prove
 # pinned FFmpeg 8.1.1 zero-size `AVPacket.opaque_ref` lifecycle behavior.
 # `av_packet_copy_props()`, `av_packet_ref()`, and `av_packet_clone()` share
@@ -676,6 +682,7 @@ unit_tests = [
   "packet::tests::packet_opaque_ref_copy_props_shares_and_clear_releases_last_reference",
   "packet::tests::packet_opaque_ref_move_take_and_unref_release_lifecycle",
   "packet::tests::packet_zero_size_opaque_ref_lifecycle_preserves_buffer_shape",
+  "packet::tests::packet_zero_size_opaque_ref_payload_helpers_preserve_user_buffer",
   "packet::tests::packet_legacy_init_resets_fields_but_preserves_payload",
   "packet::tests::packet_fifo_moves_refs_peeks_reads_and_drains_packets",
   "packet::tests::packet_fifo_unknown_flags_treat_as_move",
@@ -776,6 +783,12 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: pinned libavcodec AVPacket oracle coverage now validates
+# zero-size `opaque_ref` preservation through `av_packet_make_refcounted()` and
+# `av_packet_make_writable()`. The former keeps the single empty owner writable
+# while installing payload padding for raw data, and the latter detaches shared
+# packet payload storage without detaching the shared empty `opaque_ref`.
+# Focused unit coverage and avutil_core_models fixtures mirror the same split.
 # Latest update: pinned libavcodec AVPacket oracle coverage now validates
 # zero-size `opaque_ref` buffer lifecycles through `av_packet_copy_props()`,
 # `av_packet_ref()`, `av_packet_clone()`, and `av_packet_move_ref()`.

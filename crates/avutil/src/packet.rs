@@ -14406,6 +14406,41 @@ mod tests {
     }
 
     #[test]
+    fn packet_zero_size_opaque_ref_payload_helpers_preserve_user_buffer() {
+        let mut refcounted = Packet::new(vec![0x31], 0);
+        refcounted.set_opaque(Some(PacketOpaque::new(0xabcd).unwrap()));
+        refcounted.set_opaque_ref(Some(BufferRef::from_vec(Vec::new())));
+        refcounted.make_refcounted().unwrap();
+        assert_eq!(refcounted.data(), &[0x31]);
+        assert_eq!(refcounted.opaque_address(), Some(0xabcd));
+        assert_eq!(refcounted.opaque_ref().unwrap().len(), 0);
+        assert!(refcounted.opaque_ref().unwrap().is_writable());
+        assert_eq!(refcounted.opaque_ref().unwrap().strong_count(), 1);
+
+        let mut src = Packet::from_data(vec![0x31]).unwrap();
+        src.set_opaque(Some(PacketOpaque::new(0xabcd).unwrap()));
+        src.set_opaque_ref(Some(BufferRef::from_vec(Vec::new())));
+        let mut dst = Packet::default();
+        dst.ref_from(&src);
+        dst.make_writable().unwrap();
+        dst.make_data_writable()[0] = 0xcc;
+
+        assert_eq!(src.data(), &[0x31]);
+        assert_eq!(dst.data(), &[0xcc]);
+        assert_eq!(src.opaque_ref().unwrap().len(), 0);
+        assert_eq!(dst.opaque_ref().unwrap().len(), 0);
+        assert!(dst
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(src.opaque_ref().unwrap()));
+        assert_eq!(src.opaque_ref().unwrap().strong_count(), 2);
+        assert_eq!(dst.opaque_ref().unwrap().strong_count(), 2);
+        assert!(!src.opaque_ref().unwrap().is_writable());
+        assert!(!dst.opaque_ref().unwrap().is_writable());
+        assert_eq!(dst.opaque_address(), Some(0xabcd));
+    }
+
+    #[test]
     fn packet_time_base_defaults_copies_resets_and_rescale_preserves() {
         let mut src = Packet::new(vec![1, 2], 0);
         assert_eq!(src.time_base(), Rational::ZERO);
