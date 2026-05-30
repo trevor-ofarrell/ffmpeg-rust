@@ -14441,6 +14441,50 @@ mod tests {
     }
 
     #[test]
+    fn packet_zero_size_opaque_ref_resize_helpers_preserve_user_buffer() {
+        let mut packet = Packet::from_data(vec![0x31]).unwrap();
+        packet.set_pts(Some(111));
+        packet.set_dts(Some(77));
+        packet.set_duration(33).unwrap();
+        packet.set_pos(Some(44)).unwrap();
+        packet.set_flag(PacketFlags::TRUSTED, true);
+        packet.set_flag(PacketFlags::DISPOSABLE, true);
+        packet
+            .set_time_base(Rational::new(1, 48_000).unwrap())
+            .unwrap();
+        packet.set_opaque(Some(PacketOpaque::new(0xabcd).unwrap()));
+        packet.set_opaque_ref(Some(BufferRef::from_vec(Vec::new())));
+
+        packet.grow_data(2).unwrap();
+        packet.make_data_writable()[1..3].copy_from_slice(&[0x41, 0x42]);
+
+        assert_eq!(packet.data(), &[0x31, 0x41, 0x42]);
+        assert_eq!(packet.pts(), Some(111));
+        assert_eq!(packet.dts(), Some(77));
+        assert_eq!(packet.duration(), 33);
+        assert_eq!(packet.pos(), Some(44));
+        assert_eq!(
+            packet.flags(),
+            PacketFlags::from_bits_retain(
+                PacketFlags::TRUSTED.bits() | PacketFlags::DISPOSABLE.bits()
+            )
+        );
+        assert_eq!(packet.opaque_address(), Some(0xabcd));
+        assert_eq!(packet.time_base(), Rational::new(1, 48_000).unwrap());
+        assert_eq!(packet.opaque_ref().unwrap().len(), 0);
+        assert!(packet.opaque_ref().unwrap().is_writable());
+        assert_eq!(packet.opaque_ref().unwrap().strong_count(), 1);
+
+        packet.shrink_data(1).unwrap();
+
+        assert_eq!(packet.data(), &[0x31]);
+        assert_eq!(packet.opaque_address(), Some(0xabcd));
+        assert_eq!(packet.opaque_ref().unwrap().len(), 0);
+        assert!(packet.opaque_ref().unwrap().is_writable());
+        assert_eq!(packet.opaque_ref().unwrap().strong_count(), 1);
+    }
+
+    #[test]
     fn packet_time_base_defaults_copies_resets_and_rescale_preserves() {
         let mut src = Packet::new(vec![1, 2], 0);
         assert_eq!(src.time_base(), Rational::ZERO);

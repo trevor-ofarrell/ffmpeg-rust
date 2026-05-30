@@ -2745,6 +2745,23 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         opaque_ref_pair_fields(&zero_opaque_writable_src, &zero_opaque_writable_dst),
     );
 
+    let mut zero_opaque_resize = packet_with_zero_opaque_ref();
+    zero_opaque_resize.grow_data(2).unwrap();
+    zero_opaque_resize.make_data_writable()[1..3].copy_from_slice(&[0x41, 0x42]);
+    rows.insert(
+        "packet:payload-grow-zero-opaque-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-grow-zero-opaque".to_string(),
+        packet_fields(&zero_opaque_resize),
+    );
+    zero_opaque_resize.shrink_data(1).unwrap();
+    rows.insert(
+        "packet:payload-shrink-zero-opaque".to_string(),
+        packet_fields(&zero_opaque_resize),
+    );
+
     let shared_refcounted_src = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
     let mut shared_refcounted_dst = Packet::default();
     shared_refcounted_dst.ref_from(&shared_refcounted_src);
@@ -9107,6 +9124,19 @@ int main(void) {
                           zero_opaque_writable_src, zero_opaque_writable_dst);
     av_packet_free(&zero_opaque_writable_dst);
     av_packet_free(&zero_opaque_writable_src);
+
+    AVPacket *zero_opaque_resize = packet_with_zero_opaque_ref();
+    int zero_opaque_grow_ret = av_grow_packet(zero_opaque_resize, 2);
+    printf("packet:payload-grow-zero-opaque-ret|%d\n",
+           zero_opaque_grow_ret);
+    fail_if(zero_opaque_grow_ret < 0,
+            "av_grow_packet zero opaque_ref failed");
+    zero_opaque_resize->data[1] = 0x41;
+    zero_opaque_resize->data[2] = 0x42;
+    print_packet("packet:payload-grow-zero-opaque", zero_opaque_resize);
+    av_shrink_packet(zero_opaque_resize, 1);
+    print_packet("packet:payload-shrink-zero-opaque", zero_opaque_resize);
+    av_packet_free(&zero_opaque_resize);
 
     dst = new_packet();
     fail_if(av_packet_ref(dst, src) < 0, "av_packet_ref failed");

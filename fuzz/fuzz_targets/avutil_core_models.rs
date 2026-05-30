@@ -10017,6 +10017,22 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .unwrap()
         .is_writable());
 
+    let mut zero_opaque_resize = Packet::from_data(vec![0x31]).unwrap();
+    zero_opaque_resize.set_opaque(Some(PacketOpaque::new(0xabcd).unwrap()));
+    zero_opaque_resize.set_opaque_ref(Some(BufferRef::from_vec(Vec::new())));
+    zero_opaque_resize.grow_data(2).unwrap();
+    zero_opaque_resize.make_data_writable()[1..3].copy_from_slice(&[0x41, 0x42]);
+    assert_eq!(zero_opaque_resize.data(), &[0x31, 0x41, 0x42]);
+    assert_eq!(zero_opaque_resize.opaque_address(), Some(0xabcd));
+    assert_eq!(zero_opaque_resize.opaque_ref().unwrap().len(), 0);
+    assert!(zero_opaque_resize.opaque_ref().unwrap().is_writable());
+    assert_eq!(zero_opaque_resize.opaque_ref().unwrap().strong_count(), 1);
+    zero_opaque_resize.shrink_data(1).unwrap();
+    assert_eq!(zero_opaque_resize.data(), &[0x31]);
+    assert_eq!(zero_opaque_resize.opaque_ref().unwrap().len(), 0);
+    assert!(zero_opaque_resize.opaque_ref().unwrap().is_writable());
+    assert_eq!(zero_opaque_resize.opaque_ref().unwrap().strong_count(), 1);
+
     let mut raw_offset_grow_model = Packet::new(vec![0x11, 0x22], stream_index);
     raw_offset_grow_model.grow_data(2).unwrap();
     assert_eq!(raw_offset_grow_model.data(), &[0x11, 0x22, 0, 0]);
