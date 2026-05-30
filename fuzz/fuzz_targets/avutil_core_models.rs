@@ -10274,6 +10274,21 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .unwrap()
         .data()
         .is_empty());
+    zero_add_side_data_packet
+        .new_side_data(PacketSideDataKind::NewExtradata, 2)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0x31, 0x32]);
+    let zero_replaced_packet = zero_add_side_data_packet
+        .add_side_data(SideData::new_extradata(Vec::new()).unwrap())
+        .unwrap();
+    assert_eq!(zero_replaced_packet.data(), &[0x31, 0x32]);
+    assert_eq!(zero_add_side_data_packet.side_data().len(), 1);
+    assert!(zero_add_side_data_packet
+        .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+        .unwrap()
+        .data()
+        .is_empty());
     let new_entry = new_side_data_packet
         .new_side_data(typed_side_data_kind.clone(), new_side_data_payload.len())
         .unwrap();
@@ -10456,6 +10471,21 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert!(zero_add_side_data_list
         .add_side_data(SideData::new_extradata(Vec::new()).unwrap())
         .is_none());
+    assert_eq!(zero_add_side_data_list.len(), 1);
+    assert!(zero_add_side_data_list
+        .get(&PacketSideDataKind::NewExtradata)
+        .unwrap()
+        .data()
+        .is_empty());
+    zero_add_side_data_list
+        .new_side_data(PacketSideDataKind::NewExtradata, 2)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0x31, 0x32]);
+    let zero_replaced_list = zero_add_side_data_list
+        .add_side_data(SideData::new_extradata(Vec::new()).unwrap())
+        .unwrap();
+    assert_eq!(zero_replaced_list.data(), &[0x31, 0x32]);
     assert_eq!(zero_add_side_data_list.len(), 1);
     assert!(zero_add_side_data_list
         .get(&PacketSideDataKind::NewExtradata)

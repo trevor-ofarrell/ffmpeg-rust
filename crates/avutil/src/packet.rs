@@ -10787,6 +10787,22 @@ mod tests {
             .unwrap()
             .data()
             .is_empty());
+
+        packet
+            .new_side_data(PacketSideDataKind::NewExtradata, 2)
+            .unwrap()
+            .data_mut()
+            .copy_from_slice(&[0x31, 0x32]);
+        let replaced = packet
+            .add_side_data(SideData::new_extradata(Vec::new()).unwrap())
+            .unwrap();
+        assert_eq!(replaced.data(), &[0x31, 0x32]);
+        assert_eq!(packet.side_data().len(), 1);
+        assert!(packet
+            .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+            .unwrap()
+            .data()
+            .is_empty());
     }
 
     #[test]
@@ -11013,6 +11029,23 @@ mod tests {
         assert!(list
             .add_side_data(SideData::new_extradata(Vec::new()).unwrap())
             .is_none());
+        assert_eq!(list.len(), 1);
+        assert!(list
+            .get(&PacketSideDataKind::NewExtradata)
+            .unwrap()
+            .data()
+            .is_empty());
+        list.clear();
+        assert!(list.is_empty());
+
+        list.new_side_data(PacketSideDataKind::NewExtradata, 2)
+            .unwrap()
+            .data_mut()
+            .copy_from_slice(&[0x31, 0x32]);
+        let replaced = list
+            .add_side_data(SideData::new_extradata(Vec::new()).unwrap())
+            .unwrap();
+        assert_eq!(replaced.data(), &[0x31, 0x32]);
         assert_eq!(list.len(), 1);
         assert!(list
             .get(&PacketSideDataKind::NewExtradata)

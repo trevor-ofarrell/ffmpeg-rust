@@ -10,6 +10,15 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  packet-owned `av_packet_add_side_data()` and standalone
+  `av_packet_side_data_add()` replace an existing
+  `AV_PKT_DATA_NEW_EXTRADATA` entry with a zero-size caller-owned entry while
+  preserving a present lookup with size zero. Rust mirrors this through
+  `Packet::add_side_data`, `PacketSideDataList::add_side_data`, focused unit
+  coverage, the mapped packet oracle, and a deterministic `avutil_core_models`
+  fixture. This strengthens `avutil-packet`; strict completion remains 11/96
+  and the row remains `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   `av_packet_free_side_data()` is an empty-packet no-op and remains idempotent
   after clearing a populated packet, while preserving payload, timestamps,
   flags, opaque pointer metadata, `opaque_ref`, stream index, and packet

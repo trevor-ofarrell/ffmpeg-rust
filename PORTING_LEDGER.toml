@@ -3,6 +3,11 @@ target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
 # Latest main-thread packet evidence: pinned libavcodec rows now prove
+# packet-owned `av_packet_add_side_data()` and standalone
+# `av_packet_side_data_add()` replace an existing `AV_PKT_DATA_NEW_EXTRADATA`
+# entry with a zero-size caller-owned entry while keeping lookup present and
+# size zero. This is evidence-strengthening only; no status was promoted.
+# Latest main-thread packet evidence: pinned libavcodec rows now prove
 # packet-owned raw side-data values can be shrunk and error-checked through
 # `av_packet_shrink_side_data()`: raw `-1` shrinks to zero length, and raw
 # `INT_MIN` oversize shrink returns ENOMEM without mutating the entry.
@@ -1039,6 +1044,11 @@ notes = "FATE pass for the current bounded AVPacket helper surface under the sel
 # duplicate packet-owned side-data kinds by later-entry replacement, while
 # `av_packet_move_ref()` transfers the raw duplicate side-data array and resets
 # the source. Unit and fuzz-smoke coverage assert the same split.
+# Latest zero-size replacement slice: pinned libavcodec rows validate
+# packet-owned `packet:side-add-zero-replace*` and standalone
+# `packet:array-add-zero-replace*` behavior. Both add APIs replace an existing
+# `AV_PKT_DATA_NEW_EXTRADATA` entry with a zero-size caller-owned entry, retain
+# one present side-data record, and return present lookup with size zero.
 blocked_reason = ""
 
 [[component]]

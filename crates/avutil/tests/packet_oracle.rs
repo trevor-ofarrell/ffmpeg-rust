@@ -2994,6 +2994,29 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         side_data_summary_fields(&packet),
     );
 
+    let mut packet = Packet::default();
+    packet
+        .new_side_data(PacketSideDataKind::NewExtradata, 2)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0x31, 0x32]);
+    let replaced = packet
+        .add_side_data(SideData::new_extradata(Vec::new()).unwrap())
+        .expect("zero-size packet side data should replace existing new_extradata");
+    assert_eq!(replaced.data(), &[0x31, 0x32]);
+    rows.insert(
+        "packet:side-add-zero-replace-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:side-add-zero-replace".to_string(),
+        side_data_summary_fields(&packet),
+    );
+    rows.insert(
+        "packet:side-get-zero-replace".to_string(),
+        side_data_lookup_fields(packet.side_data_by_kind_id(&PacketSideDataKind::NewExtradata)),
+    );
+
     let mut raw_packet = Packet::default();
     let raw_add_kind =
         PacketSideDataKind::from_ffmpeg_raw_value(PacketSideDataKind::KNOWN.len() as i32);
@@ -3386,6 +3409,28 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:array-add-zero".to_string(),
         side_data_list_summary_fields(&list),
+    );
+
+    let mut list = PacketSideDataList::new();
+    list.new_side_data(PacketSideDataKind::NewExtradata, 2)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0x31, 0x32]);
+    let replaced = list
+        .add_side_data(SideData::new_extradata(Vec::new()).unwrap())
+        .expect("zero-size standalone side data should replace existing new_extradata");
+    assert_eq!(replaced.data(), &[0x31, 0x32]);
+    rows.insert(
+        "packet:array-add-zero-replace-ret".to_string(),
+        vec!["1".to_string()],
+    );
+    rows.insert(
+        "packet:array-add-zero-replace".to_string(),
+        side_data_list_summary_fields(&list),
+    );
+    rows.insert(
+        "packet:array-get-zero-replace".to_string(),
+        side_data_lookup_fields(list.get(&PacketSideDataKind::NewExtradata)),
     );
 
     let mut raw_list = PacketSideDataList::new();
@@ -5657,6 +5702,23 @@ static void exercise_side_data_api(void) {
     av_packet_free(&pkt);
 
     pkt = new_packet();
+    sd = av_packet_new_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, 2);
+    fail_if(!sd, "av_packet_new_side_data zero replace seed failed");
+    sd[0] = 0x31;
+    sd[1] = 0x32;
+    owned = av_mallocz(1);
+    fail_if(!owned, "av_mallocz zero packet side data replacement failed");
+    ret = av_packet_add_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, owned, 0);
+    if (ret < 0)
+        av_free(owned);
+    printf("packet:side-add-zero-replace-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_add_side_data zero replacement failed");
+    print_side_data_summary("packet:side-add-zero-replace", pkt);
+    print_side_data_lookup("packet:side-get-zero-replace", pkt,
+                           AV_PKT_DATA_NEW_EXTRADATA);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
     owned = av_mallocz(1 + AV_INPUT_BUFFER_PADDING_SIZE);
     fail_if(!owned, "av_mallocz raw packet side data failed");
     owned[0] = 0x7e;
@@ -5918,6 +5980,24 @@ static void exercise_side_data_array_api(void) {
         av_free(owned);
     fail_if(!entry, "av_packet_side_data_add zero failed");
     print_side_data_array_summary("packet:array-add-zero", sd, nb_sd);
+    av_packet_side_data_free(&sd, &nb_sd);
+
+    entry = av_packet_side_data_new(&sd, &nb_sd, AV_PKT_DATA_NEW_EXTRADATA,
+                                    2, 0);
+    fail_if(!entry, "av_packet_side_data_new zero replace seed failed");
+    entry->data[0] = 0x31;
+    entry->data[1] = 0x32;
+    owned = av_mallocz(1);
+    fail_if(!owned, "av_mallocz zero array side data replacement failed");
+    entry = av_packet_side_data_add(&sd, &nb_sd, AV_PKT_DATA_NEW_EXTRADATA,
+                                    owned, 0, 0);
+    printf("packet:array-add-zero-replace-ret|%d\n", entry != NULL);
+    if (!entry)
+        av_free(owned);
+    fail_if(!entry, "av_packet_side_data_add zero replacement failed");
+    print_side_data_array_summary("packet:array-add-zero-replace", sd, nb_sd);
+    print_side_data_array_lookup("packet:array-get-zero-replace", sd, nb_sd,
+                                 AV_PKT_DATA_NEW_EXTRADATA);
     av_packet_side_data_free(&sd, &nb_sd);
 
     owned = av_mallocz(1 + AV_INPUT_BUFFER_PADDING_SIZE);
