@@ -9,6 +9,15 @@
 
 ## Compatible Today
 
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
+  `av_packet_make_refcounted()` and `av_packet_make_writable()` on raw
+  no-buffer packets whose `data` pointer starts at a nonzero offset inside
+  caller storage copy the visible bytes into zero-offset padded `AVBufferRef`
+  storage, return success, and expose writable copied payload bytes. Rust
+  mirrors the visible raw-payload helper behavior through `Packet::new(...)`
+  and records the safe explicit-owner unpadded offset padding path in unit and
+  `avutil_core_models` coverage. This strengthens `avutil-packet`; strict
+  completion remains 11/96 and the row remains `fate_pass`.
 - Latest main-thread packet evidence: duplicate packet-owned side-data
   lifecycle parity is now listed in the packet ledger and mirrored by a
   deterministic `avutil_core_models` invariant. The pinned rows prove

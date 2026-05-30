@@ -11969,6 +11969,61 @@ mod tests {
     }
 
     #[test]
+    fn packet_unpadded_offset_payload_helpers_add_padding_in_place() {
+        let mut refcounted_storage = vec![0xa0, 0xa1, 0xa2, 0x11, 0x22];
+        let mut refcounted = Packet::with_buffer(
+            BufferRef::from_vec(refcounted_storage.clone())
+                .into_ref_slice(3, 2)
+                .unwrap(),
+            0,
+        );
+        assert_eq!(refcounted.data(), &[0x11, 0x22]);
+        assert_eq!(refcounted.data_buffer().offset(), 3);
+        assert_eq!(refcounted.data_buffer().padding_len(), 0);
+
+        refcounted.make_refcounted().unwrap();
+
+        assert_eq!(refcounted.data(), &[0x11, 0x22]);
+        assert_eq!(refcounted.data_buffer().offset(), 3);
+        assert_eq!(
+            refcounted.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(refcounted
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+        assert!(refcounted.is_data_writable());
+
+        refcounted_storage[3] = 0xcc;
+        let mut writable = Packet::with_buffer(
+            BufferRef::from_vec(refcounted_storage)
+                .into_ref_slice(3, 2)
+                .unwrap(),
+            0,
+        );
+        assert_eq!(writable.data_buffer().offset(), 3);
+        assert_eq!(writable.data_buffer().padding_len(), 0);
+
+        writable.make_writable().unwrap();
+        writable.make_data_writable()[0] = 0xdd;
+
+        assert_eq!(writable.data(), &[0xdd, 0x22]);
+        assert_eq!(writable.data_buffer().offset(), 3);
+        assert_eq!(
+            writable.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(writable
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+        assert!(writable.is_data_writable());
+    }
+
+    #[test]
     fn packet_alloc_new_packet_payload_resets_metadata_and_checks_size() {
         let mut packet = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
         packet.set_pts(Some(90_000));

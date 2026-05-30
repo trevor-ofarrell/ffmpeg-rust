@@ -9851,6 +9851,83 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     );
     assert!(refcounted_packet.is_data_writable());
 
+    let mut raw_offset_refcounted_model = Packet::new(vec![0x11, 0x22], stream_index);
+    raw_offset_refcounted_model.make_refcounted().unwrap();
+    assert_eq!(raw_offset_refcounted_model.data(), &[0x11, 0x22]);
+    assert_eq!(raw_offset_refcounted_model.data_buffer().offset(), 0);
+    assert_eq!(
+        raw_offset_refcounted_model.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(raw_offset_refcounted_model
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    assert!(raw_offset_refcounted_model.is_data_writable());
+
+    let mut raw_offset_writable_model = Packet::new(vec![0x11, 0x22], stream_index);
+    raw_offset_writable_model.make_writable().unwrap();
+    raw_offset_writable_model.make_data_writable()[0] = 0xcc;
+    assert_eq!(raw_offset_writable_model.data(), &[0xcc, 0x22]);
+    assert_eq!(raw_offset_writable_model.data_buffer().offset(), 0);
+    assert_eq!(
+        raw_offset_writable_model.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(raw_offset_writable_model
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    assert!(raw_offset_writable_model.is_data_writable());
+
+    let mut unpadded_offset_ref_storage = vec![0xa0, 0xa1, 0xa2, 0x11, 0x22];
+    let mut unpadded_offset_ref = Packet::with_buffer(
+        BufferRef::from_vec(unpadded_offset_ref_storage.clone())
+            .into_ref_slice(3, 2)
+            .unwrap(),
+        stream_index,
+    );
+    assert_eq!(unpadded_offset_ref.data(), &[0x11, 0x22]);
+    assert_eq!(unpadded_offset_ref.data_buffer().offset(), 3);
+    assert_eq!(unpadded_offset_ref.data_buffer().padding_len(), 0);
+    unpadded_offset_ref.make_refcounted().unwrap();
+    assert_eq!(unpadded_offset_ref.data(), &[0x11, 0x22]);
+    assert_eq!(unpadded_offset_ref.data_buffer().offset(), 3);
+    assert_eq!(
+        unpadded_offset_ref.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(unpadded_offset_ref
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    assert!(unpadded_offset_ref.is_data_writable());
+
+    unpadded_offset_ref_storage[3] = 0xcc;
+    let mut unpadded_offset_writable = Packet::with_buffer(
+        BufferRef::from_vec(unpadded_offset_ref_storage)
+            .into_ref_slice(3, 2)
+            .unwrap(),
+        stream_index,
+    );
+    unpadded_offset_writable.make_writable().unwrap();
+    unpadded_offset_writable.make_data_writable()[0] = 0xdd;
+    assert_eq!(unpadded_offset_writable.data(), &[0xdd, 0x22]);
+    assert_eq!(unpadded_offset_writable.data_buffer().offset(), 3);
+    assert_eq!(
+        unpadded_offset_writable.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(unpadded_offset_writable
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    assert!(unpadded_offset_writable.is_data_writable());
+
     let mut unique_writable_packet = Packet::from_data(payload.clone()).unwrap();
     let unique_writable_ptr = unique_writable_packet.data_buffer().as_padded_ptr();
     unique_writable_packet.make_writable().unwrap();

@@ -2006,6 +2006,51 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_fields(&unrefcounted_writable),
     );
 
+    let mut unrefcounted_offset_refcounted = Packet::new(vec![0x11, 0x22], 0);
+    unrefcounted_offset_refcounted.make_refcounted().unwrap();
+    rows.insert(
+        "packet:payload-make-refcounted-unrefcounted-offset-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-refcounted-unrefcounted-offset-same-ptr".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-refcounted-unrefcounted-offset-offset".to_string(),
+        vec![unrefcounted_offset_refcounted
+            .data_buffer()
+            .offset()
+            .to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-refcounted-unrefcounted-offset".to_string(),
+        payload_fields(&unrefcounted_offset_refcounted),
+    );
+
+    let mut unrefcounted_offset_writable = Packet::new(vec![0x11, 0x22], 0);
+    unrefcounted_offset_writable.make_writable().unwrap();
+    unrefcounted_offset_writable.make_data_writable()[0] = 0xcc;
+    rows.insert(
+        "packet:payload-make-writable-unrefcounted-offset-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-writable-unrefcounted-offset-same-ptr".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-writable-unrefcounted-offset-offset".to_string(),
+        vec![unrefcounted_offset_writable
+            .data_buffer()
+            .offset()
+            .to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-writable-unrefcounted-offset".to_string(),
+        payload_fields(&unrefcounted_offset_writable),
+    );
+
     let mut unique_writable = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
     let unique_writable_ptr = unique_writable.data_buffer().as_padded_ptr();
     unique_writable.make_writable().unwrap();
@@ -7369,6 +7414,49 @@ static void exercise_payload_api(void) {
     printf("packet:payload-make-writable-unrefcounted-ret|%d\n", ret);
     pkt->data[0] = 0xcc;
     print_payload("packet:payload-make-writable-unrefcounted", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    uint8_t refcounted_offset_raw[3 + 2 + AV_INPUT_BUFFER_PADDING_SIZE];
+    memset(refcounted_offset_raw, 0x5a, sizeof(refcounted_offset_raw));
+    refcounted_offset_raw[0] = 0xa0;
+    refcounted_offset_raw[1] = 0xa1;
+    refcounted_offset_raw[2] = 0xa2;
+    refcounted_offset_raw[3] = 0x11;
+    refcounted_offset_raw[4] = 0x22;
+    pkt->data = refcounted_offset_raw + 3;
+    pkt->size = 2;
+    uint8_t *refcounted_offset_raw_ptr = pkt->data;
+    ret = av_packet_make_refcounted(pkt);
+    printf("packet:payload-make-refcounted-unrefcounted-offset-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_make_refcounted raw offset payload failed");
+    printf("packet:payload-make-refcounted-unrefcounted-offset-same-ptr|%d\n",
+           pkt->data == refcounted_offset_raw_ptr);
+    printf("packet:payload-make-refcounted-unrefcounted-offset-offset|%td\n",
+           pkt->buf ? pkt->data - pkt->buf->data : -1);
+    print_payload("packet:payload-make-refcounted-unrefcounted-offset", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    uint8_t writable_offset_raw[3 + 2 + AV_INPUT_BUFFER_PADDING_SIZE];
+    memset(writable_offset_raw, 0x5a, sizeof(writable_offset_raw));
+    writable_offset_raw[0] = 0xa0;
+    writable_offset_raw[1] = 0xa1;
+    writable_offset_raw[2] = 0xa2;
+    writable_offset_raw[3] = 0x11;
+    writable_offset_raw[4] = 0x22;
+    pkt->data = writable_offset_raw + 3;
+    pkt->size = 2;
+    uint8_t *writable_offset_raw_ptr = pkt->data;
+    ret = av_packet_make_writable(pkt);
+    printf("packet:payload-make-writable-unrefcounted-offset-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_make_writable raw offset payload failed");
+    printf("packet:payload-make-writable-unrefcounted-offset-same-ptr|%d\n",
+           pkt->data == writable_offset_raw_ptr);
+    printf("packet:payload-make-writable-unrefcounted-offset-offset|%td\n",
+           pkt->buf ? pkt->data - pkt->buf->data : -1);
+    pkt->data[0] = 0xcc;
+    print_payload("packet:payload-make-writable-unrefcounted-offset", pkt);
     av_packet_free(&pkt);
 
     pkt = new_packet();

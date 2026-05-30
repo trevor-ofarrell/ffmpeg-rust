@@ -260,6 +260,14 @@ default_profile = "ffmpeg-8.1.1-default-native"
 # AV_INPUT_BUFFER_PADDING_SIZE)`. Rust `Packet::grow_data` now enforces the
 # same boundary without attempting a huge allocation, and the unit plus
 # `avutil_core_models` fuzz-model invariants cover no-mutation behavior.
+# Latest avutil-packet evidence: `packet:payload-make-refcounted-unrefcounted-offset-*`
+# and `packet:payload-make-writable-unrefcounted-offset-*` rows now prove pinned
+# FFmpeg 8.1.1 copies a raw `AVPacket.data` pointer that starts at a nonzero
+# caller-storage offset with `buf == NULL` into zero-offset padded storage for
+# refcounted/writable helper calls. Rust `Packet::new(...)` covers the visible
+# raw no-buffer payload semantics, while the safe explicit-owner offset
+# `BufferRef` fixture documents the corresponding padding path without raw
+# pointer ownership.
 # Latest avutil-packet evidence: `packet:payload-from-data-invalid-*` rows now
 # prove pinned FFmpeg 8.1.1 `av_packet_from_data()` returns EINVAL before
 # mutation when `size >= INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE`. Rust
@@ -631,6 +639,7 @@ unit_tests = [
   "packet::tests::packet_shrink_preserves_offset_payload_pointer_and_zeroes_tail",
   "packet::tests::packet_zero_size_payload_helpers_keep_ffmpeg_padding",
   "packet::tests::packet_unpadded_payload_helpers_add_padding_and_preserve_bytes",
+  "packet::tests::packet_unpadded_offset_payload_helpers_add_padding_in_place",
   "packet::tests::packet_ref_from_shares_payload_and_copies_side_data",
   "packet::tests::packet_ref_from_replaces_destination_and_releases_old_refs",
   "packet::tests::packet_ref_from_unpadded_payload_copies_into_refcounted_buffer",
@@ -748,6 +757,16 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: pinned libavcodec AVPacket payload oracle coverage now validates
+# `av_packet_make_refcounted()` and `av_packet_make_writable()` on raw
+# `data`/`size` packets whose `data` pointer starts at a nonzero offset inside
+# caller storage and whose `buf` is NULL. FFmpeg copies the visible payload into
+# zero-offset padded `AVBufferRef` storage, returns success, zeroes input
+# padding, and lets writable callers mutate the copied buffer without touching
+# the original caller storage. Rust `Packet::new(...)` models the visible raw
+# no-buffer payload helper shape, while focused unit and avutil_core_models
+# fixtures cover the safe explicit-owner unpadded offset buffer path that adds
+# zeroed padding without exposing raw pointer ownership.
 # Latest update: pinned libavcodec AVPacket payload oracle coverage now validates
 # `av_packet_unref()` on a packet whose `data` starts at a nonzero offset inside
 # `buf->data`. FFmpeg resets packet fields to defaults and calls the AVBuffer

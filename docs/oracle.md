@@ -571,6 +571,8 @@ The harness also includes `packet:payload-grow-shared*` rows, proving shared ref
 
 The harness also includes `packet:payload-grow-unrefcounted*` and `packet:payload-make-writable-unrefcounted*` rows, proving raw `AVPacket.data`/`size` helpers with no `buf` preserve prefix bytes, add zeroed FFmpeg input padding, and return writable storage after grow or make-writable. FFmpeg leaves the newly visible bytes from no-buffer `av_grow_packet()` allocator-unspecified, so that row compares payload length, preserved prefix, padding, and writability rather than full grown payload bytes.
 
+The harness also includes `packet:payload-make-refcounted-unrefcounted-offset-*` and `packet:payload-make-writable-unrefcounted-offset-*` rows, proving raw `AVPacket.data`/`size` helpers with no `buf` still copy from the current data pointer when that pointer starts at a nonzero offset inside caller storage. FFmpeg installs zero-offset padded `AVBufferRef` storage for both helper calls, returns success, zeroes input padding, and leaves the copied buffer writable.
+
 The harness also includes a `packet:payload-shrink-unrefcounted` row, proving raw `AVPacket.data`/`size` shrink behavior with caller-provided input padding. FFmpeg truncates visible size and zeroes padding without allocating an `AVBufferRef`, so the row compares payload length, visible bytes, and padding rather than writability.
 
 The harness also includes `packet:payload-ref-unrefcounted-*` and `packet:payload-clone-unrefcounted` rows, proving raw `AVPacket.data`/`size` reference behavior when `pkt->buf` is NULL. FFmpeg copies the visible bytes into new padded refcounted destination storage for both `av_packet_ref()` and `av_packet_clone()`, while the raw source packet remains a no-buffer packet.
