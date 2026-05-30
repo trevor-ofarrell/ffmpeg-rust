@@ -4181,6 +4181,67 @@ mod tests {
     }
 
     #[test]
+    fn buffer_pool_uninit_with_shared_owned_refs_releases_once_on_final_drop() {
+        let release_events = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+        let release_capture = std::sync::Arc::clone(&release_events);
+        let release_lifecycle =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<&'static str>::new()));
+        let release_lifecycle_capture = std::sync::Arc::clone(&release_lifecycle);
+        let pool_free_lifecycle_capture = std::sync::Arc::clone(&release_lifecycle);
+        let pool_free_events =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<&'static str>::new()));
+        let pool_free_capture = std::sync::Arc::clone(&pool_free_events);
+
+        let pool = BufferPool::with_callbacks(
+            2,
+            0,
+            BufferPoolCallbacks::with_allocation_callbacks(
+                |allocated_len| {
+                    assert_eq!(allocated_len, 2);
+                    Ok(BufferPoolAllocation::with_opaque(vec![1, 2], 77usize))
+                },
+                move |allocation| {
+                    release_lifecycle_capture.lock().unwrap().push("release");
+                    release_capture.lock().unwrap().push(allocation.into_vec());
+                },
+            )
+            .with_pool_free(move || {
+                pool_free_lifecycle_capture
+                    .lock()
+                    .unwrap()
+                    .push("pool_free");
+                pool_free_capture.lock().unwrap().push("pool_free");
+            }),
+        )
+        .unwrap();
+
+        let first = pool.get().unwrap();
+        let second = first.clone();
+        assert_eq!(first.strong_count(), 2);
+        assert!(first.shares_storage(&second));
+
+        let mut pool = Some(pool);
+        BufferPool::uninit(&mut pool);
+        assert!(pool.is_none());
+
+        assert!(release_events.lock().unwrap().is_empty());
+        assert!(pool_free_events.lock().unwrap().is_empty());
+
+        drop(second);
+
+        assert!(release_events.lock().unwrap().is_empty());
+        assert!(pool_free_events.lock().unwrap().is_empty());
+
+        drop(first);
+        assert_eq!(
+            *release_lifecycle.lock().unwrap(),
+            vec!["release", "pool_free"]
+        );
+        assert_eq!(*release_events.lock().unwrap(), vec![vec![1, 2]]);
+        assert_eq!(*pool_free_events.lock().unwrap(), vec!["pool_free"]);
+    }
+
+    #[test]
     fn buffer_pool_copy_on_write_returns_only_original_storage() {
         let pool = BufferPool::new(3, 1).unwrap();
         let mut buffer = pool.get().unwrap();

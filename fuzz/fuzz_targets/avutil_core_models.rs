@@ -708,6 +708,71 @@ fn assert_color_parser_fixtures() {
     );
 }
 
+fn assert_buffer_pool_uninit_outstanding_two_refs() {
+    let release_events = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+    let release_capture = std::sync::Arc::clone(&release_events);
+    let lifecycle_events = std::sync::Arc::new(std::sync::Mutex::new(Vec::<&'static str>::new()));
+    let lifecycle_release_capture = std::sync::Arc::clone(&lifecycle_events);
+    let lifecycle_pool_free_capture = std::sync::Arc::clone(&lifecycle_events);
+    let pool_free_events = std::sync::Arc::new(std::sync::Mutex::new(Vec::<&'static str>::new()));
+    let pool_free_capture = std::sync::Arc::clone(&pool_free_events);
+
+    let pool = BufferPool::with_callbacks(
+        2,
+        0,
+        BufferPoolCallbacks::with_allocation_callbacks(
+            |allocated_len| {
+                assert_eq!(allocated_len, 2);
+                Ok(BufferPoolAllocation::with_opaque(
+                    vec![0x11, 0x22],
+                    123usize,
+                ))
+            },
+            move |allocation| {
+                lifecycle_release_capture
+                    .lock()
+                    .unwrap()
+                    .push("release");
+                release_capture.lock().unwrap().push(allocation.into_vec());
+            },
+        )
+        .with_pool_free(move || {
+            lifecycle_pool_free_capture
+                .lock()
+                .unwrap()
+                .push("pool_free");
+            pool_free_capture.lock().unwrap().push("pool_free");
+        }),
+    )
+    .unwrap();
+    let first = pool.get().unwrap();
+    let second = first.clone();
+
+    let mut pool = Some(pool);
+    BufferPool::uninit(&mut pool);
+    assert!(pool.is_none());
+
+    assert!(release_events.lock().unwrap().is_empty());
+    assert!(lifecycle_events.lock().unwrap().is_empty());
+    assert!(pool_free_events.lock().unwrap().is_empty());
+
+    drop(second);
+    assert!(release_events.lock().unwrap().is_empty());
+    assert!(lifecycle_events.lock().unwrap().is_empty());
+    assert!(pool_free_events.lock().unwrap().is_empty());
+
+    drop(first);
+    assert_eq!(
+        *lifecycle_events.lock().unwrap(),
+        vec!["release", "pool_free"]
+    );
+    assert_eq!(*release_events.lock().unwrap(), vec![vec![0x11, 0x22]]);
+    assert_eq!(
+        *pool_free_events.lock().unwrap(),
+        vec!["pool_free"]
+    );
+}
+
 fn exif_two_digits(value: &str, index: usize) -> u8 {
     let bytes = value.as_bytes();
     (bytes[index] - b'0') * 10 + (bytes[index + 1] - b'0')
@@ -847,6 +912,7 @@ fuzz_target!(|data: &[u8]| {
     exercise_rational_and_timebase(&mut cursor);
     exercise_pixel_and_video_frame(&mut cursor);
     exercise_sample_channel_and_audio_frame(&mut cursor);
+    assert_buffer_pool_uninit_outstanding_two_refs();
     exercise_packet_and_hashes(&mut cursor);
     exercise_fixtures();
 });

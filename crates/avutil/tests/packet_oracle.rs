@@ -2582,6 +2582,38 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:side-get-raw-min-type".to_string(),
         side_data_lookup_fields(raw_packet.side_data_by_kind_id(&raw_min_kind)),
     );
+
+    raw_packet
+        .shrink_side_data_by_kind_id(&raw_negative_kind, 0)
+        .unwrap();
+    rows.insert(
+        "packet:side-shrink-raw-negative-type-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:side-shrink-raw-negative-type".to_string(),
+        side_data_summary_fields(&raw_packet),
+    );
+    rows.insert(
+        "packet:side-get-raw-negative-type-shrunk".to_string(),
+        side_data_lookup_fields(raw_packet.side_data_by_kind_id(&raw_negative_kind)),
+    );
+
+    let raw_min_oversize = raw_packet
+        .shrink_side_data_by_kind_id(&raw_min_kind, 2)
+        .unwrap_err();
+    rows.insert(
+        "packet:side-shrink-raw-min-oversize-ret".to_string(),
+        vec![raw_min_oversize
+            .code()
+            .expect("raw min side data oversize shrink should preserve an FFmpeg error code")
+            .raw()
+            .to_string()],
+    );
+    rows.insert(
+        "packet:side-get-raw-min-oversize".to_string(),
+        side_data_lookup_fields(raw_packet.side_data_by_kind_id(&raw_min_kind)),
+    );
 }
 
 fn insert_side_data_capacity_rows(rows: &mut BTreeMap<String, Vec<String>>) {
@@ -5001,6 +5033,18 @@ static void exercise_side_data_api(void) {
     sd[0] = 0xe0;
     print_side_data_summary("packet:side-new-raw-min-type", pkt);
     print_side_data_lookup("packet:side-get-raw-min-type", pkt,
+                           (enum AVPacketSideDataType)INT_MIN);
+
+    ret = av_packet_shrink_side_data(pkt, (enum AVPacketSideDataType)-1, 0);
+    printf("packet:side-shrink-raw-negative-type-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_shrink_side_data negative raw type failed");
+    print_side_data_summary("packet:side-shrink-raw-negative-type", pkt);
+    print_side_data_lookup("packet:side-get-raw-negative-type-shrunk", pkt,
+                           (enum AVPacketSideDataType)-1);
+
+    ret = av_packet_shrink_side_data(pkt, (enum AVPacketSideDataType)INT_MIN, 2);
+    printf("packet:side-shrink-raw-min-oversize-ret|%d\n", ret);
+    print_side_data_lookup("packet:side-get-raw-min-oversize", pkt,
                            (enum AVPacketSideDataType)INT_MIN);
     av_packet_free(&pkt);
 }

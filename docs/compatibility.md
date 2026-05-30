@@ -10,6 +10,16 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  packet-owned raw side-data values participate in
+  `av_packet_shrink_side_data()` behavior: raw type `-1` shrinks to zero
+  length, while raw type `INT_MIN` oversize shrink returns ENOMEM without
+  mutating payload. Rust mirrors this in the packet unit model.
+- Latest reviewed worker buffer evidence: pinned libavutil rows now prove
+  `av_buffer_pool_uninit()` with a two-reference outstanding custom-pool
+  buffer delays release and pool-free callbacks until the final shared ref
+  drops, then runs buffer release before pool-free. Rust mirrors this in unit,
+  differential, and deterministic fuzz-build coverage.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   `av_packet_free_side_data()` clears packet-owned side data while preserving
   payload, timestamps, stream index, flags, opaque pointer metadata, opaque_ref,
   and `time_base`. Rust mirrors this through `Packet::clear_side_data()`, with

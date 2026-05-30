@@ -3,6 +3,65 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active with xhigh
+fast/full-access subagents and no approval prompts. The tree started at
+`master...origin/master [ahead 64]`; strict completion remains 11/96
+components, about 11.5%. One worker, Darwin the 2nd, was assigned the
+disjoint `avutil-buffer` outstanding-pool lane. It timed out and was shut down
+without a final report, but left only scoped changes in its owned files; those
+changes were reviewed, corrected for callback-order evidence, and integrated.
+
+Current main-thread slice: packet-owned raw side-data shrink evidence. The
+packet oracle now includes rows proving `av_packet_shrink_side_data()` accepts a
+packet-owned raw `-1` side-data type and shrinks it to zero length, while an
+oversize shrink for raw `INT_MIN` returns FFmpeg ENOMEM without mutating the
+entry. The Rust packet unit covers the same raw-kind shrink and no-mutation
+behavior.
+
+Integrated worker slice: `avutil-buffer` outstanding two-reference pool-uninit
+evidence. The buffer oracle now proves `av_buffer_pool_uninit()` with two refs
+sharing one custom-pool allocation does not run release or pool-free callbacks
+at uninit time or after the first unref, then the final unref releases the
+buffer bytes exactly once before running pool-free. Unit and deterministic fuzz
+fixture coverage mirror the same lifetime shape.
+
+Latest validation commands for this slice passed: `cargo fmt --all -- --check`;
+`cargo test -p avutil --target-dir target-orch-packet-raw-shrink
+packet_accepts_raw_ffmpeg_side_data_types_before_capacity`; `cargo test -p
+avutil --target-dir target-orch-buffer-two-refs
+buffer_pool_uninit_with_shared_owned_refs_releases_once_on_final_drop`; `cargo
+check --manifest-path fuzz/Cargo.toml --target-dir
+target-orch-fuzz-buffer-two-refs --target x86_64-pc-windows-msvc --bin
+avutil_core_models`; `cargo test -p avutil --test packet_oracle --target-dir
+target-orch-packet-raw-shrink-oracle
+libavcodec_packet_core_lifecycle_matches_packet_model -- --ignored`; `cargo
+test -p avutil --test buffer_oracle --target-dir
+target-orch-buffer-two-refs-oracle libavutil_buffer_refs_match_current_model --
+--ignored`; pinned differential mapping runs for `avutil-packet` target
+`oracle-libavcodec-packet-core` and `avutil-buffer` target
+`oracle-libavutil-buffer`; `cargo clippy -p avutil --all-targets
+--all-features --target-dir target-orch-clippy-avutil -- -D warnings`; `cargo
+test -p fate-runner --target-dir target-orch-fate current_ledger`; `cargo run
+-p fate-runner --target-dir target-orch-fate-status -- status --next 12`;
+`cargo run -p fate-runner --target-dir target-orch-fate-changed -- run
+--changed --dry-run`; `cargo run -p xtask --target-dir
+target-orch-xtask-guard -- guard-runtime`; `cargo run -p xtask --target-dir
+target-orch-xtask-doctor -- oracle-doctor`; and `git diff --check` with CRLF
+conversion warnings only.
+
+Latest failing or limited commands for this slice: no validation failures. The
+buffer worker timed out and was shut down before returning a final report, so
+the orchestrator reviewed and corrected the scoped patch before accepting it.
+Sanitizer-backed WSL `cargo fuzz run` was not rerun for this slice; the Windows
+fuzz target build check passed.
+
+Current focus component: `avutil-packet` remains the top priority incomplete
+component (`fate_pass`), followed by `avutil-buffer` (`differential_pass`).
+Next 3 concrete actions: commit this coherent packet and buffer oracle-evidence
+slice, inspect the next missing AVPacket completion requirement, then delegate
+only disjoint xhigh/full-access lanes for `avutil-buffer`, `avutil-frame`, or
+`avutil-logging` evidence that will not touch the packet files.
+
+Current authoritative turn status: orchestrator workflow is active with xhigh
 fast/full-access subagents. The tree started clean at `master...origin/master
 [ahead 63]`; strict completion remains 11/96 components, about 11.5%. Three
 subagents were used: Aquinas the 2nd was a read-only packet explorer but was

@@ -3090,6 +3090,117 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     );
     drop(outstanding_release_values);
 
+    let outstanding_two_ref_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let outstanding_two_ref_pool_frees = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let outstanding_two_ref_lifecycle = Arc::new(Mutex::new(Vec::<&'static str>::new()));
+    let outstanding_two_ref_release_capture = Arc::clone(&outstanding_two_ref_releases);
+    let outstanding_two_ref_pool_free_capture = Arc::clone(&outstanding_two_ref_pool_frees);
+    let outstanding_two_ref_release_lifecycle = Arc::clone(&outstanding_two_ref_lifecycle);
+    let outstanding_two_ref_pool_free_lifecycle = Arc::clone(&outstanding_two_ref_lifecycle);
+    let outstanding_two_ref_pool = BufferPool::with_callbacks(
+        2,
+        0,
+        BufferPoolCallbacks::with_allocation_callbacks(
+            |allocated_len| {
+                assert_eq!(allocated_len, 2);
+                Ok(BufferPoolAllocation::with_opaque(
+                    vec![0xaa, 0xbb],
+                    PoolToken {
+                        id: 67,
+                        size: allocated_len,
+                    },
+                ))
+            },
+            move |allocation| {
+                let token = allocation
+                    .opaque_ref::<PoolToken>()
+                    .expect("outstanding two-ref token should be preserved");
+                outstanding_two_ref_release_lifecycle
+                    .lock()
+                    .unwrap()
+                    .push("release");
+                outstanding_two_ref_release_capture
+                    .lock()
+                    .unwrap()
+                    .push((token.id, allocation.into_vec()));
+            },
+        )
+        .with_pool_free(move || {
+            outstanding_two_ref_pool_free_lifecycle
+                .lock()
+                .unwrap()
+                .push("pool_free");
+            outstanding_two_ref_pool_free_capture
+                .lock()
+                .unwrap()
+                .push(67);
+        }),
+    )
+    .unwrap();
+    let outstanding_two_ref_first = outstanding_two_ref_pool.get().unwrap();
+    let outstanding_two_ref_second = outstanding_two_ref_first.clone();
+    let mut outstanding_two_ref_pool = Some(outstanding_two_ref_pool);
+    BufferPool::uninit(&mut outstanding_two_ref_pool);
+    rows.insert(
+        "pool:outstanding-two-refs:after-uninit".to_string(),
+        vec![
+            outstanding_two_ref_releases
+                .lock()
+                .unwrap()
+                .len()
+                .to_string(),
+            outstanding_two_ref_pool_frees
+                .lock()
+                .unwrap()
+                .len()
+                .to_string(),
+            outstanding_two_ref_lifecycle
+                .lock()
+                .unwrap()
+                .len()
+                .to_string(),
+        ],
+    );
+    drop(outstanding_two_ref_second);
+    rows.insert(
+        "pool:outstanding-two-refs:after-first-drop".to_string(),
+        vec![
+            outstanding_two_ref_releases
+                .lock()
+                .unwrap()
+                .len()
+                .to_string(),
+            outstanding_two_ref_pool_frees
+                .lock()
+                .unwrap()
+                .len()
+                .to_string(),
+            outstanding_two_ref_lifecycle
+                .lock()
+                .unwrap()
+                .len()
+                .to_string(),
+        ],
+    );
+    drop(outstanding_two_ref_first);
+    let outstanding_two_ref_release_values = outstanding_two_ref_releases.lock().unwrap();
+    let outstanding_two_ref_pool_free_values = outstanding_two_ref_pool_frees.lock().unwrap();
+    let outstanding_two_ref_lifecycle_values = outstanding_two_ref_lifecycle.lock().unwrap();
+    rows.insert(
+        "pool:outstanding-two-refs:after-final-drop".to_string(),
+        vec![
+            outstanding_two_ref_release_values.len().to_string(),
+            outstanding_two_ref_release_values[0].0.to_string(),
+            hex(&outstanding_two_ref_release_values[0].1),
+            outstanding_two_ref_pool_free_values.len().to_string(),
+            outstanding_two_ref_pool_free_values[0].to_string(),
+            pool_lifecycle_codes(&outstanding_two_ref_lifecycle_values),
+        ],
+    );
+    drop(outstanding_two_ref_lifecycle_values);
+    drop(outstanding_two_ref_pool_free_values);
+    drop(outstanding_two_ref_release_values);
+
     let failed_allocations = Arc::new(Mutex::new(Vec::<usize>::new()));
     let failed_releases = Arc::new(Mutex::new(Vec::<BufferPoolAllocation>::new()));
     let failed_pool_frees = Arc::new(Mutex::new(Vec::<usize>::new()));
@@ -3206,6 +3317,22 @@ fn hex(data: &[u8]) -> String {
     output
 }
 
+fn pool_lifecycle_codes(events: &[&'static str]) -> String {
+    if events.is_empty() {
+        return "0".to_string();
+    }
+
+    events
+        .iter()
+        .map(|event| match *event {
+            "release" => "1",
+            "pool_free" => "2",
+            _ => "0",
+        })
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 fn bool_field(value: bool) -> String {
     if value { "1" } else { "0" }.to_string()
 }
@@ -3293,14 +3420,17 @@ static uint8_t last_create_release[32];
 static int pool_alloc_count = 0;
 static int pool_release_count = 0;
 static int pool_free_count = 0;
+static int pool_event_count = 0;
 static uintptr_t last_pool_release_id = 0;
 static uintptr_t last_pool_free_id = 0;
 static size_t last_pool_release_size = 0;
 static uint8_t last_pool_release[32];
 #define MAX_POOL_RELEASE_EVENTS 16
+#define MAX_POOL_EVENTS 16
 static uintptr_t pool_release_ids[MAX_POOL_RELEASE_EVENTS];
 static size_t pool_release_sizes[MAX_POOL_RELEASE_EVENTS];
 static uint8_t pool_release_data[MAX_POOL_RELEASE_EVENTS][32];
+static int pool_event_log[MAX_POOL_EVENTS];
 
 typedef struct PoolOpaque {
     uintptr_t id;
@@ -3342,6 +3472,7 @@ static void reset_pool_counters(void) {
     pool_alloc_count = 0;
     pool_release_count = 0;
     pool_free_count = 0;
+    pool_event_count = 0;
     last_pool_release_id = 0;
     last_pool_free_id = 0;
     last_pool_release_size = 0;
@@ -3353,11 +3484,15 @@ static void reset_pool_counters(void) {
         for (size_t i = 0; i < sizeof(pool_release_data[event]); i++)
             pool_release_data[event][i] = 0;
     }
+    for (size_t event = 0; event < MAX_POOL_EVENTS; event++)
+        pool_event_log[event] = 0;
 }
 
 static void test_pool_free(void *opaque, uint8_t *data) {
     PoolOpaque *pool_opaque = opaque;
     int event = pool_release_count++;
+    if (pool_event_count < MAX_POOL_EVENTS)
+        pool_event_log[pool_event_count++] = 1;
     last_pool_release_id = pool_opaque->id;
     last_pool_release_size = pool_opaque->size;
     fail_if(last_pool_release_size > sizeof(last_pool_release),
@@ -3377,6 +3512,8 @@ static void test_pool_free(void *opaque, uint8_t *data) {
 
 static void test_pool_owner_free(void *opaque) {
     PoolOpaque *pool_opaque = opaque;
+    if (pool_event_count < MAX_POOL_EVENTS)
+        pool_event_log[pool_event_count++] = 2;
     pool_free_count++;
     last_pool_free_id = pool_opaque->id;
 }
@@ -3390,9 +3527,24 @@ static AVBufferRef *test_pool_alloc(void *opaque, size_t size) {
     return av_buffer_create(data, size, test_pool_free, opaque, 0);
 }
 
+static AVBufferRef *test_pool_alloc_for_two_ref(void *opaque, size_t size) {
+    uint8_t *data = av_malloc(size);
+    fail_if(!data, "av_malloc two-ref pool data failed");
+    pool_alloc_count++;
+    if (size > 0)
+        data[0] = 0xaa;
+    if (size > 1)
+        data[1] = 0xbb;
+    for (size_t i = 2; i < size; i++)
+        data[i] = 0xcc;
+    return av_buffer_create(data, size, test_pool_free, opaque, 0);
+}
+
 static void test_pool_free_legacy(void *opaque, uint8_t *data) {
     (void)opaque;
     int event = pool_release_count++;
+    if (pool_event_count < MAX_POOL_EVENTS)
+        pool_event_log[pool_event_count++] = 1;
     last_pool_release_id = 0;
     last_pool_release_size = 3;
     for (size_t i = 0; i < last_pool_release_size; i++)
@@ -3481,6 +3633,19 @@ static void fill_bytes(AVBufferRef *buf, const uint8_t *data, size_t size) {
 static void print_hex(const uint8_t *data, size_t size) {
     for (size_t i = 0; i < size; i++)
         printf("%02x", data[i]);
+}
+
+static void print_pool_events(void) {
+    if (pool_event_count == 0) {
+        printf("0");
+        return;
+    }
+
+    for (int event = 0; event < pool_event_count; event++) {
+        if (event > 0)
+            printf(",");
+        printf("%d", pool_event_log[event]);
+    }
 }
 
 static void print_status(const char *label, const AVBufferRef *buf) {
@@ -5248,6 +5413,32 @@ int main(void) {
            pool_release_count, last_pool_release_id);
     print_hex(last_pool_release, last_pool_release_size);
     printf("|%d\n", pool_free_count);
+
+    reset_pool_counters();
+    PoolOpaque outstanding_shared_pool_opaque = { 67, 2 };
+    pool = av_buffer_pool_init2(
+        2,
+        &outstanding_shared_pool_opaque,
+        test_pool_alloc_for_two_ref,
+        test_pool_owner_free
+    );
+    fail_if(!pool, "av_buffer_pool_init2 outstanding two-ref failed");
+    AVBufferRef *outstanding_shared_first = av_buffer_pool_get(pool);
+    fail_if(!outstanding_shared_first, "av_buffer_pool_get outstanding two-ref failed");
+    AVBufferRef *outstanding_shared_second = av_buffer_ref(outstanding_shared_first);
+    av_buffer_pool_uninit(&pool);
+    printf("pool:outstanding-two-refs:after-uninit|%d|%d|%d\n",
+           pool_release_count, pool_free_count, pool_event_count);
+    av_buffer_unref(&outstanding_shared_first);
+    printf("pool:outstanding-two-refs:after-first-drop|%d|%d|%d\n",
+           pool_release_count, pool_free_count, pool_event_count);
+    av_buffer_unref(&outstanding_shared_second);
+    printf("pool:outstanding-two-refs:after-final-drop|%d|%" PRIuPTR "|",
+           pool_release_count, last_pool_release_id);
+    print_hex(last_pool_release, last_pool_release_size);
+    printf("|%d|%" PRIuPTR "|", pool_free_count, last_pool_free_id);
+    print_pool_events();
+    printf("\n");
 
     reset_pool_counters();
     PoolOpaque fail_opaque = { 77, 4 };

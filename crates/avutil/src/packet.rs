@@ -10876,6 +10876,31 @@ mod tests {
             packet.side_data_by_kind_id(&raw_min_kind).unwrap().data(),
             &[0xe0]
         );
+
+        packet
+            .shrink_side_data_by_kind_id(&raw_negative_kind, 0)
+            .unwrap();
+        assert_eq!(
+            packet
+                .side_data_by_kind_id(&raw_negative_kind)
+                .unwrap()
+                .data(),
+            &[]
+        );
+        assert_eq!(
+            packet.side_data_by_kind_id(&raw_min_kind).unwrap().data(),
+            &[0xe0]
+        );
+
+        let err = packet
+            .shrink_side_data_by_kind_id(&raw_min_kind, 2)
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::External);
+        assert_eq!(err.code(), Some(AvErrorCode::ENOMEM));
+        assert_eq!(
+            packet.side_data_by_kind_id(&raw_min_kind).unwrap().data(),
+            &[0xe0]
+        );
     }
 
     #[test]
