@@ -369,6 +369,7 @@ pub enum PacketSideDataKind {
     RtcpSenderReport,
     Exif,
     Unknown(String),
+    Raw { value: i32, name: String },
 }
 
 impl PacketSideDataKind {
@@ -422,6 +423,13 @@ impl PacketSideDataKind {
         Ok(Self::known_from_name(&name).unwrap_or(Self::Unknown(name)))
     }
 
+    pub fn from_ffmpeg_raw_value(value: i32) -> Self {
+        Self::from_ffmpeg_value(value).unwrap_or_else(|| Self::Raw {
+            value,
+            name: format!("ffmpeg_raw_{value}"),
+        })
+    }
+
     pub fn name(&self) -> &str {
         match self {
             Self::Palette => "palette",
@@ -466,6 +474,7 @@ impl PacketSideDataKind {
             Self::RtcpSenderReport => "rtcp_sr",
             Self::Exif => "exif",
             Self::Unknown(name) => name.as_str(),
+            Self::Raw { name, .. } => name.as_str(),
         }
     }
 
@@ -512,15 +521,18 @@ impl PacketSideDataKind {
             Self::ThreeDReferenceDisplays => Some("AV_PKT_DATA_3D_REFERENCE_DISPLAYS"),
             Self::RtcpSenderReport => Some("AV_PKT_DATA_RTCP_SR"),
             Self::Exif => Some("AV_PKT_DATA_EXIF"),
-            Self::Unknown(_) => None,
+            Self::Unknown(_) | Self::Raw { .. } => None,
         }
     }
 
     pub fn ffmpeg_value(&self) -> Option<i32> {
-        Self::KNOWN
-            .iter()
-            .position(|kind| kind == self)
-            .map(|index| index as i32)
+        match self {
+            Self::Raw { value, .. } => Some(*value),
+            _ => Self::KNOWN
+                .iter()
+                .position(|kind| kind == self)
+                .map(|index| index as i32),
+        }
     }
 
     pub fn from_ffmpeg_value(value: i32) -> Option<Self> {
@@ -575,7 +587,7 @@ impl PacketSideDataKind {
             Self::ThreeDReferenceDisplays => Some("3D Reference Displays Info"),
             Self::RtcpSenderReport => Some("RTCP Sender Report"),
             Self::Exif => Some("EXIF metadata"),
-            Self::Unknown(_) => None,
+            Self::Unknown(_) | Self::Raw { .. } => None,
         }
     }
 
@@ -614,7 +626,7 @@ impl PacketSideDataKind {
     }
 
     pub fn is_known(&self) -> bool {
-        !matches!(self, Self::Unknown(_))
+        !matches!(self, Self::Unknown(_) | Self::Raw { .. })
     }
 
     fn known_from_name(name: &str) -> Option<Self> {
@@ -4584,8 +4596,11 @@ impl SideData {
     }
 
     pub fn new_with_kind(kind: PacketSideDataKind, data: Vec<u8>) -> AvResult<Self> {
-        if let PacketSideDataKind::Unknown(name) = &kind {
-            validate_packet_side_data_kind(name.clone())?;
+        match &kind {
+            PacketSideDataKind::Unknown(name) | PacketSideDataKind::Raw { name, .. } => {
+                validate_packet_side_data_kind(name.clone())?;
+            }
+            _ => {}
         }
         Ok(Self { kind, data })
     }
@@ -6520,6 +6535,22 @@ mod tests {
         assert_eq!(packet.pos(), None);
         assert!(SideData::new(" ", Vec::new()).is_err());
         assert!(SideData::new("bad\0kind", Vec::new()).is_err());
+        assert!(SideData::new_with_kind(
+            PacketSideDataKind::Raw {
+                value: PacketSideDataKind::KNOWN.len() as i32,
+                name: " ".to_string(),
+            },
+            Vec::new(),
+        )
+        .is_err());
+        assert!(SideData::new_with_kind(
+            PacketSideDataKind::Raw {
+                value: PacketSideDataKind::KNOWN.len() as i32,
+                name: "bad\0kind".to_string(),
+            },
+            Vec::new(),
+        )
+        .is_err());
     }
 
     #[test]
@@ -6627,6 +6658,13 @@ mod tests {
         assert_eq!(unknown.ffmpeg_constant(), None);
         assert_eq!(unknown.ffmpeg_value(), None);
         assert_eq!(unknown.ffmpeg_side_data_name(), None);
+
+        let raw = PacketSideDataKind::from_ffmpeg_raw_value(PacketSideDataKind::KNOWN.len() as i32);
+        assert_eq!(raw.name(), "ffmpeg_raw_41");
+        assert!(!raw.is_known());
+        assert_eq!(raw.ffmpeg_constant(), None);
+        assert_eq!(raw.ffmpeg_value(), Some(41));
+        assert_eq!(raw.ffmpeg_side_data_name(), None);
 
         let side_data = SideData::new("AV_PKT_DATA_PALETTE", vec![1, 2]).unwrap();
         assert_eq!(side_data.kind(), "palette");
@@ -10743,6 +10781,35 @@ mod tests {
         assert_eq!(
             packet.side_data_by_kind("new_extradata").unwrap().data(),
             &[7]
+        );
+    }
+
+    #[test]
+    fn packet_accepts_raw_ffmpeg_side_data_types_before_capacity() {
+        let mut packet = Packet::new(Vec::new(), 0);
+        let raw_kind =
+            PacketSideDataKind::from_ffmpeg_raw_value(PacketSideDataKind::KNOWN.len() as i32);
+        assert!(packet
+            .try_add_side_data(SideData::new_with_kind(raw_kind.clone(), vec![0x7e]).unwrap())
+            .unwrap()
+            .is_none());
+        assert_eq!(packet.side_data().len(), 1);
+        assert_eq!(
+            packet.side_data_by_kind_id(&raw_kind).unwrap().data(),
+            &[0x7e]
+        );
+
+        let raw_new_kind =
+            PacketSideDataKind::from_ffmpeg_raw_value(PacketSideDataKind::KNOWN.len() as i32 + 1);
+        packet
+            .new_side_data(raw_new_kind.clone(), 2)
+            .unwrap()
+            .data_mut()
+            .copy_from_slice(&[0x6a, 0x6b]);
+        assert_eq!(packet.side_data().len(), 2);
+        assert_eq!(
+            packet.side_data_by_kind_id(&raw_new_kind).unwrap().data(),
+            &[0x6a, 0x6b]
         );
     }
 

@@ -10,6 +10,14 @@
 ## Compatible Today
 
 - Latest orchestrated parallel evidence: xhigh worker lanes plus main-thread
+  review added pinned oracle rows for packet-owned raw numeric side-data types,
+  raw `pcm_s16le` 9-channel unspecified-layout framecrc timing, YUV4MPEG2
+  leading whitespace before the first frame marker, WAV duplicate-`fmt `
+  handling when the later fmt chunk is unsupported, and ffmpeg/ffprobe
+  version/buildconf requests after prior value-taking options. These rows
+  strengthen existing incomplete components; strict complete count remains
+  unchanged.
+- Latest orchestrated parallel evidence: xhigh worker lanes plus main-thread
   review added pinned oracle rows for AVPacket raw unknown flag preservation,
   AVOption whitespace-only shorthand rejection without mutation, WAV missing
   padding after an odd-sized `fmt ` chunk, image2 maximum/overflow

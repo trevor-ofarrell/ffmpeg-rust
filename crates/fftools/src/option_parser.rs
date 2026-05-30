@@ -899,6 +899,15 @@ mod tests {
     }
 
     #[test]
+    fn treats_file_scoped_value_tokens_as_non_requests_when_followed_by_request_args() {
+        let args = strings(&["-c:a", "-version", "-version"]);
+        assert_eq!(find_version_or_buildconf_request_index(&args), Some(2));
+
+        let args = strings(&["-map", "-version", "out.mkv", "-buildconf"]);
+        assert_eq!(find_version_or_buildconf_request_index(&args), Some(3));
+    }
+
+    #[test]
     fn trailing_loglevel_warning_matches_version_request_precedence() {
         assert_eq!(
             trailing_loglevel_warning(&strings(&["-loglevel", "info", "-v", "foo"])),

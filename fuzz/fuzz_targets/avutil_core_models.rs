@@ -10163,6 +10163,41 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         PacketSideDataKind::MAX_FFMPEG_PACKET_SIDE_DATA_ELEMS
     );
 
+    let raw_packet_kind =
+        PacketSideDataKind::from_ffmpeg_raw_value(PacketSideDataKind::KNOWN.len() as i32);
+    assert_eq!(
+        raw_packet_kind.ffmpeg_value(),
+        Some(PacketSideDataKind::KNOWN.len() as i32)
+    );
+    assert!(!raw_packet_kind.is_known());
+    let mut raw_packet = Packet::default();
+    assert!(raw_packet
+        .try_add_side_data(SideData::new_with_kind(raw_packet_kind.clone(), vec![0x7e]).unwrap())
+        .unwrap()
+        .is_none());
+    assert_eq!(
+        raw_packet
+            .side_data_by_kind_id(&raw_packet_kind)
+            .unwrap()
+            .data(),
+        &[0x7e]
+    );
+    let raw_new_packet_kind =
+        PacketSideDataKind::from_ffmpeg_raw_value(PacketSideDataKind::KNOWN.len() as i32 + 1);
+    raw_packet
+        .new_side_data(raw_new_packet_kind.clone(), 2)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0x6a, 0x6b]);
+    assert_eq!(raw_packet.side_data().len(), 2);
+    assert_eq!(
+        raw_packet
+            .side_data_by_kind_id(&raw_new_packet_kind)
+            .unwrap()
+            .data(),
+        &[0x6a, 0x6b]
+    );
+
     let mut capacity_list = PacketSideDataList::new();
     for (index, kind) in PacketSideDataKind::KNOWN.iter().enumerate() {
         assert!(capacity_list

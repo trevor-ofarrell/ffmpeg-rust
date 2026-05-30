@@ -3,6 +3,13 @@ target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
 # Latest orchestrated evidence: xhigh worker lanes plus main-thread review now
+# pin packet-owned raw numeric side-data types before capacity, raw pcm_s16le
+# 9-channel unspecified-layout framecrc timing, YUV4MPEG2 leading whitespace
+# before the first frame header, WAV first-fmt preservation when a later
+# duplicate fmt chunk is unsupported, and ffmpeg/ffprobe version/buildconf
+# requests after prior value-taking options. These are evidence-strengthening
+# rows only; no status was promoted.
+# Latest orchestrated evidence: xhigh worker lanes plus main-thread review now
 # pin AVPacket raw unknown flag preservation, AVOption whitespace-only shorthand
 # rejection without mutation, WAV missing padding after an odd-sized `fmt `
 # chunk, image2 max/overflow `-start_number` behavior, and version/buildconf
@@ -486,6 +493,7 @@ unit_tests = [
   "packet::tests::packet_new_side_data_accepts_zero_size",
   "packet::tests::packet_add_side_data_replaces_first_matching_kind",
   "packet::tests::packet_try_add_side_data_reports_ffmpeg_entry_limit",
+  "packet::tests::packet_accepts_raw_ffmpeg_side_data_types_before_capacity",
   "packet::tests::packet_side_data_list_matches_standalone_array_lifecycle",
   "packet::tests::packet_side_data_list_duplicate_lookup_add_and_remove_match_standalone_array_semantics",
   "packet::tests::packet_side_data_list_accepts_entries_beyond_packet_owned_limit",
@@ -543,6 +551,7 @@ differential_tests = [
   "tests/differential/mappings.txt:avutil-packet|oracle-pcm-s16le-partial-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-pcm-s16le-odd-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-pcm-s16le-three-channel-partial-framecrc-records",
+  "tests/differential/mappings.txt:avutil-packet|oracle-pcm-s16le-nine-channel-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-pcm-s16le-file-output",
   "tests/differential/mappings.txt:avutil-packet|oracle-pcm-s16le-packetized-file-output",
   "tests/differential/mappings.txt:avutil-packet|oracle-pcm-s16le-odd-file-output",
@@ -552,6 +561,8 @@ differential_tests = [
   "tests/differential/mappings.txt:avutil-packet|oracle-wav-extensible-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-wav-duplicate-data-last-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-wav-duplicate-fmt-short-second-framecrc-records",
+  "tests/differential/mappings.txt:avutil-packet|oracle-wav-duplicate-fmt-unsupported-second-framecrc-records",
+  "tests/differential/mappings.txt:avutil-packet|oracle-yuv4mpegpipe-leading-whitespace-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-image2-file-output",
   "tests/differential/mappings.txt:avutil-packet|oracle-image2-sequence-file-output",
   "tests/differential/mappings.txt:avutil-packet|oracle-image2-single-framecrc-records",
@@ -580,6 +591,7 @@ differential_tests = [
   "pcm_oracle::pcm_s16le_partial_framecrc_records_match_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_odd_packet_framecrc_records_match_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_three_channel_partial_framecrc_records_match_ffmpeg_oracle",
+  "pcm_oracle::pcm_s16le_nine_channel_framecrc_records_match_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_file_output_matches_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_packetized_file_output_matches_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_odd_packet_file_output_matches_ffmpeg_oracle",
@@ -589,6 +601,8 @@ differential_tests = [
   "wav_oracle::wav_pcm_s16le_extensible_generated_framecrc_matches_ffmpeg_oracle",
   "wav_oracle::wav_pcm_s16le_duplicate_data_chunk_last_data_used_for_framecrc",
   "wav_oracle::wav_pcm_s16le_duplicate_fmt_short_second_is_ignored_for_framecrc",
+  "wav_oracle::wav_pcm_s16le_duplicate_fmt_unsupported_second_is_ignored_for_framecrc",
+  "yuv4mpegpipe_oracle::yuv4mpegpipe_leading_whitespace_before_first_frame_is_accepted_by_oracle",
   "image2_oracle::image2_ppm_single_file_output_matches_ffmpeg_oracle",
   "image2_oracle::image2_ppm_numbered_sequence_file_output_matches_ffmpeg_oracle",
   "image2_oracle::image2_ppm_single_framecrc_records_match_ffmpeg_oracle",
@@ -607,6 +621,18 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest AVPacket raw side-data update: pinned libavcodec rows now prove
+# packet-owned `av_packet_add_side_data()` and `av_packet_new_side_data()`
+# accept raw numeric side-data types at `AV_PKT_DATA_NB` and
+# `AV_PKT_DATA_NB + 1` before the packet-owned capacity ceiling is reached.
+# Rust preserves the raw integer through `PacketSideDataKind::Raw` while still
+# rejecting invalid display names at the safe SideData construction boundary.
+# The unit, oracle, and `avutil_core_models` deterministic fuzz fixture cover
+# the bounded behavior.
+# Latest media evidence: raw pcm_s16le nine-channel, YUV4MPEG2 leading
+# whitespace before the first frame marker, and WAV duplicate-fmt unsupported
+# second-chunk rows are now mapped to avutil-packet, validating the current
+# Packet handoff in those constrained demuxer -> framecrc paths.
 # Latest AVPacket raw-flag update: pinned libavcodec rows now prove
 # AVPacket.flags retains unknown raw bits such as 0x4000 through copy-props,
 # ref, clone, and move operations, with move resetting the source. Rust
@@ -2504,6 +2530,8 @@ unit_tests = [
   "ffmpeg::tests::ffmpeg_version_and_buildconf_without_banner_for_preceding_invalid_loglevel",
   "ffmpeg::tests::ffmpeg_output_rejects_double_dash_version_like_upstream",
   "ffmpeg::tests::ffmpeg_version_vs_buildconf_follows_arg_order",
+  "ffmpeg::tests::ffmpeg_version_request_follows_value_option",
+  "ffmpeg::tests::ffmpeg_buildconf_request_follows_value_option",
   "ffprobe::tests::ffprobe_output_prints_version_banner",
   "ffprobe::tests::ffprobe_output_accepts_hide_banner_with_version",
   "ffprobe::tests::ffprobe_buildconf_output_prints_configuration",
@@ -2513,6 +2541,8 @@ unit_tests = [
   "ffprobe::tests::ffprobe_version_and_buildconf_without_banner_for_preceding_invalid_loglevel",
   "ffprobe::tests::ffprobe_output_rejects_double_dash_version_like_upstream",
   "ffprobe::tests::ffprobe_version_vs_buildconf_follows_arg_order",
+  "ffprobe::tests::ffprobe_version_request_follows_value_option",
+  "ffprobe::tests::ffprobe_buildconf_request_follows_value_option",
   "option_parser::tests::treats_buildconf_as_global_flag",
   "option_parser::tests::double_dash_options_are_not_normalized_to_single_dash_options",
   "option_parser::tests::standalone_version_and_buildconf_detection_skips_option_values",
@@ -2534,11 +2564,13 @@ differential_tests = [
   "tests/differential/mappings.txt:fftools-version|oracle-version-buildconf-invalid-loglevel-prefix",
   "tests/differential/mappings.txt:fftools-version|oracle-version-buildconf-trailing-hide-banner",
   "tests/differential/mappings.txt:fftools-version|oracle-version-trailing-loglevel-precedence",
+  "tests/differential/mappings.txt:fftools-version|oracle-version-prior-value-options",
   "version_oracle::dash_prefixed_values_are_consumed_before_special_requests",
   "version_oracle::version_and_buildconf_preempt_late_value_options",
   "version_oracle::version_buildconf_fail_without_banner_for_preceding_invalid_loglevel",
   "version_oracle::version_and_buildconf_trailing_hide_banner_is_ignored",
   "version_oracle::loglevel_precedence_for_version_requests_matches_oracle",
+  "version_oracle::version_requests_respect_prior_value_options",
 ]
 fate_tests = [
   "tests/fate/mappings.txt:fftools-version|local-version-unit",
@@ -2557,6 +2589,9 @@ fuzz_targets = []
 # prove an immediate trailing `-loglevel` controls invalid-loglevel diagnostics
 # for version/buildconf requests, while a later `-loglevel` overrides an earlier
 # trailing `-v` candidate for the bounded rows.
+# Latest prior value-option slice: pinned ffmpeg/ffprobe rows now prove
+# `-loglevel error -version` and `-loglevel error -buildconf` still execute the
+# special request after consuming the prior value option, with no stderr.
 notes = "Version/buildconf command support exists but is not byte-identical to upstream. The Rust version banner uses FFmpeg-shaped dual library ABI lines (`current / configured`) and reports the pinned target version/profile, while keeping Rust-specific build text. The Rust `-buildconf` path reports the selected default-native configure flag surface as an FFmpeg-shaped indented configuration block without the normal version line or library table; it also mirrors the pinned oracle's preemptive `-buildconf` shape where unknown trailing options do not make the request fail. When `-version` and `-buildconf` are both present, Rust follows pinned FFmpeg/ffprobe first-occurrence precedence: `-version -buildconf` prints the version/library surface, while `-buildconf -version` prints the build configuration surface. The latest version-order evidence proves `-version` ignores later unknown options, while an earlier unknown option causes failure after the version banner is carried to stderr like the pinned tools. The latest late-value-option evidence proves `-version -f` and `-buildconf -f` preempt a trailing value-taking option before missing-value diagnostics, matching pinned ffmpeg/ffprobe success output for the bounded rows. The latest trailing-loglevel evidence proves pinned ffmpeg/ffprobe still exit successfully for `-version -loglevel warn` and `-buildconf -loglevel foo` while emitting an `Invalid loglevel` diagnostic after the special request; the Rust binary paths now emit the same success/diagnostic shape. The latest dash-prefixed-value evidence proves value-taking options consume `-version`, `-buildconf`, and invalid `-loglevel`-shaped tokens as values before special request handling, matching pinned ffmpeg/ffprobe failure shape for the bounded `-f -version ...` and `-v -not-a-level ...` cases. The pinned FFmpeg 8.1.1 oracle is installed locally through WSL wrappers under ignored third_party/ffmpeg-oracle/, and the differential harness runs pinned ffmpeg/ffprobe -version, checks the target 8.1.1 first-line version prefix, compares the reported libav* ABI versions against the Rust banner constants, verifies that `-hide_banner -version` prints the same version surface as `-version`, verifies that GNU-style `--version` is not a clean successful version request, verifies the `-buildconf` configuration-block shape plus unknown-option preemption for both tools, verifies mixed `-version`/`-buildconf` precedence for both tools, verifies version/unknown-option ordering, verifies trailing invalid-loglevel success diagnostics, verifies dash-prefixed values are consumed before standalone special request detection, and verifies late value-taking options do not override already-detected special requests. The buildconf row compares shape rather than exact configure flags because the Rust implementation reports the selected compatibility profile while the local WSL oracle wrapper includes bootstrap-local `--prefix` and `--disable-x86asm` flags. `cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component fftools-version --target oracle-ffmpeg-version --target oracle-ffprobe-version --target oracle-double-dash-version-rejection --target oracle-hide-banner-version --target oracle-buildconf-surface --target oracle-version-buildconf-precedence --target oracle-version-unknown-order --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd` passed; the trailing invalid-loglevel row was separately validated by `cargo test -p fftools --test version_oracle version_requests_warn_for_later_invalid_loglevel_but_still_succeed -- --ignored --nocapture`. It derives ffprobe from FFPROBE_ORACLE, a sibling of FFMPEG_ORACLE, or the standard third_party oracle path including the generated ffmpeg.cmd/ffprobe.cmd wrappers; env-provided relative oracle paths are resolved against the repository root in the version oracle harness. WSL process checks for `ffmpeg-rs -version`, `ffprobe-rs -version`, `ffmpeg-rs --version`, and `ffprobe-rs --version` passed, with the double-dash forms exiting nonzero. The bootstrap script now emits .cmd oracle wrappers that propagate WSL exit codes for future installs. The local FATE-runner smoke mappings execute version and buildconf unit filters only and do not count as upstream FATE parity."
 blocked_reason = ""
 
@@ -3258,6 +3293,7 @@ unit_tests = [
   "option_parser::tests::preserves_raw_numeric_loglevel_thresholds",
   "option_parser::tests::rejects_invalid_loglevel_values",
   "option_parser::tests::standalone_version_and_buildconf_detection_skips_option_values",
+  "option_parser::tests::treats_file_scoped_value_tokens_as_non_requests_when_followed_by_request_args",
   "ffprobe::tests::parses_and_rejects_ffprobe_loglevel_values",
   "option_parser::tests::treats_single_dash_as_output_url",
   "option_parser::tests::treats_start_number_as_file_scoped_value_option",
@@ -3295,6 +3331,8 @@ differential_tests = [
   "version_oracle::ffmpeg_repeated_diagnostics_match_default_repeat_summary_shape",
   "tests/differential/mappings.txt:fftools-option-parser|oracle-version-trailing-loglevel-precedence",
   "version_oracle::loglevel_precedence_for_version_requests_matches_oracle",
+  "tests/differential/mappings.txt:fftools-option-parser|oracle-version-prior-value-options",
+  "version_oracle::version_requests_respect_prior_value_options",
   "tests/differential/mappings.txt:fftools-ffmpeg-rawvideo-framecrc-null|oracle-rawvideo-framecrc-records",
   "rawvideo_oracle::rawvideo_rgb24_framecrc_records_match_ffmpeg_oracle",
 ]
@@ -3307,6 +3345,10 @@ fuzz_targets = ["fftools_option_parser"]
 # matches the bounded pinned ffmpeg/ffprobe precedence where immediate
 # `-loglevel` stops warning selection, later `-loglevel` can override `-v`,
 # and unknown options stop the post-special-request scan.
+# Latest prior value-option parser update: value-taking file/global options
+# such as `-c:a`, `-map`, and `-loglevel` consume a following `-version` token
+# as their value, so only a later standalone `-version`/`-buildconf` is treated
+# as the special request.
 notes = "Initial parser groups a small known option set, including file-scoped -start_number and output-scoped -hash, into global options, next input, or next output according to FFmpeg option ordering. Value-taking options now consume the following token even when it begins with `-`, with local coverage for codec-like `-ac3`, negative channel counts, and negative sample-rate-like values, while `-version` and `-buildconf` are detected as special requests only when they are standalone options rather than consumed values; pinned ffmpeg/ffprobe oracle rows prove the bounded `-f -version ...` and `-v -not-a-level ...` rejection shape. Repeated output groups preserve the file-option order attached to each output, and missing-value diagnostics include the full option token. It deliberately rejects unknown options and now validates -loglevel/-v values through the shared avutil LogLevel/LogFlags model for exact case-sensitive level names, known numeric severities including -8 quiet, raw numeric thresholds such as 23/57/-1/999, standalone repeat/level/time/datetime flag directives, default FFmpeg CLI repeat suppression, repeat/+repeat clearing AV_LOG_SKIP_REPEATED, -repeat setting it, +level/-level relative directives, and compound flag+level/raw-threshold values; pinned ffmpeg/ffprobe -version oracle rows now prove accepted and rejected directive forms. It preserves bounded stream-specifier option names including -c:, -c:0, -c:a:0, and trailing-colon -c:a: / -c:v: forms while rejecting consecutive-colon malformed forms such as -c::, -c::0, and -c:a::0; a bounded pinned oracle probe observed the same accepted/rejected shape. The ffprobe parser accepts the same constrained loglevel directive surface. It is partially wired into command execution: process-level ffmpeg-rs/ffprobe-rs diagnostic stderr now uses a shared best-effort argv scan plus avutil Logger/LogRecord/LogFormatOptions formatting for raw-threshold quiet/error filtering, quiet suppression, level-prefixed error lines, time/datetime prefixes when the current clock is available, repeat-summary compression for consecutive identical diagnostics when AV_LOG_SKIP_REPEATED is active, including the default and -repeat CLI forms, FFmpeg default-callback four-space repeat-summary indentation, and AV_LOG_FORCE_COLOR/AV_LOG_FORCE_NOCOLOR plus terminal-stderr-derived ANSI coloring with no-color precedence; deterministic tests cover repeat and non-repeat multi-record diagnostics, raw numeric threshold filtering, terminal/non-terminal stderr decisions, and forced no-color precedence without mutating process environment. Pinned ffmpeg invalid-MJPEG sequence oracle rows now prove default CLI repeated diagnostics emit the same indented summary and `repeat+error` preserves duplicate diagnostics without a summary. Full media-progress stderr and byte-identical upstream timestamp/color formatting remain incomplete. The local FATE-runner smoke mappings execute the option_parser and cli_logging unit filters only and do not count as upstream FATE parity. Build-checked cargo-fuzz target fftools_option_parser exercises bounded argv parsing, option arity invariants, valid loglevel directives, raw numeric loglevel thresholds, stream-specifier option names including malformed consecutive-colon rejection, file/global grouping, hash output option handling, and parse/render/parse stability, but actual local fuzz execution is blocked until cargo-fuzz is installed."
 blocked_reason = ""
 
@@ -4111,14 +4153,19 @@ differential_tests = [
   "tests/differential/mappings.txt:fftools-ffmpeg-wav-framecrc-null|oracle-wav-duplicate-data-last-framecrc-records",
   "tests/differential/mappings.txt:fftools-ffmpeg-wav-framecrc-null|oracle-wav-duplicate-data-last-empty-framecrc-records",
   "tests/differential/mappings.txt:fftools-ffmpeg-wav-framecrc-null|oracle-wav-duplicate-fmt-short-second-framecrc-records",
+  "tests/differential/mappings.txt:fftools-ffmpeg-wav-framecrc-null|oracle-wav-duplicate-fmt-unsupported-second-framecrc-records",
   "wav_oracle::wav_pcm_s16le_generated_framecrc_matches_ffmpeg_oracle",
   "wav_oracle::wav_pcm_s16le_extensible_generated_framecrc_matches_ffmpeg_oracle",
   "wav_oracle::wav_pcm_s16le_duplicate_data_chunk_last_data_used_for_framecrc",
   "wav_oracle::wav_pcm_s16le_duplicate_data_chunk_last_data_empty",
   "wav_oracle::wav_pcm_s16le_duplicate_fmt_short_second_is_ignored_for_framecrc",
+  "wav_oracle::wav_pcm_s16le_duplicate_fmt_unsupported_second_is_ignored_for_framecrc",
 ]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffmpeg-wav-framecrc-null|local-ffmpeg-unit"]
 fuzz_targets = []
+# Latest WAV oracle row proves a valid first `fmt ` chunk followed by a second
+# unsupported IEEE-float `fmt ` chunk still uses the first PCM parameters and
+# produces matching framecrc packet records.
 notes = "ffmpeg-rs command execution supports exactly one local seekable PCM s16le RIFF/WAVE input, including bounded WAVE_FORMAT_EXTENSIBLE PCM s16le input, and one stdout pipe output with explicit -f null or -f framecrc. It detects WAV by RIFF/WAVE signature or .wav extension, accepts explicit -f wav/-f wave, and uses the Rust WAV demuxer and Rust null/framecrc muxers. The bounded generated canonical, extensible, duplicate-data, and truncated duplicate-fmt PCM s16le WAV oracle rows compare normalized framecrc streamcopy records against pinned FFmpeg 8.1.1 `-c:a copy -f framecrc`, proving packet count, byte count, DTS, PTS, duration, size, checksum, FFmpeg's last-data-chunk selection, empty-last-data zero-packet behavior, and first-valid-fmt selection when a later duplicate fmt chunk is malformed. The local null output path and local unit coverage remain separate from upstream FATE parity. RF64/WAVE64, WAVE_FORMAT_EXTENSIBLE variants beyond PCM s16le, non-PCM formats, packet chunking, broad CLI execution, broader upstream FATE coverage, and sustained fuzz execution remain pending. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
@@ -4140,11 +4187,16 @@ unit_tests = [
 differential_tests = [
   "tests/differential/mappings.txt:fftools-ffmpeg-pcm-s16le-framecrc-null|oracle-pcm-s16le-framecrc-records",
   "tests/differential/mappings.txt:fftools-ffmpeg-pcm-s16le-framecrc-null|oracle-pcm-s16le-odd-framecrc-records",
+  "tests/differential/mappings.txt:fftools-ffmpeg-pcm-s16le-framecrc-null|oracle-pcm-s16le-nine-channel-framecrc-records",
   "pcm_oracle::pcm_s16le_framecrc_records_match_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_odd_packet_framecrc_records_match_ffmpeg_oracle",
+  "pcm_oracle::pcm_s16le_nine_channel_framecrc_records_match_ffmpeg_oracle",
 ]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffmpeg-pcm-s16le-framecrc-null|local-ffmpeg-unit"]
 fuzz_targets = []
+# Latest raw PCM oracle row proves a 9-channel single interleaved sample frame
+# produces one framecrc packet with unspecified channel layout metadata and
+# one-sample duration like pinned FFmpeg.
 notes = "ffmpeg-rs command execution now supports exactly one local seekable raw pcm_s16le input and one stdout pipe output with explicit -f s16le or -f pcm_s16le plus required -ar and -ac stream parameters. It uses the Rust raw PCM demuxer with 1024-sample packetization and the Rust null/framecrc muxers, rejects missing parameters, and preserves trailing partial and odd-byte packet payloads while computing duration from complete sample frames. The bounded stereo pcm_s16le framecrc oracle rows compare normalized Rust streamcopy packet rows against pinned FFmpeg 8.1.1 and prove packet count, byte count, sample-duration timing, payload size, and checksum for complete and non-sample-frame-aligned payload paths. Upstream FATE coverage and broader raw PCM/null output differential coverage remain pending. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
@@ -4389,12 +4441,17 @@ differential_tests = [
   "tests/differential/mappings.txt:fftools-ffmpeg-yuv4mpegpipe-framecrc-null|oracle-yuv4mpegpipe-framecrc-records",
   "tests/differential/mappings.txt:fftools-ffmpeg-yuv4mpegpipe-framecrc-null|oracle-yuv4mpegpipe-truncated-framecrc-records",
   "tests/differential/mappings.txt:fftools-ffmpeg-yuv4mpegpipe-framecrc-null|oracle-yuv4mpegpipe-unknown-x-extension-fields",
+  "tests/differential/mappings.txt:fftools-ffmpeg-yuv4mpegpipe-framecrc-null|oracle-yuv4mpegpipe-leading-whitespace-framecrc-records",
   "yuv4mpegpipe_oracle::yuv4mpegpipe_yuv420p_framecrc_records_match_ffmpeg_oracle",
   "yuv4mpegpipe_oracle::yuv4mpegpipe_truncated_frame_eof_records_match_ffmpeg_oracle",
   "yuv4mpegpipe_oracle::yuv4mpegpipe_unknown_x_extension_fields_match_ffmpeg_oracle",
+  "yuv4mpegpipe_oracle::yuv4mpegpipe_leading_whitespace_before_first_frame_is_accepted_by_oracle",
 ]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffmpeg-yuv4mpegpipe-framecrc-null|local-ffmpeg-unit"]
 fuzz_targets = []
+# Latest YUV4MPEG2 oracle row proves a leading whitespace-only frame-header
+# line before the first `FRAME` marker is ignored and the first frame still
+# produces the expected framecrc packet record.
 notes = "ffmpeg-rs command execution now supports exactly one local seekable yuv4mpegpipe input and one stdout pipe output with explicit -f yuv4mpegpipe or YUV4MPEG2/.y4m detection. It uses the Rust YUV4MPEG2 demuxer and Rust null/framecrc muxers, accepts the current progressive C420jpeg demuxer subset, rejects malformed stream headers, and treats truncated frame payloads at EOF as clean end-of-stream like pinned FFmpeg. The bounded two-frame yuv420p oracle row compares normalized framecrc streamcopy records against pinned FFmpeg 8.1.1 `-c:v copy -f framecrc`, proving packet count, byte count, DTS, PTS, duration, size, and checksum for that constrained CLI path. The truncated-frame oracle row proves FFmpeg-compatible zero-record output for a truncated first frame and one-record output for a complete first frame followed by a truncated tail. The local null output path and local unit coverage remain separate from upstream FATE parity. Broader chroma/interlace/frame-header handling, broad CLI execution, upstream FATE coverage, and sustained fuzz execution remain pending. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
@@ -4699,14 +4756,17 @@ differential_tests = [
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-mov-framecrc-records",
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-pcm-s16le-framecrc-records",
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-pcm-s16le-odd-framecrc-records",
+  "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-pcm-s16le-nine-channel-framecrc-records",
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-wav-generated-framecrc-records",
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-wav-extensible-framecrc-records",
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-wav-duplicate-data-last-framecrc-records",
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-wav-duplicate-data-last-empty-framecrc-records",
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-wav-duplicate-fmt-short-second-framecrc-records",
+  "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-wav-duplicate-fmt-unsupported-second-framecrc-records",
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-yuv4mpegpipe-framecrc-records",
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-yuv4mpegpipe-truncated-framecrc-records",
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-yuv4mpegpipe-unknown-x-extension-fields",
+  "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-yuv4mpegpipe-leading-whitespace-framecrc-records",
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-image2-single-framecrc-records",
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-image2-single-start-number-framecrc-records",
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-image2-sequence-framecrc-records",
@@ -4719,14 +4779,17 @@ differential_tests = [
   "pcm_oracle::pcm_s16le_framecrc_records_match_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_odd_packet_framecrc_records_match_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_three_channel_partial_framecrc_records_match_ffmpeg_oracle",
+  "pcm_oracle::pcm_s16le_nine_channel_framecrc_records_match_ffmpeg_oracle",
   "wav_oracle::wav_pcm_s16le_generated_framecrc_matches_ffmpeg_oracle",
   "wav_oracle::wav_pcm_s16le_extensible_generated_framecrc_matches_ffmpeg_oracle",
   "wav_oracle::wav_pcm_s16le_duplicate_data_chunk_last_data_used_for_framecrc",
   "wav_oracle::wav_pcm_s16le_duplicate_data_chunk_last_data_empty",
   "wav_oracle::wav_pcm_s16le_duplicate_fmt_short_second_is_ignored_for_framecrc",
+  "wav_oracle::wav_pcm_s16le_duplicate_fmt_unsupported_second_is_ignored_for_framecrc",
   "yuv4mpegpipe_oracle::yuv4mpegpipe_yuv420p_framecrc_records_match_ffmpeg_oracle",
   "yuv4mpegpipe_oracle::yuv4mpegpipe_truncated_frame_eof_records_match_ffmpeg_oracle",
   "yuv4mpegpipe_oracle::yuv4mpegpipe_unknown_x_extension_fields_match_ffmpeg_oracle",
+  "yuv4mpegpipe_oracle::yuv4mpegpipe_leading_whitespace_before_first_frame_is_accepted_by_oracle",
   "image2_oracle::image2_ppm_single_framecrc_records_match_ffmpeg_oracle",
   "image2_oracle::image2_ppm_single_framecrc_records_ignores_nonzero_start_number_like_rust",
   "image2_oracle::image2_ppm_numbered_sequence_framecrc_records_match_ffmpeg_oracle",
@@ -4750,6 +4813,10 @@ fuzz_targets = ["avformat_packet_muxers"]
 # unknown `X*` extension tokens surround or duplicate XCOLORRANGE fields.
 # Latest image2 oracle row proves framecrc packet records still match for a
 # bounded sequence whose first accepted frame number is i32::MAX.
+# Latest PCM/WAV/YUV oracle rows prove framecrc record parity for a 9-channel
+# raw pcm_s16le single-frame packet, a WAV duplicate `fmt ` file whose second
+# fmt is unsupported, and a YUV4MPEG2 file with leading whitespace before the
+# first frame marker.
 notes = "Initial internal framecrc-style muxer records one FFmpeg-shaped comma-separated line per packet with stream index, PTS/DTS, duration, size, and the FFmpeg framecrc Adler-style checksum initialized at zero. The ignored rawvideo oracle row compares normalized rgb24 framecrc packet rows against pinned FFmpeg streamcopy output, proving bounded video record parity for packet count, PTS, DTS, duration, payload size, and checksum. The ignored generated AVI oracle row compares normalized RGB24 AVI input framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape after AVI demuxing including DIB scanline-padding payload sizes and checksums. The ignored generated MOV oracle row compares normalized rgb24 MOV input framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape after MOV demuxing for packet timing, payload sizes, and checksums. The ignored raw PCM oracle rows compare normalized stereo pcm_s16le framecrc packet rows, including odd-byte/non-sample-frame-aligned payloads, against pinned FFmpeg streamcopy output, proving the same record shape for bounded audio packet timing, duration, payload size, and checksum. The ignored generated WAV oracle rows compare normalized canonical, WAVE_FORMAT_EXTENSIBLE, and duplicate-data PCM s16le WAV input framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape after WAV demuxing plus FFmpeg's last-data-chunk selection and empty-last-data zero-packet behavior. The ignored yuv4mpegpipe oracle rows compare normalized two-frame and truncated-tail yuv420p YUV4MPEG2 input framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape for bounded demuxed video packets and no-record/one-record EOF-truncation cases. The ignored image2 oracle rows compare normalized single-frame, single-frame nonzero-start-number, and two-frame PPM sequence framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape for bounded encoded-image packets and no start-number timing shift in single-image mode. Header byte identity remains outside the current claim. Build-checked cargo-fuzz target avformat_packet_muxers covers per-packet record fields, checksum stability, render/finish stability, and post-finish rejection. Broader input differential rows, byte-identical headers, upstream FATE coverage, and sustained fuzz execution are pending."
 blocked_reason = ""
 
@@ -4928,6 +4995,7 @@ unit_tests = [
   "wav::tests::returns_no_packet_for_empty_data_chunk",
   "wav::tests::uses_first_fmt_chunk_when_multiple_fmt_chunks_are_present",
   "wav::tests::ignores_truncated_duplicate_fmt_chunk_after_the_first_valid_fmt_chunk",
+  "wav::tests::uses_first_fmt_chunk_when_following_fmt_chunk_is_unsupported",
   "wav::tests::uses_last_data_chunk_when_multiple_data_chunks_are_present",
   "wav::tests::uses_last_empty_data_chunk_when_multiple_data_chunks_are_present",
 ]
@@ -4938,6 +5006,7 @@ differential_tests = [
   "tests/differential/mappings.txt:avformat-wav-demuxer|oracle-wav-duplicate-data-last-empty-framecrc-records",
   "tests/differential/mappings.txt:avformat-wav-demuxer|oracle-wav-duplicate-fmt-first-framecrc-records",
   "tests/differential/mappings.txt:avformat-wav-demuxer|oracle-wav-duplicate-fmt-short-second-framecrc-records",
+  "tests/differential/mappings.txt:avformat-wav-demuxer|oracle-wav-duplicate-fmt-unsupported-second-framecrc-records",
   "tests/differential/mappings.txt:avformat-wav-demuxer|oracle-wav-short-pcm-fmt-rejection",
   "tests/differential/mappings.txt:avformat-wav-demuxer|oracle-wav-missing-padding-after-odd-unknown-chunk-rejection",
   "tests/differential/mappings.txt:avformat-wav-demuxer|oracle-wav-missing-padding-after-odd-fmt-chunk-rejection",
@@ -4949,6 +5018,7 @@ differential_tests = [
   "crates/fftools/tests/wav_oracle.rs::wav_pcm_s16le_duplicate_data_chunk_last_data_empty",
   "crates/fftools/tests/wav_oracle.rs::wav_pcm_s16le_duplicate_fmt_chunk_first_fmt_used_for_framecrc",
   "crates/fftools/tests/wav_oracle.rs::wav_pcm_s16le_duplicate_fmt_short_second_is_ignored_for_framecrc",
+  "crates/fftools/tests/wav_oracle.rs::wav_pcm_s16le_duplicate_fmt_unsupported_second_is_ignored_for_framecrc",
   "crates/fftools/tests/wav_oracle.rs::wav_short_pcm_fmt_chunk_is_rejected_by_ffmpeg",
   "crates/fftools/tests/wav_oracle.rs::wav_missing_padding_after_odd_unknown_chunk_is_rejected_by_ffmpeg",
   "crates/fftools/tests/wav_oracle.rs::wav_missing_padding_after_odd_fmt_chunk_is_rejected_by_ffmpeg",
@@ -4974,6 +5044,11 @@ fuzz_targets = ["avformat_wav"]
 # truncated duplicate `fmt ` chunk is accepted like pinned FFmpeg 8.1.1; later
 # fmt chunks are skipped after the first valid one, and the data packet still
 # feeds matching framecrc output.
+# Latest orchestrated update: a valid first WAV `fmt ` chunk followed by an
+# unsupported IEEE-float duplicate `fmt ` chunk is accepted like pinned FFmpeg
+# 8.1.1; the first PCM parameters remain authoritative and the data packet
+# still feeds matching framecrc output. Deterministic fuzz corpus coverage now
+# includes this duplicate-fmt unsupported-second fixture.
 # Latest delegated update: duplicate WAV `fmt ` chunks now follow pinned FFmpeg
 # 8.1.1's first-fmt-chunk selection. Later fmt chunks are consumed but do not
 # override stream parameters. Unit, ignored oracle, differential mapping, and
@@ -5044,6 +5119,7 @@ unit_tests = [
   "yuv4mpegpipe::tests::parses_sample_aspect_token_variants",
   "yuv4mpegpipe::tests::parses_nonstandard_frame_header_fields_as_data",
   "yuv4mpegpipe::tests::invalid_frame_header_after_payload_is_error",
+  "yuv4mpegpipe::tests::treats_leading_whitespace_frame_headers_as_pad_and_parses_first_frame",
 ]
 differential_tests = [
   "tests/differential/mappings.txt:avformat-yuv4mpegpipe-demuxer|oracle-rawvideo-yuv4mpegpipe-file-output",
@@ -5053,6 +5129,7 @@ differential_tests = [
   "tests/differential/mappings.txt:avformat-yuv4mpegpipe-demuxer|oracle-yuv4mpegpipe-unknown-x-extension-fields",
   "tests/differential/mappings.txt:avformat-yuv4mpegpipe-demuxer|oracle-yuv4mpegpipe-flexible-frame-header-records",
   "tests/differential/mappings.txt:avformat-yuv4mpegpipe-demuxer|oracle-yuv4mpegpipe-invalid-first-marker-eof-records",
+  "tests/differential/mappings.txt:avformat-yuv4mpegpipe-demuxer|oracle-yuv4mpegpipe-leading-whitespace-framecrc-records",
   "tests/differential/mappings.txt:avformat-yuv4mpegpipe-demuxer|oracle-yuv4mpegpipe-sar-file-output",
   "tests/differential/mappings.txt:avformat-yuv4mpegpipe-demuxer|oracle-yuv4mpegpipe-sample-aspect-fields",
   "tests/differential/mappings.txt:avformat-yuv4mpegpipe-demuxer|oracle-yuv4mpegpipe-xcolorrange-remux",
@@ -5063,6 +5140,7 @@ differential_tests = [
   "yuv4mpegpipe_oracle::yuv4mpegpipe_unknown_x_extension_fields_match_ffmpeg_oracle",
   "yuv4mpegpipe_oracle::yuv4mpegpipe_flexible_frame_header_variants_match_ffmpeg_oracle",
   "yuv4mpegpipe_oracle::yuv4mpegpipe_invalid_first_frame_marker_is_clean_eof",
+  "yuv4mpegpipe_oracle::yuv4mpegpipe_leading_whitespace_before_first_frame_is_accepted_by_oracle",
   "yuv4mpegpipe_oracle::yuv4mpegpipe_sample_aspect_ratio_header_matches_ffmpeg_oracle",
   "yuv4mpegpipe_oracle::yuv4mpegpipe_sample_aspect_fields_match_ffmpeg_oracle",
   "yuv4mpegpipe_oracle::yuv4mpegpipe_xcolorrange_remux_preserves_color_range_oracle",
@@ -5086,6 +5164,10 @@ fuzz_targets = ["avformat_yuv4mpegpipe"]
 # Latest orchestrated update: XCOLORRANGE FULL/LIMITED metadata now survives a
 # bounded Rust demux/remux path and matches pinned FFmpeg 8.1.1 color_range
 # ffprobe output.
+# Latest orchestrated update: leading whitespace-only frame-header lines before
+# the first real `FRAME` marker are skipped like pinned FFmpeg 8.1.1. Unit,
+# ignored oracle, differential mapping, and deterministic fuzz-seed coverage
+# pin the bounded pre-first-frame behavior.
 notes = "Initial YUV4MPEG2 demuxer parses progressive 4:2:0 C420jpeg headers, validates dimensions and frame size through shared VideoStreamParameters plus PixelFormat::Yuv420p while keeping frame rate/interlace and chroma checks local, treats FFmpeg's `A0:0` yuv4mpegpipe header as unspecified sample aspect, parses non-default sample aspect ratios such as `A4:3`, ignores unknown YUV4MPEG2 `X*` extension fields including the pinned `XYSCSS=420JPEG` field, accepts empty `X` fields, parses duplicate `XCOLORRANGE` fields with last value winning, parses `XCOLORRANGE=FULL`/`LIMITED` into JPEG/MPEG color-range metadata while leaving unknown values unspecified, accepts bounded nonstandard frame headers that start with `FRAME`, and treats an invalid first frame marker as clean EOF with zero packets. It emits one stream-0 packet per complete frame with incrementing PTS, rejects unsupported chroma identifiers such as 420mpeg2/420paldv/422/444/mono with a typed Unsupported error, treats EOF-truncated frame payloads as clean end-of-stream after preserving any complete preceding frames, and treats invalid frame headers after an emitted payload as invalid data. The bounded yuv420p yuv4mpegpipe file-output oracle row parses pinned FFmpeg 8.1.1 y4m output with this demuxer after byte comparison, and the bounded YUV4MPEG2 input framecrc oracle row proves demuxed packet payload/timing through the Rust framecrc muxer against pinned FFmpeg streamcopy records. The truncated-frame oracle row proves FFmpeg-compatible zero-record output for a truncated first frame and one-record output for a complete first frame followed by a truncated tail. The ffprobe-backed oracle row proves empty `X`, FULL, LIMITED, and bogus `XCOLORRANGE` metadata against pinned FFmpeg 8.1.1 stream color_range output. The flexible-frame-header and invalid-first-marker oracle rows prove nonstandard `FRAME*` headers produce packet records and pre-packet malformed markers produce clean zero-record output. The sample-aspect oracle row proves a bounded `A4:3` stream remuxes with preserved header shape and sample-aspect metadata. Build-checked cargo-fuzz target avformat_yuv4mpegpipe exercises demuxer opening, XCOLORRANGE parsing, frame packet emission, flexible frame-header seeds, clean EOF after truncated payload tails, and parsed stream invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Other chroma modes, interlaced modes, frame header overrides beyond the accepted ignored suffix/field shape, broader CLI wiring, upstream FATE, and sustained fuzz execution are pending."
 blocked_reason = ""
 
@@ -5236,6 +5318,8 @@ unit_tests = [
   "pcm::tests::accepts_partial_final_sample_frame_like_raw_ffmpeg_demuxing",
   "pcm::tests::truncates_partial_packet_duration_to_complete_sample_frames",
   "pcm::tests::packetizes_multiple_packets_and_tracks_timestamps_with_odd_tail",
+  "pcm::tests::preserves_nine_channel_unspecified_layout_and_full_frame_timestamping",
+  "pcm::tests::rejects_packet_samples_that_overflow_packet_size",
 ]
 differential_tests = [
   "tests/differential/mappings.txt:avformat-pcm-s16le-demuxer|oracle-pcm-s16le-framecrc-records",
@@ -5243,6 +5327,7 @@ differential_tests = [
   "tests/differential/mappings.txt:avformat-pcm-s16le-demuxer|oracle-pcm-s16le-odd-framecrc-records",
   "tests/differential/mappings.txt:avformat-pcm-s16le-demuxer|oracle-pcm-s16le-empty-framecrc-records",
   "tests/differential/mappings.txt:avformat-pcm-s16le-demuxer|oracle-pcm-s16le-three-channel-partial-framecrc-records",
+  "tests/differential/mappings.txt:avformat-pcm-s16le-demuxer|oracle-pcm-s16le-nine-channel-framecrc-records",
   "tests/differential/mappings.txt:avformat-pcm-s16le-demuxer|oracle-pcm-s16le-file-output",
   "tests/differential/mappings.txt:avformat-pcm-s16le-demuxer|oracle-pcm-s16le-packetized-file-output",
   "tests/differential/mappings.txt:avformat-pcm-s16le-demuxer|oracle-pcm-s16le-odd-file-output",
@@ -5253,6 +5338,7 @@ differential_tests = [
   "pcm_oracle::pcm_s16le_odd_packet_framecrc_records_match_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_empty_framecrc_records_match_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_three_channel_partial_framecrc_records_match_ffmpeg_oracle",
+  "pcm_oracle::pcm_s16le_nine_channel_framecrc_records_match_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_file_output_matches_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_packetized_file_output_matches_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_odd_packet_file_output_matches_ffmpeg_oracle",
@@ -5266,6 +5352,10 @@ fuzz_targets = ["avformat_pcm_s16le"]
 # `s16le` inputs with zero sample rate or zero channels before packet output;
 # Rust rejects the same cases through the constrained CLI path with typed
 # invalid-argument context.
+# Latest nine-channel oracle slice: pinned FFmpeg 8.1.1 emits one packet for an
+# 18-byte 9-channel raw s16le input, with one-sample duration and unspecified
+# channel layout. Rust also rejects packet-size arithmetic overflow before
+# demuxer construction mutates state.
 notes = "Initial raw pcm_s16le demuxer slices interleaved sample-frame packets with configurable packet sample counts, sample-rate/channel validation through the shared avformat AudioStreamParameters helper, SampleFormat::S16-derived frame sizing, native or count-only ChannelLayoutSpec metadata where safe, and PTS measured in samples. It accepts trailing partial and odd-byte raw PCM packet payloads like FFmpeg's raw s16le demuxer while computing duration from complete interleaved sample frames, including zero-duration partial-only packet payloads. The bounded stereo pcm_s16le oracle rows compare Rust framecrc streamcopy records, raw s16le file output, multi-packet raw file output, and byte-exact WAV file output against pinned FFmpeg 8.1.1 output, proving the demuxed packet payload, byte count, sample-duration timing, packet count, and packet transfer into the constrained raw and WAV muxers for complete and non-sample-frame-aligned packet paths. Empty-input framecrc evidence now proves FFmpeg-style zero packet output with header-only framecrc success, and the three-channel 14-byte framecrc row proves FFmpeg's default 3-channel `2.1` layout plus duration truncation for a trailing partial interleaved sample frame. Build-checked cargo-fuzz target avformat_pcm_s16le exercises parameter validation, empty input, packet slicing including trailing partial/odd payloads and multi-packet timing, muxer byte preservation, and side-data invariants. Probe integration, other PCM formats, broader differential tests, upstream FATE, and sustained fuzz execution are pending. The local FATE-runner smoke mapping executes the pcm unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 

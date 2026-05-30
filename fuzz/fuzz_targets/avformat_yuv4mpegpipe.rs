@@ -23,14 +23,15 @@ const VALID_Y4M_A_MALFORMED_DENOM: &[u8] =
     b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg A1:foo\nFRAME\nabcdef";
 const VALID_Y4M_A_ZERO_NUMERATOR: &[u8] =
     b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg A4:3 A0:1\nFRAME\nabcdef";
-const VALID_Y4M_A_NEGATIVE: &[u8] =
-    b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg A-1:-2\nFRAME\nabcdef";
+const VALID_Y4M_A_NEGATIVE: &[u8] = b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg A-1:-2\nFRAME\nabcdef";
 const VALID_Y4M_A_INVALID_ONLY: &[u8] = b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg Afoo\nFRAME\nabcdef";
 const VALID_Y4M_A_EMPTY_FIELD: &[u8] = b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg A\nFRAME\nabcdef";
 const VALID_Y4M_X_UNKNOWN_EXTENSION: &[u8] =
     b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg XFOO=bar XCOLORRANGE=FULL XBAR=1\nFRAME\nabcdef";
 const VALID_Y4M_X_UNKNOWN_AND_DUPLICATE_RANGE: &[u8] =
     b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg XFOO=bar XCOLORRANGE=LIMITED XBAZ=2 XCOLORRANGE=FULL\nFRAME\nabcdef";
+const VALID_Y4M_LEADING_WHITESPACE_FRAME_HEADER: &[u8] =
+    b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg\n \nFRAME\nabcdef";
 const BASE_Y4M_HEADER: &[u8] = b"YUV4MPEG2 W2 H2 F25:1 Ip A1:1 C420jpeg\n";
 const VALID_FRAME_VARIANTS: &[&[u8]] = &[
     b"YUV4MPEG2 W2 H2 F25:1 Ip A1:1 C420jpeg\nFRAME\nabcdef",
@@ -48,6 +49,7 @@ fuzz_target!(|data: &[u8]| {
     exercise_frame_variants();
     exercise_sample_aspect_fields();
     exercise_unknown_x_extension_fields();
+    exercise_leading_whitespace_frame_header();
     exercise_y4m(VALID_Y4M);
 });
 
@@ -202,10 +204,28 @@ fn exercise_sample_aspect_fields() {
 }
 
 fn exercise_unknown_x_extension_fields() {
-    for input in [VALID_Y4M_X_UNKNOWN_EXTENSION, VALID_Y4M_X_UNKNOWN_AND_DUPLICATE_RANGE] {
-        let mut demuxer = Yuv4MpegDemuxer::open(input)
-            .expect("valid yuv4mpegpipe x extension seed should parse");
+    for input in [
+        VALID_Y4M_X_UNKNOWN_EXTENSION,
+        VALID_Y4M_X_UNKNOWN_AND_DUPLICATE_RANGE,
+    ] {
+        let mut demuxer =
+            Yuv4MpegDemuxer::open(input).expect("valid yuv4mpegpipe x extension seed should parse");
         assert_eq!(demuxer.read_packet().unwrap().unwrap().data(), b"abcdef");
         assert!(matches!(demuxer.read_packet(), Ok(None)));
     }
+}
+
+fn exercise_leading_whitespace_frame_header() {
+    let mut demuxer = Yuv4MpegDemuxer::open(VALID_Y4M_LEADING_WHITESPACE_FRAME_HEADER)
+        .expect("leading whitespace frame-header seed should parse");
+    let packet = demuxer
+        .read_packet()
+        .expect("leading whitespace frame-header seed should yield a packet")
+        .expect("leading whitespace frame-header seed should contain a frame");
+    assert_eq!(packet.stream_index(), 0);
+    assert_eq!(packet.pts(), Some(0));
+    assert_eq!(packet.dts(), Some(0));
+    assert_eq!(packet.duration(), 1);
+    assert_eq!(packet.data(), b"abcdef");
+    assert!(matches!(demuxer.read_packet(), Ok(None)));
 }

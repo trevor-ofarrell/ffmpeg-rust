@@ -7,6 +7,8 @@ use libfuzzer_sys::fuzz_target;
 const VALID_STEREO: &[u8] = &[0, 0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0];
 const PARTIAL_THREE_CHANNEL: &[u8] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
 const ODD_STEREO_PACKET: &[u8] = &[0, 1, 2, 3, 4];
+const FULL_NINE_CHANNEL_FRAME: &[u8] =
+    &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
 
 fuzz_target!(|data: &[u8]| {
     let sample_rate = data
@@ -21,9 +23,11 @@ fuzz_target!(|data: &[u8]| {
     exercise_pcm(payload, sample_rate, channels, packet_samples);
     exercise_pcm(VALID_STEREO, 48_000, 2, 2);
     exercise_pcm(PARTIAL_THREE_CHANNEL, 48_000, 3, 1024);
+    exercise_pcm(FULL_NINE_CHANNEL_FRAME, 48_000, 9, 1024);
     exercise_pcm(&[], 48_000, 2, 1024);
     let odd_payload = vec![0_u8; 4_105];
     exercise_pcm(&odd_payload, 48_000, 2, 1024);
+    exercise_pcm_overflow_packet_samples_guard();
     exercise_pcm_s16le_muxer(VALID_STEREO);
     exercise_pcm_s16le_muxer(PARTIAL_THREE_CHANNEL);
     exercise_pcm_s16le_muxer(ODD_STEREO_PACKET);
@@ -106,6 +110,10 @@ fn sample_rate_from(byte: u8) -> u32 {
         5 => 192_000,
         _ => u32::MAX,
     }
+}
+
+fn exercise_pcm_overflow_packet_samples_guard() {
+    assert!(PcmS16leDemuxer::open(&[0_u8], 48_000, 2, usize::MAX).is_err());
 }
 
 fn exercise_pcm_s16le_muxer(payload: &[u8]) {

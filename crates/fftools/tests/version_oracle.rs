@@ -103,6 +103,13 @@ fn version_and_buildconf_preempt_late_value_options() {
 
 #[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn version_requests_respect_prior_value_options() {
+    compare_version_buildconf_after_prior_value_option("ffmpeg");
+    compare_version_buildconf_after_prior_value_option("ffprobe");
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
 fn version_requests_warn_for_later_invalid_loglevel_but_still_succeed() {
     compare_trailing_invalid_loglevel_warning("ffmpeg", "-version", "warn");
     compare_trailing_invalid_loglevel_warning("ffprobe", "-version", "warn");
@@ -482,6 +489,93 @@ fn compare_version_buildconf_ignores_value_option_tail(tool_name: &str) {
             let rust_buildconf = ffprobe_output(&strings(&["-buildconf", "-f"]))
                 .expect("Rust ffprobe buildconf should ignore trailing -f");
             assert_buildconf_shape(tool_name, &rust_buildconf, "Rust");
+        }
+        other => panic!("unsupported tool `{other}`"),
+    }
+}
+
+fn compare_version_buildconf_after_prior_value_option(tool_name: &str) {
+    let oracle = oracle_tool(tool_name);
+
+    let oracle_version = run_oracle(&oracle, tool_name, &["-loglevel", "error", "-version"]);
+    assert!(
+        oracle_version.status_success,
+        "oracle `{}` should accept value-option then -version ordering, got stdout:\n{}\nstderr:\n{}",
+        oracle.display(),
+        oracle_version.stdout,
+        oracle_version.stderr
+    );
+    assert!(
+        oracle_version
+            .stdout
+            .starts_with(&format!("{tool_name} version {TARGET_FFMPEG_VERSION}")),
+        "oracle `{}` should emit version banner after preceding value option, got:\n{}",
+        oracle.display(),
+        oracle_version.stdout
+    );
+    assert!(
+        oracle_version.stderr.is_empty(),
+        "oracle `{}` should keep trailing value-option version request stderr-free, got:\n{}",
+        oracle.display(),
+        oracle_version.stderr
+    );
+
+    let oracle_buildconf = run_oracle(&oracle, tool_name, &["-loglevel", "error", "-buildconf"]);
+    assert!(
+        oracle_buildconf.status_success,
+        "oracle `{}` should accept value-option then -buildconf ordering, got stdout:\n{}\nstderr:\n{}",
+        oracle.display(),
+        oracle_buildconf.stdout,
+        oracle_buildconf.stderr
+    );
+    assert!(
+        oracle_buildconf.stderr.is_empty(),
+        "oracle `{}` should keep trailing value-option buildconf stderr-free, got:\n{}",
+        oracle.display(),
+        oracle_buildconf.stderr
+    );
+    let oracle_buildconf_combined =
+        format!("{}{}", oracle_buildconf.stdout, oracle_buildconf.stderr);
+    assert_buildconf_shape(
+        tool_name,
+        normalized_buildconf_output(tool_name, &oracle_buildconf_combined),
+        "oracle",
+    );
+
+    match tool_name {
+        "ffmpeg" => {
+            let rust_version = ffmpeg_output(&strings(&["-loglevel", "error", "-version"]))
+                .expect("Rust ffmpeg version request should be recognized after value option");
+            assert!(
+                rust_version
+                    .stdout()
+                    .starts_with(version_banner("ffmpeg").as_str()),
+                "Rust ffmpeg should emit version banner after value-option prefix, got:\n{}",
+                rust_version.stdout()
+            );
+            assert!(rust_version.stderr().is_empty());
+            assert_eq!(rust_version.output_format(), None);
+
+            let rust_buildconf = ffmpeg_output(&strings(&["-loglevel", "error", "-buildconf"]))
+                .expect("Rust ffmpeg buildconf request should be recognized after value option");
+            assert!(rust_buildconf.stdout().starts_with("  configuration:\n"));
+            assert!(!rust_buildconf.stdout().contains("ffmpeg version"));
+            assert!(rust_buildconf.stderr().is_empty());
+            assert_eq!(rust_buildconf.output_format(), None);
+        }
+        "ffprobe" => {
+            let rust_version = ffprobe_output(&strings(&["-loglevel", "error", "-version"]))
+                .expect("Rust ffprobe version request should be recognized after value option");
+            assert!(
+                rust_version.starts_with("ffprobe version 8.1.1-rust target FFmpeg 8.1.1"),
+                "Rust ffprobe should emit version banner after value-option prefix, got:\n{}",
+                rust_version
+            );
+
+            let rust_buildconf = ffprobe_output(&strings(&["-loglevel", "error", "-buildconf"]))
+                .expect("Rust ffprobe buildconf request should be recognized after value option");
+            assert_buildconf_shape(tool_name, &rust_buildconf, "Rust");
+            assert!(!rust_buildconf.contains("ffprobe version"));
         }
         other => panic!("unsupported tool `{other}`"),
     }

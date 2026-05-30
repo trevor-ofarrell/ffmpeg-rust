@@ -2122,6 +2122,21 @@ mod tests {
     }
 
     #[test]
+    fn ffprobe_version_request_follows_value_option() {
+        let stdout = ffprobe_output(&strings(&["-loglevel", "error", "-version"])).unwrap();
+
+        assert!(stdout.starts_with("ffprobe version 8.1.1-rust target FFmpeg 8.1.1"));
+    }
+
+    #[test]
+    fn ffprobe_buildconf_request_follows_value_option() {
+        let stdout = ffprobe_output(&strings(&["-loglevel", "error", "-buildconf"])).unwrap();
+
+        assert!(stdout.starts_with("  configuration:\n"));
+        assert!(!stdout.contains("ffprobe version"));
+    }
+
+    #[test]
     fn ffprobe_buildconf_output_prints_configuration() {
         let stdout = ffprobe_output(&strings(&["-hide_banner", "-buildconf"])).unwrap();
 

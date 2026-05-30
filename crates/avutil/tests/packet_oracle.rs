@@ -2498,6 +2498,38 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:side-add-zero".to_string(),
         side_data_summary_fields(&packet),
     );
+
+    let mut raw_packet = Packet::default();
+    let raw_add_kind =
+        PacketSideDataKind::from_ffmpeg_raw_value(PacketSideDataKind::KNOWN.len() as i32);
+    let raw_added = raw_packet
+        .try_add_side_data(SideData::new_with_kind(raw_add_kind, vec![0x7e]).unwrap())
+        .unwrap();
+    assert!(raw_added.is_none());
+    rows.insert(
+        "packet:side-add-raw-type-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:side-add-raw-type".to_string(),
+        side_data_summary_fields(&raw_packet),
+    );
+
+    let raw_new_kind =
+        PacketSideDataKind::from_ffmpeg_raw_value(PacketSideDataKind::KNOWN.len() as i32 + 1);
+    raw_packet
+        .new_side_data(raw_new_kind, 2)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0x6a, 0x6b]);
+    rows.insert(
+        "packet:side-new-raw-type-ret".to_string(),
+        vec!["1".to_string()],
+    );
+    rows.insert(
+        "packet:side-new-raw-type".to_string(),
+        side_data_summary_fields(&raw_packet),
+    );
 }
 
 fn insert_side_data_capacity_rows(rows: &mut BTreeMap<String, Vec<String>>) {
@@ -4818,6 +4850,28 @@ static void exercise_side_data_api(void) {
     printf("packet:side-add-zero-ret|%d\n", ret);
     fail_if(ret < 0, "av_packet_add_side_data zero failed");
     print_side_data_summary("packet:side-add-zero", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    owned = av_mallocz(1 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!owned, "av_mallocz raw packet side data failed");
+    owned[0] = 0x7e;
+    ret = av_packet_add_side_data(pkt, (enum AVPacketSideDataType)AV_PKT_DATA_NB,
+                                  owned, 1);
+    if (ret < 0)
+        av_free(owned);
+    printf("packet:side-add-raw-type-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_add_side_data raw type failed");
+    print_side_data_summary("packet:side-add-raw-type", pkt);
+
+    sd = av_packet_new_side_data(pkt,
+                                 (enum AVPacketSideDataType)(AV_PKT_DATA_NB + 1),
+                                 2);
+    printf("packet:side-new-raw-type-ret|%d\n", sd != NULL);
+    fail_if(!sd, "av_packet_new_side_data raw type failed");
+    sd[0] = 0x6a;
+    sd[1] = 0x6b;
+    print_side_data_summary("packet:side-new-raw-type", pkt);
     av_packet_free(&pkt);
 }
 

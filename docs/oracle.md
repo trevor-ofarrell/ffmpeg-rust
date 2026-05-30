@@ -113,6 +113,15 @@ timeout while rebuilding sanitizer artifacts; the process was stopped after
 confirming no crash artifact, and the Windows fuzz build/clippy checks for
 `avutil_core_models` passed.
 
+The latest orchestrated media-edge fuzz fixtures add deterministic seeds for
+packet-owned raw numeric side data in `avutil_core_models`, raw `pcm_s16le`
+9-channel packetization and packet-size overflow guarding in
+`avformat_pcm_s16le`, WAV duplicate-`fmt ` with an unsupported second format in
+`avformat_wav`, and YUV4MPEG2 leading whitespace before the first frame marker
+in `avformat_yuv4mpegpipe`. Windows-side fuzz build/clippy checks are the
+baseline for these targets on this turn; sanitizer-backed WSL `cargo fuzz run`
+smokes remain desirable before promoting any affected component to complete.
+
 The latest yuv4mpegpipe parser fuzz smoke ran through WSL with `cargo fuzz run avformat_yuv4mpegpipe -- -runs=1` after adding malformed, duplicate, signed, and zero sample-aspect field fixtures. This records only bounded sanitizer-backed smoke evidence for the current corpus, not a sustained fuzz campaign.
 
 `cargo run -p fate-runner -- list` reads `PORTING_LEDGER.toml` and lists known components. `cargo run -p fate-runner -- status --next 5` reports the current strict completion count/percentage, status counts, and the next priority-sorted incomplete components. `cargo run -p fate-runner -- mappings` reads `tests/fate/mappings.txt` and lists configured component-target commands; add repeated `--component <id>` and/or `--target <name>` filters to narrow the listing to exact component IDs or target names, or add `--check-prereqs` with `--samples <path>` and `--oracle-ffmpeg <path>` to resolve placeholders and validate all listed mapping prerequisites without executing commands. `cargo run -p fate-runner -- run --changed` inspects git changed paths, maps currently covered Rust modules, dependency manifests and lockfile, cargo-fuzz target files, selected fuzz corpus directories, `tests/differential/` files, and the version/loglevel, rawvideo/PCM/dict/options/pixel-format/sample-format/channel-layout/color/WAV oracle integration harnesses to ledger component IDs, and runs explicit command mappings from the selected mapping file for selected components. Explicit runs may pass `--component <id>` more than once to select multiple components in one invocation; duplicate component IDs are coalesced before execution. Repeated `--target <name>` filters narrow run selection to exact target names, and a selected component whose mappings are all filtered out still fails as unmapped rather than silently passing. Add `--dry-run` to resolve and print selected mappings, including prerequisite validation, without executing them. The mapping format is documented in `tests/fate/README.md` as `component_id|target|workdir|program|arg1|arg2|...`.

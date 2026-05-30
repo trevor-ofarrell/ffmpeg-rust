@@ -109,8 +109,20 @@ impl<'a> Yuv4MpegDemuxer<'a> {
             return Ok(None);
         }
 
-        let frame_header =
-            read_required_line(self.input, &mut self.position, "YUV4MPEG2 frame header")?;
+        let frame_header = loop {
+            let frame_header =
+                read_required_line(self.input, &mut self.position, "YUV4MPEG2 frame header");
+            match frame_header {
+                Ok(frame_header) if self.next_pts == 0 && frame_header.trim().is_empty() => {
+                    continue;
+                }
+                Ok(frame_header) => break frame_header,
+                Err(err) if self.next_pts == 0 && err.kind() == AvErrorKind::EndOfFile => {
+                    return Ok(None);
+                }
+                Err(err) => return Err(err),
+            }
+        };
         if let Err(err) = parse_frame_header(frame_header) {
             if err.kind() == AvErrorKind::InvalidData && self.next_pts == 0 {
                 return Ok(None);
@@ -774,6 +786,21 @@ mod tests {
         assert_eq!(packet.data(), first.as_slice());
         assert_eq!(packet.duration(), 1);
         assert_eq!(demuxer.read_packet().unwrap(), None);
+        assert_eq!(demuxer.read_packet().unwrap(), None);
+    }
+
+    #[test]
+    fn treats_leading_whitespace_frame_headers_as_pad_and_parses_first_frame() {
+        let payload = frame_bytes(6, 0x77);
+        let mut input = y4m_bytes("W2 H2 F25:1 Ip C420jpeg", &[]);
+        input.extend_from_slice(b" \nFRAME\n");
+        input.extend_from_slice(&payload);
+
+        let mut demuxer = Yuv4MpegDemuxer::open(&input).unwrap();
+        assert_eq!(
+            demuxer.read_packet().unwrap().unwrap().data(),
+            payload.as_slice()
+        );
         assert_eq!(demuxer.read_packet().unwrap(), None);
     }
 

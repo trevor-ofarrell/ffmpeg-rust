@@ -348,6 +348,34 @@ mod tests {
     }
 
     #[test]
+    fn rejects_packet_samples_that_overflow_packet_size() {
+        let err = PcmS16leDemuxer::open(&[0, 0], 48_000, 2, usize::MAX).unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(err.message(), "pcm_s16le packet size overflow");
+    }
+
+    #[test]
+    fn preserves_nine_channel_unspecified_layout_and_full_frame_timestamping() {
+        let payload: Vec<u8> = (0_u8..18).collect();
+        let mut demuxer = PcmS16leDemuxer::open(&payload, 48_000, 9, 1024).unwrap();
+
+        assert_eq!(demuxer.info().sample_rate(), 48_000);
+        assert_eq!(demuxer.info().channels(), 9);
+        assert_eq!(demuxer.info().channel_layout(), None);
+        assert_eq!(demuxer.info().bytes_per_sample_frame(), 18);
+        assert_eq!(demuxer.info().packet_size(), 18 * 1024);
+        assert_eq!(demuxer.info().total_samples_per_channel(), 1);
+
+        let packet = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(packet.data(), payload.as_slice());
+        assert_eq!(packet.duration(), 1);
+        assert_eq!(packet.pts(), Some(0));
+        assert_eq!(packet.dts(), Some(0));
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
     fn rejects_invalid_parameters() {
         let err = PcmS16leDemuxer::open(&[0, 0], 0, 2, 1).unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::InvalidArgument);

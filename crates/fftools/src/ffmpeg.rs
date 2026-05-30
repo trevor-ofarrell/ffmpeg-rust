@@ -1799,6 +1799,27 @@ mod tests {
     }
 
     #[test]
+    fn ffmpeg_version_request_follows_value_option() {
+        let output = ffmpeg_output(&strings(&["-f", "lavfi", "-version"])).unwrap();
+
+        assert!(output
+            .stdout()
+            .starts_with(version_banner("ffmpeg").as_str()));
+        assert!(output.stderr().is_empty());
+        assert_eq!(output.output_format(), None);
+    }
+
+    #[test]
+    fn ffmpeg_buildconf_request_follows_value_option() {
+        let output = ffmpeg_output(&strings(&["-f", "lavfi", "-buildconf"])).unwrap();
+
+        assert!(output.stdout().starts_with("  configuration:\n"));
+        assert!(!output.stdout().contains("ffmpeg version"));
+        assert!(output.stderr().is_empty());
+        assert_eq!(output.output_format(), None);
+    }
+
+    #[test]
     fn ffmpeg_buildconf_output_prints_configuration() {
         let output = ffmpeg_output(&strings(&["-hide_banner", "-buildconf"])).unwrap();
 

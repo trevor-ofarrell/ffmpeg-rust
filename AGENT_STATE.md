@@ -3,54 +3,56 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active. The latest
-xhigh fast/full-access worker batch has been reviewed, integrated, and closed:
-Ohm (`avutil-options` whitespace-only shorthand), Helmholtz
-(`fftools-version` trailing loglevel precedence), Aristotle
-(`avformat-wav-demuxer` missing padding after odd `fmt ` chunk), and Zeno
-(`avformat-image2-demuxer` start_number max/overflow range). The main thread
-also added AVPacket raw unknown-flag preservation and fixed `fate-runner`
-changed-path selection for `fuzz/corpus/avformat_image2/`. No approval prompts
+xhigh fast/full-access worker batch has been reviewed, integrated, validated,
+and closed: Jason (`avformat-pcm-s16le-demuxer` 9-channel raw PCM),
+Tesla (`avformat-yuv4mpegpipe-demuxer` leading whitespace before first frame),
+Poincare (`fftools-version` prior value-option requests), and Hume
+(`avformat-wav-demuxer` duplicate `fmt ` with unsupported second format). The
+main thread added AVPacket raw numeric side-data type preservation and updated
+ledger, docs, differential mappings, and state centrally. No approval prompts
 were used.
 
 This batch added bounded strict-parity evidence for `avutil-packet`,
-`avutil-options`, `avformat-wav-demuxer`, `avformat-image2-demuxer`,
-`avformat-framecrc-muxer`, `fftools-version`, `fftools-option-parser`,
-`fftools-ffmpeg-image2-sequence-framecrc-null`, and
-`fftools-ffmpeg-image2-start-number`. No component was promoted to `complete`;
-strict completion remains 11/96 components, about 11.5%.
+`avformat-pcm-s16le-demuxer`, `fftools-ffmpeg-pcm-s16le-framecrc-null`,
+`avformat-yuv4mpegpipe-demuxer`,
+`fftools-ffmpeg-yuv4mpegpipe-framecrc-null`, `avformat-wav-demuxer`,
+`fftools-ffmpeg-wav-framecrc-null`, `avformat-framecrc-muxer`,
+`fftools-version`, and `fftools-option-parser`. No component was promoted to
+`complete`; strict completion remains 11/96 components, about 11.5%.
 
-Latest committed slice: `e42b1bd8 Pin orchestrated status and parser edge
-parity`. Pending coherent slice: `Pin raw packet flags and edge oracle parity`,
-covering worker evidence, image2 corpus changed-selection, ledger, docs, state,
-and validation.
+Latest committed slice: `Pin raw side data and media edge parity`,
+covering the new worker evidence, raw packet side-data evidence, differential
+mappings, ledger, docs, state, and validation.
 
 Latest validation commands for the current orchestrated evidence batch passed:
-focused local unit tests for `avutil` packet flags and AVOption
-set-from-string, `avformat` WAV and image2, `fftools` version/loglevel and
-image2 start-number overflow, full `fate-runner` tests, `fate-runner
-status --next 12`, `fate-runner run --changed --dry-run`,
-`cargo fmt --all -- --check`, core clippy for `avutil`, `avformat`,
-`fftools`, and `fate-runner`, fuzz clippy for `avutil_core_models`,
-`avutil_metadata_options`, `avformat_wav`, and `avformat_image2`, `xtask
-guard-runtime`, `xtask oracle-doctor`, and pinned differential mapping runs for
-the new packet, options, WAV, image2 max/overflow, and version-loglevel rows.
-WSL one-run fuzz smokes passed for `avutil_metadata_options`, `avformat_wav`,
-and `avformat_image2`.
+`cargo fmt --all`; `cargo fmt --all -- --check`; `cargo test -p avutil --lib
+packet`; `cargo test -p avformat pcm`; `cargo test -p avformat wav`; `cargo
+test -p avformat yuv4mpegpipe`; `cargo test -p fftools version`; focused
+`fftools` unit filters for prior value-option parsing and buildconf requests;
+ignored pinned oracle tests for `packet_oracle`,
+`version_requests_respect_prior_value_options`,
+`wav_pcm_s16le_duplicate_fmt_unsupported_second_is_ignored_for_framecrc`,
+`yuv4mpegpipe_leading_whitespace_before_first_frame_is_accepted_by_oracle`, and
+`pcm_s16le_nine_channel_framecrc_records_match_ffmpeg_oracle`; `cargo check`
+for fuzz targets `avutil_core_models`, `avformat_pcm_s16le`,
+`avformat_yuv4mpegpipe`, and `avformat_wav`; `cargo test -p fate-runner
+current_ledger`; `fate-runner status --next 12`; `fate-runner run --changed
+--dry-run`; pinned differential mapping runs for the new packet, version, WAV,
+YUV4MPEG2, and PCM rows; `xtask guard-runtime`; `xtask oracle-doctor`; core
+clippy for `avutil`, `avformat`, `fftools`, and `fate-runner`; fuzz clippy for
+the four changed fuzz targets; and `git diff --check` with CRLF conversion
+warnings only.
 
-Latest failing or limited commands for this batch: a combined WSL
-`cargo fuzz run` command including `avutil_core_models`,
-`avutil_metadata_options`, `avformat_wav`, and `avformat_image2` exceeded the
-local timeout while rebuilding fresh sanitizer artifacts for
-`avutil_core_models`; the lingering WSL cargo/rustc processes were stopped and
-no crash artifact was observed. Three local `cargo test` attempts also used
-invalid multiple-filter syntax; they were rerun as separate valid filters and
-passed.
+Latest failing or limited commands for this batch: no current validation
+failures remain. Sanitizer-backed WSL `cargo fuzz run` smokes were not rerun
+for this slice; Windows fuzz build and clippy checks passed, and WSL fuzz
+smokes remain desirable before any affected component is promoted to complete.
 
 Current focus component: `avutil-packet` remains the top priority incomplete
 component (`fate_pass`). Next 3 concrete actions: identify the next missing
 AVPacket completion requirement, add a bounded oracle/fuzz/FATE evidence row
-without broad stubs, and continue using parallel xhigh workers only for
-disjoint file sets that do not touch orchestrator-owned ledger/state/docs.
+without broad stubs, and use parallel xhigh workers only after this dirty slice
+is committed and ownership is cleanly partitioned.
 
 Current authoritative turn status: orchestrator workflow is active. The latest
 xhigh fast/full-access worker batch has been reviewed and integrated with a

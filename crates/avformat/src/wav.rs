@@ -480,6 +480,25 @@ mod tests {
     }
 
     #[test]
+    fn uses_first_fmt_chunk_when_following_fmt_chunk_is_unsupported() {
+        let data = [0, 0, 1, 0];
+        let bytes = wav_bytes_with_duplicate_fmt_chunks_and_unsupported_second(
+            1, 44_100, 1, 48_000, 3, &data,
+        );
+        let mut demuxer = WavDemuxer::open(&bytes).unwrap();
+
+        assert_eq!(demuxer.info().channels(), 1);
+        assert_eq!(demuxer.info().sample_rate(), 44_100);
+        assert_eq!(demuxer.info().channel_layout(), Some(ChannelLayout::mono()));
+        assert_eq!(demuxer.info().samples_per_channel(), 2);
+
+        let packet = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(packet.data(), &data);
+        assert_eq!(packet.duration(), 2);
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
     fn ignores_truncated_duplicate_fmt_chunk_after_the_first_valid_fmt_chunk() {
         let data = [0, 0, 1, 0];
         let bytes = wav_bytes_with_short_second_duplicate_fmt_chunk(1, 44_100, &data);
@@ -779,6 +798,31 @@ mod tests {
     ) -> Vec<u8> {
         let mut body = fmt_chunk(1, first_channels, first_sample_rate, 16);
         body.extend_from_slice(&fmt_chunk(1, second_channels, second_sample_rate, 16));
+        body.extend_from_slice(b"data");
+        body.extend_from_slice(&(u32::try_from(data.len()).unwrap()).to_le_bytes());
+        body.extend_from_slice(data);
+        if data.len() % 2 == 1 {
+            body.push(0);
+        }
+
+        wav_bytes_with_body(body)
+    }
+
+    fn wav_bytes_with_duplicate_fmt_chunks_and_unsupported_second(
+        first_channels: u16,
+        first_sample_rate: u32,
+        second_channels: u16,
+        second_sample_rate: u32,
+        second_audio_format: u16,
+        data: &[u8],
+    ) -> Vec<u8> {
+        let mut body = fmt_chunk(1, first_channels, first_sample_rate, 16);
+        body.extend_from_slice(&fmt_chunk(
+            second_audio_format,
+            second_channels,
+            second_sample_rate,
+            16,
+        ));
         body.extend_from_slice(b"data");
         body.extend_from_slice(&(u32::try_from(data.len()).unwrap()).to_le_bytes());
         body.extend_from_slice(data);

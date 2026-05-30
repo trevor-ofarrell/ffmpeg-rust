@@ -214,6 +214,16 @@ fn yuv4mpegpipe_invalid_first_frame_marker_is_clean_eof() {
 
 #[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn yuv4mpegpipe_leading_whitespace_before_first_frame_is_accepted_by_oracle() {
+    let mut input = y4m_file_bytes(2, 2, "25:1", &[]);
+    input.extend_from_slice(b" \nFRAME\n");
+    input.extend_from_slice(&[0, 1, 2, 3, 4, 5]);
+
+    compare_yuv4mpegpipe_framecrc_records(&input, 1, 6);
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
 fn yuv4mpegpipe_sample_aspect_ratio_header_matches_ffmpeg_oracle() {
     compare_rawvideo_yuv4mpegpipe_file_output_with_aspect(
         "2x2",
