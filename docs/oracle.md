@@ -175,6 +175,11 @@ The latest packet offset-unref fixture extends `avutil_core_models` with
 to default fields and releases the complete backing storage, including prefix
 bytes before the visible payload and dirty FFmpeg input-padding bytes after it.
 
+The latest packet raw-offset ref/clone fixture extends `avutil_core_models`
+with raw no-buffer `Packet::ref_from()` and `Packet::clone()` copy behavior plus
+the safe explicit-owner unpadded offset source path. Ref and clone destinations
+preserve visible bytes while detaching into zero-offset padded writable storage.
+
 The latest packet payload reset fixture extends `avutil_core_models` with the deterministic `Packet::alloc_new_packet_payload(0)` reset path for `av_new_packet(pkt, 0)` parity: a pre-populated packet becomes an empty writable padded packet with default metadata, no side data, no opaque pointer metadata, no `opaque_ref`, empty flags, stream index zero, and packet time base zero.
 
 The latest `avutil_core_models` pixel-format fuzz evidence includes a saved-crash replay and warmed 4096-run WSL sanitizer execution after fixing a stale no-byte-stride invariant. The harness now treats absent fixed byte stride as valid for planar formats or the modeled bit-packed single-plane formats (`monow`, `monob`, `rgb4`, `bgr4`, and `uyyvyy411`), and separately recognizes planar GBRA formats as alpha-bearing. This narrows bounded pixel-format fuzz coverage but does not replace full `AVPixFmtDescriptor`, FATE media, conversion, or hardware-device parity.
@@ -575,7 +580,7 @@ The harness also includes `packet:payload-make-refcounted-unrefcounted-offset-*`
 
 The harness also includes a `packet:payload-shrink-unrefcounted` row, proving raw `AVPacket.data`/`size` shrink behavior with caller-provided input padding. FFmpeg truncates visible size and zeroes padding without allocating an `AVBufferRef`, so the row compares payload length, visible bytes, and padding rather than writability.
 
-The harness also includes `packet:payload-ref-unrefcounted-*` and `packet:payload-clone-unrefcounted` rows, proving raw `AVPacket.data`/`size` reference behavior when `pkt->buf` is NULL. FFmpeg copies the visible bytes into new padded refcounted destination storage for both `av_packet_ref()` and `av_packet_clone()`, while the raw source packet remains a no-buffer packet.
+The harness also includes `packet:payload-ref-unrefcounted-*`, `packet:payload-clone-unrefcounted`, `packet:payload-ref-unrefcounted-offset-*`, and `packet:payload-clone-unrefcounted-offset-*` rows, proving raw `AVPacket.data`/`size` reference behavior when `pkt->buf` is NULL. FFmpeg copies the visible bytes at the current data pointer into new zero-offset padded refcounted destination storage for both `av_packet_ref()` and `av_packet_clone()`, including when the source data pointer starts at a nonzero offset inside caller storage, while the raw source packet remains a no-buffer packet.
 
 The harness also includes `packet:dict-pack-multikey`, `packet:dict-unpack-multikey-ret`, and `packet:dict-unpack-multikey` rows. These pin the `AV_DICT_MULTIKEY` pack shape and the subsequent case-insensitive duplicate-key unpack collapse. The `packet:dict-unpack-empty-ret`, `packet:dict-unpack-missing-final-nul-ret`, `packet:dict-unpack-key-without-value-ret`, `packet:dict-unpack-empty-key-ret`, and `packet:dict-unpack-trailing-empty-key-ret` rows pin `av_packet_unpack_dictionary()` return-code behavior for empty input and malformed string metadata, with the malformed rows returning `AVERROR_INVALIDDATA`.
 

@@ -1775,6 +1775,35 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_fields(&raw_ref_src.clone()),
     );
 
+    let raw_ref_offset_src = Packet::new(vec![0x11, 0x22], 0);
+    let mut raw_ref_offset_dst = Packet::default();
+    raw_ref_offset_dst.ref_from(&raw_ref_offset_src);
+    let raw_ref_offset_cloned = raw_ref_offset_src.clone();
+    rows.insert(
+        "packet:payload-ref-unrefcounted-offset-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-ref-unrefcounted-offset-src".to_string(),
+        payload_visible_fields(&raw_ref_offset_src),
+    );
+    rows.insert(
+        "packet:payload-ref-unrefcounted-offset-dst-offset".to_string(),
+        vec![raw_ref_offset_dst.data_buffer().offset().to_string()],
+    );
+    rows.insert(
+        "packet:payload-ref-unrefcounted-offset-dst".to_string(),
+        payload_fields(&raw_ref_offset_dst),
+    );
+    rows.insert(
+        "packet:payload-clone-unrefcounted-offset-offset".to_string(),
+        vec![raw_ref_offset_cloned.data_buffer().offset().to_string()],
+    );
+    rows.insert(
+        "packet:payload-clone-unrefcounted-offset".to_string(),
+        payload_fields(&raw_ref_offset_cloned),
+    );
+
     let mut grow = Packet::new_zeroed(2, 0).unwrap();
     grow.make_data_writable().copy_from_slice(&[0xaa, 0xbb]);
     grow.grow_data(3).unwrap();
@@ -7228,6 +7257,35 @@ static void exercise_payload_api(void) {
     av_packet_free(&ref_dst);
     av_packet_free(&pkt);
     av_free(ref_raw);
+
+    pkt = new_packet();
+    uint8_t ref_offset_raw[3 + 2 + AV_INPUT_BUFFER_PADDING_SIZE];
+    memset(ref_offset_raw, 0x5a, sizeof(ref_offset_raw));
+    ref_offset_raw[0] = 0xa0;
+    ref_offset_raw[1] = 0xa1;
+    ref_offset_raw[2] = 0xa2;
+    ref_offset_raw[3] = 0x11;
+    ref_offset_raw[4] = 0x22;
+    pkt->data = ref_offset_raw + 3;
+    pkt->size = 2;
+    AVPacket *ref_offset_dst = new_packet();
+    ret = av_packet_ref(ref_offset_dst, pkt);
+    printf("packet:payload-ref-unrefcounted-offset-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_ref raw offset payload failed");
+    print_payload_visible("packet:payload-ref-unrefcounted-offset-src", pkt);
+    printf("packet:payload-ref-unrefcounted-offset-dst-offset|%td\n",
+           ref_offset_dst->buf ? ref_offset_dst->data - ref_offset_dst->buf->data : -1);
+    print_payload("packet:payload-ref-unrefcounted-offset-dst",
+                  ref_offset_dst);
+    AVPacket *raw_offset_cloned = av_packet_clone(pkt);
+    fail_if(!raw_offset_cloned, "av_packet_clone raw offset payload failed");
+    printf("packet:payload-clone-unrefcounted-offset-offset|%td\n",
+           raw_offset_cloned->buf ? raw_offset_cloned->data - raw_offset_cloned->buf->data : -1);
+    print_payload("packet:payload-clone-unrefcounted-offset",
+                  raw_offset_cloned);
+    av_packet_free(&raw_offset_cloned);
+    av_packet_free(&ref_offset_dst);
+    av_packet_free(&pkt);
 
     pkt = new_packet();
     fail_if(av_new_packet(pkt, 2) < 0, "av_new_packet payload grow failed");

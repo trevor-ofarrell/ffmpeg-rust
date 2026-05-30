@@ -10,6 +10,15 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  `av_packet_ref()` and `av_packet_clone()` on raw no-buffer packets whose
+  `data` pointer starts at a nonzero offset inside caller storage copy the
+  visible bytes into zero-offset padded refcounted destination storage while
+  leaving the raw source packet untouched. Rust mirrors the visible raw-payload
+  behavior through `Packet::new(...)` and records the safe explicit-owner
+  unpadded offset ref/clone path in unit and `avutil_core_models` coverage.
+  This strengthens `avutil-packet`; strict completion remains 11/96 and the
+  row remains `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   `av_packet_make_refcounted()` and `av_packet_make_writable()` on raw
   no-buffer packets whose `data` pointer starts at a nonzero offset inside
   caller storage copy the visible bytes into zero-offset padded `AVBufferRef`

@@ -93,13 +93,15 @@ destination without sharing, so the moved packet remains writable while the
 source resets to defaults.
 
 Raw no-buffer packet rows cover the C-only shape where `pkt->data` points into
-caller storage at a nonzero offset while `pkt->buf == NULL`. FFmpeg copies only
-the visible payload bytes into new zero-offset padded `AVBufferRef` storage for
-`av_packet_make_refcounted()` and `av_packet_make_writable()`. The safe Rust
+caller storage at a nonzero offset while `pkt->buf == NULL`. FFmpeg copies the
+visible payload bytes at the current data pointer into new zero-offset padded
+`AVBufferRef` storage for `av_packet_ref()`, `av_packet_clone()`,
+`av_packet_make_refcounted()`, and `av_packet_make_writable()`. The safe Rust
 `Packet::new(...)` path models that visible raw-payload behavior without
 exposing borrowed packet data pointers; explicit-owner offset `BufferRef`
-fixtures separately document the safe padding path, where the owner remains
-known and the visible offset is preserved.
+fixtures separately document the safe padding path, where ref/clone detach to
+zero-offset padded storage while helper calls on uniquely owned offset storage
+preserve the known owner and visible offset.
 
 `Packet::alloc_new_packet_payload` models the `av_new_packet()` reset path. Pinned rows cover both positive-size reset and zero-size reset on a pre-populated packet: metadata, side data, opaque metadata, `opaque_ref`, flags, stream index, and packet time base reset to defaults before writable padded payload storage is installed.
 

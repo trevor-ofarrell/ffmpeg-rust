@@ -260,6 +260,11 @@ default_profile = "ffmpeg-8.1.1-default-native"
 # AV_INPUT_BUFFER_PADDING_SIZE)`. Rust `Packet::grow_data` now enforces the
 # same boundary without attempting a huge allocation, and the unit plus
 # `avutil_core_models` fuzz-model invariants cover no-mutation behavior.
+# Latest avutil-packet evidence: `packet:payload-ref-unrefcounted-offset-*`
+# and `packet:payload-clone-unrefcounted-offset-*` rows now prove pinned FFmpeg
+# 8.1.1 `av_packet_ref()` and `av_packet_clone()` copy from a raw
+# `AVPacket.data` pointer that starts at a nonzero caller-storage offset with
+# `buf == NULL`, installing zero-offset padded destination storage.
 # Latest avutil-packet evidence: `packet:payload-make-refcounted-unrefcounted-offset-*`
 # and `packet:payload-make-writable-unrefcounted-offset-*` rows now prove pinned
 # FFmpeg 8.1.1 copies a raw `AVPacket.data` pointer that starts at a nonzero
@@ -643,6 +648,7 @@ unit_tests = [
   "packet::tests::packet_ref_from_shares_payload_and_copies_side_data",
   "packet::tests::packet_ref_from_replaces_destination_and_releases_old_refs",
   "packet::tests::packet_ref_from_unpadded_payload_copies_into_refcounted_buffer",
+  "packet::tests::packet_ref_and_clone_from_unpadded_offset_payload_copy_to_padded_storage",
   "packet::tests::packet_empty_source_lifecycle_matches_ffmpeg_reset_shapes",
   "packet::tests::packet_clone_matches_ref_from_shape",
   "packet::tests::packet_clone_of_unpadded_payload_matches_refcounted_copy_shape",
@@ -757,6 +763,16 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: pinned libavcodec AVPacket payload oracle coverage now validates
+# `av_packet_ref()` and `av_packet_clone()` on raw `data`/`size` packets whose
+# `data` pointer starts at a nonzero offset inside caller storage and whose
+# `buf` is NULL. FFmpeg copies the visible bytes at the current data pointer
+# into zero-offset padded destination storage for both helpers, leaves the raw
+# source no-buffer packet untouched, and exposes writable refcounted
+# destinations. Rust `Packet::ref_from` and `Clone` already model raw
+# no-buffer packet sources with `Packet::new(...)`; focused unit and
+# avutil_core_models fixtures now also cover the safe explicit-owner unpadded
+# offset source path copying to zero-offset padded destination storage.
 # Latest update: pinned libavcodec AVPacket payload oracle coverage now validates
 # `av_packet_make_refcounted()` and `av_packet_make_writable()` on raw
 # `data`/`size` packets whose `data` pointer starts at a nonzero offset inside

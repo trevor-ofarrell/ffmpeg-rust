@@ -13134,6 +13134,58 @@ mod tests {
     }
 
     #[test]
+    fn packet_ref_and_clone_from_unpadded_offset_payload_copy_to_padded_storage() {
+        let src = Packet::with_buffer(
+            BufferRef::from_vec(vec![0xa0, 0xa1, 0xa2, 1, 2])
+                .into_ref_slice(3, 2)
+                .unwrap(),
+            4,
+        );
+        let mut dst = Packet::default();
+
+        dst.ref_from(&src);
+        let mut cloned = src.clone();
+
+        assert_eq!(src.data(), &[1, 2]);
+        assert_eq!(src.data_buffer().offset(), 3);
+        assert_eq!(src.data_buffer().padding_len(), 0);
+        assert_eq!(dst.data(), &[1, 2]);
+        assert_eq!(cloned.data(), &[1, 2]);
+        assert_eq!(dst.data_buffer().offset(), 0);
+        assert_eq!(cloned.data_buffer().offset(), 0);
+        assert!(!dst.data_buffer().shares_storage(src.data_buffer()));
+        assert!(!cloned.data_buffer().shares_storage(src.data_buffer()));
+        assert_eq!(
+            dst.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert_eq!(
+            cloned.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(dst
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+        assert!(cloned
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+        assert!(src.is_data_writable());
+        assert!(dst.is_data_writable());
+        assert!(cloned.is_data_writable());
+
+        dst.make_data_writable()[0] = 9;
+        cloned.make_data_writable()[1] = 8;
+
+        assert_eq!(src.data(), &[1, 2]);
+        assert_eq!(dst.data(), &[9, 2]);
+        assert_eq!(cloned.data(), &[1, 8]);
+    }
+
+    #[test]
     fn packet_clone_of_unpadded_payload_matches_refcounted_copy_shape() {
         let src = Packet::new(vec![1, 2, 3], 4);
 
