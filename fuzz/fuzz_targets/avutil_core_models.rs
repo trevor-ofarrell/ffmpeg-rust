@@ -9477,6 +9477,71 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(writable_props_src.data(), &[0xaa, 0xbb, 0xcc]);
     assert_eq!(writable_props_dst.data(), &[0xcc, 0xbb, 0xcc]);
 
+    let duplicate_signature = |packet: &Packet| -> Vec<(PacketSideDataKind, Vec<u8>)> {
+        packet
+            .side_data()
+            .iter()
+            .map(|side_data| (side_data.kind_id().clone(), side_data.data().to_vec()))
+            .collect()
+    };
+    let mut duplicate_src = Packet::new(vec![0x01, 0x02, 0x03], 4);
+    duplicate_src.push_side_data(
+        SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x11]).unwrap(),
+    );
+    duplicate_src.push_side_data(
+        SideData::new_with_kind(PacketSideDataKind::NewExtradata, vec![0x22]).unwrap(),
+    );
+    duplicate_src.push_side_data(
+        SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x33]).unwrap(),
+    );
+    duplicate_src.push_side_data(
+        SideData::new_with_kind(PacketSideDataKind::SkipSamples, vec![0x44]).unwrap(),
+    );
+    duplicate_src.make_refcounted().unwrap();
+    let duplicate_moved_expected = duplicate_signature(&duplicate_src);
+    let duplicate_copied_expected = vec![
+        (PacketSideDataKind::Palette, vec![0x33]),
+        (PacketSideDataKind::NewExtradata, vec![0x22]),
+        (PacketSideDataKind::SkipSamples, vec![0x44]),
+    ];
+
+    let mut duplicate_copy = Packet::new(vec![0x77], 8);
+    duplicate_copy.push_side_data(
+        SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xee]).unwrap(),
+    );
+    duplicate_copy.copy_props_from(&duplicate_src);
+    assert_eq!(duplicate_signature(&duplicate_copy), duplicate_copied_expected);
+    assert_eq!(duplicate_copy.data(), &[0x77]);
+
+    let mut duplicate_ref = Packet::default();
+    duplicate_ref.ref_from(&duplicate_src);
+    assert_eq!(duplicate_signature(&duplicate_ref), duplicate_copied_expected);
+    assert!(duplicate_ref
+        .data_buffer()
+        .shares_storage(duplicate_src.data_buffer()));
+
+    let duplicate_clone = duplicate_src.clone();
+    assert_eq!(
+        duplicate_signature(&duplicate_clone),
+        duplicate_copied_expected
+    );
+    assert!(duplicate_clone
+        .data_buffer()
+        .shares_storage(duplicate_src.data_buffer()));
+
+    let mut duplicate_move_src = duplicate_src;
+    let mut duplicate_move_dst = Packet::new(vec![0xaa], 1);
+    duplicate_move_dst.push_side_data(
+        SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xee]).unwrap(),
+    );
+    duplicate_move_dst.move_ref_from(&mut duplicate_move_src);
+    assert_eq!(
+        duplicate_signature(&duplicate_move_dst),
+        duplicate_moved_expected
+    );
+    assert!(duplicate_move_src.side_data().is_empty());
+    assert!(duplicate_move_src.is_empty());
+
     let mut new_packet_reset = Packet::from_data(vec![0x01, 0x02]).unwrap();
     new_packet_reset.set_pts(Some(90_000));
     new_packet_reset.set_dts(Some(45_000));

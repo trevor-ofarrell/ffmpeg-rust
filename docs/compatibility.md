@@ -9,6 +9,14 @@
 
 ## Compatible Today
 
+- Latest main-thread packet evidence: duplicate packet-owned side-data
+  lifecycle parity is now listed in the packet ledger and mirrored by a
+  deterministic `avutil_core_models` invariant. The pinned rows prove
+  `av_packet_copy_props()`, `av_packet_ref()`, and `av_packet_clone()` collapse
+  duplicate side-data kinds by later-entry replacement, while
+  `av_packet_move_ref()` transfers the raw duplicate array and resets the
+  source. This strengthens `avutil-packet`; strict completion remains 11/96
+  and the row remains `fate_pass`.
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
   `av_packet_unref()` on an `AVPacket` whose `data` points at an offset inside
   `buf->data` resets packet fields to defaults and invokes the AVBuffer release

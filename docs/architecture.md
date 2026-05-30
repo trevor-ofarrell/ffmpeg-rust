@@ -310,7 +310,7 @@ Latest logging TERM evidence narrows the no-force pseudo-terminal color model: r
 
 The packet side-data free rows also prove group clearing is scoped to side data: `av_packet_free_side_data()` preserves payload storage and visible bytes, PTS/DTS/duration/position, stream index, flags, opaque pointer metadata, `opaque_ref`, and `time_base`, including empty-packet no-op and repeated-clear idempotence. `Packet::clear_side_data()` mirrors that field-preservation shape.
 
-`Packet::ref_from`, `Packet::clone`, and `Packet::copy_props_from` intentionally collapse duplicate packet-owned side-data kinds by later-entry replacement, matching `av_packet_ref()`, `av_packet_clone()`, and `av_packet_copy_props()` oracle rows. `Packet::move_ref_from` preserves the raw duplicate side-data array and resets the source, matching `av_packet_move_ref()`.
+`Packet::ref_from`, `Packet::clone`, and `Packet::copy_props_from` intentionally collapse duplicate packet-owned side-data kinds by later-entry replacement, matching `av_packet_ref()`, `av_packet_clone()`, and `av_packet_copy_props()` oracle rows. `Packet::move_ref_from` preserves the raw duplicate side-data array and resets the source, matching `av_packet_move_ref()`. The deterministic `avutil_core_models` fixture mirrors both branches so fuzz smoke exercises the same duplicate lifecycle split.
 
 `Packet::validate_payload_len` centralizes the safe Rust equivalent of FFmpeg's `av_new_packet()` / `av_packet_from_data()` size guard. `Packet::from_data`, `Packet::replace_data_from_vec`, `Packet::new_zeroed`, and `Packet::alloc_new_packet_payload` reject payload lengths above `INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE - 1` with `EINVAL` before allocation or mutation.
 
