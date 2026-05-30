@@ -2155,6 +2155,78 @@ fn insert_packet_fifo_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         vec![fifo.can_read().to_string()],
     );
 
+    let mut invalid_move_src = Packet::from_data(vec![0xa1]).unwrap();
+    invalid_move_src.set_pts(Some(310));
+    let mut invalid_ref_src = Packet::from_data(vec![0xb2]).unwrap();
+    invalid_ref_src.set_pts(Some(320));
+    fifo.write_move(&mut invalid_move_src).unwrap();
+    fifo.write_ref(&invalid_ref_src).unwrap();
+    rows.insert(
+        "packet:fifo-invalid-mixed-move-src".to_string(),
+        packet_fields(&invalid_move_src),
+    );
+    rows.insert(
+        "packet:fifo-invalid-mixed-ref-src".to_string(),
+        packet_fields(&invalid_ref_src),
+    );
+    rows.insert(
+        "packet:fifo-invalid-mixed-before".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+    let err = fifo.peek(2).unwrap_err();
+    rows.insert(
+        "packet:fifo-invalid-mixed-peek2-ret".to_string(),
+        vec![err.code().unwrap().raw().to_string()],
+    );
+    rows.insert(
+        "packet:fifo-invalid-mixed-after-peek-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+    rows.insert(
+        "packet:fifo-invalid-mixed-after-peek0".to_string(),
+        packet_fields(fifo.peek(0).unwrap()),
+    );
+    rows.insert(
+        "packet:fifo-invalid-mixed-after-peek1".to_string(),
+        packet_fields(fifo.peek(1).unwrap()),
+    );
+    let mut invalid_read_dst = Packet::default();
+    fifo.read_move(&mut invalid_read_dst).unwrap();
+    rows.insert(
+        "packet:fifo-invalid-mixed-read-first-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:fifo-invalid-mixed-read-first".to_string(),
+        packet_fields(&invalid_read_dst),
+    );
+    rows.insert(
+        "packet:fifo-invalid-mixed-after-read-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+    rows.insert(
+        "packet:fifo-invalid-mixed-after-read-peek0".to_string(),
+        packet_fields(fifo.peek(0).unwrap()),
+    );
+    fifo.drain(1).unwrap();
+    rows.insert(
+        "packet:fifo-invalid-mixed-drain-rest-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:fifo-invalid-mixed-after-drain-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+    fifo.clear();
+    rows.insert(
+        "packet:fifo-invalid-mixed-clear-empty-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+    rows.insert(
+        "packet:fifo-invalid-mixed-ref-src-after-drain".to_string(),
+        packet_fields(&invalid_ref_src),
+    );
+
     let unknown_flags = PacketFifoFlags::from_bits(0x8000_0000);
     let mut unknown_src = packet_with_common_props();
     fifo.write_with_flags(&mut unknown_src, unknown_flags)
@@ -6361,6 +6433,62 @@ static void exercise_packet_fifo_api(void) {
            av_container_fifo_can_read(fifo));
     av_packet_free(&user_ref_dst);
     av_packet_free(&user_ref_src);
+
+    AVPacket *invalid_move_src = new_packet();
+    fail_if(av_new_packet(invalid_move_src, 1) < 0,
+            "fifo invalid move seed failed");
+    invalid_move_src->data[0] = 0xa1;
+    invalid_move_src->pts = 310;
+    AVPacket *invalid_ref_src = new_packet();
+    fail_if(av_new_packet(invalid_ref_src, 1) < 0,
+            "fifo invalid ref seed failed");
+    invalid_ref_src->data[0] = 0xb2;
+    invalid_ref_src->pts = 320;
+    fail_if(av_container_fifo_write(fifo, invalid_move_src, 0) < 0,
+            "fifo invalid mixed move write failed");
+    fail_if(av_container_fifo_write(fifo, invalid_ref_src,
+                                    AV_CONTAINER_FIFO_FLAG_REF) < 0,
+            "fifo invalid mixed ref write failed");
+    print_packet("packet:fifo-invalid-mixed-move-src", invalid_move_src);
+    print_packet("packet:fifo-invalid-mixed-ref-src", invalid_ref_src);
+    printf("packet:fifo-invalid-mixed-before|%zu\n",
+           av_container_fifo_can_read(fifo));
+    peek = NULL;
+    ret = av_container_fifo_peek(fifo, (void **)&peek, 2);
+    printf("packet:fifo-invalid-mixed-peek2-ret|%d\n", ret);
+    printf("packet:fifo-invalid-mixed-after-peek-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+    peek = NULL;
+    ret = av_container_fifo_peek(fifo, (void **)&peek, 0);
+    fail_if(ret < 0 || !peek, "fifo invalid mixed peek0 failed");
+    print_packet("packet:fifo-invalid-mixed-after-peek0", peek);
+    peek = NULL;
+    ret = av_container_fifo_peek(fifo, (void **)&peek, 1);
+    fail_if(ret < 0 || !peek, "fifo invalid mixed peek1 failed");
+    print_packet("packet:fifo-invalid-mixed-after-peek1", peek);
+    AVPacket *invalid_read_dst = new_packet();
+    ret = av_container_fifo_read(fifo, invalid_read_dst, 0);
+    printf("packet:fifo-invalid-mixed-read-first-ret|%d\n", ret);
+    fail_if(ret < 0, "fifo invalid mixed read first failed");
+    print_packet("packet:fifo-invalid-mixed-read-first", invalid_read_dst);
+    printf("packet:fifo-invalid-mixed-after-read-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+    peek = NULL;
+    ret = av_container_fifo_peek(fifo, (void **)&peek, 0);
+    fail_if(ret < 0 || !peek, "fifo invalid mixed after read peek failed");
+    print_packet("packet:fifo-invalid-mixed-after-read-peek0", peek);
+    av_container_fifo_drain(fifo, 1);
+    printf("packet:fifo-invalid-mixed-drain-rest-ret|%d\n", 0);
+    printf("packet:fifo-invalid-mixed-after-drain-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+    av_container_fifo_drain(fifo, 0);
+    printf("packet:fifo-invalid-mixed-clear-empty-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+    print_packet("packet:fifo-invalid-mixed-ref-src-after-drain",
+                 invalid_ref_src);
+    av_packet_free(&invalid_move_src);
+    av_packet_free(&invalid_ref_src);
+    av_packet_free(&invalid_read_dst);
 
     unsigned unknown_flags = 0x80000000u;
     AVPacket *unknown_flags_src = packet_with_common_props();

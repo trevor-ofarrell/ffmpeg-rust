@@ -9,6 +9,15 @@
 
 ## Compatible Today
 
+- Latest orchestrated avutil lifecycle evidence: packet FIFO invalid-operation
+  rows now prove a mixed move/ref `AVContainerFifo` keeps readable count and
+  queued order intact after an out-of-range peek, then drains in the expected
+  move/ref order while preserving the ref source. Delegated logging rows now
+  prove `av_log_set_callback()` replacement/default-restore/custom-restore
+  dispatch through observable callback counts and messages. Rust unit,
+  differential, local FATE-runner, clippy, and warmed WSL `avutil_core_models`
+  fuzz-smoke gates passed; `avutil-packet` and `avutil-logging` remain
+  `fate_pass`, not `complete`.
 - Latest main-thread packet evidence: pinned libavcodec rows now prove the
   public `AVContainerFifo` all-drain equivalent for a mixed move/ref packet
   queue releases the move-written payload and `opaque_ref` once, preserves the

@@ -4784,6 +4784,93 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     assert!(callback_logger.log(LogRecord::new(LogLevel::Error, "demuxer", "after clear")));
     assert_eq!(callback_seen.lock().unwrap().len(), 3);
 
+    let mut callback_lifecycle_logger = Logger::new(LogLevel::Info);
+    let lifecycle_first_seen = Arc::new(Mutex::new(Vec::new()));
+    let lifecycle_second_seen = Arc::new(Mutex::new(Vec::new()));
+    let first_lifecycle_callback = Arc::clone(&lifecycle_first_seen);
+    callback_lifecycle_logger.set_callback(move |record| {
+        first_lifecycle_callback
+            .lock()
+            .unwrap()
+            .push(format!("first:{}", record.message()));
+    });
+    assert!(callback_lifecycle_logger.log(LogRecord::new(
+        LogLevel::Warning,
+        "decoder",
+        "first"
+    )));
+    assert_eq!(
+        lifecycle_first_seen.lock().unwrap().as_slice(),
+        ["first:first"]
+    );
+    assert!(lifecycle_second_seen.lock().unwrap().is_empty());
+
+    let second_lifecycle_callback = Arc::clone(&lifecycle_second_seen);
+    callback_lifecycle_logger.set_callback(move |record| {
+        second_lifecycle_callback
+            .lock()
+            .unwrap()
+            .push(format!("second:{}", record.message()));
+    });
+    assert!(callback_lifecycle_logger.log(LogRecord::new(
+        LogLevel::Error,
+        "demuxer",
+        "second"
+    )));
+    assert_eq!(
+        lifecycle_first_seen.lock().unwrap().as_slice(),
+        ["first:first"]
+    );
+    assert_eq!(
+        lifecycle_second_seen.lock().unwrap().as_slice(),
+        ["second:second"]
+    );
+
+    callback_lifecycle_logger.clear();
+    assert!(callback_lifecycle_logger.records().is_empty());
+    assert!(callback_lifecycle_logger.log(LogRecord::new(
+        LogLevel::Fatal,
+        "demuxer",
+        "after-record-reset"
+    )));
+    assert_eq!(
+        lifecycle_second_seen.lock().unwrap().as_slice(),
+        ["second:second", "second:after-record-reset"]
+    );
+
+    assert!(callback_lifecycle_logger.clear_callback());
+    assert!(!callback_lifecycle_logger.clear_callback());
+    assert!(callback_lifecycle_logger.log(LogRecord::new(
+        LogLevel::Error,
+        "muxer",
+        "after-callback-clear"
+    )));
+    assert_eq!(
+        lifecycle_second_seen.lock().unwrap().as_slice(),
+        ["second:second", "second:after-record-reset"]
+    );
+
+    let restored_lifecycle_callback = Arc::clone(&lifecycle_first_seen);
+    callback_lifecycle_logger.set_callback(move |record| {
+        restored_lifecycle_callback
+            .lock()
+            .unwrap()
+            .push(format!("first-restored:{}", record.message()));
+    });
+    assert!(callback_lifecycle_logger.log(LogRecord::new(
+        LogLevel::Warning,
+        "decoder",
+        "after-restore"
+    )));
+    assert_eq!(
+        lifecycle_first_seen.lock().unwrap().as_slice(),
+        ["first:first", "first-restored:after-restore"]
+    );
+    assert_eq!(
+        lifecycle_second_seen.lock().unwrap().as_slice(),
+        ["second:second", "second:after-record-reset"]
+    );
+
     clear_global_log_callback();
     clear_global_log_records();
     set_global_log_level(LogLevel::Info);
@@ -4838,6 +4925,98 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     assert!(!flush_global_log_repeated());
     assert_eq!(take_global_log_records().len(), 2);
     set_global_log_flags(LogFlags::PRINT_LEVEL);
+
+    clear_global_log_callback();
+    clear_global_log_records();
+    set_global_log_level(LogLevel::Info);
+    set_global_log_flags(LogFlags::PRINT_LEVEL);
+    let global_lifecycle_first_seen = Arc::new(Mutex::new(Vec::new()));
+    let global_lifecycle_second_seen = Arc::new(Mutex::new(Vec::new()));
+    let first_global_lifecycle_callback = Arc::clone(&global_lifecycle_first_seen);
+    set_global_log_callback(move |record| {
+        first_global_lifecycle_callback
+            .lock()
+            .unwrap()
+            .push(format!("first:{}", record.message()));
+    });
+    assert!(global_log(LogRecord::new(
+        LogLevel::Warning,
+        "decoder",
+        "first"
+    )));
+    assert_eq!(
+        global_lifecycle_first_seen.lock().unwrap().as_slice(),
+        ["first:first"]
+    );
+    assert!(global_lifecycle_second_seen.lock().unwrap().is_empty());
+
+    let second_global_lifecycle_callback = Arc::clone(&global_lifecycle_second_seen);
+    set_global_log_callback(move |record| {
+        second_global_lifecycle_callback
+            .lock()
+            .unwrap()
+            .push(format!("second:{}", record.message()));
+    });
+    assert!(global_log(LogRecord::new(
+        LogLevel::Error,
+        "demuxer",
+        "second"
+    )));
+    assert_eq!(
+        global_lifecycle_first_seen.lock().unwrap().as_slice(),
+        ["first:first"]
+    );
+    assert_eq!(
+        global_lifecycle_second_seen.lock().unwrap().as_slice(),
+        ["second:second"]
+    );
+
+    clear_global_log_records();
+    assert!(global_formatted_log_records().is_empty());
+    assert!(global_log(LogRecord::new(
+        LogLevel::Fatal,
+        "demuxer",
+        "after-record-reset"
+    )));
+    assert_eq!(
+        global_lifecycle_second_seen.lock().unwrap().as_slice(),
+        ["second:second", "second:after-record-reset"]
+    );
+
+    assert!(clear_global_log_callback());
+    assert!(!clear_global_log_callback());
+    assert!(global_log(LogRecord::new(
+        LogLevel::Error,
+        "muxer",
+        "after-callback-clear"
+    )));
+    assert_eq!(
+        global_lifecycle_second_seen.lock().unwrap().as_slice(),
+        ["second:second", "second:after-record-reset"]
+    );
+
+    let restored_global_lifecycle_callback = Arc::clone(&global_lifecycle_first_seen);
+    set_global_log_callback(move |record| {
+        restored_global_lifecycle_callback
+            .lock()
+            .unwrap()
+            .push(format!("first-restored:{}", record.message()));
+    });
+    assert!(global_log(LogRecord::new(
+        LogLevel::Warning,
+        "decoder",
+        "after-restore"
+    )));
+    assert_eq!(
+        global_lifecycle_first_seen.lock().unwrap().as_slice(),
+        ["first:first", "first-restored:after-restore"]
+    );
+    assert_eq!(
+        global_lifecycle_second_seen.lock().unwrap().as_slice(),
+        ["second:second", "second:after-record-reset"]
+    );
+    clear_global_log_callback();
+    clear_global_log_records();
 
     let mut time_flags = LogFlags::PRINT_LEVEL;
     time_flags.insert(LogFlags::PRINT_TIME);
@@ -10593,6 +10772,54 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .data_buffer()
         .shares_storage(&fifo_user_ref_storage));
     assert_eq!(fifo_user_ref_src.data(), fifo_user_ref_payload.as_slice());
+
+    let mut fifo_invalid_move = Packet::from_data(vec![0xa1]).unwrap();
+    fifo_invalid_move.set_pts(Some(310));
+    let fifo_invalid_move_storage = fifo_invalid_move.data_buffer().clone();
+    let mut fifo_invalid_ref = Packet::from_data(vec![0xb2]).unwrap();
+    fifo_invalid_ref.set_pts(Some(320));
+    let fifo_invalid_ref_storage = fifo_invalid_ref.data_buffer().clone();
+    packet_fifo.write_move(&mut fifo_invalid_move).unwrap();
+    packet_fifo.write_ref(&fifo_invalid_ref).unwrap();
+    assert!(fifo_invalid_move.is_empty());
+    assert_eq!(fifo_invalid_ref.data(), &[0xb2]);
+    assert_eq!(packet_fifo.can_read(), 2);
+    let fifo_invalid_peek = packet_fifo.peek(2).unwrap_err();
+    assert_eq!(fifo_invalid_peek.kind(), AvErrorKind::InvalidArgument);
+    assert_eq!(fifo_invalid_peek.code(), Some(AvErrorCode::EINVAL));
+    assert_eq!(packet_fifo.can_read(), 2);
+    assert_eq!(packet_fifo.peek(0).unwrap().data(), &[0xa1]);
+    assert!(packet_fifo
+        .peek(0)
+        .unwrap()
+        .data_buffer()
+        .shares_storage(&fifo_invalid_move_storage));
+    assert_eq!(packet_fifo.peek(1).unwrap().data(), &[0xb2]);
+    assert!(packet_fifo
+        .peek(1)
+        .unwrap()
+        .data_buffer()
+        .shares_storage(&fifo_invalid_ref_storage));
+    let fifo_invalid_drain = packet_fifo.drain(3).unwrap_err();
+    assert_eq!(fifo_invalid_drain.kind(), AvErrorKind::InvalidArgument);
+    assert_eq!(fifo_invalid_drain.code(), Some(AvErrorCode::EINVAL));
+    assert_eq!(packet_fifo.can_read(), 2);
+    let mut fifo_invalid_first = Packet::default();
+    packet_fifo.read_move(&mut fifo_invalid_first).unwrap();
+    assert_eq!(fifo_invalid_first.data(), &[0xa1]);
+    assert_eq!(fifo_invalid_first.pts(), Some(310));
+    assert!(fifo_invalid_first
+        .data_buffer()
+        .shares_storage(&fifo_invalid_move_storage));
+    assert_eq!(packet_fifo.can_read(), 1);
+    assert_eq!(packet_fifo.peek(0).unwrap().data(), &[0xb2]);
+    packet_fifo.clear();
+    assert!(packet_fifo.is_empty());
+    assert_eq!(fifo_invalid_ref.data(), &[0xb2]);
+    assert_eq!(fifo_invalid_ref.pts(), Some(320));
+    assert!(fifo_invalid_ref
+        .data_buffer()
+        .shares_storage(&fifo_invalid_ref_storage));
 
     let mut fifo_first = Packet::new(vec![0x01], 1);
     let mut fifo_second = Packet::new(vec![0x02], 2);

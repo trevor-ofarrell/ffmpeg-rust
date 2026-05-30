@@ -3544,6 +3544,80 @@ mod tests {
     }
 
     #[test]
+    fn installed_callback_replacement_clear_and_restore_are_dispatch_visible() {
+        let mut logger = Logger::new(LogLevel::Info);
+        let first_seen = Arc::new(Mutex::new(Vec::new()));
+        let second_seen = Arc::new(Mutex::new(Vec::new()));
+
+        let first_callback_seen = Arc::clone(&first_seen);
+        logger.set_callback(move |record| {
+            first_callback_seen
+                .lock()
+                .unwrap()
+                .push(format!("first:{}", record.message()));
+        });
+        assert!(logger.log(LogRecord::new(LogLevel::Warning, "decoder", "first")));
+        assert_eq!(first_seen.lock().unwrap().as_slice(), ["first:first"]);
+        assert!(second_seen.lock().unwrap().is_empty());
+
+        let second_callback_seen = Arc::clone(&second_seen);
+        logger.set_callback(move |record| {
+            second_callback_seen
+                .lock()
+                .unwrap()
+                .push(format!("second:{}", record.message()));
+        });
+        assert!(logger.log(LogRecord::new(LogLevel::Error, "demuxer", "second")));
+        assert_eq!(first_seen.lock().unwrap().as_slice(), ["first:first"]);
+        assert_eq!(second_seen.lock().unwrap().as_slice(), ["second:second"]);
+
+        logger.clear();
+        assert!(logger.records().is_empty());
+        assert!(logger.log(LogRecord::new(
+            LogLevel::Fatal,
+            "demuxer",
+            "after-record-reset"
+        )));
+        assert_eq!(
+            second_seen.lock().unwrap().as_slice(),
+            ["second:second", "second:after-record-reset"]
+        );
+
+        assert!(logger.clear_callback());
+        assert!(!logger.clear_callback());
+        assert!(logger.log(LogRecord::new(
+            LogLevel::Error,
+            "muxer",
+            "after-callback-clear"
+        )));
+        assert_eq!(
+            second_seen.lock().unwrap().as_slice(),
+            ["second:second", "second:after-record-reset"]
+        );
+
+        let restored_first_seen = Arc::clone(&first_seen);
+        logger.set_callback(move |record| {
+            restored_first_seen
+                .lock()
+                .unwrap()
+                .push(format!("first-restored:{}", record.message()));
+        });
+        assert!(logger.log(LogRecord::new(
+            LogLevel::Warning,
+            "decoder",
+            "after-restore"
+        )));
+        assert_eq!(
+            first_seen.lock().unwrap().as_slice(),
+            ["first:first", "first-restored:after-restore"]
+        );
+        assert_eq!(
+            second_seen.lock().unwrap().as_slice(),
+            ["second:second", "second:after-record-reset"]
+        );
+    }
+
+    #[test]
     fn installed_callback_observes_repeat_summary_when_materialized() {
         let mut flags = LogFlags::PRINT_LEVEL;
         flags.insert(LogFlags::SKIP_REPEATED);
@@ -3786,6 +3860,106 @@ mod tests {
             "after clear"
         )));
         assert_eq!(seen.lock().unwrap().len(), 3);
+
+        reset_global_logger_for_tests(LogLevel::Info, LogFlags::PRINT_LEVEL);
+    }
+
+    #[test]
+    fn global_logger_callback_replacement_reset_and_restore_are_dispatch_visible() {
+        let _guard = GLOBAL_LOGGER_TEST_LOCK.lock().unwrap();
+        reset_global_logger_for_tests(LogLevel::Info, LogFlags::PRINT_LEVEL);
+        let first_seen = Arc::new(Mutex::new(Vec::new()));
+        let second_seen = Arc::new(Mutex::new(Vec::new()));
+
+        let first_callback_seen = Arc::clone(&first_seen);
+        set_global_log_callback(move |record| {
+            first_callback_seen
+                .lock()
+                .unwrap()
+                .push(format!("first:{}", record.message()));
+        });
+        assert!(global_log(LogRecord::new(
+            LogLevel::Warning,
+            "decoder",
+            "first"
+        )));
+        assert_eq!(first_seen.lock().unwrap().as_slice(), ["first:first"]);
+        assert!(second_seen.lock().unwrap().is_empty());
+
+        let second_callback_seen = Arc::clone(&second_seen);
+        set_global_log_callback(move |record| {
+            second_callback_seen
+                .lock()
+                .unwrap()
+                .push(format!("second:{}", record.message()));
+        });
+        assert!(global_log(LogRecord::new(
+            LogLevel::Error,
+            "demuxer",
+            "second"
+        )));
+        assert_eq!(first_seen.lock().unwrap().as_slice(), ["first:first"]);
+        assert_eq!(second_seen.lock().unwrap().as_slice(), ["second:second"]);
+
+        clear_global_log_records();
+        assert!(global_formatted_log_records().is_empty());
+        assert!(global_log(LogRecord::new(
+            LogLevel::Fatal,
+            "demuxer",
+            "after-record-reset"
+        )));
+        assert_eq!(
+            second_seen.lock().unwrap().as_slice(),
+            ["second:second", "second:after-record-reset"]
+        );
+
+        assert!(clear_global_log_callback());
+        assert!(!clear_global_log_callback());
+        assert!(global_log(LogRecord::new(
+            LogLevel::Error,
+            "muxer",
+            "after-callback-clear"
+        )));
+        assert_eq!(
+            second_seen.lock().unwrap().as_slice(),
+            ["second:second", "second:after-record-reset"]
+        );
+
+        let restored_first_seen = Arc::clone(&first_seen);
+        set_global_log_callback(move |record| {
+            restored_first_seen
+                .lock()
+                .unwrap()
+                .push(format!("first-restored:{}", record.message()));
+        });
+        assert!(global_log(LogRecord::new(
+            LogLevel::Warning,
+            "decoder",
+            "after-restore"
+        )));
+        assert_eq!(
+            first_seen.lock().unwrap().as_slice(),
+            ["first:first", "first-restored:after-restore"]
+        );
+        assert_eq!(
+            second_seen.lock().unwrap().as_slice(),
+            ["second:second", "second:after-record-reset"]
+        );
+
+        reset_global_logger_for_tests(LogLevel::Info, LogFlags::PRINT_LEVEL);
+        assert!(global_log(LogRecord::new(
+            LogLevel::Warning,
+            "decoder",
+            "after-global-reset"
+        )));
+        assert_eq!(
+            first_seen.lock().unwrap().as_slice(),
+            ["first:first", "first-restored:after-restore"]
+        );
+        assert_eq!(
+            second_seen.lock().unwrap().as_slice(),
+            ["second:second", "second:after-record-reset"]
+        );
 
         reset_global_logger_for_tests(LogLevel::Info, LogFlags::PRINT_LEVEL);
     }

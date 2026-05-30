@@ -243,6 +243,24 @@ fn expected_rows() -> BTreeMap<&'static str, i32> {
         "custom-callback-context-quiet-level",
         LogLevel::Quiet.as_ffmpeg_value(),
     );
+    rows.insert("custom-callback-replace-first-count", 1);
+    rows.insert(
+        "custom-callback-replace-first-level",
+        LogLevel::Warning.as_ffmpeg_value(),
+    );
+    rows.insert("custom-callback-replace-first-after-second-count", 1);
+    rows.insert("custom-callback-replace-second-count", 1);
+    rows.insert(
+        "custom-callback-replace-second-level",
+        LogLevel::Error.as_ffmpeg_value(),
+    );
+    rows.insert("custom-callback-replace-first-after-default-count", 1);
+    rows.insert("custom-callback-replace-second-after-default-count", 1);
+    rows.insert("custom-callback-restore-count", 1);
+    rows.insert(
+        "custom-callback-restore-level",
+        LogLevel::Warning.as_ffmpeg_value(),
+    );
     rows
 }
 
@@ -1133,6 +1151,19 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
     rows.insert(
         "custom-callback-context-quiet-item",
         escape_row_text(custom_context_quiet_item.as_bytes()),
+    );
+    let lifecycle = rust_custom_callback_lifecycle_text();
+    rows.insert(
+        "custom-callback-replace-first-message",
+        escape_row_text(lifecycle.first.as_bytes()),
+    );
+    rows.insert(
+        "custom-callback-replace-second-message",
+        escape_row_text(lifecycle.second.as_bytes()),
+    );
+    rows.insert(
+        "custom-callback-restore-message",
+        escape_row_text(lifecycle.restored.as_bytes()),
     );
 
     let (plain, _) = rust_format_line(LogLevel::Warning, "plain", LogFlags::empty(), true, 128);
@@ -2101,6 +2132,66 @@ fn rust_custom_callback_context_quiet_text(context: &AvLogContextPrefix) -> (Str
     seen.remove(0)
 }
 
+struct CustomCallbackLifecycleText {
+    first: String,
+    second: String,
+    restored: String,
+}
+
+fn rust_custom_callback_lifecycle_text() -> CustomCallbackLifecycleText {
+    let mut logger = Logger::new(LogLevel::Trace);
+    let first_seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let second_seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+
+    let first_callback_seen = std::sync::Arc::clone(&first_seen);
+    logger.set_callback(move |record| {
+        first_callback_seen
+            .lock()
+            .unwrap()
+            .push(record.message().to_owned());
+    });
+    assert!(logger.log(LogRecord::new(LogLevel::Warning, "", "first")));
+
+    let second_callback_seen = std::sync::Arc::clone(&second_seen);
+    logger.set_callback(move |record| {
+        second_callback_seen
+            .lock()
+            .unwrap()
+            .push(record.message().to_owned());
+    });
+    assert!(logger.log(LogRecord::new(LogLevel::Error, "", "second")));
+    assert_eq!(first_seen.lock().unwrap().as_slice(), ["first"]);
+    assert_eq!(second_seen.lock().unwrap().as_slice(), ["second"]);
+
+    assert!(logger.clear_callback());
+    assert!(logger.log(LogRecord::new(LogLevel::Fatal, "", "after default restore")));
+    assert_eq!(first_seen.lock().unwrap().as_slice(), ["first"]);
+    assert_eq!(second_seen.lock().unwrap().as_slice(), ["second"]);
+
+    let restored_first_seen = std::sync::Arc::clone(&first_seen);
+    logger.set_callback(move |record| {
+        restored_first_seen
+            .lock()
+            .unwrap()
+            .push(record.message().to_owned());
+    });
+    assert!(logger.log(LogRecord::new(
+        LogLevel::Warning,
+        "",
+        "after custom restore"
+    )));
+
+    let first = first_seen.lock().unwrap();
+    let second = second_seen.lock().unwrap();
+    assert_eq!(first.as_slice(), ["first", "after custom restore"]);
+    assert_eq!(second.as_slice(), ["second"]);
+    CustomCallbackLifecycleText {
+        first: first[0].clone(),
+        second: second[0].clone(),
+        restored: first[1].clone(),
+    }
+}
+
 fn normalize_default_callback_timestamp(line: &str) -> String {
     if is_default_datetime_prefix(line) {
         format!("<datetime> {}", &line[24..])
@@ -2466,12 +2557,21 @@ static int captured_count = 0;
 static int captured_level = -999;
 static char captured_message[512];
 static char captured_item[128];
+static int replacement_captured_count = 0;
+static int replacement_captured_level = -999;
+static char replacement_captured_message[512];
 
 static void reset_capture(void) {
     captured_count = 0;
     captured_level = -999;
     captured_message[0] = '\0';
     snprintf(captured_item, sizeof(captured_item), "%s", "<none>");
+}
+
+static void reset_replacement_capture(void) {
+    replacement_captured_count = 0;
+    replacement_captured_level = -999;
+    replacement_captured_message[0] = '\0';
 }
 
 static void capture_log_callback(void *ptr, int level, const char *fmt, va_list vl) {
@@ -2483,6 +2583,15 @@ static void capture_log_callback(void *ptr, int level, const char *fmt, va_list 
         snprintf(captured_item, sizeof(captured_item), "%s", av_class->item_name(ptr));
     else
         snprintf(captured_item, sizeof(captured_item), "%s", "<none>");
+}
+
+static void capture_replacement_log_callback(void *ptr, int level,
+                                             const char *fmt, va_list vl) {
+    (void)ptr;
+    replacement_captured_count++;
+    replacement_captured_level = level;
+    vsnprintf(replacement_captured_message,
+              sizeof(replacement_captured_message), fmt, vl);
 }
 
 static void print_level_after_set(const char *name, int level) {
@@ -3578,6 +3687,42 @@ static void print_custom_callback_rows(void) {
     av_log_set_callback(av_log_default_callback);
 }
 
+static void print_custom_callback_lifecycle_rows(void) {
+    reset_capture();
+    reset_replacement_capture();
+    av_log_set_callback(capture_log_callback);
+    av_log_set_level(AV_LOG_TRACE);
+    av_log_set_flags(AV_LOG_PRINT_LEVEL);
+
+    av_log(NULL, AV_LOG_WARNING, "%s", "first");
+    ROW("custom-callback-replace-first-count", captured_count);
+    ROW("custom-callback-replace-first-level", captured_level);
+    ROW_STR("custom-callback-replace-first-message", captured_message);
+
+    av_log_set_callback(capture_replacement_log_callback);
+    av_log(NULL, AV_LOG_ERROR, "%s", "second");
+    ROW("custom-callback-replace-first-after-second-count", captured_count);
+    ROW("custom-callback-replace-second-count", replacement_captured_count);
+    ROW("custom-callback-replace-second-level", replacement_captured_level);
+    ROW_STR("custom-callback-replace-second-message",
+            replacement_captured_message);
+
+    av_log_set_callback(av_log_default_callback);
+    av_log(NULL, AV_LOG_FATAL, "%s\n", "after default restore");
+    ROW("custom-callback-replace-first-after-default-count", captured_count);
+    ROW("custom-callback-replace-second-after-default-count",
+        replacement_captured_count);
+
+    reset_capture();
+    av_log_set_callback(capture_log_callback);
+    av_log(NULL, AV_LOG_WARNING, "%s", "after custom restore");
+    ROW("custom-callback-restore-count", captured_count);
+    ROW("custom-callback-restore-level", captured_level);
+    ROW_STR("custom-callback-restore-message", captured_message);
+
+    av_log_set_callback(av_log_default_callback);
+}
+
 int main(int argc, char **argv) {
     if (argc > 1 && strcmp(argv[1], "--plain") == 0) {
         print_default_callback_no_force_redirected_rows();
@@ -3673,6 +3818,7 @@ int main(int argc, char **argv) {
     print_default_callback_rows();
     print_default_callback_color_cache_after_nocolor_rows();
     print_custom_callback_rows();
+    print_custom_callback_lifecycle_rows();
     av_log_set_callback(capture_log_callback);
     reset_capture();
     int once_state = 0;

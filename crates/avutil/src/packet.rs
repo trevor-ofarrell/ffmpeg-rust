@@ -12925,6 +12925,68 @@ mod tests {
     }
 
     #[test]
+    fn packet_fifo_invalid_ops_preserve_mixed_queue_order() {
+        let mut fifo = PacketFifo::new();
+        let mut move_src = Packet::from_data(vec![0xa1]).unwrap();
+        move_src.set_pts(Some(310));
+        let move_payload = move_src.data_buffer().clone();
+        let mut ref_src = Packet::from_data(vec![0xb2]).unwrap();
+        ref_src.set_pts(Some(320));
+        let ref_payload = ref_src.data_buffer().clone();
+
+        fifo.write_move(&mut move_src).unwrap();
+        fifo.write_ref(&ref_src).unwrap();
+        assert!(move_src.is_empty());
+        assert_eq!(ref_src.data(), &[0xb2]);
+        assert_eq!(fifo.can_read(), 2);
+
+        let peek_err = fifo.peek(2).unwrap_err();
+        assert_eq!(peek_err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(peek_err.code(), Some(AvErrorCode::EINVAL));
+        assert_eq!(fifo.can_read(), 2);
+        assert_eq!(fifo.peek(0).unwrap().data(), &[0xa1]);
+        assert_eq!(fifo.peek(0).unwrap().pts(), Some(310));
+        assert!(fifo
+            .peek(0)
+            .unwrap()
+            .data_buffer()
+            .shares_storage(&move_payload));
+        assert_eq!(fifo.peek(1).unwrap().data(), &[0xb2]);
+        assert_eq!(fifo.peek(1).unwrap().pts(), Some(320));
+        assert!(fifo
+            .peek(1)
+            .unwrap()
+            .data_buffer()
+            .shares_storage(&ref_payload));
+
+        let drain_err = fifo.drain(3).unwrap_err();
+        assert_eq!(drain_err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(drain_err.code(), Some(AvErrorCode::EINVAL));
+        assert_eq!(fifo.can_read(), 2);
+        assert_eq!(fifo.peek(0).unwrap().data(), &[0xa1]);
+        assert_eq!(fifo.peek(1).unwrap().data(), &[0xb2]);
+
+        let mut first = Packet::default();
+        fifo.read_move(&mut first).unwrap();
+        assert_eq!(first.data(), &[0xa1]);
+        assert_eq!(first.pts(), Some(310));
+        assert!(first.data_buffer().shares_storage(&move_payload));
+        assert_eq!(fifo.can_read(), 1);
+        assert_eq!(fifo.peek(0).unwrap().data(), &[0xb2]);
+        assert!(fifo
+            .peek(0)
+            .unwrap()
+            .data_buffer()
+            .shares_storage(&ref_payload));
+
+        fifo.clear();
+        assert!(fifo.is_empty());
+        assert_eq!(ref_src.data(), &[0xb2]);
+        assert_eq!(ref_src.pts(), Some(320));
+        assert!(ref_src.data_buffer().shares_storage(&ref_payload));
+    }
+
+    #[test]
     fn packet_fifo_drop_releases_queued_moved_payload_and_opaque_ref() {
         let payload_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
         let opaque_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));

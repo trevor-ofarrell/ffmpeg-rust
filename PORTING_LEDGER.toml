@@ -546,6 +546,7 @@ unit_tests = [
   "packet::tests::packet_legacy_init_resets_fields_but_preserves_payload",
   "packet::tests::packet_fifo_moves_refs_peeks_reads_and_drains_packets",
   "packet::tests::packet_fifo_unknown_flags_treat_as_move",
+  "packet::tests::packet_fifo_invalid_ops_preserve_mixed_queue_order",
   "packet::tests::packet_fifo_drop_releases_queued_moved_payload_and_opaque_ref",
   "packet::tests::packet_fifo_clear_releases_moved_packets_and_preserves_ref_sources",
   "packet::tests::packet_time_base_defaults_copies_resets_and_rescale_preserves",
@@ -640,6 +641,12 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest packet FIFO invalid-op update: pinned libavcodec rows now prove an
+# out-of-range `av_container_fifo_peek()` on a mixed move/ref packet queue
+# returns EINVAL without changing readable count or queued order. Follow-on
+# rows read the moved packet first, then drain the ref packet while preserving
+# the ref source. Rust unit coverage and `avutil_core_models` mirror the same
+# invalid-operation/no-mutation lifecycle.
 # Latest packet FIFO clear update: pinned libavcodec rows now prove the public
 # `AVContainerFifo` all-drain equivalent for a mixed move/ref queue releases the
 # move-written payload and opaque_ref exactly once, preserves a ref-written
@@ -2266,6 +2273,7 @@ unit_tests = [
   "logging::tests::repeated_comparison_respects_printed_timestamp_flags",
   "logging::tests::installed_callback_receives_emitted_records_until_cleared",
   "logging::tests::installed_callback_observes_repeat_summary_when_materialized",
+  "logging::tests::installed_callback_replacement_clear_and_restore_are_dispatch_visible",
   "logging::tests::callback_runs_only_for_accepted_records",
   "logging::tests::callback_runs_only_for_emitted_repeated_records",
   "logging::tests::callback_receives_raw_record_fields_after_level_filtering",
@@ -2274,6 +2282,7 @@ unit_tests = [
   "logging::tests::global_logger_filters_and_takes_records",
   "logging::tests::global_logger_shared_flags_flush_repeated_state",
   "logging::tests::global_logger_installed_callback_receives_emitted_records",
+  "logging::tests::global_logger_callback_replacement_reset_and_restore_are_dispatch_visible",
   "logging::tests::global_log_once_uses_shared_logger_state",
   "logging::tests::repetition_summary_records_format_without_level_prefix",
   "logging::tests::default_callback_repeat_summary_stays_plain_when_colored",
@@ -2294,6 +2303,13 @@ fate_tests = [
   "not_applicable: pinned FFmpeg 8.1.1 tests/fate/libavutil.mak has no fate-log target; libavutil/tests/log is an upstream TESTPROGS utility and is built/run through the upstream mapping",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest logging callback lifecycle update: pinned libavutil rows now prove
+# `av_log_set_callback()` replacement dispatches only to the active callback,
+# restoring the default callback stops custom dispatch, and installing a custom
+# callback again resumes dispatch. Rust unit coverage proves the same
+# replacement, record-clear, callback-clear, global-reset, and reinstall
+# behavior through observable dispatch counts/messages rather than pointer
+# identity. `avutil_core_models` mirrors the deterministic callback lifecycle.
 # Latest delegated TERM-color update: pinned libavutil default-callback rows now
 # prove a no-force pseudo-terminal with `TERM=xterm-color` resolves to BASIC
 # color output for the warning-level row, distinct from the 256-color

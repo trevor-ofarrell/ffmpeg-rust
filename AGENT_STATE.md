@@ -3,6 +3,69 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active with xhigh
+fast/full-access subagents and no approval prompts. The tree started clean at
+`master...origin/master [ahead 68]`; strict completion remains 11/96
+components, about 11.5%. Three read-only explorers reported bounded next
+slices: Ptolemy the 2nd recommended `avutil-packet` FIFO invalid-operation
+ordering, Curie the 2nd recommended `avutil-logging` callback replacement
+lifecycle, and Turing the 2nd recommended future `avutil-frame` PAL8 palette
+side-plane propagation. Hume the 2nd implemented the disjoint logging callback
+slice, and the main thread implemented/reviewed the packet FIFO slice.
+
+Current orchestrated slice: pinned libavcodec packet rows now prove an
+out-of-range `av_container_fifo_peek()` on a mixed move/ref packet FIFO returns
+EINVAL without changing readable count or queued order. Follow-on rows read the
+moved packet first, then drain the ref packet while preserving the ref source.
+Rust `PacketFifo` unit coverage and the deterministic `avutil_core_models`
+fixture mirror that invalid-operation/no-mutation lifecycle. Delegated pinned
+libavutil logging rows now prove `av_log_set_callback()` replacement/default
+restore/custom restore through observable callback counts and messages. Rust
+logger and global logger unit coverage mirrors replacement, clear, callback
+clear, reset, and reinstall behavior. `avutil-packet` and `avutil-logging`
+remain `fate_pass`, not `complete`; strict completion remains 11/96.
+
+Latest validation commands for this orchestrated slice passed: `cargo fmt
+--all`; `cargo test -p avutil --target-dir target-orch-avutil-life-logging
+logging -- --nocapture`; `cargo test -p avutil --target-dir
+target-orch-avutil-life-packet packet_fifo -- --nocapture`; `cargo check
+--manifest-path fuzz\\Cargo.toml --target-dir
+target-orch-avutil-life-fuzz-check --bin avutil_core_models`; `cargo run -p
+fate-runner --target-dir target-orch-avutil-life-log-map -- run --mappings
+tests\\differential\\mappings.txt --component avutil-logging --target
+oracle-libavutil-logging --oracle-ffmpeg
+.\\third_party\\ffmpeg-oracle\\build\\bin\\ffmpeg.cmd`; `cargo run -p
+fate-runner --target-dir target-orch-avutil-life-packet-map -- run --mappings
+tests\\differential\\mappings.txt --component avutil-packet --target
+oracle-libavcodec-packet-core --oracle-ffmpeg
+.\\third_party\\ffmpeg-oracle\\build\\bin\\ffmpeg.cmd`; `cargo run -p
+fate-runner --target-dir target-orch-avutil-life-log-local -- run --component
+avutil-logging`; `cargo run -p fate-runner --target-dir
+target-orch-avutil-life-packet-local -- run --component avutil-packet`; `cargo
+fmt --all -- --check`; `cargo clippy -p avutil --all-targets --all-features
+--target-dir target-orch-avutil-life-clippy -- -D warnings`; `cargo clippy
+--manifest-path fuzz\\Cargo.toml --target-dir
+target-orch-avutil-life-fuzz-clippy --bin avutil_core_models -- -D warnings`;
+and warmed WSL `RUST_MIN_STACK=33554432 CXXFLAGS='-O1'
+HOST_CXXFLAGS='-O1' CARGO_TARGET_DIR=target-wsl-avutil-life-fuzz-o1 cargo fuzz
+run avutil_core_models -- -runs=1`.
+
+Latest failing or limited commands for this slice: the first focused packet FIFO
+unit test used an unpadded `Packet::new` ref source while asserting shared
+refcounted storage; the fixture was corrected to `Packet::from_data` and the
+unit rerun passed. The first WSL `cargo fuzz run avutil_core_models -- -runs=1`
+timed out after 15 minutes while compile/link work was still running; process
+inspection showed the background job active, a wait loop confirmed it finished,
+and a warmed rerun passed. No behavior failure remains.
+
+Current focus component: `avutil-packet` remains the top priority incomplete
+component (`fate_pass`), followed by `avutil-buffer` (`differential_pass`),
+`avutil-frame` (`differential_pass`), `avutil-logging` (`fate_pass`), and
+`avutil-options` (`fate_pass`). Next 3 concrete actions: run final ledger and
+runtime guards, commit this coherent avutil lifecycle evidence slice if clean,
+then use the next clean-tree window for the `avutil-frame` PAL8 palette
+side-plane propagation slice or another bounded `avutil-packet` completion gap.
+
+Current authoritative turn status: orchestrator workflow is active with xhigh
 fast/full-access subagents and no approval prompts. After committing
 `858968bf Pin buffer recycle rejection lifecycles`, the tree was clean at
 `master...origin/master [ahead 67]`; strict completion remains 11/96
