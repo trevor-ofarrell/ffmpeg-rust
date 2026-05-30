@@ -1,6 +1,6 @@
 use crate::{
     AvError, AvErrorCode, AvErrorKind, AvResult, BufferRef, ChannelLayout, ChannelLayoutSpec,
-    Dictionary, MatchMode, PixelFormat, Rational, SampleFormat, SetMode,
+    Dictionary, MatchMode, PixelFormat, Rational, SampleFormat, SetMode, AVPALETTE_SIZE,
 };
 use std::collections::VecDeque;
 use std::num::NonZeroUsize;
@@ -13361,6 +13361,50 @@ impl VideoFrame {
         )
     }
 
+    pub fn new_pal8_with_palette(
+        width: usize,
+        height: usize,
+        index_plane: Vec<u8>,
+        palette: Vec<u8>,
+    ) -> AvResult<Self> {
+        if palette.len() != AVPALETTE_SIZE {
+            return Err(AvError::invalid_data(format!(
+                "pal8 video frame palette has {} bytes, expected {AVPALETTE_SIZE}",
+                palette.len()
+            )));
+        }
+
+        Self::new_with_line_sizes(
+            width,
+            height,
+            PixelFormat::Pal8,
+            vec![index_plane, palette],
+            pal8_full_line_sizes(width),
+        )
+    }
+
+    pub fn new_pal8_with_palette_refs(
+        width: usize,
+        height: usize,
+        index_plane: BufferRef,
+        palette: BufferRef,
+    ) -> AvResult<Self> {
+        if palette.len() != AVPALETTE_SIZE {
+            return Err(AvError::invalid_data(format!(
+                "pal8 video frame palette buffer has {} bytes, expected {AVPALETTE_SIZE}",
+                palette.len()
+            )));
+        }
+
+        Self::new_with_buffer_refs_and_line_sizes(
+            width,
+            height,
+            PixelFormat::Pal8,
+            vec![index_plane, palette],
+            pal8_full_line_sizes(width),
+        )
+    }
+
     pub fn new_with_aligned_line_sizes(
         width: usize,
         height: usize,
@@ -13419,7 +13463,8 @@ impl VideoFrame {
             ));
         }
 
-        let plane_shapes = video_plane_shapes(pixel_format, width, height)?;
+        let plane_shapes =
+            video_plane_shapes_for_plane_count(pixel_format, width, height, plane_buffers.len())?;
         let planes = snapshot_video_plane_buffers(
             &plane_buffers,
             &plane_shapes,
@@ -13482,15 +13527,21 @@ impl VideoFrame {
             return;
         }
 
-        let line_sizes = Self::aligned_line_sizes(
+        let line_sizes = aligned_video_line_sizes_for_plane_count(
             self.pixel_format,
             self.width,
             self.height,
+            self.plane_buffers.len(),
             FFMPEG_FRAME_DEFAULT_ALIGNMENT,
         )
         .expect("existing video frame shape should align");
-        let plane_shapes = video_plane_shapes(self.pixel_format, self.width, self.height)
-            .expect("existing video frame shape should remain valid");
+        let plane_shapes = video_plane_shapes_for_plane_count(
+            self.pixel_format,
+            self.width,
+            self.height,
+            self.plane_buffers.len(),
+        )
+        .expect("existing video frame shape should remain valid");
         let plane_buffers = repack_video_planes(
             &self.planes,
             &plane_shapes,
@@ -13504,7 +13555,12 @@ impl VideoFrame {
     }
 
     pub fn set_plane_visible_data(&mut self, index: usize, data: &[u8]) -> AvResult<()> {
-        let plane_shapes = video_plane_shapes(self.pixel_format, self.width, self.height)?;
+        let plane_shapes = video_plane_shapes_for_plane_count(
+            self.pixel_format,
+            self.width,
+            self.height,
+            self.plane_buffers.len(),
+        )?;
         let Some(shape) = plane_shapes.get(index).copied() else {
             return Err(AvError::invalid_argument(format!(
                 "{} video frame plane index {index} is out of range",
@@ -13562,8 +13618,18 @@ impl VideoFrame {
             )));
         }
 
-        let source_shapes = video_plane_shapes(source.pixel_format, source.width, source.height)?;
-        let destination_shapes = video_plane_shapes(self.pixel_format, self.width, self.height)?;
+        let source_shapes = video_plane_shapes_for_plane_count(
+            source.pixel_format,
+            source.width,
+            source.height,
+            source.plane_buffers.len(),
+        )?;
+        let destination_shapes = video_plane_shapes_for_plane_count(
+            self.pixel_format,
+            self.width,
+            self.height,
+            self.plane_buffers.len(),
+        )?;
         if source_shapes.len() != destination_shapes.len()
             || source_shapes.len() != self.planes.len()
         {
@@ -13859,9 +13925,20 @@ impl VideoFrame {
             BufferRef::from_vec(storage)
         };
 
-        let new_shapes = video_plane_shapes(self.pixel_format, new_width, new_height)?;
-        let line_sizes = vec![line_size];
-        let plane_buffers = vec![new_buffer];
+        let pal8_has_palette =
+            self.pixel_format == PixelFormat::Pal8 && self.plane_buffers.len() == 2;
+        let mut line_sizes = vec![line_size];
+        let mut plane_buffers = vec![new_buffer];
+        if pal8_has_palette {
+            line_sizes.push(self.line_sizes[1]);
+            plane_buffers.push(self.plane_buffers[1].clone());
+        }
+        let new_shapes = video_plane_shapes_for_plane_count(
+            self.pixel_format,
+            new_width,
+            new_height,
+            plane_buffers.len(),
+        )?;
         let planes = snapshot_video_plane_buffers(
             &plane_buffers,
             &new_shapes,
@@ -14852,6 +14929,33 @@ struct VideoPlaneShape {
     rows: usize,
 }
 
+fn is_zero_line_sized_palette_shape(shape: VideoPlaneShape, line_size: usize) -> bool {
+    line_size == 0 && shape.row_bytes == AVPALETTE_SIZE && shape.rows == 1
+}
+
+fn validate_video_line_size(
+    format_name: &str,
+    index: usize,
+    shape: VideoPlaneShape,
+    line_size: usize,
+) -> AvResult<()> {
+    if line_size < shape.row_bytes && !is_zero_line_sized_palette_shape(shape, line_size) {
+        return Err(AvError::invalid_argument(format!(
+            "{format_name} video frame plane {index} line size {line_size} is smaller than visible row bytes {}",
+            shape.row_bytes
+        )));
+    }
+    Ok(())
+}
+
+fn expected_video_storage_size(shape: VideoPlaneShape, line_size: usize) -> AvResult<usize> {
+    if is_zero_line_sized_palette_shape(shape, line_size) {
+        return Ok(AVPALETTE_SIZE);
+    }
+
+    checked_mul(line_size, shape.rows, "video frame storage size")
+}
+
 fn repack_video_planes(
     planes: &[Vec<u8>],
     plane_shapes: &[VideoPlaneShape],
@@ -14868,12 +14972,7 @@ fn repack_video_planes(
     for (index, ((plane, shape), line_size)) in
         planes.iter().zip(plane_shapes).zip(line_sizes).enumerate()
     {
-        if *line_size < shape.row_bytes {
-            return Err(AvError::invalid_argument(format!(
-                "{format_name} video frame plane {index} line size {line_size} is smaller than visible row bytes {}",
-                shape.row_bytes
-            )));
-        }
+        validate_video_line_size(format_name, index, *shape, *line_size)?;
         let expected_visible = checked_mul(
             shape.row_bytes,
             shape.rows,
@@ -14885,7 +14984,7 @@ fn repack_video_planes(
                 plane.len()
             )));
         }
-        let expected_storage = checked_mul(*line_size, shape.rows, "video frame storage size")?;
+        let expected_storage = expected_video_storage_size(*shape, *line_size)?;
         let mut storage = vec![0; expected_storage];
         for row in 0..shape.rows {
             let src_start = row * shape.row_bytes;
@@ -14928,17 +15027,8 @@ fn snapshot_video_plane_buffers(
         .zip(line_sizes)
         .enumerate()
     {
-        if *line_size < shape.row_bytes {
-            return Err(AvError::invalid_argument(format!(
-                "{format_name} video frame plane {index} line size {line_size} is smaller than visible row bytes {}",
-                shape.row_bytes
-            )));
-        }
-        let expected_storage = line_size.checked_mul(shape.rows).ok_or_else(|| {
-            AvError::invalid_argument(format!(
-                "{format_name} video frame plane {index} line size overflow"
-            ))
-        })?;
+        validate_video_line_size(format_name, index, *shape, *line_size)?;
+        let expected_storage = expected_video_storage_size(*shape, *line_size)?;
         if plane.len() != expected_storage {
             return Err(AvError::invalid_data(format!(
                 "{format_name} video frame plane {index} has {} bytes, expected {expected_storage}",
@@ -15581,6 +15671,37 @@ fn video_plane_shapes(
     }
 }
 
+fn video_plane_shapes_for_plane_count(
+    pixel_format: PixelFormat,
+    width: usize,
+    height: usize,
+    plane_count: usize,
+) -> AvResult<Vec<VideoPlaneShape>> {
+    if pixel_format == PixelFormat::Pal8 && plane_count == 2 {
+        pixel_format.plane_sizes(width, height)?;
+        return Ok(pal8_full_plane_shapes(width, height));
+    }
+
+    video_plane_shapes(pixel_format, width, height)
+}
+
+fn pal8_full_plane_shapes(width: usize, height: usize) -> Vec<VideoPlaneShape> {
+    vec![
+        VideoPlaneShape {
+            row_bytes: width,
+            rows: height,
+        },
+        VideoPlaneShape {
+            row_bytes: AVPALETTE_SIZE,
+            rows: 1,
+        },
+    ]
+}
+
+fn pal8_full_line_sizes(width: usize) -> Vec<usize> {
+    vec![width, 0]
+}
+
 fn uyyvyy411_row_bytes(width: usize) -> AvResult<usize> {
     checked_mul(
         width.div_ceil(4),
@@ -15732,6 +15853,28 @@ fn video_line_sizes(
         .into_iter()
         .map(|shape| shape.row_bytes)
         .collect())
+}
+
+fn aligned_video_line_sizes_for_plane_count(
+    pixel_format: PixelFormat,
+    width: usize,
+    height: usize,
+    plane_count: usize,
+    alignment: usize,
+) -> AvResult<Vec<usize>> {
+    let line_sizes = if pixel_format == PixelFormat::Pal8 && plane_count == 2 {
+        let mut line_sizes = pal8_full_line_sizes(width);
+        line_sizes[0] = align_size(line_sizes[0], alignment, "pal8 video frame index line size")?;
+        line_sizes
+    } else {
+        video_line_sizes(pixel_format, width, height)?
+    };
+
+    if pixel_format == PixelFormat::Pal8 && plane_count == 2 {
+        Ok(line_sizes)
+    } else {
+        align_line_sizes(line_sizes, alignment, "video frame line size")
+    }
 }
 
 fn validate_frame_crop(width: usize, height: usize, crop: FrameCrop) -> AvResult<()> {
@@ -19439,6 +19582,117 @@ mod tests {
             &[1, 2, 3, 4],
         );
         assert_eq!(source.as_slice(), &[1, 2, 3, 4]);
+    }
+
+    fn pal8_palette_fixture() -> Vec<u8> {
+        (0..AVPALETTE_SIZE)
+            .map(|index| (index as u8).wrapping_mul(37).wrapping_add(11))
+            .collect()
+    }
+
+    fn pal8_index_fixture(width: usize, height: usize) -> Vec<u8> {
+        let mut data = Vec::with_capacity(width * height);
+        for row in 0..height {
+            for column in 0..width {
+                data.push((row * 16 + column) as u8);
+            }
+        }
+        data
+    }
+
+    #[test]
+    fn video_frame_pal8_accepts_palette_side_plane_and_preserves_raw_index_constructor() {
+        let index = pal8_index_fixture(3, 2);
+        let palette = pal8_palette_fixture();
+
+        let raw = VideoFrame::new(3, 2, PixelFormat::Pal8, vec![index.clone()]).unwrap();
+        assert_eq!(raw.line_sizes(), &[3]);
+        assert_eq!(raw.planes(), std::slice::from_ref(&index));
+        assert_eq!(raw.plane_buffers().len(), 1);
+
+        let full = VideoFrame::new_pal8_with_palette(3, 2, index.clone(), palette.clone()).unwrap();
+        assert_eq!(full.line_sizes(), &[3, 0]);
+        assert_eq!(full.planes(), &[index.clone(), palette.clone()]);
+        assert_eq!(full.plane_buffers().len(), 2);
+        assert_eq!(full.plane_buffers()[1].len(), AVPALETTE_SIZE);
+
+        let explicit = VideoFrame::new_with_line_sizes(
+            3,
+            2,
+            PixelFormat::Pal8,
+            vec![index, palette.clone()],
+            vec![3, 0],
+        )
+        .unwrap();
+        assert_eq!(explicit.line_sizes(), &[3, 0]);
+        assert_eq!(explicit.planes()[1], palette);
+
+        assert_eq!(
+            VideoFrame::new_pal8_with_palette(3, 2, vec![0; 6], vec![0; AVPALETTE_SIZE - 1])
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn video_frame_pal8_palette_side_plane_shares_detaches_and_crops() {
+        let index = pal8_index_fixture(3, 2);
+        let palette = pal8_palette_fixture();
+        let mut frame =
+            VideoFrame::new_pal8_with_palette(3, 2, index.clone(), palette.clone()).unwrap();
+        let cloned = frame.clone();
+        assert!(!frame.is_writable());
+        assert!(frame.plane_buffers()[0].shares_storage(&cloned.plane_buffers()[0]));
+        assert!(frame.plane_buffers()[1].shares_storage(&cloned.plane_buffers()[1]));
+
+        frame.make_writable();
+        assert!(frame.is_writable());
+        assert_eq!(frame.line_sizes(), &[FFMPEG_FRAME_DEFAULT_ALIGNMENT, 0]);
+        assert!(!frame.plane_buffers()[0].shares_storage(&cloned.plane_buffers()[0]));
+        assert!(!frame.plane_buffers()[1].shares_storage(&cloned.plane_buffers()[1]));
+        assert_eq!(frame.planes(), &[index.clone(), palette.clone()]);
+        assert_strided_plane(
+            frame.plane_buffers()[0].as_slice(),
+            FFMPEG_FRAME_DEFAULT_ALIGNMENT,
+            3,
+            2,
+            &index,
+        );
+        assert_eq!(frame.plane_buffers()[1].as_slice(), palette.as_slice());
+
+        let crop_index = BufferRef::from_vec(pal8_index_fixture(6, 4));
+        let crop_palette = BufferRef::from_vec(palette.clone());
+        let mut cropped =
+            VideoFrame::new_pal8_with_palette_refs(6, 4, crop_index, crop_palette.clone()).unwrap();
+        cropped
+            .apply_cropping(FrameCrop::new(1, 1, 1, 1), FrameCropFlags::UNALIGNED)
+            .unwrap();
+        assert_eq!(cropped.width(), 4);
+        assert_eq!(cropped.height(), 2);
+        assert_eq!(cropped.line_sizes(), &[6, 0]);
+        assert_eq!(cropped.planes()[0], vec![17, 18, 19, 20, 33, 34, 35, 36]);
+        assert_eq!(cropped.planes()[1], palette);
+        assert!(cropped.plane_buffers()[1].shares_storage(&crop_palette));
+    }
+
+    #[test]
+    fn video_frame_pal8_copy_data_copies_palette_when_both_frames_have_side_plane() {
+        let index = pal8_index_fixture(3, 2);
+        let palette = pal8_palette_fixture();
+        let source =
+            VideoFrame::new_pal8_with_palette(3, 2, index.clone(), palette.clone()).unwrap();
+        let mut destination =
+            VideoFrame::new_pal8_with_palette(3, 2, vec![0; 6], vec![0; AVPALETTE_SIZE]).unwrap();
+
+        destination.copy_data_from(&source).unwrap();
+        assert_eq!(destination.planes(), &[index, palette]);
+
+        let raw_source = VideoFrame::new(3, 2, PixelFormat::Pal8, vec![vec![1; 6]]).unwrap();
+        assert_eq!(
+            destination.copy_data_from(&raw_source).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
     }
 
     #[test]

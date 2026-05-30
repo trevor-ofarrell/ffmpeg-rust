@@ -21,6 +21,8 @@ This repository is a Rust workspace for a compatibility-oriented FFmpeg 8.1.1 re
 
 ## Type Model
 
+`VideoFrame` keeps raw `pal8` packet payloads as a one-plane index image while exposing explicit full-frame PAL8 constructors for FFmpeg `AVFrame` parity. The full PAL8 shape stores the index plane in plane 0 and the 1024-byte palette in plane 1 with `linesize[1] == 0`, matching pinned libavutil rows for `av_frame_get_buffer`, `av_frame_ref`, `av_frame_make_writable`, and `av_frame_apply_cropping`.
+
 `LogFlags` preserves the raw integer stored by FFmpeg's `av_log_set_flags()` rather than truncating unknown bits. Known-bit helpers still drive formatting decisions for `AV_LOG_SKIP_REPEATED`, `AV_LOG_PRINT_LEVEL`, `AV_LOG_PRINT_TIME`, and `AV_LOG_PRINT_DATETIME`, while `from_bits_truncate` remains available for call sites that intentionally want the known-mask subset.
 
 `Logger` stores its threshold as the raw integer used by `av_log_set_level()` so non-enum thresholds retain exact `av_log_get_level()` state and filter records by FFmpeg's integer comparison. `known_level()` exposes named thresholds while `raw_level()` preserves arbitrary values.
@@ -445,7 +447,7 @@ Both rawvideo packet paths also accept FFmpeg's byte-packed low-bit-depth RGB na
 
 Both rawvideo packet paths also accept FFmpeg's Bayer CFA names `bayer_bggr8`/`bayer_rggb8`/`bayer_gbrg8`/`bayer_grbg8` and `bayer_bggr16le`/`bayer_bggr16be`/`bayer_rggb16le`/`bayer_rggb16be`/`bayer_gbrg16le`/`bayer_gbrg16be`/`bayer_grbg16le`/`bayer_grbg16be` as one payload plane through the shared `PixelFormat` model. The 8-bit variants use one byte per pixel and the 16-bit variants use two bytes per pixel.
 
-Both rawvideo packet paths also accept FFmpeg's paletted `pal8` name as one byte-per-pixel index payload plane through the shared `PixelFormat` model; palette side-plane handling is intentionally not yet modeled in `VideoFrame`.
+Both rawvideo packet paths also accept FFmpeg's paletted `pal8` name as one byte-per-pixel index payload plane through the shared `PixelFormat` model; full PAL8 `VideoFrame` palette side-plane handling is modeled separately so demuxed raw packets stay index-only while AVFrame-style callers can carry the 1024-byte palette.
 
 Both rawvideo packet paths also accept FFmpeg's packed YUV 4:2:2 names `yuyv422`, `uyvy422`, and `yvyu422` as one two-byte-per-pixel payload plane with even-width validation through the shared `PixelFormat` model.
 

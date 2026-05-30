@@ -3,6 +3,78 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active with xhigh
+fast/full-access subagents and no approval prompts. The tree started at
+`master...origin/master [ahead 71]`; strict completion remains 11/96
+components, about 11.5%. The main thread completed an `avutil-frame` PAL8
+palette side-plane slice while Huygens the 2nd completed a disjoint
+`avutil-buffer` threaded ref/unref slice. Both were reviewed and integrated
+serially by the orchestrator.
+
+Current orchestrated slice: pinned libavutil `AVFrame` rows now prove full PAL8
+frame behavior with index data in plane 0 and a 1024-byte palette at `data[1]`
+while `linesize[1] == 0`. Rust preserves one-plane raw PAL8 packet-frame
+construction, adds explicit two-plane PAL8 frame constructors, detaches both
+planes during make-writable, copies palette data when both frames carry it, and
+crops only the index plane while keeping the palette side plane shared and
+unchanged. The delegated buffer rows prove concurrent `AVBufferRef` ref/unref
+activity from four worker threads keeps clones sharing storage and releases
+callback-owned bytes exactly once only after the final owner drops.
+`avutil-frame` and `avutil-buffer` remain `differential_pass`, not `complete`;
+strict completion remains 11/96.
+
+Latest validation commands for this orchestrated slice passed: `cargo fmt
+--all`; `cargo test -p avutil --lib pal8 --target-dir target-pal8-frame-unit
+-- --nocapture`; `cargo test -p avutil --lib
+buffer_ref_concurrent_clone_drop_preserves_final_release --target-dir
+target-buffer-thread-unit-review -- --nocapture`; `cargo check
+--manifest-path fuzz\\Cargo.toml --target-dir target-pal8-frame-fuzz-check
+--bin avutil_core_models`; `$env:FFMPEG_ORACLE='.\\third_party\\ffmpeg-oracle\\build\\bin\\ffmpeg.cmd';
+cargo test -p avutil --test frame_oracle
+libavutil_frame_core_lifecycle_matches_current_model --target-dir
+target-pal8-frame-oracle -- --ignored --nocapture`; `$env:FFMPEG_ORACLE='.\\third_party\\ffmpeg-oracle\\build\\bin\\ffmpeg.cmd';
+cargo test -p avutil --test buffer_oracle
+libavutil_buffer_refs_match_current_model --target-dir
+target-buffer-thread-oracle-review -- --ignored --nocapture`; `cargo run -p
+fate-runner --target-dir target-pal8-frame-diff -- run --mappings
+tests\\differential\\mappings.txt --component avutil-frame --target
+oracle-libavutil-frame-core --oracle-ffmpeg
+.\\third_party\\ffmpeg-oracle\\build\\bin\\ffmpeg.cmd`; `cargo run -p
+fate-runner --target-dir target-buffer-thread-diff -- run --mappings
+tests\\differential\\mappings.txt --component avutil-buffer --target
+oracle-libavutil-buffer --oracle-ffmpeg
+.\\third_party\\ffmpeg-oracle\\build\\bin\\ffmpeg.cmd`; `cargo run -p
+fate-runner --target-dir target-pal8-buffer-local -- run --component
+avutil-frame --component avutil-buffer`; `cargo fmt --all -- --check`;
+`cargo clippy -p avutil --all-targets --all-features --target-dir
+target-pal8-buffer-clippy -- -D warnings`; `cargo clippy --manifest-path
+fuzz\\Cargo.toml --target-dir target-pal8-buffer-fuzz-clippy --bin
+avutil_core_models -- -D warnings`; `cargo test -p fate-runner --target-dir
+target-pal8-buffer-ledger current_ledger`; `cargo run -p xtask --target-dir
+target-pal8-buffer-guard -- guard-runtime`; `cargo run -p xtask --target-dir
+target-pal8-buffer-doctor -- oracle-doctor`; `cargo run -p fate-runner
+--target-dir target-pal8-buffer-status -- status --next 12`; `git diff
+--check`; and WSL `RUST_MIN_STACK=33554432 CXXFLAGS='-O1'
+HOST_CXXFLAGS='-O1' CARGO_TARGET_DIR=target-wsl-pal8-buffer-fuzz-o1 cargo fuzz
+run avutil_core_models -- -runs=1`.
+
+Latest failing or limited commands for this slice: the first PAL8 oracle run
+proved the initial assumption wrong: pinned FFmpeg uses `linesize[1] == 0` for
+the palette side plane, not a 4-byte row stride. The Rust model and tests were
+corrected to that shape. Adding PAL8 rows also exposed an unrelated
+allocator-dependent audio oracle row that read uninitialized packed-ten-channel
+sample bytes; the C helper now zeroes that fixture before comparison. The first
+WSL fuzz attempt exceeded the command timeout during sanitizer rebuild; a
+warmed rerun completed successfully.
+
+Current focus component: `avutil-packet` remains the top priority incomplete
+component (`fate_pass`), followed by `avutil-buffer` (`differential_pass`),
+`avutil-frame` (`differential_pass`), `avutil-logging` (`fate_pass`), and
+`avutil-options` (`fate_pass`). Next 3 concrete actions: commit this coherent
+orchestrated frame/buffer evidence slice, then use a clean tree to continue
+`avutil-packet` completion evidence or delegate disjoint `avutil-options` /
+`fftools-version` / media-edge workers.
+
+Current authoritative turn status: orchestrator workflow is active with xhigh
 fast/full-access subagents and no approval prompts. The tree started clean at
 `master...origin/master [ahead 70]`; strict completion remains 11/96
 components, about 11.5%. Read-only scouts returned three bounded lanes:

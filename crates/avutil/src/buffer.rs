@@ -1633,6 +1633,46 @@ mod tests {
     }
 
     #[test]
+    fn buffer_ref_concurrent_clone_drop_preserves_final_release() {
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+        let capture = std::sync::Arc::clone(&released);
+        let source = BufferRef::from_vec_with_release_callback(
+            vec![0xa0, 0xa1, 0xa2, 0xa3],
+            move |storage| {
+                capture.lock().unwrap().push(storage);
+            },
+        );
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(5));
+
+        std::thread::scope(|scope| {
+            for _ in 0..4 {
+                let barrier = std::sync::Arc::clone(&barrier);
+                let source_ref = &source;
+                scope.spawn(move || {
+                    barrier.wait();
+                    for _ in 0..32 {
+                        let cloned = BufferRef::ref_from(source_ref);
+                        assert!(source_ref.shares_storage(&cloned));
+                        assert_eq!(cloned.as_slice(), &[0xa0, 0xa1, 0xa2, 0xa3]);
+                        drop(cloned);
+                    }
+                });
+            }
+
+            barrier.wait();
+        });
+
+        assert_eq!(source.strong_count(), 1);
+        assert!(released.lock().unwrap().is_empty());
+        drop(source);
+
+        assert_eq!(
+            *released.lock().unwrap(),
+            vec![vec![0xa0, 0xa1, 0xa2, 0xa3]]
+        );
+    }
+
+    #[test]
     fn callback_owned_buffer_supports_visible_len_and_padding() {
         let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
         let capture = std::sync::Arc::clone(&released);

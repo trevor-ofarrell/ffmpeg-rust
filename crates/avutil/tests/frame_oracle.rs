@@ -11,8 +11,8 @@ use avutil::{
     FrameChromaLocation, FrameColorPrimaries, FrameColorRange, FrameColorSpace,
     FrameColorTransferCharacteristic, FrameCropFlags, FrameData, FrameDecodeErrorFlags, FrameFifo,
     FrameFlags, FramePictureType, FrameSideData, FrameSideDataFlags, FrameSideDataKind,
-    FrameSideDataProperties, PixelFormat, Rational, SampleFormat, VideoFrame, AV_NOPTS_VALUE,
-    AV_NUM_DATA_POINTERS,
+    FrameSideDataProperties, PixelFormat, Rational, SampleFormat, VideoFrame, AVPALETTE_SIZE,
+    AV_NOPTS_VALUE, AV_NUM_DATA_POINTERS,
 };
 
 #[test]
@@ -220,6 +220,75 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     rows.insert(
         "frame:video-after-make-writable-shares".to_string(),
         first_plane_share_fields(&video, &video_ref),
+    );
+
+    let pal8 = Frame::video(
+        VideoFrame::new_pal8_with_palette(3, 2, pal8_index_fixture(3, 2), pal8_palette_fixture())
+            .unwrap(),
+    );
+    rows.insert("frame:pal8-buffer".to_string(), pal8_frame_fields(&pal8));
+    rows.insert(
+        "frame:pal8-plane-buffer-0".to_string(),
+        pal8_plane_buffer_fields(&pal8, 0),
+    );
+    rows.insert(
+        "frame:pal8-plane-buffer-1".to_string(),
+        pal8_plane_buffer_fields(&pal8, 1),
+    );
+    rows.insert(
+        "frame:pal8-plane-buffer-invalid".to_string(),
+        pal8_plane_buffer_fields(&pal8, 2),
+    );
+
+    let mut pal8_ref = Frame::empty();
+    pal8_ref.ref_from(&pal8);
+    rows.insert("frame:pal8-ref-src".to_string(), pal8_frame_fields(&pal8));
+    rows.insert(
+        "frame:pal8-ref-dst".to_string(),
+        pal8_frame_fields(&pal8_ref),
+    );
+    rows.insert(
+        "frame:pal8-ref-plane0-shares".to_string(),
+        pal8_plane_share_fields(&pal8, &pal8_ref, 0),
+    );
+    rows.insert(
+        "frame:pal8-ref-plane1-shares".to_string(),
+        pal8_plane_share_fields(&pal8, &pal8_ref, 1),
+    );
+
+    pal8_ref.make_writable();
+    rows.insert(
+        "frame:pal8-after-make-writable-src".to_string(),
+        pal8_frame_fields(&pal8),
+    );
+    rows.insert(
+        "frame:pal8-after-make-writable-dst".to_string(),
+        pal8_frame_fields(&pal8_ref),
+    );
+    rows.insert(
+        "frame:pal8-make-writable-plane0-shares".to_string(),
+        pal8_plane_share_fields(&pal8, &pal8_ref, 0),
+    );
+    rows.insert(
+        "frame:pal8-make-writable-plane1-shares".to_string(),
+        pal8_plane_share_fields(&pal8, &pal8_ref, 1),
+    );
+
+    let pal8_crop_palette = BufferRef::from_vec(pal8_palette_fixture());
+    let mut pal8_crop = Frame::video(
+        VideoFrame::new_pal8_with_palette_refs(
+            6,
+            4,
+            BufferRef::from_vec(pal8_index_fixture(6, 4)),
+            pal8_crop_palette.clone(),
+        )
+        .unwrap(),
+    );
+    pal8_crop.set_crop_offsets(1, 1, 1, 1);
+    pal8_crop.apply_cropping(FrameCropFlags::UNALIGNED).unwrap();
+    rows.insert(
+        "frame:pal8-crop-palette-preserved".to_string(),
+        pal8_crop_palette_preserved_fields(&pal8_crop, &pal8_crop_palette),
     );
 
     let mut move_dst = Frame::empty();
@@ -3248,6 +3317,82 @@ fn frame_plane_buffer_fields(frame: &Frame, index: usize) -> Vec<String> {
     }
 }
 
+fn pal8_frame_fields(frame: &Frame) -> Vec<String> {
+    match frame.data() {
+        FrameData::Video(video) => vec![
+            "video".to_string(),
+            video.pixel_format_name().to_string(),
+            video.width().to_string(),
+            video.height().to_string(),
+            join_usizes(video.line_sizes()),
+            join_hex_planes(video.planes()),
+            bool_field(video.is_writable()),
+            video.plane_buffers().len().to_string(),
+        ],
+        _ => vec![
+            "empty".to_string(),
+            "none".to_string(),
+            "0".to_string(),
+            "0".to_string(),
+            "none".to_string(),
+            "none".to_string(),
+            "0".to_string(),
+            "0".to_string(),
+        ],
+    }
+}
+
+fn pal8_plane_buffer_fields(frame: &Frame, index: usize) -> Vec<String> {
+    match frame.data() {
+        FrameData::Video(video) => match video.plane_buffer(index) {
+            Some(buffer) => vec![
+                "1".to_string(),
+                hex(&video.planes()[index]),
+                buffer.strong_count().to_string(),
+                bool_field(buffer.is_writable()),
+            ],
+            None => vec![
+                "0".to_string(),
+                "none".to_string(),
+                "0".to_string(),
+                "0".to_string(),
+            ],
+        },
+        _ => vec![
+            "0".to_string(),
+            "none".to_string(),
+            "0".to_string(),
+            "0".to_string(),
+        ],
+    }
+}
+
+fn pal8_plane_share_fields(left: &Frame, right: &Frame, index: usize) -> Vec<String> {
+    let left = pal8_plane_buffer(left, index);
+    let right = pal8_plane_buffer(right, index);
+    buffer_share_fields(left, right)
+}
+
+fn pal8_plane_buffer(frame: &Frame, index: usize) -> &BufferRef {
+    match frame.data() {
+        FrameData::Video(video) if video.pixel_format() == PixelFormat::Pal8 => video
+            .plane_buffer(index)
+            .unwrap_or_else(|| panic!("pal8 frame has no plane buffer {index}")),
+        _ => panic!("frame is not a pal8 video frame"),
+    }
+}
+
+fn pal8_crop_palette_preserved_fields(frame: &Frame, palette: &BufferRef) -> Vec<String> {
+    let FrameData::Video(video) = frame.data() else {
+        return vec!["0".to_string(), "0".to_string(), "none".to_string()];
+    };
+    vec![
+        bool_field(video.plane_buffers()[1].shares_storage(palette)),
+        video.line_sizes()[1].to_string(),
+        join_hex_planes(video.planes()),
+    ]
+}
+
 fn frame_buffer_topology_values(topology: FrameBufferTopology) -> Vec<String> {
     vec![
         AV_NUM_DATA_POINTERS.to_string(),
@@ -3505,6 +3650,22 @@ fn hex(data: &[u8]) -> String {
         output.push_str(&format!("{byte:02x}"));
     }
     output
+}
+
+fn pal8_index_fixture(width: usize, height: usize) -> Vec<u8> {
+    let mut data = Vec::with_capacity(width * height);
+    for row in 0..height {
+        for column in 0..width {
+            data.push((row * 16 + column) as u8);
+        }
+    }
+    data
+}
+
+fn pal8_palette_fixture() -> Vec<u8> {
+    (0..AVPALETTE_SIZE)
+        .map(|index| (index as u8).wrapping_mul(37).wrapping_add(11))
+        .collect()
 }
 
 fn opaque_ref_summary(buffer: Option<&BufferRef>) -> String {
@@ -4300,6 +4461,75 @@ static void print_frame_plane_buffer(const char *name, const AVFrame *frame,
            av_buffer_is_writable(ref));
 }
 
+static void print_pal8_planes(const AVFrame *frame)
+{
+    if (frame->format != AV_PIX_FMT_PAL8 || frame->data[0] == NULL ||
+        frame->data[1] == NULL) {
+        printf("none");
+        return;
+    }
+
+    for (int row = 0; row < frame->height; row++)
+        print_hex(frame->data[0] + row * frame->linesize[0], frame->width);
+    printf(",");
+    print_hex(frame->data[1], AVPALETTE_SIZE);
+}
+
+static void print_pal8_frame(const char *name, const AVFrame *frame)
+{
+    printf("%s|video|%s|%d|%d|%d,%d|", name,
+           av_get_pix_fmt_name(frame->format), frame->width, frame->height,
+           frame->linesize[0], frame->linesize[1]);
+    print_pal8_planes(frame);
+    printf("|%d|%d\n", av_frame_is_writable((AVFrame *)frame),
+           frame->data[1] != NULL ? 2 : 1);
+}
+
+static void print_pal8_plane_buffer(const char *name, const AVFrame *frame,
+                                    int plane)
+{
+    AVBufferRef *ref = av_frame_get_plane_buffer(frame, plane);
+    if (!ref || frame->format != AV_PIX_FMT_PAL8 || plane < 0 || plane > 1) {
+        printf("%s|0|none|0|0\n", name);
+        return;
+    }
+
+    printf("%s|1|", name);
+    if (plane == 0) {
+        for (int row = 0; row < frame->height; row++)
+            print_hex(frame->data[0] + row * frame->linesize[0],
+                      frame->width);
+    } else {
+        print_hex(frame->data[1], AVPALETTE_SIZE);
+    }
+    printf("|%d|%d\n", av_buffer_get_ref_count(ref),
+           av_buffer_is_writable(ref));
+}
+
+static void print_pal8_share(const char *name, const AVFrame *left,
+                             const AVFrame *right, int plane)
+{
+    AVBufferRef *left_ref = av_frame_get_plane_buffer((AVFrame *)left, plane);
+    AVBufferRef *right_ref = av_frame_get_plane_buffer((AVFrame *)right, plane);
+    fail_if(!left_ref || !right_ref, "missing pal8 plane buffer ref");
+    printf("%s|%d|%d|%d|%d|%d\n",
+           name, left->data[plane] == right->data[plane],
+           av_buffer_get_ref_count(left_ref),
+           av_buffer_get_ref_count(right_ref),
+           av_buffer_is_writable(left_ref),
+           av_buffer_is_writable(right_ref));
+}
+
+static void print_pal8_crop_palette_preserved(const char *name,
+                                              const AVFrame *frame,
+                                              const uint8_t *palette_before)
+{
+    printf("%s|%d|%d|", name, frame->data[1] == palette_before,
+           frame->linesize[1]);
+    print_pal8_planes(frame);
+    printf("\n");
+}
+
 static void print_side_summary(const AVFrame *frame)
 {
     if (frame->nb_side_data == 0) {
@@ -4936,6 +5166,17 @@ static void fill_video_gray(AVFrame *frame, const uint8_t *data)
                data + row * frame->width, frame->width);
 }
 
+static void fill_video_pal8(AVFrame *frame)
+{
+    for (int row = 0; row < frame->height; row++) {
+        uint8_t *dst = frame->data[0] + row * frame->linesize[0];
+        for (int column = 0; column < frame->width; column++)
+            dst[column] = (uint8_t)(row * 16 + column);
+    }
+    for (int index = 0; index < AVPALETTE_SIZE; index++)
+        frame->data[1][index] = (uint8_t)(index * 37 + 11);
+}
+
 static void fill_video_packed(AVFrame *frame, int bytes_per_pixel)
 {
     int visible_row_bytes = frame->width * bytes_per_pixel;
@@ -5277,6 +5518,59 @@ int main(void)
     print_frame("frame:video-after-make-writable-dst", video_ref);
     print_share("frame:video-after-make-writable-shares", video, video_ref);
 
+    AVFrame *pal8 = av_frame_alloc();
+    fail_if(!pal8, "pal8 allocation failed");
+    pal8->format = AV_PIX_FMT_PAL8;
+    pal8->width = 3;
+    pal8->height = 2;
+    fail_if(av_frame_get_buffer(pal8, 1) < 0,
+            "pal8 get_buffer failed");
+    fill_video_pal8(pal8);
+    print_pal8_frame("frame:pal8-buffer", pal8);
+    print_pal8_plane_buffer("frame:pal8-plane-buffer-0", pal8, 0);
+    print_pal8_plane_buffer("frame:pal8-plane-buffer-1", pal8, 1);
+    print_pal8_plane_buffer("frame:pal8-plane-buffer-invalid", pal8, 2);
+
+    AVFrame *pal8_ref = av_frame_alloc();
+    fail_if(!pal8_ref, "pal8_ref allocation failed");
+    fail_if(av_frame_ref(pal8_ref, pal8) < 0, "pal8 av_frame_ref failed");
+    print_pal8_frame("frame:pal8-ref-src", pal8);
+    print_pal8_frame("frame:pal8-ref-dst", pal8_ref);
+    print_pal8_share("frame:pal8-ref-plane0-shares", pal8, pal8_ref, 0);
+    print_pal8_share("frame:pal8-ref-plane1-shares", pal8, pal8_ref, 1);
+
+    fail_if(av_frame_make_writable(pal8_ref) < 0,
+            "pal8 av_frame_make_writable failed");
+    print_pal8_frame("frame:pal8-after-make-writable-src", pal8);
+    print_pal8_frame("frame:pal8-after-make-writable-dst", pal8_ref);
+    print_pal8_share("frame:pal8-make-writable-plane0-shares",
+                     pal8, pal8_ref, 0);
+    print_pal8_share("frame:pal8-make-writable-plane1-shares",
+                     pal8, pal8_ref, 1);
+
+    AVFrame *pal8_crop = av_frame_alloc();
+    fail_if(!pal8_crop, "pal8_crop allocation failed");
+    pal8_crop->format = AV_PIX_FMT_PAL8;
+    pal8_crop->width = 6;
+    pal8_crop->height = 4;
+    fail_if(av_frame_get_buffer(pal8_crop, 1) < 0,
+            "pal8_crop get_buffer failed");
+    fill_video_pal8(pal8_crop);
+    const uint8_t *pal8_crop_palette_before = pal8_crop->data[1];
+    pal8_crop->crop_top = 1;
+    pal8_crop->crop_bottom = 1;
+    pal8_crop->crop_left = 1;
+    pal8_crop->crop_right = 1;
+    fail_if(av_frame_apply_cropping(pal8_crop, AV_FRAME_CROP_UNALIGNED) < 0,
+            "pal8_crop apply failed");
+    print_pal8_crop_palette_preserved("frame:pal8-crop-palette-preserved",
+                                      pal8_crop,
+                                      pal8_crop_palette_before);
+
+    av_frame_free(&pal8_crop);
+    av_frame_free(&pal8_ref);
+    av_frame_free(&pal8);
+
     AVFrame *move_dst = av_frame_alloc();
     fail_if(!move_dst, "move_dst av_frame_alloc failed");
     av_frame_move_ref(move_dst, video_ref);
@@ -5377,6 +5671,7 @@ int main(void)
     av_channel_layout_default(&packed_ten_audio->ch_layout, 10);
     fail_if(av_frame_get_buffer(packed_ten_audio, 1) < 0,
             "packed_ten_audio av_frame_get_buffer failed");
+    memset(packed_ten_audio->data[0], 0, 20);
     print_frame_buffer_topology("frame:audio-packed-ten-topology",
                                 packed_ten_audio);
     print_frame_plane_buffer("frame:plane-buffer-audio-packed-ten-0",

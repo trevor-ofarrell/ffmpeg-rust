@@ -110,6 +110,8 @@ The latest direct packet-free WSL fuzz smoke used a fresh `avutil_core_models` t
 
 The latest packet FIFO nullable-free fixture extends `avutil_core_models` with the safe Rust equivalent of `av_container_fifo_free(&fifo)` for `fifo == NULL` and an empty FIFO: `Option<PacketFifo>::take()` keeps `None` as `None`, drops an empty FIFO owner without queued entries, and leaves no release side effects to observe. A fresh-target WSL one-input sanitizer smoke passed after rebuilding `avutil_core_models`.
 
+The latest PAL8/buffer lifecycle fixture extends `avutil_core_models` with full PAL8 frame palette side-plane construction, make-writable detachment, copy/crop preservation, and threaded `BufferRef` clone/drop release timing. WSL `cargo fuzz run avutil_core_models -- -runs=1` passed after a long sanitizer rebuild in `target-wsl-pal8-buffer-fuzz-o1`.
+
 The latest orchestrated WSL fuzz evidence for the packet/options/WAV/image2
 edge batch includes one-run sanitizer smokes for `avutil_metadata_options`,
 `avformat_wav`, and `avformat_image2` after adding the whitespace shorthand,

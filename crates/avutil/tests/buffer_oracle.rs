@@ -3,7 +3,7 @@ use std::{
     env, fs,
     path::{Path, PathBuf},
     process::Command,
-    sync::{Arc, Mutex},
+    sync::{Arc, Barrier, Mutex},
 };
 
 use avutil::{
@@ -1203,6 +1203,48 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     rows.insert(
         "buffer:unref-shared-src".to_string(),
         buffer_status_fields(&unref_shared_src),
+    );
+
+    let thread_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let thread_capture = Arc::clone(&thread_released);
+    let thread_source = BufferRef::from_vec_with_opaque_release_callback(
+        vec![0xa0, 0xa1, 0xa2, 0xa3],
+        1003usize,
+        move |opaque, bytes| {
+            thread_capture.lock().unwrap().push((opaque, bytes));
+        },
+    );
+    let thread_barrier = Arc::new(Barrier::new(5));
+    std::thread::scope(|scope| {
+        for _ in 0..4 {
+            let thread_barrier = Arc::clone(&thread_barrier);
+            let source_ref = &thread_source;
+            scope.spawn(move || {
+                thread_barrier.wait();
+                for _ in 0..32 {
+                    let cloned = BufferRef::ref_from(source_ref);
+                    assert!(source_ref.shares_storage(&cloned));
+                    assert_eq!(cloned.as_slice(), &[0xa0, 0xa1, 0xa2, 0xa3]);
+                    drop(cloned);
+                }
+            });
+        }
+        thread_barrier.wait();
+    });
+    rows.insert(
+        "buffer:thread-ref-unref-before-final".to_string(),
+        vec![
+            thread_released.lock().unwrap().len().to_string(),
+            thread_source.strong_count().to_string(),
+            thread_source.len().to_string(),
+            hex(thread_source.as_slice()),
+            bool_field(thread_source.is_writable()),
+        ],
+    );
+    drop(thread_source);
+    rows.insert(
+        "buffer:thread-ref-unref-final-release".to_string(),
+        release_fields(&thread_released),
     );
 
     let mut realloc_null = None;
@@ -3404,10 +3446,12 @@ fn compile_and_run_oracle(
 
 fn oracle_c_source() -> &'static str {
     r#"#include <inttypes.h>
+#include <pthread.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <libavutil/buffer.h>
 #include <libavutil/mem.h>
 
@@ -3436,6 +3480,12 @@ typedef struct PoolOpaque {
     uintptr_t id;
     size_t size;
 } PoolOpaque;
+
+typedef struct ThreadRefWorker {
+    const AVBufferRef *source;
+    pthread_barrier_t *barrier;
+    int failures;
+} ThreadRefWorker;
 
 static void fail_if(int condition, const char *message) {
     if (condition) {
@@ -3707,6 +3757,34 @@ static void print_buffer_abi_layout(void) {
 
 static void print_buffer_flag_constants(void) {
     printf("buffer:flag-readonly|%d\n", AV_BUFFER_FLAG_READONLY);
+}
+
+static void *test_thread_ref_unref_worker(void *opaque) {
+    ThreadRefWorker *worker = opaque;
+    int barrier_ret = pthread_barrier_wait(worker->barrier);
+    if (barrier_ret != 0 && barrier_ret != PTHREAD_BARRIER_SERIAL_THREAD) {
+        worker->failures++;
+        return NULL;
+    }
+
+    for (int i = 0; i < 32; i++) {
+        AVBufferRef *clone = av_buffer_ref(worker->source);
+        if (!clone) {
+            worker->failures++;
+            continue;
+        }
+        if (clone->buffer != worker->source->buffer ||
+            clone->data != worker->source->data ||
+            clone->size != worker->source->size ||
+            clone->size != 4 ||
+            memcmp(clone->data, worker->source->data, 4) != 0)
+            worker->failures++;
+        av_buffer_unref(&clone);
+        if (clone != NULL)
+            worker->failures++;
+    }
+
+    return NULL;
 }
 
 int main(void) {
@@ -4492,6 +4570,52 @@ int main(void) {
     printf("buffer:unref-shared-dst-null|%d\n", unref_shared_dst == NULL);
     print_status("buffer:unref-shared-src", unref_shared_src);
     av_buffer_unref(&unref_shared_src);
+
+    reset_create_release();
+    static const uint8_t thread_ref_bytes[] = { 0xa0, 0xa1, 0xa2, 0xa3 };
+    uint8_t *thread_ref_data = av_malloc(sizeof(thread_ref_bytes));
+    fail_if(!thread_ref_data, "av_malloc thread_ref_data failed");
+    for (size_t i = 0; i < sizeof(thread_ref_bytes); i++)
+        thread_ref_data[i] = thread_ref_bytes[i];
+    last_create_release_size = sizeof(thread_ref_bytes);
+    AVBufferRef *thread_ref_source =
+        av_buffer_create(thread_ref_data, sizeof(thread_ref_bytes),
+                         test_create_free, (void *)(uintptr_t)1003, 0);
+    fail_if(!thread_ref_source, "av_buffer_create thread ref source failed");
+
+    pthread_barrier_t thread_ref_barrier;
+    pthread_t thread_ref_threads[4];
+    ThreadRefWorker thread_ref_workers[4];
+    fail_if(pthread_barrier_init(&thread_ref_barrier, NULL, 5) != 0,
+            "pthread_barrier_init thread ref failed");
+    for (int i = 0; i < 4; i++) {
+        thread_ref_workers[i].source = thread_ref_source;
+        thread_ref_workers[i].barrier = &thread_ref_barrier;
+        thread_ref_workers[i].failures = 0;
+        fail_if(pthread_create(&thread_ref_threads[i], NULL,
+                               test_thread_ref_unref_worker,
+                               &thread_ref_workers[i]) != 0,
+                "pthread_create thread ref failed");
+    }
+    int thread_ref_barrier_ret = pthread_barrier_wait(&thread_ref_barrier);
+    fail_if(thread_ref_barrier_ret != 0 &&
+                thread_ref_barrier_ret != PTHREAD_BARRIER_SERIAL_THREAD,
+            "pthread_barrier_wait thread ref failed");
+    for (int i = 0; i < 4; i++) {
+        fail_if(pthread_join(thread_ref_threads[i], NULL) != 0,
+                "pthread_join thread ref failed");
+        fail_if(thread_ref_workers[i].failures != 0,
+                "thread ref/unref worker observed a mismatch");
+    }
+    pthread_barrier_destroy(&thread_ref_barrier);
+    printf("buffer:thread-ref-unref-before-final|%d|%d|%zu|",
+           create_release_count,
+           av_buffer_get_ref_count(thread_ref_source),
+           thread_ref_source->size);
+    print_hex(thread_ref_source->data, thread_ref_source->size);
+    printf("|%d\n", av_buffer_is_writable(thread_ref_source));
+    av_buffer_unref(&thread_ref_source);
+    print_create_release("buffer:thread-ref-unref-final-release");
 
     AVBufferRef *realloc_null = NULL;
     ret = av_buffer_realloc(&realloc_null, 4);

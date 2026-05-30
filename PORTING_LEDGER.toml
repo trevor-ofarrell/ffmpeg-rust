@@ -1068,6 +1068,7 @@ unit_tests = [
   "buffer::tests::readonly_opaque_data_buffers_release_original_bytes_on_detach",
   "buffer::tests::zeroed_buffer_allocates_requested_zero_bytes",
   "buffer::tests::cloned_buffers_share_until_copy_on_write_mutation",
+  "buffer::tests::buffer_ref_concurrent_clone_drop_preserves_final_release",
   "buffer::tests::zero_length_shared_make_mut_detaches_to_writable_empty_ref",
   "buffer::tests::buffer_slices_are_checked_views_over_shared_storage",
   "buffer::tests::buffer_storage_identity_tracks_refs_slices_and_detach",
@@ -1156,6 +1157,11 @@ fuzz_targets = ["avutil_core_models"]
 # Latest self-replace slice: pinned libavutil oracle coverage now validates
 # `av_buffer_replace(&buf, buf)` succeeds without changing the visible data
 # pointer, bytes, writability, or final single-reference shape.
+# Latest threaded ref/unref slice: pinned libavutil rows and Rust unit coverage
+# now validate concurrent `AVBufferRef` clone/drop style ref/unref activity from
+# four worker threads. Intermediate clones preserve shared storage and bytes,
+# no release callback fires before the final owner drops, and final unref
+# releases the callback-owned bytes exactly once.
 # Latest offset-pool make-writable slice: pinned libavutil oracle coverage now
 # validates `av_buffer_make_writable()` on a unique writable custom-pool
 # allocation whose visible data pointer is offset from the backing allocation.
@@ -1396,6 +1402,9 @@ unit_tests = [
   "frame::tests::video_frame_rejects_invalid_custom_line_sizes",
   "frame::tests::video_frame_mutates_visible_plane_data_with_copy_on_write",
   "frame::tests::video_frame_make_writable_detaches_readonly_plane_storage",
+  "frame::tests::video_frame_pal8_accepts_palette_side_plane_and_preserves_raw_index_constructor",
+  "frame::tests::video_frame_pal8_palette_side_plane_shares_detaches_and_crops",
+  "frame::tests::video_frame_pal8_copy_data_copies_palette_when_both_frames_have_side_plane",
   "frame::tests::audio_frame_retains_buffer_ref_planes_and_visible_bytes",
   "frame::tests::audio_frame_buffer_refs_validate_plane_count_size_and_layout",
   "frame::tests::audio_frame_accepts_custom_line_sizes_and_excludes_padding",
@@ -1551,6 +1560,13 @@ differential_tests = [
 ]
 fate_tests = ["tests/fate/mappings.txt:avutil-frame|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
+# Latest PAL8 palette side-plane slice: pinned libavutil oracle rows now
+# validate FFmpeg's full PAL8 AVFrame shape with index data in plane 0 and a
+# 1024-byte palette at data[1] while `linesize[1]` remains zero. Rust
+# `VideoFrame` preserves one-plane raw packet construction, adds explicit
+# two-plane PAL8 frame constructors, detaches both planes during
+# make-writable, copies palette data when both frames carry it, and crops only
+# the index plane while preserving the palette side plane.
 # Latest ref/unref slice: pinned libavutil oracle coverage now validates an
 # `av_frame_ref()` destination remains populated after an equivalent rich
 # source frame is unreffed, while the source becomes empty. Unit coverage pins
@@ -1564,8 +1580,8 @@ fuzz_targets = ["avutil_core_models"]
 # left offset, and the palette plane offset remains zero in the pinned
 # `calc_cropping_offsets()` path. Rust unit, oracle, local FATE,
 # differential, and avutil_core_models fuzz-smoke evidence cover this bounded
-# crop row without claiming full `AVFrame.data[1]` palette side-plane/context
-# propagation, hardware, or remaining crop behavior.
+# crop row; broader paletted codec/container context propagation, hardware, and
+# remaining crop behavior are still outside the completed surface.
 # Prior update: The pinned libavutil `AVFrame` oracle now validates
 # `av_frame_apply_cropping()` for packed UYYVYY411 rows. FFmpeg 8.1.1 returns
 # `AVERROR_BUG` without mutation for default nonzero-left crop, while
@@ -2240,7 +2256,7 @@ Prior legacy/full-range 8-bit planar YUV crop evidence extends the current `Vide
 
 Prior high-bit planar YUV crop evidence extends the current `VideoFrame::apply_cropping` model to the modeled 9/10/12/14/16-bit planar YUV families, 10/12-bit 4:4:0 rows, and `yuv444p10msb*`/`yuv444p12msb*`. The pinned oracle proves the same two-byte-per-sample shape across those rows: default nonzero-left crop returns `AVERROR_BUG` without mutation, while `AV_FRAME_CROP_UNALIGNED` applies exact luma/chroma offsets, floor-shifted chroma visible dimensions, and crop-field reset on success.
 
-Full AVFrame fields, full `AVFrame.data[1]` palette side-plane/context propagation for paletted frame paths, av_frame_apply_cropping parity for hardware-format branches, other bitstream formats, and other packed formats, complete FFmpeg alignment policy, full EXIF/GPS/interoperability tag coverage beyond the current selected common-tag view, deeper HDR10+/Dolby Vision/HDR Vivid color transform semantics, ROI encoder constraint handling, codec-specific video encoding parameter quantizer semantics, film grain synthesis/selection behavior, detection-model semantics beyond the native envelope, hardware device/frame context internals, deeper AVFrame per-buffer permission flags beyond the current BufferRef-backed writable/readonly model, sample-data conversion routines, and complete FFmpeg pixel/sample/channel layout coverage are pending. The local FATE-runner smoke mapping executes the frame unit filter only and does not count as upstream FATE parity; the latest focused avutil-frame unit filter executed successfully locally.'''
+Full AVFrame fields, broader paletted codec/container context propagation beyond the current PAL8 frame side-plane rows, av_frame_apply_cropping parity for hardware-format branches, other bitstream formats, and other packed formats, complete FFmpeg alignment policy, full EXIF/GPS/interoperability tag coverage beyond the current selected common-tag view, deeper HDR10+/Dolby Vision/HDR Vivid color transform semantics, ROI encoder constraint handling, codec-specific video encoding parameter quantizer semantics, film grain synthesis/selection behavior, detection-model semantics beyond the native envelope, hardware device/frame context internals, deeper AVFrame per-buffer permission flags beyond the current BufferRef-backed writable/readonly model, sample-data conversion routines, and complete FFmpeg pixel/sample/channel layout coverage are pending. The local FATE-runner smoke mapping executes the frame unit filter only and does not count as upstream FATE parity; the latest focused avutil-frame unit filter executed successfully locally.'''
 blocked_reason = ""
 
 [[component]]

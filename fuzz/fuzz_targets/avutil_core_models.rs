@@ -5671,6 +5671,56 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         assert_eq!(stored.padding_slice(), &[0]);
     }
 
+    let pal8_index = vec![0, 1, 16, 17];
+    let pal8_palette = (0..AVPALETTE_SIZE)
+        .map(|index| (index as u8).wrapping_mul(37).wrapping_add(11))
+        .collect::<Vec<_>>();
+    let mut pal8 = VideoFrame::new_pal8_with_palette(
+        2,
+        2,
+        pal8_index.clone(),
+        pal8_palette.clone(),
+    )
+    .unwrap();
+    assert_eq!(pal8.line_sizes(), &[2, 0]);
+    assert_eq!(pal8.planes(), &[pal8_index.clone(), pal8_palette.clone()]);
+    assert_eq!(pal8.plane_buffers().len(), 2);
+    let shared_pal8 = pal8.clone();
+    assert!(pal8.plane_buffers()[0].shares_storage(&shared_pal8.plane_buffers()[0]));
+    assert!(pal8.plane_buffers()[1].shares_storage(&shared_pal8.plane_buffers()[1]));
+    pal8.make_writable();
+    assert_eq!(pal8.line_sizes(), &[FFMPEG_FRAME_DEFAULT_ALIGNMENT, 0]);
+    assert_eq!(pal8.planes(), &[pal8_index.clone(), pal8_palette.clone()]);
+    assert!(!pal8.plane_buffers()[0].shares_storage(&shared_pal8.plane_buffers()[0]));
+    assert!(!pal8.plane_buffers()[1].shares_storage(&shared_pal8.plane_buffers()[1]));
+    assert_strided_plane(
+        pal8.plane_buffers()[0].as_slice(),
+        FFMPEG_FRAME_DEFAULT_ALIGNMENT,
+        2,
+        2,
+        &pal8_index,
+    );
+    assert_eq!(pal8.plane_buffers()[1].as_slice(), pal8_palette.as_slice());
+
+    let pal8_crop_index = (0..3)
+        .flat_map(|row| (0..4).map(move |column| (row * 16 + column) as u8))
+        .collect::<Vec<_>>();
+    let pal8_crop_palette = BufferRef::from_vec(pal8_palette.clone());
+    let mut pal8_crop = VideoFrame::new_pal8_with_palette_refs(
+        4,
+        3,
+        BufferRef::from_vec(pal8_crop_index),
+        pal8_crop_palette.clone(),
+    )
+    .unwrap();
+    pal8_crop
+        .apply_cropping(FrameCrop::new(1, 1, 1, 1), FrameCropFlags::UNALIGNED)
+        .unwrap();
+    assert_eq!(pal8_crop.line_sizes(), &[4, 0]);
+    assert_eq!(pal8_crop.planes()[0], vec![17, 18]);
+    assert_eq!(pal8_crop.planes()[1], pal8_palette);
+    assert!(pal8_crop.plane_buffers()[1].shares_storage(&pal8_crop_palette));
+
     let video_plane_shapes = expected_video_plane_shapes(pixel_format, width, height);
     let strided_line_sizes = video_plane_shapes
         .iter()

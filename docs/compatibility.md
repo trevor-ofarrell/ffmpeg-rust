@@ -9,6 +9,15 @@
 
 ## Compatible Today
 
+- Latest orchestrated frame/buffer evidence: pinned libavutil rows now prove
+  full PAL8 `AVFrame` palette side-plane behavior (`data[1]` with
+  `linesize[1] == 0`) across get-buffer, ref, make-writable, copy, and crop
+  preservation, while raw PAL8 packet frames remain one-plane index payloads.
+  A parallel buffer worker added threaded `AVBufferRef` ref/unref evidence
+  showing concurrent clone/drop activity preserves storage and releases the
+  callback-owned bytes exactly once after the final owner drops. Unit,
+  differential, local FATE-runner, clippy, and WSL `avutil_core_models`
+  fuzz-smoke gates passed; both components remain `differential_pass`.
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
   `av_container_fifo_free(&fifo)` treats `fifo == NULL` as a no-op and frees an
   empty packet FIFO by nulling the pointer while keeping zero readable entries.
