@@ -2,6 +2,11 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest main-thread packet evidence: pinned FFmpeg oracle rows now prove
+# generated MOV `ffprobe -show_packets` fields, YUV4MPEG2 color-range remux
+# packet transfer, empty rawvideo/WAV packet streams, and empty-last duplicate
+# WAV data chunks are now mapped to `avutil-packet` differential coverage.
+# This is evidence-strengthening only; no status was promoted.
 # Latest main-thread packet evidence: pinned libavcodec rows now prove
 # zero-size `AVPacket.opaque_ref` survives `av_packet_free_side_data()` while
 # side data is cleared, and is cleared by `av_packet_unref()` with the rest of
@@ -695,6 +700,7 @@ unit_tests = [
   "packet::tests::packet_zero_size_opaque_ref_payload_helpers_preserve_user_buffer",
   "packet::tests::packet_zero_size_opaque_ref_resize_helpers_preserve_user_buffer",
   "packet::tests::packet_zero_size_opaque_ref_reset_helpers_match_ffmpeg_shape",
+  "packet::tests::packet_drop_and_option_take_match_av_packet_free_lifecycle",
   "packet::tests::packet_legacy_init_resets_fields_but_preserves_payload",
   "packet::tests::packet_fifo_moves_refs_peeks_reads_and_drains_packets",
   "packet::tests::packet_fifo_unknown_flags_treat_as_move",
@@ -711,11 +717,16 @@ differential_tests = [
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-avi-file-output",
   "tests/differential/mappings.txt:avutil-packet|oracle-avi-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-mov-framecrc-records",
+  "tests/differential/mappings.txt:avutil-packet|oracle-ffprobe-mov-core-fields",
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-yuv4mpegpipe-file-output",
+  "tests/differential/mappings.txt:avutil-packet|oracle-yuv4mpegpipe-sar-file-output",
   "tests/differential/mappings.txt:avutil-packet|oracle-yuv4mpegpipe-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-yuv4mpegpipe-truncated-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-yuv4mpegpipe-unknown-x-extension-fields",
+  "tests/differential/mappings.txt:avutil-packet|oracle-yuv4mpegpipe-xcolorrange-remux",
+  "tests/differential/mappings.txt:avutil-packet|oracle-yuv4mpegpipe-flexible-frame-header-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-framecrc-records",
+  "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-empty-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-framehash-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-framemd5-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-streamhash-records",
@@ -730,10 +741,14 @@ differential_tests = [
   "tests/differential/mappings.txt:avutil-packet|oracle-pcm-s16le-packetized-file-output",
   "tests/differential/mappings.txt:avutil-packet|oracle-pcm-s16le-odd-file-output",
   "tests/differential/mappings.txt:avutil-packet|oracle-pcm-s16le-wav-file-output",
+  "tests/differential/mappings.txt:avutil-packet|oracle-pcm-s16le-odd-wav-file-output",
   "tests/differential/mappings.txt:avutil-packet|oracle-wav-generated-md5",
   "tests/differential/mappings.txt:avutil-packet|oracle-wav-generated-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-wav-extensible-framecrc-records",
+  "tests/differential/mappings.txt:avutil-packet|oracle-wav-empty-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-wav-duplicate-data-last-framecrc-records",
+  "tests/differential/mappings.txt:avutil-packet|oracle-wav-duplicate-data-last-empty-framecrc-records",
+  "tests/differential/mappings.txt:avutil-packet|oracle-wav-duplicate-fmt-first-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-wav-duplicate-fmt-short-second-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-wav-duplicate-fmt-unsupported-second-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-yuv4mpegpipe-leading-whitespace-framecrc-records",
@@ -745,17 +760,25 @@ differential_tests = [
   "tests/differential/mappings.txt:avutil-packet|oracle-image2-nonzero-width-pattern-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-image2-padded-width-growth-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-image2-wide-zero-padded-sequence-framecrc-records",
+  "tests/differential/mappings.txt:avutil-packet|oracle-image2-sequence-gap-framecrc-records",
+  "tests/differential/mappings.txt:avutil-packet|oracle-image2-start-probe-skip-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-image2-max-start-number-framecrc-records",
+  "tests/differential/mappings.txt:avutil-packet|oracle-image2-start-probe-boundary-framecrc-records",
   "packet_oracle::libavcodec_packet_core_lifecycle_matches_packet_model",
   "rawvideo_oracle::rawvideo_rgb24_file_output_matches_ffmpeg_oracle",
   "rawvideo_oracle::rawvideo_gbrp10msble_file_output_matches_ffmpeg_oracle",
   "rawvideo_oracle::rawvideo_bgr24_avi_file_output_matches_ffmpeg_oracle",
   "rawvideo_oracle::avi_rgb24_framecrc_records_match_ffmpeg_oracle",
   "mov_oracle::mov_rgb24_framecrc_records_match_ffmpeg_oracle",
+  "ffprobe_mov_oracle::mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle",
   "yuv4mpegpipe_oracle::rawvideo_yuv420p_yuv4mpegpipe_file_output_matches_ffmpeg_oracle",
+  "yuv4mpegpipe_oracle::yuv4mpegpipe_sample_aspect_ratio_header_matches_ffmpeg_oracle",
   "yuv4mpegpipe_oracle::yuv4mpegpipe_yuv420p_framecrc_records_match_ffmpeg_oracle",
   "yuv4mpegpipe_oracle::yuv4mpegpipe_unknown_x_extension_fields_match_ffmpeg_oracle",
+  "yuv4mpegpipe_oracle::yuv4mpegpipe_xcolorrange_remux_preserves_color_range_oracle",
+  "yuv4mpegpipe_oracle::yuv4mpegpipe_flexible_frame_header_variants_match_ffmpeg_oracle",
   "rawvideo_oracle::rawvideo_rgb24_framecrc_records_match_ffmpeg_oracle",
+  "rawvideo_oracle::rawvideo_empty_rgb24_framecrc_has_no_packet_records",
   "rawvideo_oracle::rawvideo_rgb24_framehash_records_match_ffmpeg_oracle",
   "rawvideo_oracle::rawvideo_rgb24_framemd5_records_match_ffmpeg_oracle",
   "rawvideo_oracle::rawvideo_rgb24_streamhash_records_match_ffmpeg_oracle",
@@ -770,10 +793,14 @@ differential_tests = [
   "pcm_oracle::pcm_s16le_packetized_file_output_matches_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_odd_packet_file_output_matches_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_wav_file_output_matches_ffmpeg_oracle",
+  "pcm_oracle::pcm_s16le_odd_payload_wav_file_output_matches_ffmpeg_oracle",
   "wav_oracle::wav_pcm_s16le_generated_md5_matches_ffmpeg_oracle",
   "wav_oracle::wav_pcm_s16le_generated_framecrc_matches_ffmpeg_oracle",
   "wav_oracle::wav_pcm_s16le_extensible_generated_framecrc_matches_ffmpeg_oracle",
+  "wav_oracle::wav_pcm_s16le_empty_data_framecrc_matches_ffmpeg_oracle",
   "wav_oracle::wav_pcm_s16le_duplicate_data_chunk_last_data_used_for_framecrc",
+  "wav_oracle::wav_pcm_s16le_duplicate_data_chunk_last_data_empty",
+  "wav_oracle::wav_pcm_s16le_duplicate_fmt_chunk_first_fmt_used_for_framecrc",
   "wav_oracle::wav_pcm_s16le_duplicate_fmt_short_second_is_ignored_for_framecrc",
   "wav_oracle::wav_pcm_s16le_duplicate_fmt_unsupported_second_is_ignored_for_framecrc",
   "yuv4mpegpipe_oracle::yuv4mpegpipe_leading_whitespace_before_first_frame_is_accepted_by_oracle",
@@ -785,7 +812,10 @@ differential_tests = [
   "image2_oracle::image2_ppm_nonzero_width_pattern_framecrc_records_match_ffmpeg_oracle",
   "image2_oracle::image2_ppm_padded_width_growth_framecrc_records_match_ffmpeg_oracle",
   "image2_oracle::image2_ppm_wide_zero_padded_sequence_framecrc_records_match_ffmpeg_oracle",
+  "image2_oracle::image2_ppm_sequence_with_gap_stops_at_first_missing_frame",
+  "image2_oracle::image2_ppm_sequence_with_start_number_skips_until_first_available",
   "image2_oracle::image2_ppm_sequence_from_i32_max_start_number_framecrc_records_match_ffmpeg_oracle",
+  "image2_oracle::image2_ppm_sequence_with_start_number_accepts_probe_window_upper_boundary",
 ]
 fate_tests = [
   "tests/fate/mappings.txt:avutil-packet|local-avutil-unit",
@@ -795,6 +825,14 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: existing generated-media oracle rows are now wired or recorded
+# as `avutil-packet` evidence: generated MOV ffprobe packet fields, YUV4MPEG2
+# sample-aspect and color-range remux transfer, flexible YUV4MPEG2 frame
+# headers, empty rawvideo framecrc, odd PCM-to-WAV payload output, empty WAV
+# data chunks, duplicate WAV data with an empty last chunk, first duplicate WAV
+# fmt preservation, and image2 gap/start-probe rows. The focused packet-free
+# unit test is also listed in the ledger. This is evidence bookkeeping only;
+# the row remains fate_pass, not complete.
 # Latest update: pinned libavcodec AVPacket oracle coverage now validates
 # zero-size `opaque_ref` reset-helper behavior: `av_packet_free_side_data()`
 # clears side data while preserving the empty user buffer, and

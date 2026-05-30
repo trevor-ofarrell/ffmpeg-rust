@@ -3,6 +3,53 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The
+tree started clean at `master...origin/master [ahead 10]`; required startup
+checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
+-- status --next 15` reporting 11/96 strict-complete components (11.5%) and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validating the pinned FFmpeg 8.1.1 oracle and ABI versions. Three read-only
+explorer subagents audited packet API, media mapping, and evidence-list gaps;
+the main thread kept the merge-captain edits local and did not delegate writes.
+
+Current main-thread slice: existing generated-media oracle rows are now wired
+or recorded as `avutil-packet` evidence. `tests/differential/mappings.txt` now
+maps generated MOV `ffprobe -show_packets`, YUV4MPEG2 color-range remux,
+empty rawvideo framecrc, empty WAV data framecrc, and duplicate WAV data with
+an empty final data chunk to `avutil-packet`. `PORTING_LEDGER.toml` also now
+lists those rows plus existing packet-mapped YUV4MPEG2 sample-aspect/flexible
+frame-header rows, odd PCM-to-WAV output, first duplicate WAV fmt preservation,
+image2 gap/start-probe rows, and the focused packet-free unit test that was
+already present. Docs record the media packet evidence. No behavior code was
+changed, no component was promoted, and strict completion remains 11/96.
+
+Latest validation commands for this packet media-evidence wiring slice passed:
+`CARGO_TARGET_DIR=target-orch-fate cargo test -p fftools --test
+ffprobe_mov_oracle mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle --
+--ignored --nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p
+fate-runner -- run --mappings tests/differential/mappings.txt --component
+avutil-packet --target oracle-ffprobe-mov-core-fields --oracle-ffmpeg
+./third_party/ffmpeg-oracle/build/bin/ffmpeg`; the same fate-runner command for
+`oracle-yuv4mpegpipe-xcolorrange-remux`,
+`oracle-rawvideo-empty-framecrc-records`, `oracle-wav-empty-framecrc-records`,
+and `oracle-wav-duplicate-data-last-empty-framecrc-records`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run --component
+avutil-packet`; `cargo fmt --all -- --check`; `CARGO_TARGET_DIR=target-orch-fate
+cargo test -p fate-runner current_ledger`; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p xtask -- guard-runtime`; `CARGO_TARGET_DIR=target-orch-fate cargo
+run -p xtask -- oracle-doctor`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p
+fate-runner -- status --next 15`; and `git diff --check` with CRLF conversion
+warnings only.
+
+Current focus component: `avutil-packet` remains the top priority incomplete
+component (`fate_pass`), followed by `avutil-buffer` (`differential_pass`),
+`avutil-frame` (`differential_pass`), `avutil-logging` (`fate_pass`), and
+`avutil-options` (`fate_pass`). Next concrete packet candidates from the
+read-only API audit include refcounted-but-unpadded payload helper no-op
+parity, raw no-buffer unref/free caller-storage evidence, negative-duration
+signed-field parity, side-data allocation padding rows, and focused
+unknown-flag/FIFO evidence splits.
+
+Current authoritative turn status: orchestrator workflow is active on WSL. The
 tree started clean at `master...origin/master [ahead 9]`; required startup
 checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
 -- status --next 15` reporting 11/96 strict-complete components (11.5%) and
