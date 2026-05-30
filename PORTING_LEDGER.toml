@@ -3,6 +3,11 @@ target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
 # Latest main-thread packet evidence: pinned libavcodec rows now prove
+# av_packet_ref() preserves an offset pkt->data pointer inside pkt->buf->data,
+# keeps the offset and dirty padding visible through both packet refs, and makes
+# both refs non-writable because they share the same AVBuffer. This is
+# evidence-strengthening only; no status was promoted.
+# Latest main-thread packet evidence: pinned libavcodec rows now prove
 # av_packet_clone() preserves an offset pkt->data pointer inside pkt->buf->data,
 # keeps the offset and dirty padding visible through both packet refs, and makes
 # both refs non-writable because they share the same AVBuffer. This is
@@ -586,6 +591,7 @@ unit_tests = [
   "packet::tests::packet_custom_padding_capacity_preserves_clone_and_writable",
   "packet::tests::packet_offset_payload_helpers_preserve_pointer_and_padding",
   "packet::tests::packet_offset_payload_clone_preserves_pointer_offset_and_padding",
+  "packet::tests::packet_offset_payload_ref_preserves_pointer_offset_and_padding",
   "packet::tests::packet_zero_grow_sanitizes_padding_but_noop_shrink_preserves_it",
   "packet::tests::packet_zero_grow_preserves_offset_payload_pointer",
   "packet::tests::packet_grow_preserves_offset_pointer_and_exposes_tail_bytes",

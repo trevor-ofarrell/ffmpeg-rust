@@ -2204,6 +2204,45 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_fields(&offset_helper),
     );
 
+    let mut offset_ref_storage = vec![0xa0, 0xa1, 0xa2, 0x11, 0x22];
+    offset_ref_storage.resize(3 + 2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+    let offset_ref_src = Packet::with_buffer(
+        BufferRef::from_vec(offset_ref_storage)
+            .into_ref_slice(3, 2)
+            .unwrap(),
+        0,
+    );
+    let mut offset_ref_dst = Packet::default();
+    offset_ref_dst.try_ref_from(&offset_ref_src).unwrap();
+    rows.insert(
+        "packet:payload-ref-offset-padding-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-ref-offset-padding-same-ptr".to_string(),
+        vec![u8::from(
+            offset_ref_dst.data_buffer().as_padded_ptr()
+                == offset_ref_src.data_buffer().as_padded_ptr(),
+        )
+        .to_string()],
+    );
+    rows.insert(
+        "packet:payload-ref-offset-padding-src-offset".to_string(),
+        vec![offset_ref_src.data_buffer().offset().to_string()],
+    );
+    rows.insert(
+        "packet:payload-ref-offset-padding-dst-offset".to_string(),
+        vec![offset_ref_dst.data_buffer().offset().to_string()],
+    );
+    rows.insert(
+        "packet:payload-ref-offset-padding-src".to_string(),
+        payload_fields(&offset_ref_src),
+    );
+    rows.insert(
+        "packet:payload-ref-offset-padding-dst".to_string(),
+        payload_fields(&offset_ref_dst),
+    );
+
     let mut offset_clone_storage = vec![0xa0, 0xa1, 0xa2, 0x11, 0x22];
     offset_clone_storage.resize(3 + 2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
     let offset_clone = Packet::with_buffer(
@@ -8255,6 +8294,25 @@ int main(void) {
     print_payload("packet:payload-make-writable-offset-padding",
                   offset_helper);
     av_packet_free(&offset_helper);
+
+    AVPacket *offset_ref = packet_with_offset_padding();
+    AVPacket *offset_ref_dst = new_packet();
+    int offset_ref_ret = av_packet_ref(offset_ref_dst, offset_ref);
+    printf("packet:payload-ref-offset-padding-ret|%d\n",
+           offset_ref_ret);
+    fail_if(offset_ref_ret < 0, "av_packet_ref offset padding failed");
+    printf("packet:payload-ref-offset-padding-same-ptr|%d\n",
+           offset_ref_dst->data == offset_ref->data);
+    printf("packet:payload-ref-offset-padding-src-offset|%td\n",
+           offset_ref->data - offset_ref->buf->data);
+    printf("packet:payload-ref-offset-padding-dst-offset|%td\n",
+           offset_ref_dst->data - offset_ref_dst->buf->data);
+    print_payload("packet:payload-ref-offset-padding-src",
+                  offset_ref);
+    print_payload("packet:payload-ref-offset-padding-dst",
+                  offset_ref_dst);
+    av_packet_free(&offset_ref_dst);
+    av_packet_free(&offset_ref);
 
     AVPacket *offset_clone = packet_with_offset_padding();
     AVPacket *offset_cloned = av_packet_clone(offset_clone);

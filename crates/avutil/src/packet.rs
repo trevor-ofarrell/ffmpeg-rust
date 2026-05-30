@@ -12374,6 +12374,42 @@ mod tests {
     }
 
     #[test]
+    fn packet_offset_payload_ref_preserves_pointer_offset_and_padding() {
+        let mut storage = vec![0xa0, 0xa1, 0xa2, 0x11, 0x22];
+        storage.resize(3 + 2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+        let packet = Packet::with_buffer(
+            BufferRef::from_vec(storage).into_ref_slice(3, 2).unwrap(),
+            0,
+        );
+        let payload_ptr = packet.data_buffer().as_padded_ptr();
+        let mut referenced = Packet::default();
+
+        referenced.try_ref_from(&packet).unwrap();
+
+        assert!(referenced
+            .data_buffer()
+            .shares_storage(packet.data_buffer()));
+        assert_eq!(packet.data(), &[0x11, 0x22]);
+        assert_eq!(referenced.data(), &[0x11, 0x22]);
+        assert_eq!(packet.data_buffer().offset(), 3);
+        assert_eq!(referenced.data_buffer().offset(), 3);
+        assert_eq!(packet.data_buffer().as_padded_ptr(), payload_ptr);
+        assert_eq!(referenced.data_buffer().as_padded_ptr(), payload_ptr);
+        assert!(!packet.is_data_writable());
+        assert!(!referenced.is_data_writable());
+        assert!(packet
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0x5a));
+        assert!(referenced
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0x5a));
+    }
+
+    #[test]
     fn packet_zero_grow_sanitizes_padding_but_noop_shrink_preserves_it() {
         let mut grow_storage = vec![0x11, 0x22];
         grow_storage.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);

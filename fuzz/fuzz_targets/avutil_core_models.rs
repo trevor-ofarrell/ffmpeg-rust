@@ -9946,6 +9946,43 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .iter()
         .all(|byte| *byte == 0x5a));
 
+    let mut offset_ref_storage = vec![0xa0, 0xa1, 0xa2];
+    offset_ref_storage.extend_from_slice(&payload);
+    offset_ref_storage.resize(3 + payload.len() + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+    let offset_ref_packet = Packet::with_buffer(
+        BufferRef::from_vec(offset_ref_storage)
+            .into_ref_slice(3, payload.len())
+            .unwrap(),
+        stream_index,
+    );
+    let offset_ref_ptr = offset_ref_packet.data_buffer().as_padded_ptr();
+    let mut offset_ref_dst = Packet::default();
+    offset_ref_dst.try_ref_from(&offset_ref_packet).unwrap();
+    assert!(offset_ref_dst
+        .data_buffer()
+        .shares_storage(offset_ref_packet.data_buffer()));
+    assert_eq!(offset_ref_packet.data(), payload.as_slice());
+    assert_eq!(offset_ref_dst.data(), payload.as_slice());
+    assert_eq!(offset_ref_packet.data_buffer().offset(), 3);
+    assert_eq!(offset_ref_dst.data_buffer().offset(), 3);
+    assert_eq!(
+        offset_ref_packet.data_buffer().as_padded_ptr(),
+        offset_ref_ptr
+    );
+    assert_eq!(offset_ref_dst.data_buffer().as_padded_ptr(), offset_ref_ptr);
+    assert!(!offset_ref_packet.is_data_writable());
+    assert!(!offset_ref_dst.is_data_writable());
+    assert!(offset_ref_packet
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0x5a));
+    assert!(offset_ref_dst
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0x5a));
+
     let mut offset_clone_storage = vec![0xa0, 0xa1, 0xa2];
     offset_clone_storage.extend_from_slice(&payload);
     offset_clone_storage.resize(3 + payload.len() + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
