@@ -2285,6 +2285,31 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_fields(&offset_writable_dst),
     );
 
+    let mut offset_unref_storage = vec![0xa0, 0xa1, 0xa2, 0x11, 0x22];
+    offset_unref_storage.resize(3 + 2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+    let mut offset_unref = Packet::with_buffer(
+        BufferRef::from_vec(offset_unref_storage)
+            .into_ref_slice(3, 2)
+            .unwrap(),
+        7,
+    );
+    set_common_packet_props(&mut offset_unref);
+    offset_unref.unref();
+    rows.insert(
+        "packet:payload-unref-offset-padding-release".to_string(),
+        vec![
+            "1".to_string(),
+            "1".to_string(),
+            "a0a1a21122".to_string(),
+            "5a".to_string(),
+            "5a".to_string(),
+        ],
+    );
+    rows.insert(
+        "packet:payload-unref-offset-padding".to_string(),
+        packet_fields(&offset_unref),
+    );
+
     let mut offset_ref_storage = vec![0xa0, 0xa1, 0xa2, 0x11, 0x22];
     offset_ref_storage.resize(3 + 2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
     let offset_ref_src = Packet::with_buffer(
@@ -5927,6 +5952,35 @@ static void free_custom_padding_packet(void *opaque, uint8_t *data) {
     av_free(data);
 }
 
+static uint8_t *offset_unref_expected_base;
+static int offset_unref_release_count;
+static int offset_unref_release_base_match;
+static uint8_t offset_unref_release_prefix[5];
+static uint8_t offset_unref_release_padding_first;
+static uint8_t offset_unref_release_padding_last;
+
+static void reset_offset_unref_release(uint8_t *expected_base) {
+    offset_unref_expected_base = expected_base;
+    offset_unref_release_count = 0;
+    offset_unref_release_base_match = 0;
+    memset(offset_unref_release_prefix, 0, sizeof(offset_unref_release_prefix));
+    offset_unref_release_padding_first = 0;
+    offset_unref_release_padding_last = 0;
+}
+
+static void free_offset_unref_packet(void *opaque, uint8_t *data) {
+    (void)opaque;
+    offset_unref_release_count++;
+    offset_unref_release_base_match = data == offset_unref_expected_base;
+    if (data) {
+        memcpy(offset_unref_release_prefix, data, sizeof(offset_unref_release_prefix));
+        offset_unref_release_padding_first = data[5];
+        offset_unref_release_padding_last =
+            data[3 + 2 + AV_INPUT_BUFFER_PADDING_SIZE - 1];
+    }
+    av_free(data);
+}
+
 static AVPacket *packet_with_custom_padding(void) {
     AVPacket *pkt = new_packet();
     uint8_t *data = av_malloc(2 + AV_INPUT_BUFFER_PADDING_SIZE);
@@ -5963,6 +6017,29 @@ static AVPacket *packet_with_offset_padding(void) {
         NULL,
         0);
     fail_if(!pkt->buf, "offset padded packet buffer creation failed");
+    pkt->data = data + 3;
+    pkt->size = 2;
+    return pkt;
+}
+
+static AVPacket *packet_with_offset_padding_unref_release(void) {
+    AVPacket *pkt = new_packet();
+    uint8_t *data = av_malloc(3 + 2 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!data, "offset unref packet allocation failed");
+    data[0] = 0xa0;
+    data[1] = 0xa1;
+    data[2] = 0xa2;
+    data[3] = 0x11;
+    data[4] = 0x22;
+    memset(data + 5, 0x5a, AV_INPUT_BUFFER_PADDING_SIZE);
+    reset_offset_unref_release(data);
+    pkt->buf = av_buffer_create(
+        data,
+        3 + 2 + AV_INPUT_BUFFER_PADDING_SIZE,
+        free_offset_unref_packet,
+        NULL,
+        0);
+    fail_if(!pkt->buf, "offset unref packet buffer creation failed");
     pkt->data = data + 3;
     pkt->size = 2;
     return pkt;
@@ -8449,6 +8526,22 @@ int main(void) {
                   offset_writable_dst);
     av_packet_free(&offset_writable_dst);
     av_packet_free(&offset_writable_src);
+
+    AVPacket *offset_unref = packet_with_offset_padding_unref_release();
+    set_common_packet_props(offset_unref);
+    av_packet_unref(offset_unref);
+    printf("packet:payload-unref-offset-padding-release|%d|%d|%02x%02x%02x%02x%02x|%02x|%02x\n",
+           offset_unref_release_count,
+           offset_unref_release_base_match,
+           offset_unref_release_prefix[0],
+           offset_unref_release_prefix[1],
+           offset_unref_release_prefix[2],
+           offset_unref_release_prefix[3],
+           offset_unref_release_prefix[4],
+           offset_unref_release_padding_first,
+           offset_unref_release_padding_last);
+    print_packet("packet:payload-unref-offset-padding", offset_unref);
+    av_packet_free(&offset_unref);
 
     AVPacket *offset_ref = packet_with_offset_padding();
     AVPacket *offset_ref_dst = new_packet();

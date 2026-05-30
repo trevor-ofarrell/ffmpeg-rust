@@ -10097,6 +10097,51 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .unwrap()
         .shares_storage(offset_writable_src.opaque_ref().unwrap()));
 
+    let mut offset_unref_storage = vec![0xa0, 0xa1, 0xa2];
+    offset_unref_storage.extend_from_slice(&payload);
+    offset_unref_storage.resize(3 + payload.len() + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+    let offset_unref_expected_storage = offset_unref_storage.clone();
+    let offset_unref_released = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let offset_unref_capture = Arc::clone(&offset_unref_released);
+    let mut offset_unref_packet = Packet::with_buffer(
+        BufferRef::from_vec_with_release_callback(offset_unref_storage, move |data| {
+            offset_unref_capture.lock().unwrap().push(data);
+        })
+        .into_ref_slice(3, payload.len())
+        .unwrap(),
+        7,
+    );
+    offset_unref_packet.set_pts(Some(123));
+    offset_unref_packet.set_dts(Some(111));
+    offset_unref_packet.set_duration(12).unwrap();
+    offset_unref_packet.set_pos(Some(456)).unwrap();
+    offset_unref_packet.set_flag(PacketFlags::KEY, true);
+    offset_unref_packet.set_flag(PacketFlags::DISPOSABLE, true);
+    offset_unref_packet
+        .set_time_base(Rational::new(1, 1_000).unwrap())
+        .unwrap();
+    offset_unref_packet
+        .push_side_data(SideData::new_extradata(vec![0x33, 0x44]).unwrap());
+    offset_unref_packet.set_opaque(Some(PacketOpaque::new(0x1234).unwrap()));
+    offset_unref_packet.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad])));
+    offset_unref_packet.unref();
+    assert!(offset_unref_packet.is_empty());
+    assert_eq!(offset_unref_packet.data_buffer().padding_len(), 0);
+    assert_eq!(offset_unref_packet.stream_index(), 0);
+    assert_eq!(offset_unref_packet.pts(), None);
+    assert_eq!(offset_unref_packet.dts(), None);
+    assert_eq!(offset_unref_packet.duration(), 0);
+    assert_eq!(offset_unref_packet.pos(), None);
+    assert!(offset_unref_packet.flags().is_empty());
+    assert!(offset_unref_packet.side_data().is_empty());
+    assert!(offset_unref_packet.opaque().is_none());
+    assert!(offset_unref_packet.opaque_ref().is_none());
+    assert_eq!(offset_unref_packet.time_base(), Rational::ZERO);
+    assert_eq!(
+        *offset_unref_released.lock().unwrap(),
+        vec![offset_unref_expected_storage]
+    );
+
     let mut offset_ref_storage = vec![0xa0, 0xa1, 0xa2];
     offset_ref_storage.extend_from_slice(&payload);
     offset_ref_storage.resize(3 + payload.len() + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);

@@ -12566,6 +12566,51 @@ mod tests {
     }
 
     #[test]
+    fn packet_offset_payload_unref_resets_and_releases_full_storage() {
+        let released = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+        let capture = Arc::clone(&released);
+        let mut storage = vec![0xa0, 0xa1, 0xa2, 0x11, 0x22];
+        storage.resize(3 + 2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+        let expected_storage = storage.clone();
+        let mut packet = Packet::with_buffer(
+            BufferRef::from_vec_with_release_callback(storage, move |data| {
+                capture.lock().unwrap().push(data);
+            })
+            .into_ref_slice(3, 2)
+            .unwrap(),
+            7,
+        );
+        packet.set_pts(Some(123));
+        packet.set_dts(Some(111));
+        packet.set_duration(12).unwrap();
+        packet.set_pos(Some(456)).unwrap();
+        packet.set_flag(PacketFlags::KEY, true);
+        packet.set_flag(PacketFlags::DISPOSABLE, true);
+        packet
+            .set_time_base(Rational::new(1, 1_000).unwrap())
+            .unwrap();
+        packet.push_side_data(SideData::new_extradata(vec![0x33, 0x44]).unwrap());
+        packet.set_opaque(Some(PacketOpaque::new(0x1234).unwrap()));
+        packet.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad])));
+
+        packet.unref();
+
+        assert!(packet.is_empty());
+        assert_eq!(packet.data_buffer().padding_len(), 0);
+        assert_eq!(packet.stream_index(), 0);
+        assert_eq!(packet.pts(), None);
+        assert_eq!(packet.dts(), None);
+        assert_eq!(packet.duration(), 0);
+        assert_eq!(packet.pos(), None);
+        assert!(packet.flags().is_empty());
+        assert!(packet.side_data().is_empty());
+        assert!(packet.opaque().is_none());
+        assert!(packet.opaque_ref().is_none());
+        assert_eq!(packet.time_base(), Rational::ZERO);
+        assert_eq!(*released.lock().unwrap(), vec![expected_storage]);
+    }
+
+    #[test]
     fn packet_zero_grow_sanitizes_padding_but_noop_shrink_preserves_it() {
         let mut grow_storage = vec![0x11, 0x22];
         grow_storage.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);

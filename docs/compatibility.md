@@ -10,6 +10,15 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  `av_packet_unref()` on an `AVPacket` whose `data` points at an offset inside
+  `buf->data` resets packet fields to defaults and invokes the AVBuffer release
+  callback with the original backing allocation base, leaving prefix, visible
+  payload, and dirty input-padding bytes observable at release time. Rust
+  mirrors this through focused unit coverage, the mapped packet oracle, and a
+  deterministic `avutil_core_models` fixture. This strengthens
+  `avutil-packet`; strict completion remains 11/96 and the row remains
+  `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   `av_packet_make_writable()` on a shared `AVPacket` ref whose `data` points
   at an offset inside `buf->data` detaches the destination to writable
   zero-offset padded storage, preserves visible bytes and packet properties,
