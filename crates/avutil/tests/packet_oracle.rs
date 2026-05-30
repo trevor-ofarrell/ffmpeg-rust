@@ -536,6 +536,7 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         packet_fields(&unref_repeat),
     );
 
+    insert_packet_free_rows(&mut rows);
     insert_side_data_api_rows(&mut rows);
     insert_side_data_capacity_rows(&mut rows);
     insert_side_data_array_api_rows(&mut rows);
@@ -590,6 +591,164 @@ fn insert_packet_unknown_flag_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:flags-unknown-move-src".to_string(),
         packet_fields(&moved_src),
     );
+}
+
+fn insert_packet_free_rows(rows: &mut BTreeMap<String, Vec<String>>) {
+    rows.insert(
+        "packet:free-nullptr-noop".to_string(),
+        vec!["1".to_string()],
+    );
+    rows.insert("packet:free-null-packet".to_string(), vec!["1".to_string()]);
+
+    let payload_releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+    let opaque_releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+    let payload_capture = std::sync::Arc::clone(&payload_releases);
+    let opaque_capture = std::sync::Arc::clone(&opaque_releases);
+
+    let mut payload_storage = vec![0xab, 0xbc];
+    payload_storage.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0);
+    let payload =
+        BufferRef::from_vec_with_len_and_release_callback(payload_storage, 2, move |data| {
+            payload_capture.lock().unwrap().push(data);
+        })
+        .unwrap();
+    let mut src = Packet::with_buffer(payload, 7);
+    src.set_pts(Some(90_000));
+    src.set_dts(Some(45_000));
+    src.set_duration(180_000).unwrap();
+    src.set_pos(Some(1_234)).unwrap();
+    src.set_flag(PacketFlags::KEY, true);
+    src.set_flag(PacketFlags::CORRUPT, true);
+    src.set_time_base(Rational::new(1, 90_000).unwrap())
+        .unwrap();
+    src.push_side_data(SideData::new_extradata(vec![0x11, 0x22, 0x33]).unwrap());
+    src.set_opaque(Some(PacketOpaque::new(0x1234).unwrap()));
+    src.set_opaque_ref(Some(BufferRef::from_vec_with_release_callback(
+        vec![0xde, 0xad, 0xbe],
+        move |data| {
+            opaque_capture.lock().unwrap().push(data);
+        },
+    )));
+
+    let mut dst = Packet::default();
+    dst.ref_from(&src);
+    rows.insert(
+        "packet:free-shared-before".to_string(),
+        packet_free_before_fields(&src, &dst, &payload_releases, &opaque_releases),
+    );
+    rows.insert(
+        "packet:free-shared-before-src".to_string(),
+        packet_fields(&src),
+    );
+    rows.insert(
+        "packet:free-shared-before-dst".to_string(),
+        packet_fields(&dst),
+    );
+
+    let mut dst_owner = Some(dst);
+    drop(dst_owner.take());
+    rows.insert(
+        "packet:free-shared-after-dst".to_string(),
+        packet_free_after_dst_fields(
+            dst_owner.is_none(),
+            &src,
+            &payload_releases,
+            &opaque_releases,
+        ),
+    );
+    rows.insert(
+        "packet:free-shared-after-dst-src".to_string(),
+        packet_fields(&src),
+    );
+
+    let mut src_owner = Some(src);
+    drop(src_owner.take());
+    rows.insert(
+        "packet:free-shared-after-src".to_string(),
+        packet_free_after_src_fields(src_owner.is_none(), &payload_releases, &opaque_releases),
+    );
+}
+
+fn packet_free_before_fields(
+    src: &Packet,
+    dst: &Packet,
+    payload_releases: &std::sync::Arc<std::sync::Mutex<Vec<Vec<u8>>>>,
+    opaque_releases: &std::sync::Arc<std::sync::Mutex<Vec<Vec<u8>>>>,
+) -> Vec<String> {
+    let mut fields = packet_free_release_fields(payload_releases, opaque_releases);
+    fields.extend([
+        src.data_buffer().strong_count().to_string(),
+        dst.data_buffer().strong_count().to_string(),
+        src.opaque_ref()
+            .map(BufferRef::strong_count)
+            .unwrap_or(0)
+            .to_string(),
+        dst.opaque_ref()
+            .map(BufferRef::strong_count)
+            .unwrap_or(0)
+            .to_string(),
+        bool_field(src.data_buffer().shares_storage(dst.data_buffer())),
+        bool_field(
+            src.opaque_ref()
+                .zip(dst.opaque_ref())
+                .is_some_and(|(src, dst)| src.shares_storage(dst)),
+        ),
+    ]);
+    fields
+}
+
+fn packet_free_after_dst_fields(
+    dst_is_none: bool,
+    src: &Packet,
+    payload_releases: &std::sync::Arc<std::sync::Mutex<Vec<Vec<u8>>>>,
+    opaque_releases: &std::sync::Arc<std::sync::Mutex<Vec<Vec<u8>>>>,
+) -> Vec<String> {
+    let mut fields = vec![bool_field(dst_is_none)];
+    fields.extend(packet_free_release_fields(
+        payload_releases,
+        opaque_releases,
+    ));
+    fields.extend([
+        src.data_buffer().strong_count().to_string(),
+        src.opaque_ref()
+            .map(BufferRef::strong_count)
+            .unwrap_or(0)
+            .to_string(),
+    ]);
+    fields
+}
+
+fn packet_free_after_src_fields(
+    src_is_none: bool,
+    payload_releases: &std::sync::Arc<std::sync::Mutex<Vec<Vec<u8>>>>,
+    opaque_releases: &std::sync::Arc<std::sync::Mutex<Vec<Vec<u8>>>>,
+) -> Vec<String> {
+    let mut fields = vec![bool_field(src_is_none)];
+    fields.extend(packet_free_release_fields(
+        payload_releases,
+        opaque_releases,
+    ));
+    fields
+}
+
+fn packet_free_release_fields(
+    payload_releases: &std::sync::Arc<std::sync::Mutex<Vec<Vec<u8>>>>,
+    opaque_releases: &std::sync::Arc<std::sync::Mutex<Vec<Vec<u8>>>>,
+) -> Vec<String> {
+    let payload_releases = payload_releases.lock().unwrap();
+    let opaque_releases = opaque_releases.lock().unwrap();
+    vec![
+        payload_releases.len().to_string(),
+        payload_releases
+            .first()
+            .map(|bytes| hex_or_dash(&bytes[..bytes.len().min(2)]))
+            .unwrap_or_else(|| "-".to_string()),
+        opaque_releases.len().to_string(),
+        opaque_releases
+            .first()
+            .map(|bytes| hex_or_dash(bytes))
+            .unwrap_or_else(|| "-".to_string()),
+    ]
 }
 
 fn insert_side_data_kind_inventory_row(rows: &mut BTreeMap<String, Vec<String>>) {
@@ -5078,6 +5237,11 @@ static int fifo_release_opaque_first = -1;
 static int fifo_release_ref_payload_count = 0;
 static int fifo_release_ref_payload_first = -1;
 static int fifo_release_ref_payload_second = -1;
+static int packet_free_payload_count = 0;
+static int packet_free_payload_first = -1;
+static int packet_free_payload_second = -1;
+static int packet_free_opaque_count = 0;
+static uint8_t packet_free_opaque_bytes[3] = { 0, 0, 0 };
 
 static void reset_fifo_release_counters(void) {
     fifo_release_payload_count = 0;
@@ -5111,6 +5275,122 @@ static void free_fifo_ref_payload(void *opaque, uint8_t *data) {
     fifo_release_ref_payload_first = data ? data[0] : -1;
     fifo_release_ref_payload_second = data ? data[1] : -1;
     av_free(data);
+}
+
+static void reset_packet_free_release_counters(void) {
+    packet_free_payload_count = 0;
+    packet_free_payload_first = -1;
+    packet_free_payload_second = -1;
+    packet_free_opaque_count = 0;
+    memset(packet_free_opaque_bytes, 0, sizeof(packet_free_opaque_bytes));
+}
+
+static void free_packet_free_payload(void *opaque, uint8_t *data) {
+    (void)opaque;
+    packet_free_payload_count++;
+    packet_free_payload_first = data ? data[0] : -1;
+    packet_free_payload_second = data ? data[1] : -1;
+    av_free(data);
+}
+
+static void free_packet_free_opaque_ref(void *opaque, uint8_t *data) {
+    (void)opaque;
+    packet_free_opaque_count++;
+    if (data)
+        memcpy(packet_free_opaque_bytes, data, sizeof(packet_free_opaque_bytes));
+    av_free(data);
+}
+
+static void print_packet_free_release_fields(void) {
+    printf("|%d|", packet_free_payload_count);
+    if (packet_free_payload_count > 0)
+        printf("%02x%02x", packet_free_payload_first & 0xff,
+               packet_free_payload_second & 0xff);
+    else
+        printf("-");
+    printf("|%d|", packet_free_opaque_count);
+    if (packet_free_opaque_count > 0)
+        print_hex_or_dash(packet_free_opaque_bytes,
+                          (int)sizeof(packet_free_opaque_bytes));
+    else
+        printf("-");
+}
+
+static void exercise_packet_free_api(void) {
+    av_packet_free(NULL);
+    printf("packet:free-nullptr-noop|1\n");
+
+    AVPacket *null_packet = NULL;
+    av_packet_free(&null_packet);
+    printf("packet:free-null-packet|%d\n", null_packet == NULL);
+
+    reset_packet_free_release_counters();
+    AVPacket *src = new_packet();
+    uint8_t *payload = av_mallocz(2 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!payload, "packet free payload allocation failed");
+    payload[0] = 0xab;
+    payload[1] = 0xbc;
+    src->buf = av_buffer_create(
+        payload,
+        2 + AV_INPUT_BUFFER_PADDING_SIZE,
+        free_packet_free_payload,
+        NULL,
+        0);
+    fail_if(!src->buf, "packet free payload buffer creation failed");
+    src->data = payload;
+    src->size = 2;
+    src->pts = 90000;
+    src->dts = 45000;
+    src->duration = 180000;
+    src->pos = 1234;
+    src->stream_index = 7;
+    src->flags = AV_PKT_FLAG_KEY | AV_PKT_FLAG_CORRUPT;
+    src->time_base = (AVRational){ 1, 90000 };
+    src->opaque = (void *)(uintptr_t)0x1234;
+    uint8_t *opaque = av_mallocz(3);
+    fail_if(!opaque, "packet free opaque_ref allocation failed");
+    opaque[0] = 0xde;
+    opaque[1] = 0xad;
+    opaque[2] = 0xbe;
+    src->opaque_ref = av_buffer_create(
+        opaque,
+        3,
+        free_packet_free_opaque_ref,
+        NULL,
+        0);
+    fail_if(!src->opaque_ref, "packet free opaque_ref buffer creation failed");
+    uint8_t *sd = av_packet_new_side_data(src, AV_PKT_DATA_NEW_EXTRADATA, 3);
+    fail_if(!sd, "packet free side-data allocation failed");
+    sd[0] = 0x11;
+    sd[1] = 0x22;
+    sd[2] = 0x33;
+
+    AVPacket *dst = new_packet();
+    fail_if(av_packet_ref(dst, src) < 0, "packet free av_packet_ref failed");
+    printf("packet:free-shared-before");
+    print_packet_free_release_fields();
+    printf("|%d|%d|%d|%d|%d|%d\n",
+           av_buffer_get_ref_count(src->buf),
+           av_buffer_get_ref_count(dst->buf),
+           av_buffer_get_ref_count(src->opaque_ref),
+           av_buffer_get_ref_count(dst->opaque_ref),
+           src->data == dst->data,
+           src->opaque_ref->data == dst->opaque_ref->data);
+    print_packet("packet:free-shared-before-src", src);
+    print_packet("packet:free-shared-before-dst", dst);
+
+    av_packet_free(&dst);
+    printf("packet:free-shared-after-dst|%d", dst == NULL);
+    print_packet_free_release_fields();
+    printf("|%d|%d\n",
+           av_buffer_get_ref_count(src->buf),
+           av_buffer_get_ref_count(src->opaque_ref));
+    print_packet("packet:free-shared-after-dst-src", src);
+
+    av_packet_free(&src);
+    printf("packet:free-shared-after-src|%d", src == NULL);
+    print_packet_free_release_fields();
+    printf("\n");
 }
 
 static void exercise_side_data_api(void) {
@@ -7191,6 +7471,7 @@ int main(void) {
     print_packet("packet:unref-repeat", pkt);
     av_packet_free(&pkt);
 
+    exercise_packet_free_api();
     exercise_side_data_api();
     exercise_side_data_capacity_api();
     exercise_side_data_array_api();
@@ -7215,6 +7496,10 @@ fn hex_or_dash(bytes: &[u8]) -> String {
         out.push(HEX[(byte & 0x0f) as usize] as char);
     }
     out
+}
+
+fn bool_field(value: bool) -> String {
+    u8::from(value).to_string()
 }
 
 fn repo_root() -> PathBuf {

@@ -12584,6 +12584,75 @@ mod tests {
     }
 
     #[test]
+    fn packet_drop_and_option_take_match_av_packet_free_lifecycle() {
+        let mut none_packet: Option<Packet> = None;
+        drop(none_packet.take());
+        assert!(none_packet.is_none());
+
+        let payload_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+        let opaque_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+        let payload_capture = Arc::clone(&payload_releases);
+        let opaque_capture = Arc::clone(&opaque_releases);
+
+        let mut payload = vec![0xab, 0xbc];
+        payload.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0);
+        let buffer =
+            BufferRef::from_vec_with_len_and_release_callback(payload.clone(), 2, move |data| {
+                payload_capture.lock().unwrap().push(data);
+            })
+            .unwrap();
+        let mut src = Packet::with_buffer(buffer, 7);
+        src.set_pts(Some(90_000));
+        src.set_dts(Some(45_000));
+        src.set_duration(180_000).unwrap();
+        src.set_pos(Some(1_234)).unwrap();
+        src.set_flag(PacketFlags::KEY, true);
+        src.set_flag(PacketFlags::CORRUPT, true);
+        src.set_time_base(Rational::new(1, 90_000).unwrap())
+            .unwrap();
+        src.push_side_data(SideData::new_extradata(vec![0x11, 0x22, 0x33]).unwrap());
+        src.set_opaque_address(0x1234);
+        src.set_opaque_ref(Some(BufferRef::from_vec_with_release_callback(
+            vec![0xde, 0xad, 0xbe],
+            move |data| {
+                opaque_capture.lock().unwrap().push(data);
+            },
+        )));
+
+        let mut dst = Packet::default();
+        dst.ref_from(&src);
+        assert!(dst.data_buffer().shares_storage(src.data_buffer()));
+        assert!(dst
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(src.opaque_ref().unwrap()));
+        assert_eq!(src.data_buffer().strong_count(), 2);
+        assert_eq!(dst.data_buffer().strong_count(), 2);
+        assert_eq!(src.opaque_ref().unwrap().strong_count(), 2);
+        assert_eq!(dst.opaque_ref().unwrap().strong_count(), 2);
+        assert!(payload_releases.lock().unwrap().is_empty());
+        assert!(opaque_releases.lock().unwrap().is_empty());
+
+        let mut dst_owner = Some(dst);
+        drop(dst_owner.take());
+        assert!(dst_owner.is_none());
+        assert_eq!(src.data(), &[0xab, 0xbc]);
+        assert_eq!(src.data_buffer().strong_count(), 1);
+        assert_eq!(src.opaque_ref().unwrap().strong_count(), 1);
+        assert!(payload_releases.lock().unwrap().is_empty());
+        assert!(opaque_releases.lock().unwrap().is_empty());
+
+        let mut src_owner = Some(src);
+        drop(src_owner.take());
+        assert!(src_owner.is_none());
+        assert_eq!(*payload_releases.lock().unwrap(), vec![payload]);
+        assert_eq!(
+            *opaque_releases.lock().unwrap(),
+            vec![vec![0xde, 0xad, 0xbe]]
+        );
+    }
+
+    #[test]
     fn packet_legacy_init_resets_fields_but_preserves_payload() {
         let mut packet = Packet::from_data(vec![1, 2, 3]).unwrap();
         packet.set_pts(Some(12));

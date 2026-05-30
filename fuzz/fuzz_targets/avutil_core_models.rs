@@ -9817,6 +9817,72 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         assert_eq!(shared_src.data(), payload.as_slice());
     }
 
+    let free_payload_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let free_opaque_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let free_payload_capture = Arc::clone(&free_payload_releases);
+    let free_opaque_capture = Arc::clone(&free_opaque_releases);
+    let mut free_payload = vec![0xab, 0xbc];
+    free_payload.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0);
+    let free_payload_expected = free_payload.clone();
+    let free_buffer = BufferRef::from_vec_with_len_and_release_callback(
+        free_payload,
+        2,
+        move |data| {
+            free_payload_capture.lock().unwrap().push(data);
+        },
+    )
+    .unwrap();
+    let mut free_src = Packet::with_buffer(free_buffer, 7);
+    free_src.set_pts(Some(90_000));
+    free_src.set_dts(Some(45_000));
+    free_src.set_duration(180_000).unwrap();
+    free_src.set_pos(Some(1_234)).unwrap();
+    free_src.set_flag(PacketFlags::KEY, true);
+    free_src.set_flag(PacketFlags::CORRUPT, true);
+    free_src
+        .set_time_base(Rational::new(1, 90_000).unwrap())
+        .unwrap();
+    free_src.push_side_data(SideData::new_extradata(vec![0x11, 0x22, 0x33]).unwrap());
+    free_src.set_opaque(Some(PacketOpaque::new(0x1234).unwrap()));
+    free_src.set_opaque_ref(Some(BufferRef::from_vec_with_release_callback(
+        vec![0xde, 0xad, 0xbe],
+        move |data| {
+            free_opaque_capture.lock().unwrap().push(data);
+        },
+    )));
+    let mut free_dst = Packet::default();
+    free_dst.ref_from(&free_src);
+    assert!(free_dst.data_buffer().shares_storage(free_src.data_buffer()));
+    assert!(free_dst
+        .opaque_ref()
+        .unwrap()
+        .shares_storage(free_src.opaque_ref().unwrap()));
+    assert_eq!(free_src.data_buffer().strong_count(), 2);
+    assert_eq!(free_dst.data_buffer().strong_count(), 2);
+    assert_eq!(free_src.opaque_ref().unwrap().strong_count(), 2);
+    assert_eq!(free_dst.opaque_ref().unwrap().strong_count(), 2);
+    assert!(free_payload_releases.lock().unwrap().is_empty());
+    assert!(free_opaque_releases.lock().unwrap().is_empty());
+    let mut free_dst_owner = Some(free_dst);
+    drop(free_dst_owner.take());
+    assert!(free_dst_owner.is_none());
+    assert_eq!(free_src.data(), &[0xab, 0xbc]);
+    assert_eq!(free_src.data_buffer().strong_count(), 1);
+    assert_eq!(free_src.opaque_ref().unwrap().strong_count(), 1);
+    assert!(free_payload_releases.lock().unwrap().is_empty());
+    assert!(free_opaque_releases.lock().unwrap().is_empty());
+    let mut free_src_owner = Some(free_src);
+    drop(free_src_owner.take());
+    assert!(free_src_owner.is_none());
+    assert_eq!(
+        *free_payload_releases.lock().unwrap(),
+        vec![free_payload_expected]
+    );
+    assert_eq!(
+        *free_opaque_releases.lock().unwrap(),
+        vec![vec![0xde, 0xad, 0xbe]]
+    );
+
     let pts = timestamp_from(cursor.next());
     let dts = timestamp_from(cursor.next());
     packet.set_pts(pts);

@@ -3,6 +3,66 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active with xhigh
+fast/full-access subagents and no approval prompts. The packet-free slice
+started from `master...origin/master [ahead 69]`; strict completion remains
+11/96 components, about 11.5%. Read-only explorers converged on direct
+`av_packet_free()` lifecycle evidence as the next highest-priority
+`avutil-packet` gap, and a separate frame explorer recorded PAL8 palette
+side-plane propagation as a future `avutil-frame` task.
+
+Current main-thread slice: pinned libavcodec rows now prove
+`av_packet_free(NULL)` and `av_packet_free(&NULL)` are no-ops, and freeing one
+side of a shared refcounted packet pair nulls only that pointer while
+preserving the other owner. Payload and `opaque_ref` release callbacks fire
+exactly once only after the final owner is freed. Rust mirrors this through
+`Option<Packet>::take()` / Drop unit coverage and the deterministic
+`avutil_core_models` fixture. `avutil-packet` remains `fate_pass`, not
+`complete`; strict completion remains 11/96.
+
+Latest validation commands for this packet-free slice passed: `cargo fmt
+--all`; `cargo test -p avutil --lib --target-dir
+target-orch-packet-free-unit
+packet_drop_and_option_take_match_av_packet_free_lifecycle -- --nocapture`;
+`cargo check --manifest-path fuzz\\Cargo.toml --target-dir
+target-orch-packet-free-fuzz-check --bin avutil_core_models`; `cargo fmt
+--all -- --check`; `$env:FFMPEG_ORACLE='.\\third_party\\ffmpeg-oracle\\build\\bin\\ffmpeg.cmd';
+cargo test -p avutil --target-dir target-orch-packet-free-oracle --test
+packet_oracle libavcodec_packet_core_lifecycle_matches_packet_model --
+--ignored --nocapture`; `cargo run -p fate-runner --target-dir
+target-orch-packet-free-diff -- run --mappings tests\\differential\\mappings.txt
+--component avutil-packet --target oracle-libavcodec-packet-core
+--oracle-ffmpeg .\\third_party\\ffmpeg-oracle\\build\\bin\\ffmpeg.cmd`; `cargo
+run -p fate-runner --target-dir target-orch-packet-free-local -- run
+--component avutil-packet`; `cargo clippy -p avutil --all-targets
+--all-features --target-dir target-orch-packet-free-clippy -- -D warnings`;
+`cargo clippy --manifest-path fuzz\\Cargo.toml --target-dir
+target-orch-packet-free-fuzz-clippy --bin avutil_core_models -- -D warnings`;
+WSL `RUST_MIN_STACK=33554432 CXXFLAGS='-O1' HOST_CXXFLAGS='-O1'
+CARGO_TARGET_DIR=target-wsl-packet-free-drop-fuzz-o1 cargo fuzz run
+avutil_core_models -- -runs=1`; `cargo test -p fate-runner --target-dir
+target-orch-packet-free-ledger current_ledger`; `cargo run -p xtask
+--target-dir target-orch-packet-free-guard -- guard-runtime`; `cargo run -p
+xtask --target-dir target-orch-packet-free-doctor -- oracle-doctor`; `cargo
+run -p fate-runner --target-dir target-orch-packet-free-status -- status --next
+12`; and `git diff --check`.
+
+Latest failing or limited commands for this slice: the first direct packet
+oracle comparison expected one byte of `opaque_ref` release data while the C
+oracle correctly released the three-byte `[de ad be]` owner; the Rust expected
+row was corrected and the direct oracle plus mapped differential rerun passed.
+The fresh WSL fuzz smoke spent most of its time rebuilding sanitizer artifacts
+but completed without a crash. No behavior failure remains.
+
+Current focus component: `avutil-packet` remains the top priority incomplete
+component (`fate_pass`), followed by `avutil-buffer` (`differential_pass`),
+`avutil-frame` (`differential_pass`), `avutil-logging` (`fate_pass`), and
+`avutil-options` (`fate_pass`). Next 3 concrete actions: finish final
+ledger/state/doc guards and commit this coherent packet-free evidence slice,
+then use the next clean-tree window for the `avutil-frame` PAL8 palette
+side-plane propagation slice or another bounded `avutil-packet` completion gap,
+with xhigh read-only explorers or workers only on disjoint file sets.
+
+Current authoritative turn status: orchestrator workflow is active with xhigh
 fast/full-access subagents and no approval prompts. The tree started clean at
 `master...origin/master [ahead 68]`; strict completion remains 11/96
 components, about 11.5%. Three read-only explorers reported bounded next

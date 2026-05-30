@@ -9,6 +9,14 @@
 
 ## Compatible Today
 
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
+  `av_packet_free(NULL)` and `av_packet_free(&NULL)` are no-ops, and direct
+  `av_packet_free(&pkt)` on one side of a shared refcounted packet pair nulls
+  only that pointer while preserving the other owner. Payload and `opaque_ref`
+  release callbacks fire exactly once after the final shared owner is freed.
+  Rust mirrors this through `Option<Packet>::take()` / Drop unit coverage and a
+  deterministic `avutil_core_models` fuzz fixture. The strict count remains
+  11/96; `avutil-packet` remains `fate_pass`, not `complete`.
 - Latest orchestrated avutil lifecycle evidence: packet FIFO invalid-operation
   rows now prove a mixed move/ref `AVContainerFifo` keeps readable count and
   queued order intact after an out-of-range peek, then drains in the expected
