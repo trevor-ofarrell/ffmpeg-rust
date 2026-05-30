@@ -10,6 +10,15 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  `av_grow_packet(pkt, 0)` on ordinary writable padded storage preserves the
+  packet data pointer and visible payload while zeroing dirty input padding,
+  whereas exact-size and oversize `av_shrink_packet()` calls are no-ops that
+  preserve dirty padding. Rust mirrors this through `Packet::grow_data(0)`,
+  no-op `Packet::shrink_data()`, focused unit coverage, the mapped packet
+  oracle, and a deterministic `avutil_core_models` fixture. This strengthens
+  `avutil-packet`; strict completion remains 11/96 and the row remains
+  `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   `av_new_packet(pkt, 0)` on a pre-populated packet succeeds, resets metadata,
   side data, flags, stream index, opaque pointer metadata, `opaque_ref`, and
   packet `time_base`, and installs zero visible payload bytes with FFmpeg input

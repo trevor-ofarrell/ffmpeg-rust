@@ -100,7 +100,14 @@ The same form is used for `avutil_bitreader`, `avutil_byteio`, and `avutil_metad
 
 The latest `avutil_core_models` deterministic logging fixtures include the UTC+05:30 default-callback timestamp row, the POSIX Pacific DST spring-forward/fall-back timestamp rows, the wrapped AEST/AEDT southern-hemisphere DST timestamp rows, the context-sensitive default-callback repeat row where identical text from distinct AVClass instances is not coalesced, the default-callback carriage-return prefix reset row, low-level `av_log_format_line()` / `av_log_format_line2()` carriage-return prefix reset rows, low-level `AV_LOG_QUIET` prefix-suppression rows including the no-prefix `av_log_format_line2(NULL, AV_LOG_QUIET, PRINT_LEVEL)` row, forced-color default-callback `AV_LOG_QUIET` message coloring, forced-color default-callback carriage-return prefix reset, presence-only empty/zero force-color and force-no-color environment rows, no-force pseudo-terminal TERM palette rows including `TERM=dumb` BASIC quiet-message coloring and `TERM=xterm-256color` severity colors, and custom-callback raw delivered levels `-1`, `23`, and `57` with quiet/context delivery. The latest recorded WSL smoke evidence includes 1024 inputs after the UTC+05:30 timestamp addition, a warmed one-input run after adding the context-sensitive repeat fixture, a warmed one-input run after adding the default-callback carriage-return reset fixture, a dedicated one-input run after adding the low-level format-line carriage-return reset fixture, a dedicated one-input run after adding the low-level quiet prefix-suppression fixture, a dedicated one-input run after adding the raw custom-callback delivered-level fixture, a warmed one-input run after adding forced-color quiet rows, a warmed one-input run after adding forced-color carriage-return rows, a warmed one-input run after adding empty/zero force-env rows, a warmed one-input run after adding no-force TTY TERM palette rows, a warmed one-input run after adding no-force `TERM=xterm-256color` severity rows, a warmed one-input run after adding custom-callback raw negative/high-level plus quiet-context rows, a warmed one-input run after adding Pacific POSIX DST rows, and a warmed one-input run after adding wrapped AEST/AEDT DST rows; those sanitizer-backed smokes are useful, but not a sustained fuzz campaign.
 
-The latest packet payload fixture extends `avutil_core_models` with the deterministic `Packet::alloc_new_packet_payload(0)` reset path for `av_new_packet(pkt, 0)` parity: a pre-populated packet becomes an empty writable padded packet with default metadata, no side data, no opaque pointer metadata, no `opaque_ref`, empty flags, stream index zero, and packet time base zero.
+The latest packet custom-padding fixture extends `avutil_core_models` with the
+deterministic `Packet::grow_data(0)` and no-op `Packet::shrink_data()` boundary:
+zero growth preserves visible payload and the backing pointer while zeroing
+dirty FFmpeg input padding, but exact-size and oversize shrink calls preserve
+that dirty padding unchanged. A one-input WSL `avutil_core_models` smoke passed
+with local leak detection disabled after the sanitizer rebuild.
+
+The latest packet payload reset fixture extends `avutil_core_models` with the deterministic `Packet::alloc_new_packet_payload(0)` reset path for `av_new_packet(pkt, 0)` parity: a pre-populated packet becomes an empty writable padded packet with default metadata, no side data, no opaque pointer metadata, no `opaque_ref`, empty flags, stream index zero, and packet time base zero.
 
 The latest `avutil_core_models` pixel-format fuzz evidence includes a saved-crash replay and warmed 4096-run WSL sanitizer execution after fixing a stale no-byte-stride invariant. The harness now treats absent fixed byte stride as valid for planar formats or the modeled bit-packed single-plane formats (`monow`, `monob`, `rgb4`, `bgr4`, and `uyyvyy411`), and separately recognizes planar GBRA formats as alpha-bearing. This narrows bounded pixel-format fuzz coverage but does not replace full `AVPixFmtDescriptor`, FATE media, conversion, or hardware-device parity.
 
@@ -311,6 +318,13 @@ The newest zero-size side-data lifecycle rows prove `av_packet_copy_props()`,
 `av_packet_ref()`, `av_packet_clone()`, and `av_packet_move_ref()` preserve a
 zero-size `AV_PKT_DATA_NEW_EXTRADATA` record with lookup present and size zero;
 the move-ref row also proves the source side-data list resets.
+
+The newest custom-padding payload rows prove `av_grow_packet(pkt, 0)` on
+ordinary writable padded storage preserves the packet data pointer and visible
+bytes while zeroing dirty input padding, while exact-size and oversize
+`av_shrink_packet()` preserve the same dirty padding as true no-ops. Rust
+mirrors this through `Packet::grow_data(0)`, no-op `Packet::shrink_data()`,
+focused unit coverage, and the `avutil_core_models` deterministic fixture.
 
 The newest packet FIFO partial-drain rows prove `av_container_fifo_drain(fifo, 1)` on a mixed move/ref packet FIFO releases the drained move-written packet's payload buffer and `opaque_ref` buffer immediately, keeps the ref-written packet queued, then delays ref-source payload release until the queued ref is drained and the original source drops. Rust `PacketFifo::drain` plus `avutil_core_models` mirror that release ordering.
 

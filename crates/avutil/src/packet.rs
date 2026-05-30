@@ -12302,6 +12302,63 @@ mod tests {
     }
 
     #[test]
+    fn packet_zero_grow_sanitizes_padding_but_noop_shrink_preserves_it() {
+        let mut grow_storage = vec![0x11, 0x22];
+        grow_storage.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+        let mut grow_packet = Packet::with_buffer(
+            BufferRef::from_vec(grow_storage)
+                .into_ref_slice(0, 2)
+                .unwrap(),
+            0,
+        );
+        let grow_ptr = grow_packet.data_buffer().as_padded_ptr();
+
+        grow_packet.grow_data(0).unwrap();
+
+        assert_eq!(grow_packet.data(), &[0x11, 0x22]);
+        assert_eq!(grow_packet.data_buffer().as_padded_ptr(), grow_ptr);
+        assert_eq!(
+            grow_packet.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(grow_packet
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+
+        let mut exact_shrink_storage = vec![0x33, 0x44];
+        exact_shrink_storage.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+        let mut exact_shrink = Packet::with_buffer(
+            BufferRef::from_vec(exact_shrink_storage)
+                .into_ref_slice(0, 2)
+                .unwrap(),
+            0,
+        );
+        let exact_ptr = exact_shrink.data_buffer().as_padded_ptr();
+
+        exact_shrink.shrink_data(2).unwrap();
+
+        assert_eq!(exact_shrink.data(), &[0x33, 0x44]);
+        assert_eq!(exact_shrink.data_buffer().as_padded_ptr(), exact_ptr);
+        assert!(exact_shrink
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0x5a));
+
+        exact_shrink.shrink_data(9).unwrap();
+
+        assert_eq!(exact_shrink.data(), &[0x33, 0x44]);
+        assert_eq!(exact_shrink.data_buffer().as_padded_ptr(), exact_ptr);
+        assert!(exact_shrink
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0x5a));
+    }
+
+    #[test]
     fn packet_ref_from_shares_payload_and_copies_side_data() {
         let mut src = Packet::from_data(vec![1, 2, 3]).unwrap();
         src.stream_index = 4;

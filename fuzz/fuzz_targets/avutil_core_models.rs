@@ -9883,6 +9883,63 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .iter()
         .all(|byte| *byte == 0x5a));
 
+    let mut grow_zero_custom_storage = payload.clone();
+    grow_zero_custom_storage.resize(payload.len() + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+    let mut grow_zero_custom_packet = Packet::with_buffer(
+        BufferRef::from_vec(grow_zero_custom_storage)
+            .into_ref_slice(0, payload.len())
+            .unwrap(),
+        stream_index,
+    );
+    let grow_zero_custom_ptr = grow_zero_custom_packet.data_buffer().as_padded_ptr();
+    grow_zero_custom_packet.grow_data(0).unwrap();
+    assert_eq!(grow_zero_custom_packet.data(), payload.as_slice());
+    assert_eq!(
+        grow_zero_custom_packet.data_buffer().as_padded_ptr(),
+        grow_zero_custom_ptr
+    );
+    assert_eq!(
+        grow_zero_custom_packet.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(grow_zero_custom_packet
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+
+    let mut shrink_custom_storage = payload.clone();
+    shrink_custom_storage.resize(payload.len() + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+    let mut shrink_custom_packet = Packet::with_buffer(
+        BufferRef::from_vec(shrink_custom_storage)
+            .into_ref_slice(0, payload.len())
+            .unwrap(),
+        stream_index,
+    );
+    let shrink_custom_ptr = shrink_custom_packet.data_buffer().as_padded_ptr();
+    shrink_custom_packet.shrink_data(payload.len()).unwrap();
+    assert_eq!(shrink_custom_packet.data(), payload.as_slice());
+    assert_eq!(
+        shrink_custom_packet.data_buffer().as_padded_ptr(),
+        shrink_custom_ptr
+    );
+    assert!(shrink_custom_packet
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0x5a));
+    shrink_custom_packet.shrink_data(payload.len() + 8).unwrap();
+    assert_eq!(shrink_custom_packet.data(), payload.as_slice());
+    assert_eq!(
+        shrink_custom_packet.data_buffer().as_padded_ptr(),
+        shrink_custom_ptr
+    );
+    assert!(shrink_custom_packet
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0x5a));
+
     let shared_src = Packet::from_data(payload.clone()).unwrap();
     let mut shared_dst = Packet::default();
     shared_dst.ref_from(&shared_src);

@@ -2130,6 +2130,51 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_fields(&custom_padding_cloned),
     );
 
+    let mut grow_zero_custom_storage = vec![0x11, 0x22];
+    grow_zero_custom_storage.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+    let mut grow_zero_custom = Packet::with_buffer(
+        BufferRef::from_vec(grow_zero_custom_storage)
+            .into_ref_slice(0, 2)
+            .unwrap(),
+        0,
+    );
+    let grow_zero_custom_ptr = grow_zero_custom.data_buffer().as_padded_ptr();
+    grow_zero_custom.grow_data(0).unwrap();
+    rows.insert(
+        "packet:payload-grow-zero-custom-padding-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-grow-zero-custom-padding-same-ptr".to_string(),
+        vec![
+            u8::from(grow_zero_custom.data_buffer().as_padded_ptr() == grow_zero_custom_ptr)
+                .to_string(),
+        ],
+    );
+    rows.insert(
+        "packet:payload-grow-zero-custom-padding".to_string(),
+        payload_fields(&grow_zero_custom),
+    );
+
+    let mut shrink_custom_storage = vec![0x33, 0x44];
+    shrink_custom_storage.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+    let mut shrink_custom = Packet::with_buffer(
+        BufferRef::from_vec(shrink_custom_storage)
+            .into_ref_slice(0, 2)
+            .unwrap(),
+        0,
+    );
+    shrink_custom.shrink_data(2).unwrap();
+    rows.insert(
+        "packet:payload-shrink-exact-custom-padding".to_string(),
+        payload_fields(&shrink_custom),
+    );
+    shrink_custom.shrink_data(9).unwrap();
+    rows.insert(
+        "packet:payload-shrink-oversize-custom-padding".to_string(),
+        payload_fields(&shrink_custom),
+    );
+
     let shared_refcounted_src = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
     let mut shared_refcounted_dst = Packet::default();
     shared_refcounted_dst.ref_from(&shared_refcounted_src);
@@ -7928,6 +7973,46 @@ int main(void) {
 
     av_packet_free(&custom_padding_cloned);
     av_packet_free(&custom_padding_src);
+
+    pkt = new_packet();
+    uint8_t *grow_zero_custom = av_mallocz(2 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!grow_zero_custom, "av_mallocz grow zero custom padding failed");
+    grow_zero_custom[0] = 0x11;
+    grow_zero_custom[1] = 0x22;
+    memset(grow_zero_custom + 2, 0x5a, AV_INPUT_BUFFER_PADDING_SIZE);
+    pkt->buf = av_buffer_create(grow_zero_custom,
+                                2 + AV_INPUT_BUFFER_PADDING_SIZE,
+                                av_buffer_default_free, NULL, 0);
+    fail_if(!pkt->buf, "av_buffer_create grow zero custom padding failed");
+    pkt->data = grow_zero_custom;
+    pkt->size = 2;
+    uint8_t *grow_zero_custom_ptr = pkt->data;
+    int grow_zero_custom_ret = av_grow_packet(pkt, 0);
+    printf("packet:payload-grow-zero-custom-padding-ret|%d\n",
+           grow_zero_custom_ret);
+    fail_if(grow_zero_custom_ret < 0, "av_grow_packet zero custom padding failed");
+    printf("packet:payload-grow-zero-custom-padding-same-ptr|%d\n",
+           pkt->data == grow_zero_custom_ptr);
+    print_payload("packet:payload-grow-zero-custom-padding", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    uint8_t *shrink_custom = av_mallocz(2 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!shrink_custom, "av_mallocz shrink custom padding failed");
+    shrink_custom[0] = 0x33;
+    shrink_custom[1] = 0x44;
+    memset(shrink_custom + 2, 0x5a, AV_INPUT_BUFFER_PADDING_SIZE);
+    pkt->buf = av_buffer_create(shrink_custom,
+                                2 + AV_INPUT_BUFFER_PADDING_SIZE,
+                                av_buffer_default_free, NULL, 0);
+    fail_if(!pkt->buf, "av_buffer_create shrink custom padding failed");
+    pkt->data = shrink_custom;
+    pkt->size = 2;
+    av_shrink_packet(pkt, 2);
+    print_payload("packet:payload-shrink-exact-custom-padding", pkt);
+    av_shrink_packet(pkt, 9);
+    print_payload("packet:payload-shrink-oversize-custom-padding", pkt);
+    av_packet_free(&pkt);
 
     dst = new_packet();
     fail_if(av_packet_ref(dst, src) < 0, "av_packet_ref failed");
