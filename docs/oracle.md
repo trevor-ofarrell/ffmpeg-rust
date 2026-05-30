@@ -122,6 +122,14 @@ visible payload, and zeroes the new FFmpeg input-padding window. A one-input
 WSL `avutil_core_models` smoke passed with local leak detection disabled after
 the sanitizer rebuild.
 
+The latest packet offset-shrink fixture extends `avutil_core_models` with the
+deterministic `Packet::shrink_data(2)` path where packet data begins at a
+nonzero offset inside the backing buffer. It preserves the visible data pointer
+and offset, keeps the visible prefix bytes, and zeroes the new FFmpeg
+input-padding window over the truncated tail bytes. A one-input WSL
+`avutil_core_models` smoke passed with local leak detection disabled after the
+sanitizer rebuild.
+
 The latest packet payload reset fixture extends `avutil_core_models` with the deterministic `Packet::alloc_new_packet_payload(0)` reset path for `av_new_packet(pkt, 0)` parity: a pre-populated packet becomes an empty writable padded packet with default metadata, no side data, no opaque pointer metadata, no `opaque_ref`, empty flags, stream index zero, and packet time base zero.
 
 The latest `avutil_core_models` pixel-format fuzz evidence includes a saved-crash replay and warmed 4096-run WSL sanitizer execution after fixing a stale no-byte-stride invariant. The harness now treats absent fixed byte stride as valid for planar formats or the modeled bit-packed single-plane formats (`monow`, `monob`, `rgb4`, `bgr4`, and `uyyvyy411`), and separately recognizes planar GBRA formats as alpha-bearing. This narrows bounded pixel-format fuzz coverage but does not replace full `AVPixFmtDescriptor`, FATE media, conversion, or hardware-device parity.
@@ -355,6 +363,12 @@ and zeroes the new padding window. Rust mirrors this through the same
 offset-preserving resize path plus focused packet unit coverage and the
 `avutil_core_models` deterministic fixture.
 
+The newest offset-shrink rows prove `av_shrink_packet(pkt, 2)` preserves the
+same offset `pkt->data` pointer, keeps the visible prefix bytes, and zeroes the
+new padding window over the truncated tail. Rust mirrors this through the same
+offset-preserving resize path plus focused packet unit coverage and the
+`avutil_core_models` deterministic fixture.
+
 The newest packet FIFO partial-drain rows prove `av_container_fifo_drain(fifo, 1)` on a mixed move/ref packet FIFO releases the drained move-written packet's payload buffer and `opaque_ref` buffer immediately, keeps the ref-written packet queued, then delays ref-source payload release until the queued ref is drained and the original source drops. Rust `PacketFifo::drain` plus `avutil_core_models` mirror that release ordering.
 
 The newest packet side-data free rows prove `av_packet_free_side_data()` is a no-op on an empty packet and remains idempotent after clearing a populated packet, while preserving payload, timestamps, flags, opaque pointer metadata, `opaque_ref`, stream index, and packet `time_base`. Rust `Packet::clear_side_data()` plus `avutil_core_models` mirror the empty and repeated-clear shape.
@@ -428,6 +442,8 @@ The harness also includes `packet:payload-grow-empty*`, `packet:payload-shrink-o
 The harness also includes `packet:payload-grow-zero-offset-padding*` rows. These prove zero-growth on a packet whose visible payload starts at an offset inside its refcounted buffer preserves the offset data pointer and visible bytes while zeroing the FFmpeg input-padding window.
 
 The harness also includes `packet:payload-grow-offset-padding*` rows. These prove positive growth on the same offset-payload shape preserves the data pointer and offset, exposes existing tail bytes as newly visible payload, and zeroes the new FFmpeg input-padding window.
+
+The harness also includes `packet:payload-shrink-offset-padding*` rows. These prove shrinking the same offset-payload shape preserves the data pointer and offset, keeps the prefix bytes, and zeroes the new FFmpeg input-padding window over the truncated tail.
 
 The harness also includes `packet:payload-grow-invalid-*` rows. These prove `av_grow_packet()` returns `AVERROR(ENOMEM)` before mutation when `grow_by` exceeds `INT_MAX - (pkt->size + AV_INPUT_BUFFER_PADDING_SIZE)`, preserving packet fields, side data, opaque metadata, `opaque_ref`, time base, payload bytes, input padding, and writability.
 

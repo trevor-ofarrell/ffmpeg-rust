@@ -10,6 +10,14 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  `av_shrink_packet(pkt, 2)` on an `AVPacket` whose `data` points at an offset
+  inside `buf->data` preserves that offset data pointer, keeps the visible
+  prefix, and zeroes the new input-padding window over the truncated tail.
+  Rust mirrors this through `Packet::shrink_data(2)`, focused unit coverage,
+  the mapped packet oracle, and a deterministic `avutil_core_models` fixture.
+  This strengthens `avutil-packet`; strict completion remains 11/96 and the
+  row remains `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   positive `av_grow_packet()` on an `AVPacket` whose `data` points at an
   offset inside `buf->data` preserves that offset data pointer when enough
   capacity already exists, exposes the existing tail bytes as newly visible

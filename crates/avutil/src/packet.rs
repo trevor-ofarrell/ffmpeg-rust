@@ -12411,6 +12411,32 @@ mod tests {
     }
 
     #[test]
+    fn packet_shrink_preserves_offset_payload_pointer_and_zeroes_tail() {
+        let mut storage = vec![0xa0, 0xa1, 0xa2, 0x11, 0x22, 0xcc, 0xdd];
+        storage.resize(3 + 4 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+        let mut packet = Packet::with_buffer(
+            BufferRef::from_vec(storage).into_ref_slice(3, 4).unwrap(),
+            0,
+        );
+        let payload_ptr = packet.data_buffer().as_padded_ptr();
+
+        packet.shrink_data(2).unwrap();
+
+        assert_eq!(packet.data(), &[0x11, 0x22]);
+        assert_eq!(packet.data_buffer().offset(), 3);
+        assert_eq!(packet.data_buffer().as_padded_ptr(), payload_ptr);
+        assert_eq!(
+            packet.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(packet
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+    }
+
+    #[test]
     fn packet_ref_from_shares_payload_and_copies_side_data() {
         let mut src = Packet::from_data(vec![1, 2, 3]).unwrap();
         src.stream_index = 4;

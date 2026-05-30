@@ -2213,6 +2213,31 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_fields(&grow_offset),
     );
 
+    let mut shrink_offset_storage = vec![0xa0, 0xa1, 0xa2, 0x11, 0x22, 0xcc, 0xdd];
+    shrink_offset_storage.resize(3 + 4 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+    let mut shrink_offset = Packet::with_buffer(
+        BufferRef::from_vec(shrink_offset_storage)
+            .into_ref_slice(3, 4)
+            .unwrap(),
+        0,
+    );
+    let shrink_offset_ptr = shrink_offset.data_buffer().as_padded_ptr();
+    shrink_offset.shrink_data(2).unwrap();
+    rows.insert(
+        "packet:payload-shrink-offset-padding-same-ptr".to_string(),
+        vec![
+            u8::from(shrink_offset.data_buffer().as_padded_ptr() == shrink_offset_ptr).to_string(),
+        ],
+    );
+    rows.insert(
+        "packet:payload-shrink-offset-padding-offset".to_string(),
+        vec![shrink_offset.data_buffer().offset().to_string()],
+    );
+    rows.insert(
+        "packet:payload-shrink-offset-padding".to_string(),
+        payload_fields(&shrink_offset),
+    );
+
     let mut shrink_custom_storage = vec![0x33, 0x44];
     shrink_custom_storage.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
     let mut shrink_custom = Packet::with_buffer(
@@ -5735,6 +5760,30 @@ static AVPacket *packet_with_offset_grow_capacity(void) {
     return pkt;
 }
 
+static AVPacket *packet_with_offset_shrink_capacity(void) {
+    AVPacket *pkt = new_packet();
+    uint8_t *data = av_malloc(3 + 4 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!data, "offset shrink packet allocation failed");
+    data[0] = 0xa0;
+    data[1] = 0xa1;
+    data[2] = 0xa2;
+    data[3] = 0x11;
+    data[4] = 0x22;
+    data[5] = 0xcc;
+    data[6] = 0xdd;
+    memset(data + 7, 0x5a, AV_INPUT_BUFFER_PADDING_SIZE);
+    pkt->buf = av_buffer_create(
+        data,
+        3 + 4 + AV_INPUT_BUFFER_PADDING_SIZE,
+        free_custom_padding_packet,
+        NULL,
+        0);
+    fail_if(!pkt->buf, "offset shrink packet buffer creation failed");
+    pkt->data = data + 3;
+    pkt->size = 4;
+    return pkt;
+}
+
 static int fifo_release_payload_count = 0;
 static int fifo_release_payload_first = -1;
 static int fifo_release_payload_second = -1;
@@ -8124,6 +8173,16 @@ int main(void) {
            grow_offset->data - grow_offset->buf->data);
     print_payload("packet:payload-grow-offset-padding", grow_offset);
     av_packet_free(&grow_offset);
+
+    AVPacket *shrink_offset = packet_with_offset_shrink_capacity();
+    uint8_t *shrink_offset_ptr = shrink_offset->data;
+    av_shrink_packet(shrink_offset, 2);
+    printf("packet:payload-shrink-offset-padding-same-ptr|%d\n",
+           shrink_offset->data == shrink_offset_ptr);
+    printf("packet:payload-shrink-offset-padding-offset|%td\n",
+           shrink_offset->data - shrink_offset->buf->data);
+    print_payload("packet:payload-shrink-offset-padding", shrink_offset);
+    av_packet_free(&shrink_offset);
 
     pkt = new_packet();
     uint8_t *shrink_custom = av_mallocz(2 + AV_INPUT_BUFFER_PADDING_SIZE);
