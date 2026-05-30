@@ -9,6 +9,15 @@
 
 ## Compatible Today
 
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
+  `av_packet_free_side_data()` clears packet-owned side data while preserving
+  payload, timestamps, stream index, flags, opaque pointer metadata, opaque_ref,
+  and `time_base`. Rust mirrors this through `Packet::clear_side_data()`, with
+  unit and fuzz invariants; `avutil-packet` remains `fate_pass`.
+- Latest delegated logging evidence: pinned libavutil rows now prove no-force
+  pseudo-terminal `TERM=xterm-color` default-callback output uses the BASIC
+  color path for warning lines. This strengthens `avutil-logging`; strict
+  complete count remains unchanged.
 - Latest delegated `avutil-buffer` evidence: pinned libavutil rows now prove
   `av_buffer_unref()` on one reference of a shared `AVBufferRef` pair nulls
   only that destination reference while leaving the source live with refcount

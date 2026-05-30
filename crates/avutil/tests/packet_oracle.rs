@@ -2350,6 +2350,13 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         side_data_summary_fields(&packet),
     );
 
+    let mut preserved = packet_with_common_props();
+    preserved.clear_side_data();
+    rows.insert(
+        "packet:side-free-preserves-fields".to_string(),
+        packet_fields(&preserved),
+    );
+
     let mut packet = Packet::default();
     packet
         .new_side_data(PacketSideDataKind::NewExtradata, 2)
@@ -4856,6 +4863,11 @@ static void exercise_side_data_api(void) {
 
     av_packet_free_side_data(pkt);
     print_side_data_summary("packet:side-free", pkt);
+    av_packet_free(&pkt);
+
+    pkt = packet_with_common_props();
+    av_packet_free_side_data(pkt);
+    print_packet("packet:side-free-preserves-fields", pkt);
     av_packet_free(&pkt);
 
     pkt = new_packet();

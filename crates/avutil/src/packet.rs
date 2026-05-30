@@ -10675,6 +10675,43 @@ mod tests {
 
         packet.clear_side_data();
         assert!(packet.side_data().is_empty());
+
+        let mut preserved = Packet::from_data(vec![0xaa, 0xbb, 0xcc]).unwrap();
+        preserved.set_pts(Some(90_000));
+        preserved.set_dts(Some(45_000));
+        preserved.set_duration(180_000).unwrap();
+        preserved.set_pos(Some(1_234)).unwrap();
+        preserved.stream_index = 7;
+        preserved.set_flag(PacketFlags::KEY, true);
+        preserved.set_flag(PacketFlags::CORRUPT, true);
+        preserved
+            .set_time_base(Rational::new(1, 90_000).unwrap())
+            .unwrap();
+        preserved.push_side_data(SideData::new_extradata(vec![0x11, 0x22, 0x33]).unwrap());
+        preserved.set_opaque_address(0x1234);
+        preserved.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad, 0xbe])));
+        let payload_ref = preserved.data_buffer().clone();
+        let opaque_ref = preserved.opaque_ref().unwrap().clone();
+
+        preserved.clear_side_data();
+
+        assert!(preserved.side_data().is_empty());
+        assert_eq!(preserved.data(), &[0xaa, 0xbb, 0xcc]);
+        assert!(preserved.data_buffer().shares_storage(&payload_ref));
+        assert_eq!(preserved.pts(), Some(90_000));
+        assert_eq!(preserved.dts(), Some(45_000));
+        assert_eq!(preserved.duration(), 180_000);
+        assert_eq!(preserved.pos(), Some(1_234));
+        assert_eq!(preserved.stream_index(), 7);
+        assert!(preserved.flags().contains(PacketFlags::KEY));
+        assert!(preserved.flags().contains(PacketFlags::CORRUPT));
+        assert_eq!(preserved.time_base(), Rational::new(1, 90_000).unwrap());
+        assert_eq!(preserved.opaque_address(), Some(0x1234));
+        assert!(preserved.opaque_ref().unwrap().shares_storage(&opaque_ref));
+        assert_eq!(
+            preserved.opaque_ref().unwrap().as_slice(),
+            &[0xde, 0xad, 0xbe]
+        );
     }
 
     #[test]

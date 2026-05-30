@@ -12230,8 +12230,24 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert!(packet.side_data_by_kind("fuzz_side_data").is_none());
     assert!(packet.remove_side_data("other_side_data"));
     assert!(!packet.remove_side_data("other_side_data"));
+    let clear_payload = packet.data().to_vec();
+    let clear_stream_index = packet.stream_index();
+    let clear_pts = packet.pts();
+    let clear_dts = packet.dts();
+    let clear_duration = packet.duration();
+    let clear_pos = packet.pos();
+    let clear_flags = packet.flags();
+    let clear_time_base = packet.time_base();
     packet.clear_side_data();
     assert!(packet.side_data().is_empty());
+    assert_eq!(packet.data(), clear_payload.as_slice());
+    assert_eq!(packet.stream_index(), clear_stream_index);
+    assert_eq!(packet.pts(), clear_pts);
+    assert_eq!(packet.dts(), clear_dts);
+    assert_eq!(packet.duration(), clear_duration);
+    assert_eq!(packet.pos(), clear_pos);
+    assert_eq!(packet.flags(), clear_flags);
+    assert_eq!(packet.time_base(), clear_time_base);
     assert_eq!(
         SideData::new(" \t", Vec::new()).unwrap_err().kind(),
         AvErrorKind::InvalidArgument

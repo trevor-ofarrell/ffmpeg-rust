@@ -4,6 +4,63 @@
 
 Current authoritative turn status: orchestrator workflow is active with xhigh
 fast/full-access subagents. The tree started clean at `master...origin/master
+[ahead 63]`; strict completion remains 11/96 components, about 11.5%. Three
+subagents were used: Aquinas the 2nd was a read-only packet explorer but was
+closed after timeout with no report needed for this slice, Boole the 2nd
+returned a read-only buffer next-gap audit recommending a multi-owner
+outstanding-pool `av_buffer_pool_uninit()` slice for a later turn, and Lagrange
+the 2nd produced a scoped `avutil-logging` oracle row that is integrated in
+this dirty batch. No approval prompts were used.
+
+Current main-thread slice: packet-owned side-data clearing evidence. The packet
+oracle now includes `packet:side-free-preserves-fields`, proving
+`av_packet_free_side_data()` clears side data while preserving payload,
+timestamps, stream index, flags, opaque pointer metadata, opaque_ref contents
+and writability, and packet `time_base`. The Rust unit and deterministic fuzz
+fixture now assert the matching `Packet::clear_side_data()` field-preservation
+shape.
+
+Integrated worker slice: `avutil-logging` no-force pseudo-terminal
+`TERM=xterm-color` evidence. The logging oracle now proves the default callback
+resolves that TERM value to the BASIC warning color path, distinct from
+`TERM=xterm-256color` and no-color redirected/unset TERM rows.
+
+Latest validation commands for this slice passed: `cargo fmt --all`; `cargo fmt
+--all -- --check`; `cargo test -p avutil --target-dir
+target-orch-packet-sidefree packet_side_data_take_remove_and_clear_are_scoped`;
+`cargo test -p avutil --test packet_oracle --target-dir
+target-orch-packet-sidefree-oracle
+libavcodec_packet_core_lifecycle_matches_packet_model -- --ignored`; `cargo
+test -p avutil --test logging_oracle --target-dir target-orch-logging-oracle
+libavutil_logging_constants_and_state_match_current_model -- --ignored`; `cargo
+test -p avutil --target-dir target-orch-logging logging`; `cargo check
+--manifest-path fuzz/Cargo.toml --target-dir target-orch-fuzz-packet-clear
+--target x86_64-pc-windows-msvc --bin avutil_core_models`; `cargo clippy -p
+avutil --all-targets --all-features --target-dir target-orch-clippy-avutil --
+-D warnings`; `cargo test -p fate-runner --target-dir target-orch-fate
+current_ledger`; `cargo run -p fate-runner --target-dir target-orch-fate-status
+-- status --next 12`; `cargo run -p fate-runner --target-dir
+target-orch-fate-changed -- run --changed --dry-run`; pinned differential
+mapping runs for `avutil-packet` target `oracle-libavcodec-packet-core` and
+`avutil-logging` target `oracle-libavutil-logging`; `cargo run -p xtask
+--target-dir target-orch-xtask-guard -- guard-runtime`; `cargo run -p xtask
+--target-dir target-orch-xtask-doctor -- oracle-doctor`; and `git diff --check`
+with CRLF conversion warnings only.
+
+Latest failing or limited commands for this slice: one initial `cargo fmt --all
+-- --check` reported a line-wrapping diff before `cargo fmt --all`; the
+corrected formatting check passed. The packet explorer timed out and was closed
+without returned findings. Sanitizer-backed WSL `cargo fuzz run` was not rerun
+for this slice; the Windows fuzz build check passed.
+
+Current focus component: `avutil-packet` remains the top priority incomplete
+component (`fate_pass`). Next 3 concrete actions: commit this coherent packet
+and logging oracle-evidence slice, use Boole's buffer audit as the next
+parallel-safe `avutil-buffer` lane, then continue closing the next AVPacket
+completion gap without broad stubs.
+
+Current authoritative turn status: orchestrator workflow is active with xhigh
+fast/full-access subagents. The tree started clean at `master...origin/master
 [ahead 62]`; strict completion remains 11/96 components, about 11.5%. Three
 subagents were used: Arendt the 2nd returned a read-only packet audit whose
 proposed packet-owned remove API was rejected because FFmpeg 8.1.1 has no

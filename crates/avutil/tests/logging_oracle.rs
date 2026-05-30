@@ -1011,6 +1011,16 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
         "default-callback-no-force-tty-term-empty-warning-level-line",
         escape_row_text(default_no_force_tty_term_empty.as_bytes()),
     );
+    let default_no_force_tty_term_xterm_color = rust_default_callback_no_force_tty_term_line(
+        Some(OsStr::new("xterm-color")),
+        LogLevel::Warning,
+        None,
+        LogFlags::PRINT_LEVEL,
+    );
+    rows.insert(
+        "default-callback-no-force-tty-term-xterm-color-warning-level-line",
+        escape_row_text(default_no_force_tty_term_xterm_color.as_bytes()),
+    );
     let default_nocolor_wins = rust_default_callback_nocolor_wins_line();
     rows.insert(
         "default-callback-nocolor-wins-warning-line",
@@ -2201,10 +2211,11 @@ fn compile_and_run_oracle(
 ) -> String {
     let output = if cfg!(windows) {
         let script = format!(
-            "gcc -I {} {} {} -lm -pthread -ldl -lutil -o {} && {} && {} --plain && {} --tty && {} --tty-term-unset && {} --tty-term-dumb && {} --tty-term-empty && {} --color && {} --nocolor && {} --force-color-empty && {} --force-color-zero && {} --force-nocolor-empty && {} --force-nocolor-zero",
+            "gcc -I {} {} {} -lm -pthread -ldl -lutil -o {} && {} && {} --plain && {} --tty && {} --tty-term-unset && {} --tty-term-dumb && {} --tty-term-empty && {} --tty-term-xterm-color && {} --color && {} --nocolor && {} --force-color-empty && {} --force-color-zero && {} --force-nocolor-empty && {} --force-nocolor-zero",
             shell_quote(&to_wsl_path(include_dir)),
             shell_quote(&to_wsl_path(source)),
             shell_quote(&to_wsl_path(libavutil)),
+            shell_quote(&to_wsl_path(executable)),
             shell_quote(&to_wsl_path(executable)),
             shell_quote(&to_wsl_path(executable)),
             shell_quote(&to_wsl_path(executable)),
@@ -2227,10 +2238,11 @@ fn compile_and_run_oracle(
         Command::new("sh")
             .arg("-c")
             .arg(format!(
-                "gcc -I {} {} {} -lm -pthread -ldl -lutil -o {} && {} && {} --plain && {} --tty && {} --tty-term-unset && {} --tty-term-dumb && {} --tty-term-empty && {} --color && {} --nocolor && {} --force-color-empty && {} --force-color-zero && {} --force-nocolor-empty && {} --force-nocolor-zero",
+                "gcc -I {} {} {} -lm -pthread -ldl -lutil -o {} && {} && {} --plain && {} --tty && {} --tty-term-unset && {} --tty-term-dumb && {} --tty-term-empty && {} --tty-term-xterm-color && {} --color && {} --nocolor && {} --force-color-empty && {} --force-color-zero && {} --force-nocolor-empty && {} --force-nocolor-zero",
                 shell_quote(&include_dir.display().to_string()),
                 shell_quote(&source.display().to_string()),
                 shell_quote(&libavutil.display().to_string()),
+                shell_quote(&executable.display().to_string()),
                 shell_quote(&executable.display().to_string()),
                 shell_quote(&executable.display().to_string()),
                 shell_quote(&executable.display().to_string()),
@@ -3435,6 +3447,15 @@ static void print_default_callback_no_force_tty_term_empty_row(void) {
         NULL, AV_LOG_WARNING, AV_LOG_PRINT_LEVEL, "plain");
 }
 
+static void print_default_callback_no_force_tty_term_xterm_color_row(void) {
+    unsetenv("AV_LOG_FORCE_NOCOLOR");
+    unsetenv("AV_LOG_FORCE_COLOR");
+    setenv("TERM", "xterm-color", 1);
+    print_default_callback_tty_level_row(
+        "default-callback-no-force-tty-term-xterm-color-warning-level-line",
+        NULL, AV_LOG_WARNING, AV_LOG_PRINT_LEVEL, "plain");
+}
+
 static void print_default_callback_nocolor_rows(void) {
     setenv("AV_LOG_FORCE_NOCOLOR", "1", 1);
     setenv("AV_LOG_FORCE_COLOR", "1", 1);
@@ -3576,6 +3597,10 @@ int main(int argc, char **argv) {
     }
     if (argc > 1 && strcmp(argv[1], "--tty-term-empty") == 0) {
         print_default_callback_no_force_tty_term_empty_row();
+        return 0;
+    }
+    if (argc > 1 && strcmp(argv[1], "--tty-term-xterm-color") == 0) {
+        print_default_callback_no_force_tty_term_xterm_color_row();
         return 0;
     }
     if (argc > 1 && strcmp(argv[1], "--color") == 0) {

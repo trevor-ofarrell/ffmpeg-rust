@@ -2,6 +2,12 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest orchestrated evidence: main-thread packet rows now pin
+# `av_packet_free_side_data()` as clearing side data while preserving payload,
+# timestamps, stream index, flags, opaque pointer metadata, opaque_ref, and
+# packet time_base. A delegated logging row also pins no-force pseudo-terminal
+# `TERM=xterm-color` default-callback output as BASIC color mode. These are
+# evidence-strengthening rows only; no status was promoted.
 # Latest orchestrated evidence: xhigh worker lanes plus main-thread review now
 # pin packet-owned raw numeric side-data types before capacity, raw pcm_s16le
 # 9-channel unspecified-layout framecrc timing, YUV4MPEG2 leading whitespace
@@ -622,6 +628,11 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest packet-owned free-side-data update: pinned libavcodec rows now prove
+# `av_packet_free_side_data()` clears side-data entries while preserving payload,
+# timestamps, stream index, flags, opaque pointer metadata, opaque_ref, and
+# packet `time_base`. Rust unit and `avutil_core_models` invariants cover the
+# matching `Packet::clear_side_data()` field-preservation shape.
 # Latest packet-owned raw lookup update: pinned libavcodec rows now prove
 # `av_packet_get_side_data()` finds packet-owned raw side-data types at
 # `AV_PKT_DATA_NB`, `AV_PKT_DATA_NB + 1`, `-1`, and `INT_MIN` after add/new
@@ -2241,6 +2252,11 @@ fate_tests = [
   "not_applicable: pinned FFmpeg 8.1.1 tests/fate/libavutil.mak has no fate-log target; libavutil/tests/log is an upstream TESTPROGS utility and is built/run through the upstream mapping",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest delegated TERM-color update: pinned libavutil default-callback rows now
+# prove a no-force pseudo-terminal with `TERM=xterm-color` resolves to BASIC
+# color output for the warning-level row, distinct from the 256-color
+# `TERM=xterm-256color` palette and from no-color redirected/unset TERM rows.
+# The existing Rust color resolver and logging units already model this branch.
 # Latest orchestrated logging update: pinned libavutil
 # `av_log_format_line2()` context rows now prove the one-byte output-buffer
 # boundary with `AV_LOG_PRINT_LEVEL`: FFmpeg returns the full would-be length,
