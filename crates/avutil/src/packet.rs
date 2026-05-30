@@ -12410,6 +12410,41 @@ mod tests {
     }
 
     #[test]
+    fn packet_offset_payload_move_preserves_pointer_offset_and_resets_source() {
+        let mut storage = vec![0xa0, 0xa1, 0xa2, 0x11, 0x22];
+        storage.resize(3 + 2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+        let mut source = Packet::with_buffer(
+            BufferRef::from_vec(storage).into_ref_slice(3, 2).unwrap(),
+            0,
+        );
+        let payload_ptr = source.data_buffer().as_padded_ptr();
+        let mut moved = Packet::new(vec![0xee], 9);
+
+        moved.move_ref_from(&mut source);
+
+        assert_eq!(moved.data(), &[0x11, 0x22]);
+        assert_eq!(moved.data_buffer().offset(), 3);
+        assert_eq!(moved.data_buffer().as_padded_ptr(), payload_ptr);
+        assert!(moved.is_data_writable());
+        assert!(moved
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0x5a));
+        assert!(source.is_empty());
+        assert_eq!(source.pts(), None);
+        assert_eq!(source.dts(), None);
+        assert_eq!(source.duration(), 0);
+        assert_eq!(source.pos(), None);
+        assert_eq!(source.stream_index(), 0);
+        assert!(source.flags().is_empty());
+        assert!(source.side_data().is_empty());
+        assert!(source.opaque().is_none());
+        assert!(source.opaque_ref().is_none());
+        assert_eq!(source.time_base(), Rational::ZERO);
+    }
+
+    #[test]
     fn packet_zero_grow_sanitizes_padding_but_noop_shrink_preserves_it() {
         let mut grow_storage = vec![0x11, 0x22];
         grow_storage.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);

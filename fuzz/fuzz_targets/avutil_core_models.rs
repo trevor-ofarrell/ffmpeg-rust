@@ -9983,6 +9983,39 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .iter()
         .all(|byte| *byte == 0x5a));
 
+    let mut offset_move_storage = vec![0xa0, 0xa1, 0xa2];
+    offset_move_storage.extend_from_slice(&payload);
+    offset_move_storage.resize(3 + payload.len() + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+    let mut offset_move_src = Packet::with_buffer(
+        BufferRef::from_vec(offset_move_storage)
+            .into_ref_slice(3, payload.len())
+            .unwrap(),
+        stream_index,
+    );
+    let offset_move_ptr = offset_move_src.data_buffer().as_padded_ptr();
+    let mut offset_move_dst = Packet::new(vec![0xee], 9);
+    offset_move_dst.move_ref_from(&mut offset_move_src);
+    assert_eq!(offset_move_dst.data(), payload.as_slice());
+    assert_eq!(offset_move_dst.data_buffer().offset(), 3);
+    assert_eq!(offset_move_dst.data_buffer().as_padded_ptr(), offset_move_ptr);
+    assert!(offset_move_dst.is_data_writable());
+    assert!(offset_move_dst
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0x5a));
+    assert!(offset_move_src.is_empty());
+    assert_eq!(offset_move_src.pts(), None);
+    assert_eq!(offset_move_src.dts(), None);
+    assert_eq!(offset_move_src.duration(), 0);
+    assert_eq!(offset_move_src.pos(), None);
+    assert_eq!(offset_move_src.stream_index(), 0);
+    assert!(offset_move_src.flags().is_empty());
+    assert!(offset_move_src.side_data().is_empty());
+    assert!(offset_move_src.opaque().is_none());
+    assert!(offset_move_src.opaque_ref().is_none());
+    assert_eq!(offset_move_src.time_base(), Rational::ZERO);
+
     let mut offset_clone_storage = vec![0xa0, 0xa1, 0xa2];
     offset_clone_storage.extend_from_slice(&payload);
     offset_clone_storage.resize(3 + payload.len() + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);

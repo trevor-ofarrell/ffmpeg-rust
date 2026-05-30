@@ -10,6 +10,14 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  `av_packet_move_ref()` on an `AVPacket` whose `data` points at an offset
+  inside `buf->data` moves the same offset pointer into the destination,
+  preserves visible bytes, dirty input padding, and writability, and resets the
+  source packet to defaults. Rust mirrors this through focused unit coverage,
+  the mapped packet oracle, and a deterministic `avutil_core_models` fixture.
+  This strengthens `avutil-packet`; strict completion remains 11/96 and the
+  row remains `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   `av_packet_ref()` on an `AVPacket` whose `data` points at an offset inside
   `buf->data` preserves the same offset pointer, visible bytes, and dirty input
   padding in both packet references. Both refs report non-writable because they

@@ -2243,6 +2243,36 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_fields(&offset_ref_dst),
     );
 
+    let mut offset_move_storage = vec![0xa0, 0xa1, 0xa2, 0x11, 0x22];
+    offset_move_storage.resize(3 + 2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+    let mut offset_move_src = Packet::with_buffer(
+        BufferRef::from_vec(offset_move_storage)
+            .into_ref_slice(3, 2)
+            .unwrap(),
+        0,
+    );
+    let offset_move_ptr = offset_move_src.data_buffer().as_padded_ptr();
+    let mut offset_move_dst = Packet::new(vec![0xee], 9);
+    offset_move_dst.move_ref_from(&mut offset_move_src);
+    rows.insert(
+        "packet:payload-move-offset-padding-same-ptr".to_string(),
+        vec![
+            u8::from(offset_move_dst.data_buffer().as_padded_ptr() == offset_move_ptr).to_string(),
+        ],
+    );
+    rows.insert(
+        "packet:payload-move-offset-padding-dst-offset".to_string(),
+        vec![offset_move_dst.data_buffer().offset().to_string()],
+    );
+    rows.insert(
+        "packet:payload-move-offset-padding-dst".to_string(),
+        payload_fields(&offset_move_dst),
+    );
+    rows.insert(
+        "packet:payload-move-offset-padding-src".to_string(),
+        packet_fields(&offset_move_src),
+    );
+
     let mut offset_clone_storage = vec![0xa0, 0xa1, 0xa2, 0x11, 0x22];
     offset_clone_storage.resize(3 + 2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
     let offset_clone = Packet::with_buffer(
@@ -8313,6 +8343,25 @@ int main(void) {
                   offset_ref_dst);
     av_packet_free(&offset_ref_dst);
     av_packet_free(&offset_ref);
+
+    AVPacket *offset_move = packet_with_offset_padding();
+    uint8_t *offset_move_ptr = offset_move->data;
+    AVPacket *offset_move_dst = new_packet();
+    fail_if(av_new_packet(offset_move_dst, 1) < 0,
+            "av_new_packet offset move dst failed");
+    offset_move_dst->data[0] = 0xee;
+    offset_move_dst->stream_index = 9;
+    av_packet_move_ref(offset_move_dst, offset_move);
+    printf("packet:payload-move-offset-padding-same-ptr|%d\n",
+           offset_move_dst->data == offset_move_ptr);
+    printf("packet:payload-move-offset-padding-dst-offset|%td\n",
+           offset_move_dst->data - offset_move_dst->buf->data);
+    print_payload("packet:payload-move-offset-padding-dst",
+                  offset_move_dst);
+    print_packet("packet:payload-move-offset-padding-src",
+                 offset_move);
+    av_packet_free(&offset_move_dst);
+    av_packet_free(&offset_move);
 
     AVPacket *offset_clone = packet_with_offset_padding();
     AVPacket *offset_cloned = av_packet_clone(offset_clone);

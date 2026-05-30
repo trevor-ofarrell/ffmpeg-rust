@@ -88,7 +88,9 @@ unchanged. Cloning the same offset-backed shape preserves the offset data
 pointer and dirty padding through both packet references, while both references
 become non-writable because they share the backing buffer. Explicit packet refs
 use the same offset-sharing path and preserve the offset pointer and padding in
-both references.
+both references. Move-ref transfers the same offset-backed buffer into the
+destination without sharing, so the moved packet remains writable while the
+source resets to defaults.
 
 `Packet::alloc_new_packet_payload` models the `av_new_packet()` reset path. Pinned rows cover both positive-size reset and zero-size reset on a pre-populated packet: metadata, side data, opaque metadata, `opaque_ref`, flags, stream index, and packet time base reset to defaults before writable padded payload storage is installed.
 
