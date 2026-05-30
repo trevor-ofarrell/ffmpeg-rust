@@ -14330,6 +14330,82 @@ mod tests {
     }
 
     #[test]
+    fn packet_zero_size_opaque_ref_lifecycle_preserves_buffer_shape() {
+        fn zero_opaque_packet() -> Packet {
+            let mut packet = Packet::from_data(vec![0x31]).unwrap();
+            packet.set_pts(Some(111));
+            packet.set_dts(Some(77));
+            packet.set_duration(33).unwrap();
+            packet.set_pos(Some(44)).unwrap();
+            packet.set_flag(PacketFlags::TRUSTED, true);
+            packet.set_flag(PacketFlags::DISPOSABLE, true);
+            packet
+                .set_time_base(Rational::new(1, 48_000).unwrap())
+                .unwrap();
+            packet.set_opaque(Some(PacketOpaque::new(0xabcd).unwrap()));
+            packet.set_opaque_ref(Some(BufferRef::from_vec(Vec::new())));
+            packet
+        }
+
+        let copy_src = zero_opaque_packet();
+        let mut copy_dst = Packet::from_data(vec![0xaa]).unwrap();
+        copy_dst.copy_props_from(&copy_src);
+        assert_eq!(copy_dst.data(), &[0xaa]);
+        assert_eq!(copy_dst.pts(), Some(111));
+        assert_eq!(copy_dst.dts(), Some(77));
+        assert_eq!(copy_dst.duration(), 33);
+        assert_eq!(copy_dst.pos(), Some(44));
+        assert_eq!(
+            copy_dst.flags(),
+            PacketFlags::from_bits_retain(
+                PacketFlags::TRUSTED.bits() | PacketFlags::DISPOSABLE.bits()
+            )
+        );
+        assert_eq!(copy_dst.opaque_address(), Some(0xabcd));
+        assert_eq!(copy_dst.time_base(), Rational::new(1, 48_000).unwrap());
+        assert_eq!(copy_dst.opaque_ref().unwrap().len(), 0);
+        assert!(copy_dst
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(copy_src.opaque_ref().unwrap()));
+        assert_eq!(copy_src.opaque_ref().unwrap().strong_count(), 2);
+        assert!(!copy_dst.opaque_ref().unwrap().is_writable());
+
+        let ref_src = zero_opaque_packet();
+        let mut ref_dst = Packet::default();
+        ref_dst.ref_from(&ref_src);
+        assert_eq!(ref_dst.data(), &[0x31]);
+        assert_eq!(ref_dst.opaque_ref().unwrap().len(), 0);
+        assert!(ref_dst
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(ref_src.opaque_ref().unwrap()));
+        assert_eq!(ref_src.opaque_ref().unwrap().strong_count(), 2);
+        assert!(!ref_dst.opaque_ref().unwrap().is_writable());
+
+        let clone_src = zero_opaque_packet();
+        let cloned = clone_src.clone();
+        assert_eq!(cloned.data(), &[0x31]);
+        assert_eq!(cloned.opaque_ref().unwrap().len(), 0);
+        assert!(cloned
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(clone_src.opaque_ref().unwrap()));
+        assert_eq!(clone_src.opaque_ref().unwrap().strong_count(), 2);
+        assert!(!cloned.opaque_ref().unwrap().is_writable());
+
+        let mut move_src = zero_opaque_packet();
+        let mut move_dst = Packet::from_data(vec![0xbb]).unwrap();
+        move_dst.move_ref_from(&mut move_src);
+        assert!(move_src.opaque_ref().is_none());
+        assert_eq!(move_dst.data(), &[0x31]);
+        assert_eq!(move_dst.opaque_ref().unwrap().len(), 0);
+        assert!(move_dst.opaque_ref().unwrap().is_writable());
+        assert_eq!(move_dst.opaque_ref().unwrap().strong_count(), 1);
+        assert_eq!(move_dst.opaque_address(), Some(0xabcd));
+    }
+
+    #[test]
     fn packet_time_base_defaults_copies_resets_and_rescale_preserves() {
         let mut src = Packet::new(vec![1, 2], 0);
         assert_eq!(src.time_base(), Rational::ZERO);

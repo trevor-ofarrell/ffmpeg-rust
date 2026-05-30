@@ -188,6 +188,13 @@ and zeroes the new padding window, while the safe explicit-owner fixtures
 preserve the visible offset and do not require backing allocation address
 stability when padding is installed.
 
+The latest packet zero `opaque_ref` fixture extends `avutil_core_models` with
+copy-props/ref/clone sharing and move-transfer behavior for an empty
+`BufferRef`. The mapped packet oracle emits matching
+`packet:opaque-ref-zero-*` rows from pinned libavcodec, proving that FFmpeg
+keeps zero-size `AVBufferRef` storage refcounted and non-writable while shared,
+then restores writability when move-ref transfers the single owner.
+
 The latest packet payload reset fixture extends `avutil_core_models` with the deterministic `Packet::alloc_new_packet_payload(0)` reset path for `av_new_packet(pkt, 0)` parity: a pre-populated packet becomes an empty writable padded packet with default metadata, no side data, no opaque pointer metadata, no `opaque_ref`, empty flags, stream index zero, and packet time base zero.
 
 The latest `avutil_core_models` pixel-format fuzz evidence includes a saved-crash replay and warmed 4096-run WSL sanitizer execution after fixing a stale no-byte-stride invariant. The harness now treats absent fixed byte stride as valid for planar formats or the modeled bit-packed single-plane formats (`monow`, `monob`, `rgb4`, `bgr4`, and `uyyvyy411`), and separately recognizes planar GBRA formats as alpha-bearing. This narrows bounded pixel-format fuzz coverage but does not replace full `AVPixFmtDescriptor`, FATE media, conversion, or hardware-device parity.

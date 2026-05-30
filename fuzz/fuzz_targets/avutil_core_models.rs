@@ -9919,6 +9919,60 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert!(raw_offset_ref_dst_model.is_data_writable());
     assert!(raw_offset_cloned_model.is_data_writable());
 
+    let mut zero_opaque_src = Packet::from_data(vec![0x31]).unwrap();
+    zero_opaque_src.set_pts(Some(111));
+    zero_opaque_src.set_dts(Some(77));
+    zero_opaque_src.set_duration(33).unwrap();
+    zero_opaque_src.set_pos(Some(44)).unwrap();
+    zero_opaque_src.set_flag(PacketFlags::TRUSTED, true);
+    zero_opaque_src.set_flag(PacketFlags::DISPOSABLE, true);
+    zero_opaque_src
+        .set_time_base(Rational::new(1, 48_000).unwrap())
+        .unwrap();
+    zero_opaque_src.set_opaque(Some(PacketOpaque::new(0xabcd).unwrap()));
+    zero_opaque_src.set_opaque_ref(Some(BufferRef::from_vec(Vec::new())));
+
+    let mut zero_opaque_copy = Packet::from_data(vec![0xaa]).unwrap();
+    zero_opaque_copy.copy_props_from(&zero_opaque_src);
+    assert_eq!(zero_opaque_copy.data(), &[0xaa]);
+    assert_eq!(zero_opaque_copy.opaque_ref().unwrap().len(), 0);
+    assert!(zero_opaque_copy
+        .opaque_ref()
+        .unwrap()
+        .shares_storage(zero_opaque_src.opaque_ref().unwrap()));
+    assert!(!zero_opaque_copy.opaque_ref().unwrap().is_writable());
+
+    let mut zero_opaque_ref = Packet::default();
+    zero_opaque_ref.ref_from(&zero_opaque_src);
+    assert_eq!(zero_opaque_ref.data(), &[0x31]);
+    assert_eq!(zero_opaque_ref.opaque_ref().unwrap().len(), 0);
+    assert!(zero_opaque_ref
+        .opaque_ref()
+        .unwrap()
+        .shares_storage(zero_opaque_src.opaque_ref().unwrap()));
+    assert!(!zero_opaque_ref.opaque_ref().unwrap().is_writable());
+
+    let zero_opaque_clone = zero_opaque_src.clone();
+    assert_eq!(zero_opaque_clone.data(), &[0x31]);
+    assert_eq!(zero_opaque_clone.opaque_ref().unwrap().len(), 0);
+    assert!(zero_opaque_clone
+        .opaque_ref()
+        .unwrap()
+        .shares_storage(zero_opaque_src.opaque_ref().unwrap()));
+    assert!(!zero_opaque_clone.opaque_ref().unwrap().is_writable());
+
+    let mut zero_opaque_move_src = Packet::from_data(vec![0x31]).unwrap();
+    zero_opaque_move_src.set_opaque(Some(PacketOpaque::new(0xabcd).unwrap()));
+    zero_opaque_move_src.set_opaque_ref(Some(BufferRef::from_vec(Vec::new())));
+    let mut zero_opaque_move_dst = Packet::from_data(vec![0xbb]).unwrap();
+    zero_opaque_move_dst.move_ref_from(&mut zero_opaque_move_src);
+    assert!(zero_opaque_move_src.opaque_ref().is_none());
+    assert_eq!(zero_opaque_move_dst.data(), &[0x31]);
+    assert_eq!(zero_opaque_move_dst.opaque_ref().unwrap().len(), 0);
+    assert_eq!(zero_opaque_move_dst.opaque_address(), Some(0xabcd));
+    assert!(zero_opaque_move_dst.opaque_ref().unwrap().is_writable());
+    assert_eq!(zero_opaque_move_dst.opaque_ref().unwrap().strong_count(), 1);
+
     let mut raw_offset_grow_model = Packet::new(vec![0x11, 0x22], stream_index);
     raw_offset_grow_model.grow_data(2).unwrap();
     assert_eq!(raw_offset_grow_model.data(), &[0x11, 0x22, 0, 0]);

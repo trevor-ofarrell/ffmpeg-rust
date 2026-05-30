@@ -10,6 +10,16 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  zero-size `AVPacket.opaque_ref` buffer behavior through
+  `av_packet_copy_props()`, `av_packet_ref()`, `av_packet_clone()`, and
+  `av_packet_move_ref()`. Copy-props/ref/clone share the same empty
+  `AVBufferRef` and report non-writable shared storage; move-ref transfers the
+  single owner, leaves the destination writable, and resets the source. Rust
+  mirrors this through focused unit coverage, the mapped packet oracle, and a
+  deterministic `avutil_core_models` fixture. This strengthens
+  `avutil-packet`; strict completion remains 11/96 and the row remains
+  `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   `av_grow_packet()` and `av_shrink_packet()` on raw no-buffer packets whose
   `data` pointer starts at a nonzero offset inside caller storage. Grow copies
   the visible prefix into zero-offset padded storage, while shrink preserves

@@ -468,6 +468,53 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         side_data_summary_fields(&zero_move_src),
     );
 
+    let zero_opaque_copy_src = packet_with_zero_opaque_ref();
+    let mut zero_opaque_copy_dst = Packet::from_data(vec![0xaa]).unwrap();
+    zero_opaque_copy_dst.copy_props_from(&zero_opaque_copy_src);
+    rows.insert(
+        "packet:opaque-ref-zero-copy-props".to_string(),
+        packet_fields(&zero_opaque_copy_dst),
+    );
+    rows.insert(
+        "packet:opaque-ref-zero-copy-props-sharing".to_string(),
+        opaque_ref_pair_fields(&zero_opaque_copy_src, &zero_opaque_copy_dst),
+    );
+
+    let zero_opaque_ref_src = packet_with_zero_opaque_ref();
+    let mut zero_opaque_ref_dst = Packet::default();
+    zero_opaque_ref_dst.ref_from(&zero_opaque_ref_src);
+    rows.insert(
+        "packet:opaque-ref-zero-ref".to_string(),
+        packet_fields(&zero_opaque_ref_dst),
+    );
+    rows.insert(
+        "packet:opaque-ref-zero-ref-sharing".to_string(),
+        opaque_ref_pair_fields(&zero_opaque_ref_src, &zero_opaque_ref_dst),
+    );
+
+    let zero_opaque_clone_src = packet_with_zero_opaque_ref();
+    let zero_opaque_cloned = zero_opaque_clone_src.clone();
+    rows.insert(
+        "packet:opaque-ref-zero-clone".to_string(),
+        packet_fields(&zero_opaque_cloned),
+    );
+    rows.insert(
+        "packet:opaque-ref-zero-clone-sharing".to_string(),
+        opaque_ref_pair_fields(&zero_opaque_clone_src, &zero_opaque_cloned),
+    );
+
+    let mut zero_opaque_move_src = packet_with_zero_opaque_ref();
+    let mut zero_opaque_move_dst = Packet::from_data(vec![0xbb]).unwrap();
+    zero_opaque_move_dst.move_ref_from(&mut zero_opaque_move_src);
+    rows.insert(
+        "packet:opaque-ref-zero-move-dst".to_string(),
+        packet_fields(&zero_opaque_move_dst),
+    );
+    rows.insert(
+        "packet:opaque-ref-zero-move-src".to_string(),
+        packet_fields(&zero_opaque_move_src),
+    );
+
     insert_packet_unknown_flag_rows(&mut rows);
 
     let mut referenced = Packet::default();
@@ -656,6 +703,38 @@ fn insert_packet_unknown_flag_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:flags-unknown-move-src".to_string(),
         packet_fields(&moved_src),
     );
+}
+
+fn packet_with_zero_opaque_ref() -> Packet {
+    let mut packet = Packet::from_data(vec![0x31]).unwrap();
+    packet.set_pts(Some(111));
+    packet.set_dts(Some(77));
+    packet.set_duration(33).unwrap();
+    packet.set_pos(Some(44)).unwrap();
+    packet.set_flag(PacketFlags::TRUSTED, true);
+    packet.set_flag(PacketFlags::DISPOSABLE, true);
+    packet
+        .set_time_base(Rational::new(1, 48_000).unwrap())
+        .unwrap();
+    packet.set_opaque(Some(PacketOpaque::new(0xabcd).unwrap()));
+    packet.set_opaque_ref(Some(BufferRef::from_vec(Vec::new())));
+    packet
+}
+
+fn opaque_ref_pair_fields(left: &Packet, right: &Packet) -> Vec<String> {
+    let left_ref = left
+        .opaque_ref()
+        .expect("left packet should carry opaque_ref");
+    let right_ref = right
+        .opaque_ref()
+        .expect("right packet should carry opaque_ref");
+    vec![
+        left_ref.len().to_string(),
+        u8::from(left_ref.is_writable()).to_string(),
+        left_ref.strong_count().to_string(),
+        right_ref.strong_count().to_string(),
+        u8::from(left_ref.shares_storage(right_ref)).to_string(),
+    ]
 }
 
 fn insert_packet_free_rows(rows: &mut BTreeMap<String, Vec<String>>) {
@@ -6056,6 +6135,37 @@ static AVPacket *packet_with_duplicate_side_data(void) {
     return pkt;
 }
 
+static AVPacket *packet_with_zero_opaque_ref(void) {
+    AVPacket *pkt = new_packet();
+    fail_if(av_new_packet(pkt, 1) < 0,
+            "av_new_packet zero opaque_ref source failed");
+    pkt->data[0] = 0x31;
+    pkt->pts = 111;
+    pkt->dts = 77;
+    pkt->duration = 33;
+    pkt->pos = 44;
+    pkt->flags = AV_PKT_FLAG_TRUSTED | AV_PKT_FLAG_DISPOSABLE;
+    pkt->time_base = (AVRational){ 1, 48000 };
+    pkt->opaque = (void *)(uintptr_t)0xabcd;
+    pkt->opaque_ref = av_buffer_alloc(0);
+    fail_if(!pkt->opaque_ref, "av_buffer_alloc zero opaque_ref failed");
+    return pkt;
+}
+
+static void print_opaque_ref_pair(const char *name,
+                                  const AVPacket *left,
+                                  const AVPacket *right) {
+    fail_if(!left->opaque_ref || !right->opaque_ref,
+            "opaque_ref pair requires both refs");
+    printf("%s|%zu|%d|%d|%d|%d\n",
+           name,
+           left->opaque_ref->size,
+           av_buffer_is_writable(left->opaque_ref),
+           av_buffer_get_ref_count(left->opaque_ref),
+           av_buffer_get_ref_count(right->opaque_ref),
+           left->opaque_ref->buffer == right->opaque_ref->buffer);
+}
+
 static void free_custom_padding_packet(void *opaque, uint8_t *data) {
     (void)opaque;
     av_free(data);
@@ -8590,6 +8700,51 @@ int main(void) {
     av_packet_free(&zero_cloned);
     av_packet_free(&zero_ref_dst);
     av_packet_free(&zero_copy_dst);
+
+    AVPacket *zero_opaque_copy_src = packet_with_zero_opaque_ref();
+    AVPacket *zero_opaque_copy_dst = new_packet();
+    fail_if(av_new_packet(zero_opaque_copy_dst, 1) < 0,
+            "av_new_packet zero opaque_ref copy dst failed");
+    zero_opaque_copy_dst->data[0] = 0xaa;
+    fail_if(av_packet_copy_props(zero_opaque_copy_dst,
+                                 zero_opaque_copy_src) < 0,
+            "av_packet_copy_props zero opaque_ref failed");
+    print_packet("packet:opaque-ref-zero-copy-props",
+                 zero_opaque_copy_dst);
+    print_opaque_ref_pair("packet:opaque-ref-zero-copy-props-sharing",
+                          zero_opaque_copy_src, zero_opaque_copy_dst);
+    av_packet_free(&zero_opaque_copy_dst);
+    av_packet_free(&zero_opaque_copy_src);
+
+    AVPacket *zero_opaque_ref_src = packet_with_zero_opaque_ref();
+    AVPacket *zero_opaque_ref_dst = new_packet();
+    fail_if(av_packet_ref(zero_opaque_ref_dst, zero_opaque_ref_src) < 0,
+            "av_packet_ref zero opaque_ref failed");
+    print_packet("packet:opaque-ref-zero-ref", zero_opaque_ref_dst);
+    print_opaque_ref_pair("packet:opaque-ref-zero-ref-sharing",
+                          zero_opaque_ref_src, zero_opaque_ref_dst);
+    av_packet_free(&zero_opaque_ref_dst);
+    av_packet_free(&zero_opaque_ref_src);
+
+    AVPacket *zero_opaque_clone_src = packet_with_zero_opaque_ref();
+    AVPacket *zero_opaque_cloned = av_packet_clone(zero_opaque_clone_src);
+    fail_if(!zero_opaque_cloned, "av_packet_clone zero opaque_ref failed");
+    print_packet("packet:opaque-ref-zero-clone", zero_opaque_cloned);
+    print_opaque_ref_pair("packet:opaque-ref-zero-clone-sharing",
+                          zero_opaque_clone_src, zero_opaque_cloned);
+    av_packet_free(&zero_opaque_cloned);
+    av_packet_free(&zero_opaque_clone_src);
+
+    AVPacket *zero_opaque_move_src = packet_with_zero_opaque_ref();
+    AVPacket *zero_opaque_move_dst = new_packet();
+    fail_if(av_new_packet(zero_opaque_move_dst, 1) < 0,
+            "av_new_packet zero opaque_ref move dst failed");
+    zero_opaque_move_dst->data[0] = 0xbb;
+    av_packet_move_ref(zero_opaque_move_dst, zero_opaque_move_src);
+    print_packet("packet:opaque-ref-zero-move-dst", zero_opaque_move_dst);
+    print_packet("packet:opaque-ref-zero-move-src", zero_opaque_move_src);
+    av_packet_free(&zero_opaque_move_dst);
+    av_packet_free(&zero_opaque_move_src);
 
     AVPacket *unknown_flags_src = new_packet();
     fail_if(av_new_packet(unknown_flags_src, 2) < 0,

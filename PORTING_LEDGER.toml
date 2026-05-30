@@ -219,6 +219,11 @@ default_profile = "ffmpeg-8.1.1-default-native"
 # Latest delegated evidence: low-level `av_log_format_line2(NULL, ...)` with
 # `AV_LOG_QUIET`, `AV_LOG_PRINT_LEVEL`, and `print_prefix=0` still emits the
 # plain message and leaves the prefix state false.
+# Latest avutil-packet evidence: `packet:opaque-ref-zero-*` rows now prove
+# pinned FFmpeg 8.1.1 zero-size `AVPacket.opaque_ref` lifecycle behavior.
+# `av_packet_copy_props()`, `av_packet_ref()`, and `av_packet_clone()` share
+# the zero-size `AVBufferRef` and report the shared storage non-writable,
+# while `av_packet_move_ref()` transfers the buffer and resets the source.
 # Latest avutil-packet evidence: `packet:fifo-write-user-move-*`,
 # `packet:fifo-read-user-move-*`, `packet:fifo-write-user-ref-*`, and
 # `packet:fifo-read-user-ref-*` now prove pinned FFmpeg 8.1.1's
@@ -670,6 +675,7 @@ unit_tests = [
   "packet::tests::packet_opaque_address_tracks_nullable_raw_pointer_metadata",
   "packet::tests::packet_opaque_ref_copy_props_shares_and_clear_releases_last_reference",
   "packet::tests::packet_opaque_ref_move_take_and_unref_release_lifecycle",
+  "packet::tests::packet_zero_size_opaque_ref_lifecycle_preserves_buffer_shape",
   "packet::tests::packet_legacy_init_resets_fields_but_preserves_payload",
   "packet::tests::packet_fifo_moves_refs_peeks_reads_and_drains_packets",
   "packet::tests::packet_fifo_unknown_flags_treat_as_move",
@@ -770,6 +776,13 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: pinned libavcodec AVPacket oracle coverage now validates
+# zero-size `opaque_ref` buffer lifecycles through `av_packet_copy_props()`,
+# `av_packet_ref()`, `av_packet_clone()`, and `av_packet_move_ref()`.
+# Copy-props/ref/clone share the same zero-size AVBuffer storage and become
+# non-writable because the refcount is shared, while move-ref transfers the
+# single owner and resets the source. Focused unit coverage and
+# avutil_core_models fixtures cover the same BufferRef shape.
 # Latest update: pinned libavcodec AVPacket payload oracle coverage now validates
 # `av_grow_packet()` and `av_shrink_packet()` on raw `data`/`size` packets whose
 # `data` pointer starts at a nonzero offset inside caller storage and whose
