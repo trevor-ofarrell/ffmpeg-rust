@@ -13027,6 +13027,35 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .unwrap()
         .data()
         .is_empty());
+    zero_side_packet.make_refcounted().unwrap();
+    zero_side_packet.make_writable().unwrap();
+    assert_eq!(zero_side_packet.side_data().len(), 1);
+    assert!(zero_side_packet
+        .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+        .unwrap()
+        .data()
+        .is_empty());
+    let mut zero_side_src = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
+    zero_side_src
+        .new_side_data(PacketSideDataKind::NewExtradata, 0)
+        .unwrap();
+    let mut zero_side_dst = Packet::default();
+    zero_side_dst.ref_from(&zero_side_src);
+    zero_side_dst.make_writable().unwrap();
+    zero_side_dst.make_data_writable()[0] = 0xcc;
+    assert_eq!(zero_side_src.data(), &[0xaa, 0xbb]);
+    assert_eq!(zero_side_dst.data(), &[0xcc, 0xbb]);
+    assert!(!zero_side_dst
+        .data_buffer()
+        .shares_storage(zero_side_src.data_buffer()));
+    for packet in [&zero_side_src, &zero_side_dst] {
+        assert_eq!(packet.side_data().len(), 1);
+        assert!(packet
+            .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+            .unwrap()
+            .data()
+            .is_empty());
+    }
     assert!(!packet.shrink_side_data("missing_side_data", 0).unwrap());
     packet.push_side_data(SideData::new("other_side_data", vec![0xaa]).unwrap());
     let taken = packet.take_side_data("fuzz_side_data").unwrap();

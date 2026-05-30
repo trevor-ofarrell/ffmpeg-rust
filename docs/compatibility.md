@@ -10,6 +10,15 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  zero-size `AV_PKT_DATA_NEW_EXTRADATA` side data survives
+  `av_packet_make_refcounted()` on raw-data packets and
+  `av_packet_make_writable()` on shared refcounted packets, with payload,
+  timestamps, stream index, flags, opaque metadata, `opaque_ref`, and
+  `time_base` preserved according to the helper path. Rust mirrors this
+  through focused unit coverage, the mapped packet oracle, and a deterministic
+  `avutil_core_models` fixture. This strengthens `avutil-packet`; strict
+  completion remains 11/96 and the row remains `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   `av_packet_shrink_side_data()` on a zero-size
   `AV_PKT_DATA_NEW_EXTRADATA` entry returns ENOMEM when asked to grow to one
   byte, while preserving the present side-data record and lookup at size zero.

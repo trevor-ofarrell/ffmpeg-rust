@@ -1896,6 +1896,56 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         packet_fields(&writable_props_dst),
     );
 
+    let mut zero_side_refcounted = Packet::new(vec![0xaa, 0xbb], 7);
+    set_common_packet_props(&mut zero_side_refcounted);
+    zero_side_refcounted.clear_side_data();
+    zero_side_refcounted
+        .new_side_data(PacketSideDataKind::NewExtradata, 0)
+        .unwrap();
+    zero_side_refcounted.make_refcounted().unwrap();
+    rows.insert(
+        "packet:payload-make-refcounted-zero-side-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-refcounted-zero-side".to_string(),
+        packet_fields(&zero_side_refcounted),
+    );
+    rows.insert(
+        "packet:payload-make-refcounted-zero-side-lookup".to_string(),
+        side_data_lookup_fields(
+            zero_side_refcounted.side_data_by_kind_id(&PacketSideDataKind::NewExtradata),
+        ),
+    );
+
+    let mut zero_side_writable_src = packet_with_common_props();
+    zero_side_writable_src.clear_side_data();
+    zero_side_writable_src
+        .new_side_data(PacketSideDataKind::NewExtradata, 0)
+        .unwrap();
+    let mut zero_side_writable_dst = Packet::default();
+    zero_side_writable_dst.ref_from(&zero_side_writable_src);
+    zero_side_writable_dst.make_writable().unwrap();
+    zero_side_writable_dst.make_data_writable()[0] = 0xcc;
+    rows.insert(
+        "packet:payload-make-writable-zero-side-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-writable-zero-side-src".to_string(),
+        packet_fields(&zero_side_writable_src),
+    );
+    rows.insert(
+        "packet:payload-make-writable-zero-side-dst".to_string(),
+        packet_fields(&zero_side_writable_dst),
+    );
+    rows.insert(
+        "packet:payload-make-writable-zero-side-dst-lookup".to_string(),
+        side_data_lookup_fields(
+            zero_side_writable_dst.side_data_by_kind_id(&PacketSideDataKind::NewExtradata),
+        ),
+    );
+
     let mut unrefcounted_writable = Packet::new(vec![0xaa, 0xbb], 0);
     unrefcounted_writable.make_writable().unwrap();
     unrefcounted_writable.make_data_writable()[0] = 0xcc;
@@ -6691,6 +6741,44 @@ static void exercise_payload_api(void) {
     print_packet("packet:payload-make-writable-props-dst", writable_props_dst);
     av_packet_free(&writable_props_dst);
     av_packet_free(&writable_props_src);
+
+    pkt = new_packet();
+    uint8_t zero_ref_stack_data[2] = { 0xaa, 0xbb };
+    pkt->data = zero_ref_stack_data;
+    pkt->size = 2;
+    set_common_packet_props(pkt);
+    av_packet_free_side_data(pkt);
+    uint8_t *zero_ref_side = av_packet_new_side_data(
+        pkt, AV_PKT_DATA_NEW_EXTRADATA, 0);
+    fail_if(!zero_ref_side, "av_packet_new_side_data make_refcounted zero side failed");
+    ret = av_packet_make_refcounted(pkt);
+    printf("packet:payload-make-refcounted-zero-side-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_make_refcounted zero side failed");
+    print_packet("packet:payload-make-refcounted-zero-side", pkt);
+    print_side_data_lookup("packet:payload-make-refcounted-zero-side-lookup",
+                           pkt, AV_PKT_DATA_NEW_EXTRADATA);
+    av_packet_free(&pkt);
+
+    AVPacket *zero_side_writable_src = packet_with_common_props();
+    av_packet_free_side_data(zero_side_writable_src);
+    uint8_t *zero_writable_side = av_packet_new_side_data(
+        zero_side_writable_src, AV_PKT_DATA_NEW_EXTRADATA, 0);
+    fail_if(!zero_writable_side, "av_packet_new_side_data make_writable zero side failed");
+    AVPacket *zero_side_writable_dst = new_packet();
+    fail_if(av_packet_ref(zero_side_writable_dst, zero_side_writable_src) < 0,
+            "av_packet_ref make_writable zero side dst failed");
+    ret = av_packet_make_writable(zero_side_writable_dst);
+    printf("packet:payload-make-writable-zero-side-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_make_writable zero side failed");
+    zero_side_writable_dst->data[0] = 0xcc;
+    print_packet("packet:payload-make-writable-zero-side-src",
+                 zero_side_writable_src);
+    print_packet("packet:payload-make-writable-zero-side-dst",
+                 zero_side_writable_dst);
+    print_side_data_lookup("packet:payload-make-writable-zero-side-dst-lookup",
+                           zero_side_writable_dst, AV_PKT_DATA_NEW_EXTRADATA);
+    av_packet_free(&zero_side_writable_dst);
+    av_packet_free(&zero_side_writable_src);
 
     pkt = new_packet();
     uint8_t writable_stack_data[2] = { 0xaa, 0xbb };

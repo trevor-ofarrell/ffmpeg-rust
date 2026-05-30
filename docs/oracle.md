@@ -151,6 +151,15 @@ returns ENOMEM and keeps lookup present at size zero. A warmed WSL one-input
 run with local leak detection disabled passed after rebuilding
 `avutil_core_models`.
 
+The latest packet zero-size side-data payload-helper fixture extends
+`avutil_core_models` with `Packet::make_refcounted()` and
+`Packet::make_writable()` preservation of an empty
+`AV_PKT_DATA_NEW_EXTRADATA` record. It mirrors pinned rows where
+`av_packet_make_refcounted()` on a raw-data packet and
+`av_packet_make_writable()` on a shared refcounted packet keep lookup present
+with size zero. A warmed WSL one-input run with local leak detection disabled
+passed after rebuilding `avutil_core_models`.
+
 The latest PAL8/buffer lifecycle fixture extends `avutil_core_models` with full PAL8 frame palette side-plane construction, make-writable detachment, copy/crop preservation, and threaded `BufferRef` clone/drop release timing. WSL `cargo fuzz run avutil_core_models -- -runs=1` passed after a long sanitizer rebuild in `target-wsl-pal8-buffer-fuzz-o1`.
 
 The latest orchestrated WSL fuzz evidence for the packet/options/WAV/image2

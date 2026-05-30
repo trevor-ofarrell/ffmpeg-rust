@@ -10826,6 +10826,43 @@ mod tests {
     }
 
     #[test]
+    fn packet_zero_size_side_data_survives_payload_helpers() {
+        fn assert_zero_side_data(packet: &Packet) {
+            assert_eq!(packet.side_data().len(), 1);
+            let side_data = packet
+                .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+                .expect("zero-size side data should remain present");
+            assert!(side_data.data().is_empty());
+        }
+
+        let mut refcounted = Packet::new(vec![0xaa, 0xbb], 7);
+        refcounted
+            .new_side_data(PacketSideDataKind::NewExtradata, 0)
+            .unwrap();
+        refcounted.make_refcounted().unwrap();
+        assert_eq!(refcounted.data(), &[0xaa, 0xbb]);
+        assert_eq!(refcounted.stream_index(), 7);
+        assert_zero_side_data(&refcounted);
+
+        let mut writable_src = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
+        writable_src
+            .new_side_data(PacketSideDataKind::NewExtradata, 0)
+            .unwrap();
+        let mut writable_dst = Packet::default();
+        writable_dst.ref_from(&writable_src);
+        writable_dst.make_writable().unwrap();
+        writable_dst.make_data_writable()[0] = 0xcc;
+
+        assert_eq!(writable_src.data(), &[0xaa, 0xbb]);
+        assert_eq!(writable_dst.data(), &[0xcc, 0xbb]);
+        assert!(!writable_dst
+            .data_buffer()
+            .shares_storage(writable_src.data_buffer()));
+        assert_zero_side_data(&writable_src);
+        assert_zero_side_data(&writable_dst);
+    }
+
+    #[test]
     fn packet_add_side_data_replaces_first_matching_kind() {
         let mut packet = Packet::new(Vec::new(), 0);
         packet.push_side_data(SideData::new("palette", vec![0]).unwrap());
