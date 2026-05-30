@@ -745,6 +745,9 @@ impl BufferRef {
 
     pub fn resize_with_padding(&mut self, len: usize, padding: usize) -> AvResult<()> {
         let total_len = checked_storage_len(len, padding)?;
+        let required_len = self.offset.checked_add(total_len).ok_or_else(|| {
+            AvError::invalid_argument("buffer offset plus resized length overflows")
+        })?;
         let can_resize_in_place = self.can_resize_in_place();
         if len == self.len
             && total_len == self.allocated_len()
@@ -761,17 +764,17 @@ impl BufferRef {
                 .bytes
                 .as_mut_vec()
                 .expect("in-place resize requires owned storage");
-            if total_len > bytes.len() {
+            if required_len > bytes.len() {
                 bytes
-                    .try_reserve_exact(total_len - bytes.len())
+                    .try_reserve_exact(required_len - bytes.len())
                     .map_err(|_| {
                         allocation_error(format!(
-                            "failed to allocate {total_len} resized buffer bytes"
+                            "failed to allocate {required_len} resized buffer bytes"
                         ))
                     })?;
             }
-            bytes.resize(total_len, 0);
-            bytes[len..].fill(0);
+            bytes.resize(required_len, 0);
+            bytes[self.offset + len..].fill(0);
             self.len = len;
             return Ok(());
         }
@@ -785,7 +788,6 @@ impl BufferRef {
 
     fn can_resize_in_place(&self) -> bool {
         self.strong_count() == 1
-            && self.offset == 0
             && !self.is_readonly()
             && self.data.owner.is_none()
             && self.data.bytes.is_owned()
@@ -3103,6 +3105,32 @@ mod tests {
             source.ref_slice(3, 2).unwrap_err().kind(),
             AvErrorKind::InvalidArgument
         );
+    }
+
+    #[test]
+    fn buffer_resize_preserves_unique_owned_offsets() {
+        let mut offset = BufferRef::from_vec(vec![9, 8, 1, 2, 0x5a, 0x5a])
+            .into_ref_slice(2, 2)
+            .unwrap();
+        let storage = Arc::as_ptr(&offset.data);
+        let data_ptr = offset.as_ptr();
+
+        offset.resize_with_padding(2, 2).unwrap();
+
+        assert_eq!(Arc::as_ptr(&offset.data), storage);
+        assert_eq!(offset.as_ptr(), data_ptr);
+        assert_eq!(offset.offset(), 2);
+        assert_eq!(offset.as_slice(), &[1, 2]);
+        assert_eq!(offset.padding_slice(), &[0, 0]);
+        assert_eq!(offset.allocated_len(), 4);
+
+        offset.resize_with_padding(3, 2).unwrap();
+
+        assert_eq!(Arc::as_ptr(&offset.data), storage);
+        assert_eq!(offset.offset(), 2);
+        assert_eq!(offset.as_slice(), &[1, 2, 0]);
+        assert_eq!(offset.padding_slice(), &[0, 0]);
+        assert_eq!(offset.allocated_len(), 5);
     }
 
     #[test]

@@ -107,6 +107,13 @@ dirty FFmpeg input padding, but exact-size and oversize shrink calls preserve
 that dirty padding unchanged. A one-input WSL `avutil_core_models` smoke passed
 with local leak detection disabled after the sanitizer rebuild.
 
+The latest packet offset-payload fixture extends `avutil_core_models` with the
+deterministic `Packet::grow_data(0)` path where packet data begins at a nonzero
+offset inside the backing buffer. It preserves the visible data pointer and
+offset while zeroing dirty FFmpeg input padding. A one-input WSL
+`avutil_core_models` smoke passed with local leak detection disabled after the
+sanitizer rebuild.
+
 The latest packet payload reset fixture extends `avutil_core_models` with the deterministic `Packet::alloc_new_packet_payload(0)` reset path for `av_new_packet(pkt, 0)` parity: a pre-populated packet becomes an empty writable padded packet with default metadata, no side data, no opaque pointer metadata, no `opaque_ref`, empty flags, stream index zero, and packet time base zero.
 
 The latest `avutil_core_models` pixel-format fuzz evidence includes a saved-crash replay and warmed 4096-run WSL sanitizer execution after fixing a stale no-byte-stride invariant. The harness now treats absent fixed byte stride as valid for planar formats or the modeled bit-packed single-plane formats (`monow`, `monob`, `rgb4`, `bgr4`, and `uyyvyy411`), and separately recognizes planar GBRA formats as alpha-bearing. This narrows bounded pixel-format fuzz coverage but does not replace full `AVPixFmtDescriptor`, FATE media, conversion, or hardware-device parity.
@@ -326,6 +333,13 @@ bytes while zeroing dirty input padding, while exact-size and oversize
 mirrors this through `Packet::grow_data(0)`, no-op `Packet::shrink_data()`,
 focused unit coverage, and the `avutil_core_models` deterministic fixture.
 
+The newest offset-payload resize rows prove `av_grow_packet(pkt, 0)` preserves
+`pkt->data` when it points at an offset inside `pkt->buf->data` and the backing
+buffer already has enough FFmpeg input-padding capacity, while zeroing dirty
+padding. Rust mirrors this by preserving unique owned `BufferRef` offsets
+through `resize_with_padding`, focused packet unit coverage, and the
+`avutil_core_models` deterministic fixture.
+
 The newest packet FIFO partial-drain rows prove `av_container_fifo_drain(fifo, 1)` on a mixed move/ref packet FIFO releases the drained move-written packet's payload buffer and `opaque_ref` buffer immediately, keeps the ref-written packet queued, then delays ref-source payload release until the queued ref is drained and the original source drops. Rust `PacketFifo::drain` plus `avutil_core_models` mirror that release ordering.
 
 The newest packet side-data free rows prove `av_packet_free_side_data()` is a no-op on an empty packet and remains idempotent after clearing a populated packet, while preserving payload, timestamps, flags, opaque pointer metadata, `opaque_ref`, stream index, and packet `time_base`. Rust `Packet::clear_side_data()` plus `avutil_core_models` mirror the empty and repeated-clear shape.
@@ -395,6 +409,8 @@ The harness also includes already-refcounted payload no-op rows for `packet:payl
 The harness also includes `packet:payload-make-refcounted-readonly-*` and `packet:payload-make-writable-readonly-*` rows. These prove an existing read-only `AVBufferRef` is considered refcounted and left attached/non-writable by `av_packet_make_refcounted()`, then detached to writable padded storage by `av_packet_make_writable()`.
 
 The harness also includes `packet:payload-grow-empty*`, `packet:payload-shrink-oversize`, and `packet:payload-shrink-zero` rows. These prove empty-packet growth returns success with the requested size, zeroed input padding, and writable refcounted storage; oversize `av_shrink_packet()` is a no-op; and shrink-to-zero keeps a writable padded buffer while zeroing the exposed padding window. FFmpeg's newly visible bytes after `av_grow_packet()` are allocator-dependent, so growth rows compare stable prefix bytes where present, size, padding, and writability rather than all grown payload bytes. The Rust model intentionally zeroes newly grown bytes for deterministic safe ownership.
+
+The harness also includes `packet:payload-grow-zero-offset-padding*` rows. These prove zero-growth on a packet whose visible payload starts at an offset inside its refcounted buffer preserves the offset data pointer and visible bytes while zeroing the FFmpeg input-padding window.
 
 The harness also includes `packet:payload-grow-invalid-*` rows. These prove `av_grow_packet()` returns `AVERROR(ENOMEM)` before mutation when `grow_by` exceeds `INT_MAX - (pkt->size + AV_INPUT_BUFFER_PADDING_SIZE)`, preserving packet fields, side data, opaque metadata, `opaque_ref`, time base, payload bytes, input padding, and writability.
 

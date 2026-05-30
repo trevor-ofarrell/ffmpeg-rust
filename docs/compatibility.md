@@ -10,6 +10,15 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  `av_grow_packet(pkt, 0)` on an `AVPacket` whose `data` points at an offset
+  inside `buf->data` preserves that offset data pointer and visible payload
+  when enough padded capacity already exists, while zeroing dirty input padding.
+  Rust mirrors this by preserving unique owned `BufferRef` offsets in
+  `resize_with_padding`, plus focused `Packet::grow_data(0)` unit coverage,
+  the mapped packet oracle, and a deterministic `avutil_core_models` fixture.
+  This strengthens `avutil-packet`; strict completion remains 11/96 and the
+  row remains `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   `av_grow_packet(pkt, 0)` on ordinary writable padded storage preserves the
   packet data pointer and visible payload while zeroing dirty input padding,
   whereas exact-size and oversize `av_shrink_packet()` calls are no-ops that
