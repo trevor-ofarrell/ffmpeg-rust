@@ -3,6 +3,66 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active with xhigh
+fast/full-access subagents and no approval prompts. The tree started at
+`master...origin/master [ahead 66]`; strict completion remains 11/96
+components, about 11.5%. The main thread reserved the dirty buffer files and
+completed a focused `avutil-buffer` recycle-rejection lifecycle slice. Halley
+the 2nd was closed after the earlier packet explorer hit model capacity, Harvey
+the 2nd returned a read-only logging audit recommending C-exported callback ABI
+coverage, and Nash the 2nd returned a read-only packet audit recommending
+explicit `PacketFifo::clear` lifecycle evidence next. No subagent edited files
+in this slice.
+
+Current main-thread slice: Rust `BufferPool::recycle()` now has explicit unit
+and deterministic fuzz evidence for rejection side effects. Caller-owned
+wrong-offset, wrong-length, wrong-padding, and readonly rejected refs are
+consumed and release their callback-owned storage exactly once; shared
+pool-owned rejected refs remain live through the surviving reference, return to
+the pool only after the final survivor drops, and release through normal pool
+teardown. There is no direct public FFmpeg C recycle API for this safe helper,
+so the pinned buffer oracle and mapped differential row were rerun as broader
+regressions rather than new direct oracle rows. `avutil-buffer` remains
+`differential_pass`, not `complete`.
+
+Latest validation commands for this slice passed: `cargo test -p avutil
+--target-dir target-orch-buffer-recycle-side-effects
+buffer_pool_recycle_rejections_release_or_retain_by_ownership -- --nocapture`;
+`cargo check --manifest-path fuzz\\Cargo.toml --target-dir
+target-orch-fuzz-buffer-recycle --target x86_64-pc-windows-msvc --bin
+avutil_core_models`; `cargo fmt --all -- --check`; `cargo run -p fate-runner
+--target-dir target-orch-fate-buffer-recycle-run -- run --mappings
+tests\\differential\\mappings.txt --component avutil-buffer --target
+oracle-libavutil-buffer --oracle-ffmpeg
+./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd`; `cargo clippy -p avutil
+--all-targets --all-features --target-dir
+target-orch-clippy-avutil-buffer-recycle -- -D warnings`; `cargo test -p
+avutil --test buffer_oracle --target-dir target-orch-buffer-recycle-oracle
+libavutil_buffer_refs_match_current_model -- --ignored`; `cargo test -p
+fate-runner --target-dir target-orch-fate-buffer-recycle current_ledger`;
+`cargo run -p xtask --target-dir target-orch-xtask-buffer-recycle-guard --
+guard-runtime`; `cargo run -p fate-runner --target-dir
+target-orch-fate-buffer-recycle-status -- status --next 12`; `cargo run -p
+fate-runner --target-dir target-orch-fate-buffer-recycle-changed -- run
+--changed --dry-run`; `cargo run -p xtask --target-dir
+target-orch-xtask-buffer-recycle-doctor -- oracle-doctor`; `git diff --check`
+with CRLF conversion warnings only; and WSL `cargo fuzz run avutil_core_models
+-- -runs=1`.
+
+Latest failing or limited commands for this slice: one direct
+`buffer_oracle` run failed with WSL status 126 `Text file busy` because it ran
+the same generated C helper path in parallel with the mapped differential row.
+The mapped differential row passed, and the direct oracle rerun passed
+serially. No behavior failure was observed.
+
+Current focus component: `avutil-packet` remains the top priority incomplete
+component (`fate_pass`), followed by `avutil-buffer` (`differential_pass`),
+`avutil-frame` (`differential_pass`), `avutil-logging` (`fate_pass`), and
+`avutil-options` (`fate_pass`). Next 3 concrete actions: commit this coherent
+buffer recycle-rejection lifecycle slice, implement the packet explorer's
+recommended `PacketFifo::clear` lifecycle evidence on the main thread, then
+delegate disjoint xhigh worker lanes only after the tree is clean.
+
+Current authoritative turn status: orchestrator workflow is active with xhigh
 fast/full-access subagents and no approval prompts. The tree started clean at
 `master...origin/master [ahead 65]`; strict completion remains 11/96
 components, about 11.5%. Three read-only explorer lanes were used and closed:

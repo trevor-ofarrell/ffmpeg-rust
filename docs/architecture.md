@@ -67,6 +67,8 @@ This repository is a Rust workspace for a compatibility-oriented FFmpeg 8.1.1 re
 
 The latest outstanding shared-pool rows prove `av_buffer_pool_uninit()` does not release a custom-pool allocation while two `AVBufferRef` handles still share it. Callback release and pool-free are both delayed until the final shared reference drops, and the release callback runs before pool-free.
 
+The latest Rust `BufferPool::recycle` invariants pin rejection side effects for the safe helper surface: caller-owned wrong-shape and readonly refs are consumed and released once on rejection, while a shared pool-owned rejected ref remains live through its survivor and only returns to the pool when the final reference drops.
+
 The latest unique pool make-writable rows prove `av_buffer_make_writable()` is a no-op for a unique custom-pool ref: the visible data pointer and bytes remain stable, pool opaque lookup remains available, no pool release/free callback runs during the call or ordinary unref, spare reuse returns the mutated storage, and final pool uninit releases the original allocation plus pool owner.
 
 The latest pool-to-pool replace rows prove `av_buffer_replace()` with two distinct `av_buffer_pool_init2()` custom pools keeps the two pool lifecycles independent. The original destination storage returns to its pool for reuse, the replacement destination shares source-pool storage and opaque data, and each pool releases its own storage and owner only through its final uninit path.

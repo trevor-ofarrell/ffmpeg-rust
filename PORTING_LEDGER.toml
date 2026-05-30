@@ -1087,6 +1087,7 @@ unit_tests = [
   "buffer::tests::buffer_pool_recycle_transfers_callback_owned_storage_to_pool",
   "buffer::tests::buffer_pool_rejects_shared_and_wrong_shape_buffers",
   "buffer::tests::buffer_pool_rejects_readonly_buffers",
+  "buffer::tests::buffer_pool_recycle_rejections_release_or_retain_by_ownership",
   "buffer::tests::buffer_pool_rejects_overflowing_shapes",
   "buffer::tests::custom_buffer_pool_copy_on_write_detaches_without_recycling_copy",
 ]
@@ -1099,6 +1100,13 @@ fate_tests = [
   "not_applicable: upstream FFmpeg FATE has no standalone AVBufferRef/AVBufferPool API target; covered by unit tests plus pinned libavutil differential oracle",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest recycle-rejection lifecycle slice: Rust unit and deterministic fuzz
+# coverage now validate explicit `BufferPool::recycle` rejection side effects.
+# Caller-owned wrong-shape and readonly rejected refs are consumed and released
+# once on error, while shared pool-owned rejected refs remain live until the
+# final survivor drops and then return to the pool before final pool release.
+# There is no direct public libavutil `av_buffer_pool_recycle()` API; the pinned
+# buffer oracle and mapped differential row were rerun as broader regressions.
 # Latest outstanding two-ref pool-uninit slice: pinned libavutil oracle rows now
 # validate `av_buffer_pool_uninit()` while two AVBufferRef handles still share one
 # custom-pool allocation. Uninit itself and the first unref run no callbacks; the

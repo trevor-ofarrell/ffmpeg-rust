@@ -4908,6 +4908,110 @@ mod tests {
     }
 
     #[test]
+    fn buffer_pool_recycle_rejections_release_or_retain_by_ownership() {
+        let caller_releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+        let pool_releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+        let pool_release_capture = std::sync::Arc::clone(&pool_releases);
+        let pool = BufferPool::with_callbacks(
+            2,
+            1,
+            BufferPoolCallbacks::new(
+                |allocated_len| Ok(vec![0; allocated_len]),
+                move |storage| {
+                    pool_release_capture.lock().unwrap().push(storage);
+                },
+            ),
+        )
+        .unwrap();
+
+        let wrong_offset_capture = std::sync::Arc::clone(&caller_releases);
+        let wrong_offset = BufferRef::from_vec_with_len_and_release_callback(
+            vec![0xee, 0x11, 0x22, 0],
+            3,
+            move |storage| {
+                wrong_offset_capture.lock().unwrap().push(storage);
+            },
+        )
+        .unwrap()
+        .into_ref_slice(1, 2)
+        .unwrap();
+        assert_eq!(
+            pool.recycle(wrong_offset).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+
+        let wrong_len_capture = std::sync::Arc::clone(&caller_releases);
+        let wrong_len = BufferRef::from_vec_with_len_and_release_callback(
+            vec![0x31, 0x32, 0x33, 0],
+            3,
+            move |storage| {
+                wrong_len_capture.lock().unwrap().push(storage);
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            pool.recycle(wrong_len).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+
+        let wrong_padding_capture = std::sync::Arc::clone(&caller_releases);
+        let wrong_padding = BufferRef::from_vec_with_len_and_release_callback(
+            vec![0x41, 0x42, 0, 0],
+            2,
+            move |storage| {
+                wrong_padding_capture.lock().unwrap().push(storage);
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            pool.recycle(wrong_padding).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+
+        let readonly_capture = std::sync::Arc::clone(&caller_releases);
+        let readonly = BufferRef::from_vec_with_len_and_release_callback_readonly(
+            vec![0x51, 0x52, 0],
+            2,
+            move |storage| {
+                readonly_capture.lock().unwrap().push(storage);
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            pool.recycle(readonly).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+
+        assert_eq!(
+            *caller_releases.lock().unwrap(),
+            vec![
+                vec![0xee, 0x11, 0x22, 0],
+                vec![0x31, 0x32, 0x33, 0],
+                vec![0x41, 0x42, 0, 0],
+                vec![0x51, 0x52, 0],
+            ]
+        );
+        assert!(pool_releases.lock().unwrap().is_empty());
+        assert_eq!(pool.available_count().unwrap(), 0);
+
+        let mut shared = pool.get().unwrap();
+        shared.make_mut().copy_from_slice(&[0xa1, 0xa2]);
+        let shared_survivor = shared.clone();
+        assert_eq!(
+            pool.recycle(shared).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(shared_survivor.as_slice(), &[0xa1, 0xa2]);
+        assert_eq!(pool.available_count().unwrap(), 0);
+        assert!(pool_releases.lock().unwrap().is_empty());
+
+        drop(shared_survivor);
+        assert_eq!(pool.available_count().unwrap(), 1);
+        drop(pool);
+        assert_eq!(*pool_releases.lock().unwrap(), vec![vec![0xa1, 0xa2, 0]]);
+    }
+
+    #[test]
     fn buffer_pool_rejects_overflowing_shapes() {
         assert_eq!(
             BufferPool::new(1, usize::MAX).unwrap_err().kind(),

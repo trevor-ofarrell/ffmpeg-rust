@@ -2642,6 +2642,76 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     drop(auto_shared);
     assert_eq!(pool.available_count().unwrap(), 1);
 
+    let recycle_caller_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let recycle_pool_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let recycle_pool_release_capture = Arc::clone(&recycle_pool_releases);
+    let recycle_pool = BufferPool::with_callbacks(
+        2,
+        1,
+        BufferPoolCallbacks::new(
+            |allocated_len| Ok(vec![0; allocated_len]),
+            move |storage| {
+                recycle_pool_release_capture
+                    .lock()
+                    .unwrap()
+                    .push(storage);
+            },
+        ),
+    )
+    .unwrap();
+
+    let wrong_offset_capture = Arc::clone(&recycle_caller_releases);
+    let wrong_offset = BufferRef::from_vec_with_len_and_release_callback(
+        vec![0xee, 0x11, 0x22, 0],
+        3,
+        move |storage| {
+            wrong_offset_capture.lock().unwrap().push(storage);
+        },
+    )
+    .unwrap()
+    .into_ref_slice(1, 2)
+    .unwrap();
+    assert_eq!(
+        recycle_pool.recycle(wrong_offset).unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
+
+    let readonly_capture = Arc::clone(&recycle_caller_releases);
+    let readonly = BufferRef::from_vec_with_len_and_release_callback_readonly(
+        vec![0x51, 0x52, 0],
+        2,
+        move |storage| {
+            readonly_capture.lock().unwrap().push(storage);
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        recycle_pool.recycle(readonly).unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        *recycle_caller_releases.lock().unwrap(),
+        vec![vec![0xee, 0x11, 0x22, 0], vec![0x51, 0x52, 0]]
+    );
+    assert!(recycle_pool_releases.lock().unwrap().is_empty());
+
+    let mut shared_recycle = recycle_pool.get().unwrap();
+    shared_recycle.make_mut().copy_from_slice(&[0xa1, 0xa2]);
+    let shared_recycle_survivor = shared_recycle.clone();
+    assert_eq!(
+        recycle_pool.recycle(shared_recycle).unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(shared_recycle_survivor.as_slice(), &[0xa1, 0xa2]);
+    assert_eq!(recycle_pool.available_count().unwrap(), 0);
+    drop(shared_recycle_survivor);
+    assert_eq!(recycle_pool.available_count().unwrap(), 1);
+    drop(recycle_pool);
+    assert_eq!(
+        *recycle_pool_releases.lock().unwrap(),
+        vec![vec![0xa1, 0xa2, 0]]
+    );
+
     let default_pool_free_count = Arc::new(Mutex::new(0usize));
     let default_pool_free_capture = Arc::clone(&default_pool_free_count);
     let default_pool_with_free = BufferPool::with_callbacks(
