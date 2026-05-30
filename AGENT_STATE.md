@@ -3,6 +3,66 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active with xhigh
+fast/full-access subagents and no approval prompts. The tree started clean at
+`master...origin/master [ahead 65]`; strict completion remains 11/96
+components, about 11.5%. Three read-only explorer lanes were used and closed:
+`avutil-buffer` recommended a future pool-recycle rejection side-effect slice,
+`avutil-frame` recommended future PAL8 palette side-plane propagation, and
+`avutil-logging` recommended future C-exported callback ABI coverage. No
+subagent edited files this turn.
+
+Current main-thread slice: packet FIFO queued-free lifecycle evidence. The
+packet oracle now includes rows proving `av_container_fifo_free()` on a packet
+FIFO with a queued move-written packet releases that queued packet's payload
+storage and `opaque_ref` storage exactly once while the moved-from source
+packet remains reset. Rust `PacketFifo` drop/clear behavior now has matching
+unit coverage and a deterministic `avutil_core_models` fuzz fixture. This is
+evidence strengthening only; `avutil-packet` remains `fate_pass`, not
+`complete`.
+
+Latest validation commands for this slice passed: `cargo fmt --all -- --check`;
+`cargo test -p avutil --target-dir
+target-orch-packet-fifo-free
+packet_fifo_drop_releases_queued_moved_payload_and_opaque_ref`; `cargo check
+--manifest-path fuzz\\Cargo.toml --target-dir
+target-orch-fuzz-packet-fifo-free --target x86_64-pc-windows-msvc --bin
+avutil_core_models`; `cargo test -p avutil --test packet_oracle --target-dir
+target-orch-packet-fifo-free-oracle
+libavcodec_packet_core_lifecycle_matches_packet_model -- --ignored`; `cargo
+run -p fate-runner --target-dir target-orch-fate-packet-fifo-run -- run
+--mappings tests\\differential\\mappings.txt --component avutil-packet
+--target oracle-libavcodec-packet-core --oracle-ffmpeg
+./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd`; `cargo clippy -p avutil
+--all-targets --all-features --target-dir
+target-orch-clippy-avutil-packet-fifo -- -D warnings`; `cargo test -p
+fate-runner --target-dir target-orch-fate-packet-fifo current_ledger`; `cargo
+run -p xtask --target-dir target-orch-xtask-packet-fifo-guard --
+guard-runtime`; `cargo run -p fate-runner --target-dir
+target-orch-fate-packet-fifo-status -- status --next 12`; `cargo run -p
+fate-runner --target-dir target-orch-fate-packet-fifo-changed -- run --changed
+--dry-run`; `cargo run -p xtask --target-dir
+target-orch-xtask-packet-fifo-doctor -- oracle-doctor`; and `git diff
+--check` with CRLF conversion warnings only.
+
+Latest failing or limited commands for this slice: initial packet oracle runs
+timed out because the newly added Rust expected-row builder locked the same
+release-vector mutex twice inside one `vec!` expression. The generated C
+oracle binary itself completed and printed the new rows. The stale timed-out
+Cargo/test processes were stopped, the expected-row builder was fixed by
+snapshotting release vectors before row construction, and the oracle plus
+mapped differential run then passed. Sanitizer-backed WSL `cargo fuzz run` was
+not rerun for this slice; the Windows fuzz target build check passed.
+
+Current focus component: `avutil-packet` remains the top priority incomplete
+component (`fate_pass`), followed by `avutil-buffer` (`differential_pass`),
+`avutil-frame` (`differential_pass`), `avutil-logging` (`fate_pass`), and
+`avutil-options` (`fate_pass`). Next 3 concrete actions: commit this coherent
+packet FIFO queued-free evidence slice, use the buffer explorer recommendation
+as a parallel-safe lane for pool recycle rejection side effects, and keep the
+main thread on the next AVPacket completion gap unless a stricter blocker
+appears.
+
+Current authoritative turn status: orchestrator workflow is active with xhigh
 fast/full-access subagents and no approval prompts. The tree started at
 `master...origin/master [ahead 64]`; strict completion remains 11/96
 components, about 11.5%. One worker, Darwin the 2nd, was assigned the

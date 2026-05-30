@@ -12925,6 +12925,38 @@ mod tests {
     }
 
     #[test]
+    fn packet_fifo_drop_releases_queued_moved_payload_and_opaque_ref() {
+        let payload_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+        let opaque_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+        let payload_capture = Arc::clone(&payload_releases);
+        let opaque_capture = Arc::clone(&opaque_releases);
+
+        let buffer = BufferRef::from_vec_with_release_callback(vec![0xab, 0xbb], move |data| {
+            payload_capture.lock().unwrap().push(data);
+        });
+        let mut source = Packet::with_buffer(buffer, 11);
+        source.set_pts(Some(99));
+        source.set_opaque_ref(Some(BufferRef::from_vec_with_release_callback(
+            vec![0xcc],
+            move |data| {
+                opaque_capture.lock().unwrap().push(data);
+            },
+        )));
+
+        {
+            let mut fifo = PacketFifo::new();
+            fifo.write_move(&mut source).unwrap();
+            assert!(source.is_empty());
+            assert_eq!(fifo.can_read(), 1);
+            assert!(payload_releases.lock().unwrap().is_empty());
+            assert!(opaque_releases.lock().unwrap().is_empty());
+        }
+
+        assert_eq!(*payload_releases.lock().unwrap(), vec![vec![0xab, 0xbb]]);
+        assert_eq!(*opaque_releases.lock().unwrap(), vec![vec![0xcc]]);
+    }
+
+    #[test]
     fn packet_copy_props_preserves_destination_payload() {
         let mut src = Packet::new(vec![1, 2, 3], 4);
         src.set_pts(Some(12));

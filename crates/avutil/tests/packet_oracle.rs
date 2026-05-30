@@ -2187,6 +2187,54 @@ fn insert_packet_fifo_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         vec![fifo.can_read().to_string()],
     );
 
+    let payload_releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+    let opaque_releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+    let payload_capture = std::sync::Arc::clone(&payload_releases);
+    let opaque_capture = std::sync::Arc::clone(&opaque_releases);
+    let buffer = BufferRef::from_vec_with_release_callback(vec![0xab, 0xbb], move |data| {
+        payload_capture.lock().unwrap().push(data);
+    });
+    let mut free_queued = Packet::with_buffer(buffer, 11);
+    free_queued.set_pts(Some(99));
+    free_queued.set_opaque_ref(Some(BufferRef::from_vec_with_release_callback(
+        vec![0xcc],
+        move |data| {
+            opaque_capture.lock().unwrap().push(data);
+        },
+    )));
+    fifo.write_move(&mut free_queued).unwrap();
+    rows.insert(
+        "packet:fifo-free-queued-write-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:fifo-free-queued-src".to_string(),
+        packet_fields(&free_queued),
+    );
+    rows.insert(
+        "packet:fifo-free-queued-before".to_string(),
+        vec![
+            fifo.can_read().to_string(),
+            payload_releases.lock().unwrap().len().to_string(),
+            opaque_releases.lock().unwrap().len().to_string(),
+        ],
+    );
+    drop(fifo);
+    let payload_release_rows = payload_releases.lock().unwrap().clone();
+    let opaque_release_rows = opaque_releases.lock().unwrap().clone();
+    rows.insert(
+        "packet:fifo-free-queued-after".to_string(),
+        vec![
+            "0".to_string(),
+            payload_release_rows.len().to_string(),
+            hex_or_dash(&payload_release_rows[0]),
+            opaque_release_rows.len().to_string(),
+            hex_or_dash(&opaque_release_rows[0]),
+        ],
+    );
+
+    let mut fifo = PacketFifo::new();
+
     let mut all_drain_first = Packet::new(vec![1], 1);
     let mut all_drain_second = Packet::new(vec![2], 2);
     fifo.write_move(&mut all_drain_first).unwrap();
@@ -4867,6 +4915,27 @@ static AVPacket *packet_with_custom_padding(void) {
     return pkt;
 }
 
+static int fifo_release_payload_count = 0;
+static int fifo_release_payload_first = -1;
+static int fifo_release_payload_second = -1;
+static int fifo_release_opaque_count = 0;
+static int fifo_release_opaque_first = -1;
+
+static void free_fifo_payload(void *opaque, uint8_t *data) {
+    (void)opaque;
+    fifo_release_payload_count++;
+    fifo_release_payload_first = data ? data[0] : -1;
+    fifo_release_payload_second = data ? data[1] : -1;
+    av_free(data);
+}
+
+static void free_fifo_opaque_ref(void *opaque, uint8_t *data) {
+    (void)opaque;
+    fifo_release_opaque_count++;
+    fifo_release_opaque_first = data ? data[0] : -1;
+    av_free(data);
+}
+
 static void exercise_side_data_api(void) {
     AVPacket *pkt = new_packet();
     uint8_t *sd = av_packet_new_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, 4);
@@ -6206,6 +6275,55 @@ static void exercise_packet_fifo_api(void) {
            av_container_fifo_can_read(fifo));
     av_packet_free(&unknown_flags_dst);
     av_packet_free(&unknown_flags_src);
+
+    AVPacket *free_queued_src = new_packet();
+    uint8_t *free_queued_payload =
+        av_mallocz(2 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!free_queued_payload, "fifo free queued payload allocation failed");
+    free_queued_payload[0] = 0xab;
+    free_queued_payload[1] = 0xbb;
+    free_queued_src->buf = av_buffer_create(
+        free_queued_payload,
+        2 + AV_INPUT_BUFFER_PADDING_SIZE,
+        free_fifo_payload,
+        NULL,
+        0);
+    fail_if(!free_queued_src->buf, "fifo free queued payload buffer failed");
+    free_queued_src->data = free_queued_payload;
+    free_queued_src->size = 2;
+    free_queued_src->stream_index = 11;
+    free_queued_src->pts = 99;
+    uint8_t *free_queued_opaque = av_mallocz(1);
+    fail_if(!free_queued_opaque, "fifo free queued opaque allocation failed");
+    free_queued_opaque[0] = 0xcc;
+    free_queued_src->opaque_ref = av_buffer_create(
+        free_queued_opaque,
+        1,
+        free_fifo_opaque_ref,
+        NULL,
+        0);
+    fail_if(!free_queued_src->opaque_ref,
+            "fifo free queued opaque_ref buffer failed");
+    ret = av_container_fifo_write(fifo, free_queued_src, 0);
+    printf("packet:fifo-free-queued-write-ret|%d\n", ret);
+    fail_if(ret < 0, "fifo free queued move write failed");
+    print_packet("packet:fifo-free-queued-src", free_queued_src);
+    printf("packet:fifo-free-queued-before|%zu|%d|%d\n",
+           av_container_fifo_can_read(fifo),
+           fifo_release_payload_count,
+           fifo_release_opaque_count);
+    av_container_fifo_free(&fifo);
+    printf("packet:fifo-free-queued-after|%d|%d|%02x%02x|%d|%02x\n",
+           fifo != NULL,
+           fifo_release_payload_count,
+           fifo_release_payload_first & 0xff,
+           fifo_release_payload_second & 0xff,
+           fifo_release_opaque_count,
+           fifo_release_opaque_first & 0xff);
+    av_packet_free(&free_queued_src);
+
+    fifo = av_container_fifo_alloc_avpacket(0);
+    fail_if(!fifo, "av_container_fifo_alloc_avpacket after queued free failed");
 
     AVPacket *all_drain_first = new_packet();
     fail_if(av_new_packet(all_drain_first, 1) < 0,

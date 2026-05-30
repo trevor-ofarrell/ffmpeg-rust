@@ -10,6 +10,12 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  `av_container_fifo_free()` on a packet FIFO with a queued move-written packet
+  releases the queued payload storage and `opaque_ref` storage exactly once,
+  while the moved-from source packet remains reset. Rust mirrors this through
+  `PacketFifo` drop/clear behavior, unit coverage, and the deterministic
+  `avutil_core_models` fuzz fixture.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   packet-owned raw side-data values participate in
   `av_packet_shrink_side_data()` behavior: raw type `-1` shrinks to zero
   length, while raw type `INT_MIN` oversize shrink returns ENOMEM without

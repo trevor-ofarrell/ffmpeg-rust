@@ -546,6 +546,7 @@ unit_tests = [
   "packet::tests::packet_legacy_init_resets_fields_but_preserves_payload",
   "packet::tests::packet_fifo_moves_refs_peeks_reads_and_drains_packets",
   "packet::tests::packet_fifo_unknown_flags_treat_as_move",
+  "packet::tests::packet_fifo_drop_releases_queued_moved_payload_and_opaque_ref",
   "packet::tests::packet_time_base_defaults_copies_resets_and_rescale_preserves",
 ]
 differential_tests = [
@@ -638,6 +639,12 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest packet FIFO free update: pinned libavcodec rows now prove
+# `av_container_fifo_free()` on a packet FIFO with a queued move-written packet
+# unreferences that queued packet and releases both payload storage and
+# `opaque_ref` storage exactly once, while the moved-from source remains reset.
+# Rust unit coverage and the `avutil_core_models` deterministic fuzz fixture
+# mirror the queued-drop lifecycle.
 # Latest packet-owned raw shrink update: pinned libavcodec rows now prove
 # `av_packet_shrink_side_data()` accepts packet-owned raw type `-1` and shrinks
 # it to zero length, while oversize shrink for packet-owned raw `INT_MIN`

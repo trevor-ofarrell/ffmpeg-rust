@@ -10609,6 +10609,37 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     let fifo_drain_err = packet_fifo.drain(1).unwrap_err();
     assert_eq!(fifo_drain_err.code(), Some(AvErrorCode::EINVAL));
 
+    let fifo_payload_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let fifo_opaque_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let fifo_payload_capture = Arc::clone(&fifo_payload_releases);
+    let fifo_opaque_capture = Arc::clone(&fifo_opaque_releases);
+    let mut fifo_release_src = Packet::with_buffer(
+        BufferRef::from_vec_with_release_callback(vec![0xab, 0xbb], move |data| {
+            fifo_payload_capture.lock().unwrap().push(data);
+        }),
+        11,
+    );
+    fifo_release_src.set_pts(Some(99));
+    fifo_release_src.set_opaque_ref(Some(BufferRef::from_vec_with_release_callback(
+        vec![0xcc],
+        move |data| {
+            fifo_opaque_capture.lock().unwrap().push(data);
+        },
+    )));
+    {
+        let mut releasing_fifo = PacketFifo::new();
+        releasing_fifo.write_move(&mut fifo_release_src).unwrap();
+        assert!(fifo_release_src.is_empty());
+        assert_eq!(releasing_fifo.can_read(), 1);
+        assert!(fifo_payload_releases.lock().unwrap().is_empty());
+        assert!(fifo_opaque_releases.lock().unwrap().is_empty());
+    }
+    assert_eq!(
+        *fifo_payload_releases.lock().unwrap(),
+        vec![vec![0xab, 0xbb]]
+    );
+    assert_eq!(*fifo_opaque_releases.lock().unwrap(), vec![vec![0xcc]]);
+
     let bridge_payload_len = usize::from(cursor.next().unwrap_or_default() % 16);
     let bridge_payload = payload_from(cursor, bridge_payload_len);
     let frame_side_data =
