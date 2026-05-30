@@ -5167,9 +5167,16 @@ impl PacketOpaque {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PacketPayloadOwnership {
+    RawNoBuffer,
+    RefCountedBuffer,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct Packet {
     data: BufferRef,
+    data_ownership: PacketPayloadOwnership,
     pts: i64,
     dts: i64,
     duration: i64,
@@ -5184,7 +5191,11 @@ pub struct Packet {
 
 impl Packet {
     pub fn new(data: Vec<u8>, stream_index: usize) -> Self {
-        Self::with_buffer(BufferRef::from_vec(data), stream_index)
+        Self::with_payload(
+            BufferRef::from_vec(data),
+            stream_index,
+            PacketPayloadOwnership::RawNoBuffer,
+        )
     }
 
     pub fn validate_payload_len(size: usize) -> AvResult<()> {
@@ -5211,8 +5222,21 @@ impl Packet {
     }
 
     pub fn with_buffer(data: BufferRef, stream_index: usize) -> Self {
+        Self::with_payload(data, stream_index, PacketPayloadOwnership::RefCountedBuffer)
+    }
+
+    pub fn with_raw_buffer(data: BufferRef, stream_index: usize) -> Self {
+        Self::with_payload(data, stream_index, PacketPayloadOwnership::RawNoBuffer)
+    }
+
+    fn with_payload(
+        data: BufferRef,
+        stream_index: usize,
+        data_ownership: PacketPayloadOwnership,
+    ) -> Self {
         Self {
             data,
+            data_ownership,
             pts: AV_NOPTS_VALUE,
             dts: AV_NOPTS_VALUE,
             duration: 0,
@@ -5261,27 +5285,29 @@ impl Packet {
     }
 
     pub fn make_refcounted(&mut self) -> AvResult<()> {
-        if self.has_input_padding() {
+        if self.data_ownership == PacketPayloadOwnership::RefCountedBuffer {
             return Ok(());
         }
 
-        self.data
-            .resize_with_padding(self.data.len(), AV_INPUT_BUFFER_PADDING_SIZE)
+        self.copy_raw_payload_to_refcounted_storage()
     }
 
     pub fn make_writable(&mut self) -> AvResult<()> {
-        if self.data.is_writable() && self.has_input_padding() {
+        if self.data_ownership == PacketPayloadOwnership::RefCountedBuffer
+            && self.data.is_writable()
+        {
             return Ok(());
         }
 
-        self.data
-            .resize_with_padding(self.data.len(), AV_INPUT_BUFFER_PADDING_SIZE)
+        self.copy_raw_payload_to_refcounted_storage()
     }
 
     pub fn grow_data(&mut self, grow_by: usize) -> AvResult<()> {
         let len = validate_packet_grow_size(self.data.len(), grow_by)?;
         self.data
-            .resize_with_padding(len, AV_INPUT_BUFFER_PADDING_SIZE)
+            .resize_with_padding(len, AV_INPUT_BUFFER_PADDING_SIZE)?;
+        self.data_ownership = PacketPayloadOwnership::RefCountedBuffer;
+        Ok(())
     }
 
     pub fn shrink_data(&mut self, size: usize) -> AvResult<()> {
@@ -5595,7 +5621,7 @@ impl Packet {
     }
 
     pub fn try_ref_from(&mut self, src: &Self) -> AvResult<()> {
-        let data = if src.has_input_padding() {
+        let data = if src.data_ownership == PacketPayloadOwnership::RefCountedBuffer {
             src.data.clone()
         } else {
             let mut data = BufferRef::from_vec(src.data().to_vec());
@@ -5605,6 +5631,7 @@ impl Packet {
 
         *self = Self {
             data,
+            data_ownership: PacketPayloadOwnership::RefCountedBuffer,
             pts: src.pts,
             dts: src.dts,
             duration: src.duration,
@@ -5667,10 +5694,12 @@ impl Packet {
         Ok(())
     }
 
-    fn has_input_padding(&self) -> bool {
-        // FFmpeg treats the packet as already padded when the backing storage
-        // has enough trailing room, regardless of the padding byte contents.
-        self.data.padding_len() >= AV_INPUT_BUFFER_PADDING_SIZE
+    fn copy_raw_payload_to_refcounted_storage(&mut self) -> AvResult<()> {
+        let data =
+            BufferRef::copy_from_slice_with_padding(self.data(), AV_INPUT_BUFFER_PADDING_SIZE)?;
+        self.data = data;
+        self.data_ownership = PacketPayloadOwnership::RefCountedBuffer;
+        Ok(())
     }
 }
 
@@ -12020,14 +12049,15 @@ mod tests {
     }
 
     #[test]
-    fn packet_unpadded_offset_payload_helpers_add_padding_in_place() {
+    fn packet_raw_offset_payload_helpers_copy_to_refcounted_storage() {
         let mut refcounted_storage = vec![0xa0, 0xa1, 0xa2, 0x11, 0x22];
-        let mut refcounted = Packet::with_buffer(
+        let mut refcounted = Packet::with_raw_buffer(
             BufferRef::from_vec(refcounted_storage.clone())
                 .into_ref_slice(3, 2)
                 .unwrap(),
             0,
         );
+        let refcounted_ptr = refcounted.data_buffer().as_padded_ptr();
         assert_eq!(refcounted.data(), &[0x11, 0x22]);
         assert_eq!(refcounted.data_buffer().offset(), 3);
         assert_eq!(refcounted.data_buffer().padding_len(), 0);
@@ -12035,7 +12065,8 @@ mod tests {
         refcounted.make_refcounted().unwrap();
 
         assert_eq!(refcounted.data(), &[0x11, 0x22]);
-        assert_eq!(refcounted.data_buffer().offset(), 3);
+        assert_eq!(refcounted.data_buffer().offset(), 0);
+        assert_ne!(refcounted.data_buffer().as_padded_ptr(), refcounted_ptr);
         assert_eq!(
             refcounted.data_buffer().padding_len(),
             AV_INPUT_BUFFER_PADDING_SIZE
@@ -12048,12 +12079,13 @@ mod tests {
         assert!(refcounted.is_data_writable());
 
         refcounted_storage[3] = 0xcc;
-        let mut writable = Packet::with_buffer(
+        let mut writable = Packet::with_raw_buffer(
             BufferRef::from_vec(refcounted_storage)
                 .into_ref_slice(3, 2)
                 .unwrap(),
             0,
         );
+        let writable_ptr = writable.data_buffer().as_padded_ptr();
         assert_eq!(writable.data_buffer().offset(), 3);
         assert_eq!(writable.data_buffer().padding_len(), 0);
 
@@ -12061,7 +12093,8 @@ mod tests {
         writable.make_data_writable()[0] = 0xdd;
 
         assert_eq!(writable.data(), &[0xdd, 0x22]);
-        assert_eq!(writable.data_buffer().offset(), 3);
+        assert_eq!(writable.data_buffer().offset(), 0);
+        assert_ne!(writable.data_buffer().as_padded_ptr(), writable_ptr);
         assert_eq!(
             writable.data_buffer().padding_len(),
             AV_INPUT_BUFFER_PADDING_SIZE
@@ -12072,6 +12105,29 @@ mod tests {
             .iter()
             .all(|byte| *byte == 0));
         assert!(writable.is_data_writable());
+    }
+
+    #[test]
+    fn packet_refcounted_unpadded_payload_helpers_are_noops() {
+        let mut refcounted = Packet::with_buffer(BufferRef::from_vec(vec![0xaa, 0xbb]), 0);
+        let payload_ptr = refcounted.data_buffer().as_padded_ptr();
+        assert_eq!(refcounted.data_buffer().padding_len(), 0);
+        assert!(refcounted.is_data_writable());
+
+        refcounted.make_refcounted().unwrap();
+
+        assert_eq!(refcounted.data(), &[0xaa, 0xbb]);
+        assert_eq!(refcounted.data_buffer().as_padded_ptr(), payload_ptr);
+        assert_eq!(refcounted.data_buffer().padding_len(), 0);
+        assert!(refcounted.is_data_writable());
+
+        refcounted.make_writable().unwrap();
+        refcounted.make_data_writable()[0] = 0xcc;
+
+        assert_eq!(refcounted.data(), &[0xcc, 0xbb]);
+        assert_eq!(refcounted.data_buffer().as_padded_ptr(), payload_ptr);
+        assert_eq!(refcounted.data_buffer().padding_len(), 0);
+        assert!(refcounted.is_data_writable());
     }
 
     #[test]
@@ -13186,7 +13242,7 @@ mod tests {
 
     #[test]
     fn packet_ref_and_clone_from_unpadded_offset_payload_copy_to_padded_storage() {
-        let src = Packet::with_buffer(
+        let src = Packet::with_raw_buffer(
             BufferRef::from_vec(vec![0xa0, 0xa1, 0xa2, 1, 2])
                 .into_ref_slice(3, 2)
                 .unwrap(),

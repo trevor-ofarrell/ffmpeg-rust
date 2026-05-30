@@ -100,6 +100,20 @@ The same form is used for `avutil_bitreader`, `avutil_byteio`, and `avutil_metad
 
 The latest `avutil_core_models` deterministic logging fixtures include the UTC+05:30 default-callback timestamp row, the POSIX Pacific DST spring-forward/fall-back timestamp rows, the wrapped AEST/AEDT southern-hemisphere DST timestamp rows, the context-sensitive default-callback repeat row where identical text from distinct AVClass instances is not coalesced, the default-callback carriage-return prefix reset row, low-level `av_log_format_line()` / `av_log_format_line2()` carriage-return prefix reset rows, low-level `AV_LOG_QUIET` prefix-suppression rows including the no-prefix `av_log_format_line2(NULL, AV_LOG_QUIET, PRINT_LEVEL)` row, forced-color default-callback `AV_LOG_QUIET` message coloring, forced-color default-callback carriage-return prefix reset, presence-only empty/zero force-color and force-no-color environment rows, no-force pseudo-terminal TERM palette rows including `TERM=dumb` BASIC quiet-message coloring and `TERM=xterm-256color` severity colors, and custom-callback raw delivered levels `-1`, `23`, and `57` with quiet/context delivery. The latest recorded WSL smoke evidence includes 1024 inputs after the UTC+05:30 timestamp addition, a warmed one-input run after adding the context-sensitive repeat fixture, a warmed one-input run after adding the default-callback carriage-return reset fixture, a dedicated one-input run after adding the low-level format-line carriage-return reset fixture, a dedicated one-input run after adding the low-level quiet prefix-suppression fixture, a dedicated one-input run after adding the raw custom-callback delivered-level fixture, a warmed one-input run after adding forced-color quiet rows, a warmed one-input run after adding forced-color carriage-return rows, a warmed one-input run after adding empty/zero force-env rows, a warmed one-input run after adding no-force TTY TERM palette rows, a warmed one-input run after adding no-force `TERM=xterm-256color` severity rows, a warmed one-input run after adding custom-callback raw negative/high-level plus quiet-context rows, a warmed one-input run after adding Pacific POSIX DST rows, and a warmed one-input run after adding wrapped AEST/AEDT DST rows; those sanitizer-backed smokes are useful, but not a sustained fuzz campaign.
 
+The latest packet refcounted-unpadded fixture extends `avutil_core_models` with
+the deterministic split between raw no-buffer payload storage and an existing
+refcounted `AVBufferRef` with no logical trailing input-padding capacity.
+`Packet::with_buffer` now preserves the pointer and zero padding length through
+`make_refcounted()` and unique-writable `make_writable()`, while
+`Packet::with_raw_buffer` continues to copy raw no-buffer offset payloads into
+zero-offset padded storage. The pinned libavcodec oracle emits matching
+`packet:payload-make-refcounted-refcounted-unpadded-*` and
+`packet:payload-make-writable-refcounted-unpadded-*` rows. The WSL
+`avutil_core_models -- -runs=1` smoke for this slice rebuilt and then hung at
+the cargo-fuzz sandbox/tooling layer without usable completion output; unit,
+oracle, FATE-runner, and clippy gates cover the slice until a later warmed fuzz
+smoke can be recorded.
+
 The latest packet custom-padding fixture extends `avutil_core_models` with the
 deterministic `Packet::grow_data(0)` and no-op `Packet::shrink_data()` boundary:
 zero growth preserves visible payload and the backing pointer while zeroing

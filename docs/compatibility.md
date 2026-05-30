@@ -10,6 +10,15 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  `av_packet_make_refcounted()` and unique-writable
+  `av_packet_make_writable()` are no-ops for refcounted packets whose
+  `AVBufferRef` has no logical trailing input-padding capacity. Rust now
+  distinguishes raw no-buffer payloads from existing refcounted-buffer
+  payloads, so raw helpers still copy into padded storage while refcounted
+  unpadded helpers preserve the data pointer and zero logical padding. This
+  strengthens `avutil-packet`; strict completion remains 11/96 and the row
+  remains `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   zero-size `AVPacket.opaque_ref` survives `av_packet_free_side_data()` while
   side data is cleared, and is removed by `av_packet_unref()` with the rest of
   the packet reset state. Rust mirrors this through focused unit coverage, the

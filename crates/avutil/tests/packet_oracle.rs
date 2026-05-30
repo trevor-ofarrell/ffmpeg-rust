@@ -2269,6 +2269,45 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_fields(&unique_refcounted),
     );
 
+    let mut refcounted_unpadded = Packet::with_buffer(BufferRef::from_vec(vec![0xaa, 0xbb]), 0);
+    let refcounted_unpadded_ptr = refcounted_unpadded.data_buffer().as_padded_ptr();
+    refcounted_unpadded.make_refcounted().unwrap();
+    rows.insert(
+        "packet:payload-make-refcounted-refcounted-unpadded-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-refcounted-refcounted-unpadded-same-ptr".to_string(),
+        vec![u8::from(
+            refcounted_unpadded.data_buffer().as_padded_ptr() == refcounted_unpadded_ptr,
+        )
+        .to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-refcounted-refcounted-unpadded".to_string(),
+        payload_logical_fields(&refcounted_unpadded),
+    );
+
+    let mut writable_unpadded = Packet::with_buffer(BufferRef::from_vec(vec![0xaa, 0xbb]), 0);
+    let writable_unpadded_ptr = writable_unpadded.data_buffer().as_padded_ptr();
+    writable_unpadded.make_writable().unwrap();
+    writable_unpadded.make_data_writable()[0] = 0xcc;
+    rows.insert(
+        "packet:payload-make-writable-refcounted-unpadded-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-writable-refcounted-unpadded-same-ptr".to_string(),
+        vec![
+            u8::from(writable_unpadded.data_buffer().as_padded_ptr() == writable_unpadded_ptr)
+                .to_string(),
+        ],
+    );
+    rows.insert(
+        "packet:payload-make-writable-refcounted-unpadded".to_string(),
+        payload_logical_fields(&writable_unpadded),
+    );
+
     let mut readonly_bytes = vec![0xaa, 0xbb];
     readonly_bytes.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0);
     let readonly_payload = BufferRef::from_vec_with_len_readonly(readonly_bytes, 2).unwrap();
@@ -4862,6 +4901,15 @@ fn payload_visible_fields(packet: &Packet) -> Vec<String> {
     vec![packet.len().to_string(), hex_or_dash(packet.data())]
 }
 
+fn payload_logical_fields(packet: &Packet) -> Vec<String> {
+    vec![
+        packet.len().to_string(),
+        hex_or_dash(packet.data()),
+        packet.data_buffer().padding_len().to_string(),
+        u8::from(packet.is_data_writable()).to_string(),
+    ]
+}
+
 fn payload_unowned_fields(packet: &Packet) -> Vec<String> {
     let padding = packet.data_buffer().padding_slice();
     assert!(
@@ -6030,6 +6078,21 @@ static void print_payload_visible(const char *name, const AVPacket *pkt) {
     printf("%s|%d|", name, pkt->size);
     print_hex_or_dash(pkt->data, pkt->size);
     printf("\n");
+}
+
+static void print_payload_logical(const char *name, const AVPacket *pkt) {
+    ptrdiff_t tail_capacity = -1;
+    if (pkt->buf && pkt->data) {
+        ptrdiff_t offset = pkt->data - pkt->buf->data;
+        if (offset >= 0 && offset <= pkt->buf->size &&
+            pkt->size <= pkt->buf->size - offset)
+            tail_capacity = pkt->buf->size - offset - pkt->size;
+    }
+
+    printf("%s|%d|", name, pkt->size);
+    print_hex_or_dash(pkt->data, pkt->size);
+    printf("|%td|%d\n", tail_capacity,
+           pkt->buf ? av_buffer_is_writable(pkt->buf) : 0);
 }
 
 static void print_payload_unowned(const char *name, const AVPacket *pkt) {
@@ -7813,6 +7876,47 @@ static void exercise_payload_api(void) {
     printf("packet:payload-make-refcounted-unique-same-ptr|%d\n",
            pkt->data == unique_refcounted_ptr);
     print_payload("packet:payload-make-refcounted-unique", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    uint8_t *refcounted_unpadded = av_malloc(2);
+    fail_if(!refcounted_unpadded, "av_malloc refcounted unpadded payload failed");
+    refcounted_unpadded[0] = 0xaa;
+    refcounted_unpadded[1] = 0xbb;
+    pkt->buf = av_buffer_create(refcounted_unpadded, 2,
+                                av_buffer_default_free, NULL, 0);
+    fail_if(!pkt->buf, "av_buffer_create refcounted unpadded payload failed");
+    pkt->data = refcounted_unpadded;
+    pkt->size = 2;
+    uint8_t *refcounted_unpadded_ptr = pkt->data;
+    ret = av_packet_make_refcounted(pkt);
+    printf("packet:payload-make-refcounted-refcounted-unpadded-ret|%d\n",
+           ret);
+    printf("packet:payload-make-refcounted-refcounted-unpadded-same-ptr|%d\n",
+           pkt->data == refcounted_unpadded_ptr);
+    print_payload_logical(
+        "packet:payload-make-refcounted-refcounted-unpadded", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    uint8_t *writable_unpadded = av_malloc(2);
+    fail_if(!writable_unpadded, "av_malloc writable unpadded payload failed");
+    writable_unpadded[0] = 0xaa;
+    writable_unpadded[1] = 0xbb;
+    pkt->buf = av_buffer_create(writable_unpadded, 2,
+                                av_buffer_default_free, NULL, 0);
+    fail_if(!pkt->buf, "av_buffer_create writable unpadded payload failed");
+    pkt->data = writable_unpadded;
+    pkt->size = 2;
+    uint8_t *writable_unpadded_ptr = pkt->data;
+    ret = av_packet_make_writable(pkt);
+    printf("packet:payload-make-writable-refcounted-unpadded-ret|%d\n",
+           ret);
+    printf("packet:payload-make-writable-refcounted-unpadded-same-ptr|%d\n",
+           pkt->data == writable_unpadded_ptr);
+    pkt->data[0] = 0xcc;
+    print_payload_logical(
+        "packet:payload-make-writable-refcounted-unpadded", pkt);
     av_packet_free(&pkt);
 
     pkt = new_packet();

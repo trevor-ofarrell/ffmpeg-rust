@@ -10087,7 +10087,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert!(raw_offset_shrink_model.is_data_writable());
 
     let mut unpadded_offset_ref_storage = vec![0xa0, 0xa1, 0xa2, 0x11, 0x22];
-    let mut unpadded_offset_ref = Packet::with_buffer(
+    let mut unpadded_offset_ref = Packet::with_raw_buffer(
         BufferRef::from_vec(unpadded_offset_ref_storage.clone())
             .into_ref_slice(3, 2)
             .unwrap(),
@@ -10098,7 +10098,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(unpadded_offset_ref.data_buffer().padding_len(), 0);
     unpadded_offset_ref.make_refcounted().unwrap();
     assert_eq!(unpadded_offset_ref.data(), &[0x11, 0x22]);
-    assert_eq!(unpadded_offset_ref.data_buffer().offset(), 3);
+    assert_eq!(unpadded_offset_ref.data_buffer().offset(), 0);
     assert_eq!(
         unpadded_offset_ref.data_buffer().padding_len(),
         AV_INPUT_BUFFER_PADDING_SIZE
@@ -10111,7 +10111,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert!(unpadded_offset_ref.is_data_writable());
 
     unpadded_offset_ref_storage[3] = 0xcc;
-    let mut unpadded_offset_writable = Packet::with_buffer(
+    let mut unpadded_offset_writable = Packet::with_raw_buffer(
         BufferRef::from_vec(unpadded_offset_ref_storage)
             .into_ref_slice(3, 2)
             .unwrap(),
@@ -10120,7 +10120,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     unpadded_offset_writable.make_writable().unwrap();
     unpadded_offset_writable.make_data_writable()[0] = 0xdd;
     assert_eq!(unpadded_offset_writable.data(), &[0xdd, 0x22]);
-    assert_eq!(unpadded_offset_writable.data_buffer().offset(), 3);
+    assert_eq!(unpadded_offset_writable.data_buffer().offset(), 0);
     assert_eq!(
         unpadded_offset_writable.data_buffer().padding_len(),
         AV_INPUT_BUFFER_PADDING_SIZE
@@ -10132,7 +10132,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .all(|byte| *byte == 0));
     assert!(unpadded_offset_writable.is_data_writable());
 
-    let unpadded_offset_ref_src = Packet::with_buffer(
+    let unpadded_offset_ref_src = Packet::with_raw_buffer(
         BufferRef::from_vec(vec![0xa0, 0xa1, 0xa2, 0x11, 0x22])
             .into_ref_slice(3, 2)
             .unwrap(),
@@ -10175,6 +10175,28 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert!(unpadded_offset_ref_src.is_data_writable());
     assert!(unpadded_offset_ref_dst.is_data_writable());
     assert!(unpadded_offset_cloned.is_data_writable());
+
+    let mut refcounted_unpadded = Packet::with_buffer(BufferRef::from_vec(payload.clone()), 0);
+    let refcounted_unpadded_ptr = refcounted_unpadded.data_buffer().as_padded_ptr();
+    assert_eq!(refcounted_unpadded.data_buffer().padding_len(), 0);
+    refcounted_unpadded.make_refcounted().unwrap();
+    assert_eq!(refcounted_unpadded.data(), payload.as_slice());
+    assert_eq!(
+        refcounted_unpadded.data_buffer().as_padded_ptr(),
+        refcounted_unpadded_ptr
+    );
+    assert_eq!(refcounted_unpadded.data_buffer().padding_len(), 0);
+    refcounted_unpadded.make_writable().unwrap();
+    if !refcounted_unpadded.is_empty() {
+        let first = refcounted_unpadded.data()[0];
+        refcounted_unpadded.make_data_writable()[0] = first;
+    }
+    assert_eq!(
+        refcounted_unpadded.data_buffer().as_padded_ptr(),
+        refcounted_unpadded_ptr
+    );
+    assert_eq!(refcounted_unpadded.data_buffer().padding_len(), 0);
+    assert!(refcounted_unpadded.is_data_writable());
 
     let mut unpadded_offset_grow = Packet::with_buffer(
         BufferRef::from_vec(vec![0xa0, 0xa1, 0xa2, 0x11, 0x22])

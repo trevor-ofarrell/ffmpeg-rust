@@ -235,6 +235,16 @@ default_profile = "ffmpeg-8.1.1-default-native"
 # `AV_LOG_QUIET`, `AV_LOG_PRINT_LEVEL`, and `print_prefix=0` still emits the
 # plain message and leaves the prefix state false.
 # Latest avutil-packet evidence:
+# `packet:payload-make-refcounted-refcounted-unpadded-*` and
+# `packet:payload-make-writable-refcounted-unpadded-*` rows now prove pinned
+# FFmpeg treats an existing `AVPacket.buf` as refcounted even when the
+# AVBufferRef has no logical input-padding capacity. `make_refcounted` and
+# unique-writable `make_writable` return success without changing the data
+# pointer or appending padding. Rust now tracks raw no-buffer versus
+# refcounted-buffer payload ownership explicitly so raw packet helper calls
+# still copy into padded storage while refcounted unpadded buffers remain
+# untouched.
+# Latest avutil-packet evidence:
 # `packet:payload-make-refcounted-zero-opaque-*` and
 # `packet:payload-make-writable-zero-opaque-*` rows now prove zero-size
 # `AVPacket.opaque_ref` survives payload helper calls. `make_refcounted`
@@ -677,7 +687,8 @@ unit_tests = [
   "packet::tests::packet_zero_size_payload_helpers_keep_ffmpeg_padding",
   "packet::tests::packet_unpadded_payload_helpers_add_padding_and_preserve_bytes",
   "packet::tests::packet_unpadded_offset_resize_helpers_preserve_visible_offset",
-  "packet::tests::packet_unpadded_offset_payload_helpers_add_padding_in_place",
+  "packet::tests::packet_raw_offset_payload_helpers_copy_to_refcounted_storage",
+  "packet::tests::packet_refcounted_unpadded_payload_helpers_are_noops",
   "packet::tests::packet_ref_from_shares_payload_and_copies_side_data",
   "packet::tests::packet_ref_from_replaces_destination_and_releases_old_refs",
   "packet::tests::packet_ref_from_unpadded_payload_copies_into_refcounted_buffer",
@@ -833,6 +844,16 @@ fuzz_targets = ["avutil_core_models"]
 # fmt preservation, and image2 gap/start-probe rows. The focused packet-free
 # unit test is also listed in the ledger. This is evidence bookkeeping only;
 # the row remains fate_pass, not complete.
+# Latest update: pinned libavcodec AVPacket payload oracle coverage now
+# validates `av_packet_make_refcounted()` and unique-writable
+# `av_packet_make_writable()` when `pkt->buf` exists but its logical
+# `AVBufferRef` size has no trailing input-padding capacity. FFmpeg treats the
+# packet as already refcounted/writable, preserves the data pointer, and does
+# not allocate or add padding. Rust `Packet` now carries explicit raw
+# no-buffer vs refcounted-buffer payload ownership, `Packet::with_buffer`
+# models an existing `AVBufferRef`, and `Packet::with_raw_buffer` preserves the
+# raw no-buffer test model. Focused unit, oracle, and avutil_core_models
+# fixtures cover both ownership paths.
 # Latest update: pinned libavcodec AVPacket oracle coverage now validates
 # zero-size `opaque_ref` reset-helper behavior: `av_packet_free_side_data()`
 # clears side data while preserving the empty user buffer, and
