@@ -144,6 +144,13 @@ The latest packet zero-size side-data lifecycle fixture extends
 resetting the source side-data list. A warmed WSL one-input run with local leak
 detection disabled passed after rebuilding `avutil_core_models`.
 
+The latest packet zero-size side-data shrink fixture extends
+`avutil_core_models` with the no-mutation `av_packet_shrink_side_data()` edge
+for a zero-size `AV_PKT_DATA_NEW_EXTRADATA` entry: oversize shrink to one byte
+returns ENOMEM and keeps lookup present at size zero. A warmed WSL one-input
+run with local leak detection disabled passed after rebuilding
+`avutil_core_models`.
+
 The latest PAL8/buffer lifecycle fixture extends `avutil_core_models` with full PAL8 frame palette side-plane construction, make-writable detachment, copy/crop preservation, and threaded `BufferRef` clone/drop release timing. WSL `cargo fuzz run avutil_core_models -- -runs=1` passed after a long sanitizer rebuild in `target-wsl-pal8-buffer-fuzz-o1`.
 
 The latest orchestrated WSL fuzz evidence for the packet/options/WAV/image2

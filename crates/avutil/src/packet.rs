@@ -10806,6 +10806,26 @@ mod tests {
     }
 
     #[test]
+    fn packet_zero_size_side_data_rejects_oversize_shrink() {
+        let mut packet = Packet::new(Vec::new(), 0);
+        packet
+            .new_side_data(PacketSideDataKind::NewExtradata, 0)
+            .unwrap();
+
+        let err = packet
+            .shrink_side_data_by_kind_id(&PacketSideDataKind::NewExtradata, 1)
+            .unwrap_err();
+
+        assert_eq!(err.kind(), crate::AvErrorKind::External);
+        assert_eq!(err.code(), Some(crate::AvErrorCode::ENOMEM));
+        assert_eq!(packet.side_data().len(), 1);
+        let side_data = packet
+            .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+            .unwrap();
+        assert!(side_data.data().is_empty());
+    }
+
+    #[test]
     fn packet_add_side_data_replaces_first_matching_kind() {
         let mut packet = Packet::new(Vec::new(), 0);
         packet.push_side_data(SideData::new("palette", vec![0]).unwrap());

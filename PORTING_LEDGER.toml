@@ -3,6 +3,11 @@ target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
 # Latest main-thread packet evidence: pinned libavcodec rows now prove
+# `av_packet_shrink_side_data()` on a zero-size
+# `AV_PKT_DATA_NEW_EXTRADATA` entry returns ENOMEM when asked to grow to one
+# byte, without removing the entry or hiding lookup at size zero. This is
+# evidence-strengthening only; no status was promoted.
+# Latest main-thread packet evidence: pinned libavcodec rows now prove
 # zero-size `AV_PKT_DATA_NEW_EXTRADATA` side-data survives `av_packet_copy_props`,
 # `av_packet_ref`, `av_packet_clone`, and `av_packet_move_ref` lifecycles with
 # lookup still present at size zero. This is evidence-strengthening only; no
@@ -517,6 +522,7 @@ unit_tests = [
   "packet::tests::packet_side_data_take_remove_and_clear_are_scoped",
   "packet::tests::packet_new_side_data_zeroes_and_replaces_first_matching_kind",
   "packet::tests::packet_new_side_data_accepts_zero_size",
+  "packet::tests::packet_zero_size_side_data_rejects_oversize_shrink",
   "packet::tests::packet_add_side_data_replaces_first_matching_kind",
   "packet::tests::packet_try_add_side_data_reports_ffmpeg_entry_limit",
   "packet::tests::packet_accepts_raw_ffmpeg_side_data_types_before_capacity",
@@ -1018,6 +1024,11 @@ fuzz_targets = ["avutil_core_models"]
 # `read_with_flags` expose the same bounded raw flag surface.
 # Prior update: pinned libavcodec AVPacket oracle coverage validates av_container_fifo_alloc_avpacket() move/ref write, move/ref read, peek, drain, can-read, and invalid peek behavior through packet:fifo-* rows; Rust PacketFifo unit tests and avutil_core_models fuzz-smoke invariants cover the same bounded surface.
 # Prior update: pinned libavcodec AVPacket oracle coverage now validates zero-size side-data allocation for both av_packet_new_side_data() and standalone av_packet_side_data_new(); Rust unit tests and avutil_core_models fuzz-smoke invariants cover the same packet/list shape.
+# Latest update: pinned libavcodec AVPacket oracle coverage now validates
+# av_packet_shrink_side_data() on a zero-size AV_PKT_DATA_NEW_EXTRADATA entry:
+# oversize shrink to one byte returns ENOMEM and preserves the present zero-size
+# entry and lookup. Rust unit tests and avutil_core_models fuzz-smoke invariants
+# cover the same no-mutation behavior.
 # Prior update: pinned libavutil/libavcodec oracle coverage now validates the AV_PICTURE_TYPE_* numeric constants and av_get_picture_type_char() output used by PacketPictureType and AV_PKT_DATA_QUALITY_STATS parsing.
 # Prior update: pinned libavcodec AVPacket oracle coverage explicitly validates all public AV_PKT_FLAG_* numeric constants modeled by PacketFlags: KEY, CORRUPT, DISCARD, TRUSTED, DISPOSABLE, and their combined known-bit mask.
 # Prior update: pinned libavcodec AVPacket oracle coverage explicitly validates av_init_packet() legacy field reset, preserving payload data/size while resetting timestamps, position, duration, stream index, flags, side data, opaque metadata, opaque_ref, and time_base to the observed FFmpeg 8.1.1 shape. Safe Rust clears/releases owned metadata rather than modeling C ownership-leak misuse.

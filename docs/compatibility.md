@@ -10,6 +10,14 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  `av_packet_shrink_side_data()` on a zero-size
+  `AV_PKT_DATA_NEW_EXTRADATA` entry returns ENOMEM when asked to grow to one
+  byte, while preserving the present side-data record and lookup at size zero.
+  Rust mirrors this through `Packet::shrink_side_data_by_kind_id`, focused unit
+  coverage, the mapped packet oracle, and a deterministic `avutil_core_models`
+  fixture. This strengthens `avutil-packet`; strict completion remains 11/96
+  and the row remains `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   zero-size `AV_PKT_DATA_NEW_EXTRADATA` side data survives
   `av_packet_copy_props()`, `av_packet_ref()`, `av_packet_clone()`, and
   `av_packet_move_ref()` with lookup still present at size zero; move-ref also

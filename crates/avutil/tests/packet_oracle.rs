@@ -3043,6 +3043,25 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:side-new-zero".to_string(),
         side_data_summary_fields(&packet),
     );
+    let zero_oversize = packet
+        .shrink_side_data_by_kind_id(&PacketSideDataKind::NewExtradata, 1)
+        .unwrap_err();
+    rows.insert(
+        "packet:side-shrink-zero-oversize-ret".to_string(),
+        vec![zero_oversize
+            .code()
+            .expect("zero-size side-data oversize shrink should preserve an FFmpeg error code")
+            .raw()
+            .to_string()],
+    );
+    rows.insert(
+        "packet:side-shrink-zero-oversize".to_string(),
+        side_data_summary_fields(&packet),
+    );
+    rows.insert(
+        "packet:side-get-zero-oversize".to_string(),
+        side_data_lookup_fields(packet.side_data_by_kind_id(&PacketSideDataKind::NewExtradata)),
+    );
 
     let mut packet = Packet::default();
     let appended = packet.add_side_data(SideData::new_extradata(Vec::new()).unwrap());
@@ -5753,6 +5772,11 @@ static void exercise_side_data_api(void) {
     sd = av_packet_new_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, 0);
     fail_if(!sd, "av_packet_new_side_data zero failed");
     print_side_data_summary("packet:side-new-zero", pkt);
+    ret = av_packet_shrink_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, 1);
+    printf("packet:side-shrink-zero-oversize-ret|%d\n", ret);
+    print_side_data_summary("packet:side-shrink-zero-oversize", pkt);
+    print_side_data_lookup("packet:side-get-zero-oversize", pkt,
+                           AV_PKT_DATA_NEW_EXTRADATA);
     av_packet_free(&pkt);
 
     pkt = new_packet();

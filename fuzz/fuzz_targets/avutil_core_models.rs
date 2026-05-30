@@ -13009,6 +13009,24 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         packet.side_data_by_kind("fuzz_side_data").unwrap().data(),
         shrunk_payload.as_slice()
     );
+    let mut zero_side_packet = Packet::default();
+    zero_side_packet
+        .new_side_data(PacketSideDataKind::NewExtradata, 0)
+        .unwrap();
+    let zero_oversized_shrink = zero_side_packet
+        .shrink_side_data_by_kind_id(&PacketSideDataKind::NewExtradata, 1)
+        .unwrap_err();
+    assert_eq!(zero_oversized_shrink.kind(), AvErrorKind::External);
+    assert_eq!(
+        zero_oversized_shrink.code(),
+        Some(AvErrorCode::ENOMEM)
+    );
+    assert_eq!(zero_side_packet.side_data().len(), 1);
+    assert!(zero_side_packet
+        .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+        .unwrap()
+        .data()
+        .is_empty());
     assert!(!packet.shrink_side_data("missing_side_data", 0).unwrap());
     packet.push_side_data(SideData::new("other_side_data", vec![0xaa]).unwrap());
     let taken = packet.take_side_data("fuzz_side_data").unwrap();
