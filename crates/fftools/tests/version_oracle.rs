@@ -112,6 +112,13 @@ fn version_requests_warn_for_later_invalid_loglevel_but_still_succeed() {
 
 #[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn loglevel_precedence_for_version_requests_matches_oracle() {
+    compare_trailing_loglevel_precedence("ffmpeg");
+    compare_trailing_loglevel_precedence("ffprobe");
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
 fn version_buildconf_fail_without_banner_for_preceding_invalid_loglevel() {
     compare_version_buildconf_invalid_loglevel_preempts_banner("ffmpeg");
     compare_version_buildconf_invalid_loglevel_preempts_banner("ffprobe");
@@ -634,6 +641,55 @@ fn compare_trailing_invalid_loglevel_warning(tool_name: &str, request: &str, val
         assert!(rust.stdout.starts_with(&format!("{tool_name} version")));
     } else {
         assert!(rust.stdout.starts_with("  configuration:\n"));
+    }
+}
+
+fn compare_trailing_loglevel_precedence(tool_name: &str) {
+    let oracle = oracle_tool(tool_name);
+
+    let expected_no_warning = [
+        ["-version", "-loglevel", "info", "-v", "foo"],
+        ["-version", "-v", "info", "-loglevel", "info"],
+    ];
+    let expected_warning = [
+        ["-version", "-v", "info", "-loglevel", "foo"],
+        ["-version", "-loglevel", "foo", "-v", "info"],
+    ];
+
+    for args in expected_no_warning {
+        let oracle_output = run_oracle(&oracle, tool_name, &args);
+        let oracle_stderr =
+            normalize_newlines(&format!("{}{}", oracle_output.stdout, oracle_output.stderr));
+        let rust = run_rust_tool(tool_name, &args);
+        let rust_stderr = normalize_newlines(&format!("{}{}", rust.stdout, rust.stderr));
+        let label = args.join(" ");
+
+        assert!(
+            !oracle_stderr.contains("Invalid loglevel"),
+            "oracle `{tool_name}` should not emit trailing loglevel warning for `{label}`, got:\n{oracle_stderr}"
+        );
+        assert!(
+            !rust_stderr.contains("Invalid loglevel"),
+            "Rust {tool_name}-rs should match oracle and not warn for `{label}`, got:\n{rust_stderr}"
+        );
+    }
+
+    for args in expected_warning {
+        let oracle_output = run_oracle(&oracle, tool_name, &args);
+        let oracle_stderr =
+            normalize_newlines(&format!("{}{}", oracle_output.stdout, oracle_output.stderr));
+        let rust = run_rust_tool(tool_name, &args);
+        let rust_stderr = normalize_newlines(&format!("{}{}", rust.stdout, rust.stderr));
+        let label = args.join(" ");
+
+        assert!(
+            oracle_stderr.contains("Invalid loglevel"),
+            "oracle `{tool_name}` should emit trailing loglevel warning for `{label}`, got:\n{oracle_stderr}"
+        );
+        assert!(
+            rust_stderr.contains("Invalid loglevel"),
+            "Rust {tool_name}-rs should match oracle and warn for `{label}`, got:\n{rust_stderr}"
+        );
     }
 }
 

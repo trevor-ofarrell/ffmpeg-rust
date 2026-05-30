@@ -99,6 +99,23 @@ fn image2_ppm_sequence_with_start_number_skips_until_first_available() {
 
 #[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn image2_ppm_sequence_from_i32_max_start_number_framecrc_records_match_ffmpeg_oracle() {
+    compare_image2_sequence_framecrc_records_from_start(
+        "ppm",
+        "25",
+        i32::MAX as u64,
+        &[PPM_1X1_RED],
+    );
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn image2_start_number_above_i32_max_is_rejected_like_ffmpeg_oracle() {
+    compare_image2_sequence_framecrc_rejects_start_number("2147483648");
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
 fn image2_ppm_sequence_with_start_number_accepts_probe_window_upper_boundary() {
     compare_image2_sequence_framecrc_records_from_sparse_indices(
         "ppm",
@@ -715,6 +732,72 @@ fn compare_image2_sequence_framecrc_records_from_sparse_indices(
             &String::from_utf8(oracle_output.stdout)
                 .expect("oracle sparse framecrc output should be UTF-8")
         )
+    );
+}
+
+fn compare_image2_sequence_framecrc_rejects_start_number(start_number: &str) {
+    let oracle = oracle_ffmpeg();
+    let input_pattern = "missing-%d.ppm";
+
+    let rust = ffmpeg_output(&strings(&[
+        "-f",
+        "image2",
+        "-framerate",
+        "25",
+        "-start_number",
+        start_number,
+        "-i",
+        input_pattern,
+        "-f",
+        "framecrc",
+        "-",
+    ]));
+
+    let oracle_output = Command::new(&oracle)
+        .args([
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "image2",
+            "-framerate",
+            "25",
+            "-start_number",
+            start_number,
+            "-i",
+            input_pattern,
+            "-c:v",
+            "copy",
+            "-f",
+            "framecrc",
+            "-",
+        ])
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", oracle.display()));
+
+    assert!(
+        !oracle_output.status.success(),
+        "oracle image2 should reject start_number `{start_number}` with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        oracle_output.status.code(),
+        String::from_utf8_lossy(&oracle_output.stdout),
+        String::from_utf8_lossy(&oracle_output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&oracle_output.stderr).contains("out of range"),
+        "oracle image2 rejection should be the start_number range check, stderr:\n{}",
+        String::from_utf8_lossy(&oracle_output.stderr)
+    );
+    assert!(
+        rust.is_err(),
+        "Rust image2 should reject start_number `{start_number}`"
+    );
+    assert!(
+        rust.as_ref()
+            .unwrap_err()
+            .to_string()
+            .contains("image2 start number"),
+        "Rust image2 rejection should fail on the start_number range check"
     );
 }
 

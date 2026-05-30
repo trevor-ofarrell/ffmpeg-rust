@@ -470,20 +470,7 @@ fn version_request_trailing_loglevel_warning(args: &[String]) -> Option<String> 
 }
 
 fn trailing_loglevel_warning(args: &[String]) -> Option<String> {
-    let mut index = 0;
-    while index < args.len() {
-        if args[index] == "-loglevel" || args[index] == "-v" {
-            let value = args.get(index + 1)?;
-            if crate::option_parser::parse_log_level_directive(value).is_none() {
-                return Some(format!("Invalid loglevel \"{value}\""));
-            }
-            index += 2;
-            continue;
-        }
-
-        index += 1;
-    }
-    None
+    crate::option_parser::trailing_loglevel_warning(args)
 }
 
 pub fn ffprobe_output(args: &[String]) -> Result<String, FfprobeError> {

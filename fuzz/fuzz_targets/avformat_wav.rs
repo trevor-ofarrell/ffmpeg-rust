@@ -25,6 +25,7 @@ fuzz_target!(|data: &[u8]| {
     exercise_wav(&empty_generated_wav);
     assert!(WavDemuxer::open(SHORT_PCM_FMT_WAV).is_err());
     assert_rejects_wav(&wave_with_missing_padding_after_odd_unknown_chunk());
+    assert_rejects_wav(&wav_with_missing_padding_after_odd_fmt_chunk());
 });
 
 fn exercise_wav(input: &[u8]) {
@@ -125,6 +126,23 @@ fn wave_with_missing_padding_after_odd_unknown_chunk() -> Vec<u8> {
     out.extend_from_slice(b"data");
     out.extend_from_slice(&4_u32.to_le_bytes());
     out.extend_from_slice(&[0x00, 0x00, 0x01, 0x00]);
+    let riff_size = out.len() - 8;
+    out[4..8].copy_from_slice(&u32::try_from(riff_size).unwrap().to_le_bytes());
+    out
+}
+
+fn wav_with_missing_padding_after_odd_fmt_chunk() -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&0_u32.to_le_bytes());
+    out.extend_from_slice(b"WAVE");
+    out.extend_from_slice(b"fmt ");
+    out.extend_from_slice(&17_u32.to_le_bytes());
+    out.extend_from_slice(&[1, 0, 1, 0, 0x44, 0xAC, 0x00, 0x00]);
+    out.extend_from_slice(&[0x88, 0x58, 0x01, 0x00, 2, 0, 16, 0, 0]);
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&2_u32.to_le_bytes());
+    out.extend_from_slice(&[1, 0]);
     let riff_size = out.len() - 8;
     out[4..8].copy_from_slice(&u32::try_from(riff_size).unwrap().to_le_bytes());
     out

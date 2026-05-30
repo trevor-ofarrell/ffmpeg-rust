@@ -373,6 +373,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                     6 => "metadata=' title : clip = one ':threads=15",
                     7 => "12",
                     8 => "threads=10:yes:quality=0.75",
+                    9 => " ",
                     _ => "9:yes:15",
                 };
                 let before = options.clone();
@@ -381,6 +382,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                 let empty_key_result =
                     options.set_avoptions_from_string("=7", &shorthand, "=", ":");
                 let separators_invalid = key_val_sep.is_empty();
+                let whitespace_shorthand_case = opts == " ";
                 let shorthand_overflow_case =
                     opts == "9:yes:15" && key_val_sep == "=" && pairs_sep == ":";
                 let explicit_shorthand_error_case =
@@ -406,6 +408,12 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                     assert_eq!(options.get("threads"), Some(&OptionValue::Int(10)));
                     assert_eq!(options.get("bitexact"), Some(&OptionValue::Bool(false)));
                     assert_eq!(options.get("quality"), Some(&OptionValue::Float(0.5)));
+                } else if whitespace_shorthand_case {
+                    assert_eq!(
+                        result.err().and_then(|err| err.code()),
+                        Some(AvErrorCode::EINVAL),
+                    );
+                    assert_eq!(options, before);
                 } else if let Ok(count) = result {
                     assert!(count <= 3);
                     assert_option_set_invariants(&options);

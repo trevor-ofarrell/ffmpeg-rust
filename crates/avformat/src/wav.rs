@@ -550,6 +550,7 @@ mod tests {
             AvErrorKind::EndOfFile
         );
         assert!(WavDemuxer::open(&wav_with_missing_padding_after_odd_unknown_chunk()).is_err());
+        assert!(WavDemuxer::open(&wav_with_missing_padding_after_odd_fmt_chunk()).is_err());
     }
 
     #[test]
@@ -934,6 +935,19 @@ mod tests {
         body.extend_from_slice(b"data");
         body.extend_from_slice(&4_u32.to_le_bytes());
         body.extend_from_slice(&[0x00, 0x00, 0x01, 0x00]);
+        wav_bytes_with_body(body)
+    }
+
+    fn wav_with_missing_padding_after_odd_fmt_chunk() -> Vec<u8> {
+        let mut body = vec![];
+        body.extend_from_slice(b"fmt ");
+        body.extend_from_slice(&17_u32.to_le_bytes());
+        body.extend_from_slice(&[1, 0, 1, 0, 0x44, 0xAC, 0x00, 0x00]);
+        body.extend_from_slice(&[0x88, 0x58, 0x01, 0x00, 2, 0, 16, 0, 0]);
+        body.extend_from_slice(b"data");
+        body.extend_from_slice(&2_u32.to_le_bytes());
+        body.extend_from_slice(&[1, 0]);
+
         wav_bytes_with_body(body)
     }
 

@@ -97,6 +97,15 @@ fn exercise_demux_errors_from_start_probe_window_exhaustion(
     assert!(Image2Demuxer::open(pattern.to_owned(), entries, start_number, frame_rate).is_err());
 }
 
+fn exercise_demux_rejects_start_number_over_32bit_limit(
+    pattern: &str,
+    entries: Vec<Image2Entry>,
+    start_number: i64,
+    frame_rate: Rational,
+) {
+    assert!(Image2Demuxer::open(pattern.to_owned(), entries, start_number, frame_rate).is_err());
+}
+
 fn exercise_mux(pattern: &str, start_number: i64, frame_rate: Rational, packets: Vec<Packet>) {
     let Ok(mut muxer) = Image2Muxer::new(pattern.to_owned(), start_number, frame_rate) else {
         return;
@@ -203,6 +212,18 @@ fn exercise_fixtures() {
         "frame-%d.png",
         vec![entry("frame-5.png", b"five")],
         1,
+        Rational::ONE,
+    );
+    exercise_demux(
+        "frame-%d.png",
+        vec![entry("frame-2147483647.png", b"max")],
+        i32::MAX as i64,
+        Rational::ONE,
+    );
+    exercise_demux_rejects_start_number_over_32bit_limit(
+        "frame-%d.png",
+        vec![entry("frame-0.png", b"zero")],
+        i64::from(i32::MAX) + 1,
         Rational::ONE,
     );
     exercise_demux_errors_from_start_probe_window_exhaustion(

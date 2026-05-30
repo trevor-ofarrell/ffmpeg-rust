@@ -9759,6 +9759,14 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     let raw_flags = u32::from(cursor.next().unwrap_or_default()) | 0xffff_ff00;
     let truncated = PacketFlags::from_bits_truncate(raw_flags);
     assert_eq!(truncated.bits() & !PacketFlags::all().bits(), 0);
+    let retained = PacketFlags::from_bits_retain(raw_flags);
+    assert_eq!(retained.bits(), raw_flags);
+    assert_eq!(retained.known_bits(), raw_flags & PacketFlags::all().bits());
+    assert_eq!(retained.unknown_bits(), raw_flags & !PacketFlags::all().bits());
+    packet.set_flags(retained);
+    assert_eq!(packet.flags().bits(), raw_flags);
+    packet.set_flag(PacketFlags::KEY, false);
+    assert_eq!(packet.flags().unknown_bits(), raw_flags & !PacketFlags::all().bits());
 
     let typed_side_data_kind = packet_side_data_kind_from(cursor.next());
     let typed_side_data_len = usize::from(cursor.next().unwrap_or_default() % 16);

@@ -377,6 +377,53 @@ pub(crate) fn find_version_or_buildconf_request_index(args: &[String]) -> Option
     None
 }
 
+pub(crate) fn trailing_loglevel_warning(args: &[String]) -> Option<String> {
+    let mut index = 0;
+    let mut v_warning = None;
+
+    while index < args.len() {
+        let arg = &args[index];
+
+        if arg == "-loglevel" {
+            let value = args.get(index + 1)?;
+            return parse_log_level_directive(value)
+                .map_or_else(|| Some(format!("Invalid loglevel \"{value}\"")), |_| None);
+        }
+
+        if arg == "-v" {
+            let value = args.get(index + 1)?;
+            if parse_log_level_directive(value).is_none() {
+                v_warning = Some(format!("Invalid loglevel \"{value}\""));
+            } else {
+                v_warning = None;
+            }
+            index += 2;
+            continue;
+        }
+
+        if is_option_token(arg) {
+            let option_name = option_name(arg).ok()?;
+            if let Some(spec) = option_spec(option_name) {
+                match spec.arity {
+                    OptionArity::Flag => {
+                        index += 1;
+                    }
+                    OptionArity::Value => {
+                        index += 2;
+                    }
+                }
+                continue;
+            }
+
+            break;
+        }
+
+        index += 1;
+    }
+
+    v_warning
+}
+
 fn take_pending(options: &mut Vec<CliOption>) -> Vec<CliOption> {
     std::mem::take(options)
 }
@@ -848,6 +895,30 @@ mod tests {
         assert_eq!(
             find_version_or_buildconf_request_index(&strings(&["-hide_banner", "-buildconf"])),
             Some(1)
+        );
+    }
+
+    #[test]
+    fn trailing_loglevel_warning_matches_version_request_precedence() {
+        assert_eq!(
+            trailing_loglevel_warning(&strings(&["-loglevel", "info", "-v", "foo"])),
+            None
+        );
+        assert_eq!(
+            trailing_loglevel_warning(&strings(&["-v", "info", "-loglevel", "info"])),
+            None
+        );
+        assert_eq!(
+            trailing_loglevel_warning(&strings(&["-v", "info", "-loglevel", "foo"])),
+            Some("Invalid loglevel \"foo\"".to_string())
+        );
+        assert_eq!(
+            trailing_loglevel_warning(&strings(&["-loglevel", "foo", "-v", "info"])),
+            Some("Invalid loglevel \"foo\"".to_string())
+        );
+        assert_eq!(
+            trailing_loglevel_warning(&strings(&["-v", "foo", "-hide_banner"])),
+            Some("Invalid loglevel \"foo\"".to_string())
         );
     }
 

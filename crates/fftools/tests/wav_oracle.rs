@@ -147,6 +147,17 @@ fn wav_missing_padding_after_odd_unknown_chunk_is_rejected_by_ffmpeg() {
 
 #[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn wav_missing_padding_after_odd_fmt_chunk_is_rejected_by_ffmpeg() {
+    let path = write_generated_missing_padding_after_odd_fmt_chunk_wav(
+        "generated-missing-padding-after-odd-fmt-chunk",
+    );
+
+    assert_oracle_rejects_wav_for_null_output(&path);
+    remove_temp_file(&path);
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
 fn wav_pcm_s16le_empty_file_output_matches_ffmpeg_oracle() {
     let path = unique_temp_path("empty-pcm-s16le-file-output", "raw");
     fs::write(&path, []).expect("empty raw PCM fixture should be writable");
@@ -590,6 +601,13 @@ fn write_generated_missing_padding_after_odd_unknown_chunk_wav(label: &str) -> P
     path
 }
 
+fn write_generated_missing_padding_after_odd_fmt_chunk_wav(label: &str) -> PathBuf {
+    let path = unique_temp_path(label, "wav");
+    fs::write(&path, wav_missing_padding_after_odd_fmt_chunk_bytes())
+        .expect("generated odd-sized fmt chunk without padding WAV fixture should be writable");
+    path
+}
+
 fn write_generated_extensible_wav(
     label: &str,
     channels: u16,
@@ -667,6 +685,24 @@ fn wav_missing_padding_after_odd_unknown_chunk_bytes() -> Vec<u8> {
     body.extend_from_slice(b"data");
     body.extend_from_slice(&4_u32.to_le_bytes());
     body.extend_from_slice(&[0x00, 0x00, 0x01, 0x00]);
+
+    let mut out = Vec::new();
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(u32::try_from(body.len() + 4).unwrap()).to_le_bytes());
+    out.extend_from_slice(b"WAVE");
+    out.extend_from_slice(&body);
+    out
+}
+
+fn wav_missing_padding_after_odd_fmt_chunk_bytes() -> Vec<u8> {
+    let mut body = Vec::new();
+    body.extend_from_slice(b"fmt ");
+    body.extend_from_slice(&17_u32.to_le_bytes());
+    body.extend_from_slice(&[1, 0, 1, 0, 0x44, 0xAC, 0x00, 0x00]);
+    body.extend_from_slice(&[0x88, 0x58, 0x01, 0x00, 2, 0, 16, 0, 0]);
+    body.extend_from_slice(b"data");
+    body.extend_from_slice(&2_u32.to_le_bytes());
+    body.extend_from_slice(&[1, 0]);
 
     let mut out = Vec::new();
     out.extend_from_slice(b"RIFF");

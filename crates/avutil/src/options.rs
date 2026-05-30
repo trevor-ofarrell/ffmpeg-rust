@@ -9153,6 +9153,13 @@ mod tests {
         assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
         assert_eq!(no_shorthand, sample_options());
 
+        let mut whitespace_shorthand = sample_options();
+        let err = whitespace_shorthand
+            .set_avoptions_from_string(" ", &["threads", "bitexact"], "=", ":")
+            .unwrap_err();
+        assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
+        assert_eq!(whitespace_shorthand, sample_options());
+
         let mut invalid_sep = sample_options();
         let err = invalid_sep
             .set_avoptions_from_string("threads=7", &[], "", ":")

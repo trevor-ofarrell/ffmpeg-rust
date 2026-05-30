@@ -10,6 +10,15 @@
 ## Compatible Today
 
 - Latest orchestrated parallel evidence: xhigh worker lanes plus main-thread
+  review added pinned oracle rows for AVPacket raw unknown flag preservation,
+  AVOption whitespace-only shorthand rejection without mutation, WAV missing
+  padding after an odd-sized `fmt ` chunk, image2 maximum/overflow
+  `-start_number` behavior, and ffmpeg/ffprobe version/buildconf trailing
+  loglevel precedence. WSL one-run fuzz smokes passed for the changed
+  AVOption, WAV, and image2 fuzz targets; a fresh avutil core-model sanitizer
+  rebuild exceeded the local timeout. These rows strengthen existing
+  incomplete components; strict complete count remains unchanged.
+- Latest orchestrated parallel evidence: xhigh worker lanes plus main-thread
   review added pinned oracle rows for WAV missing padding after an odd-sized
   unknown chunk, YUV4MPEG2 unknown `X*` extensions mixed with duplicate
   XCOLORRANGE fields, AVOption explicit-assignment then shorthand-token

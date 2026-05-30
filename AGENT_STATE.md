@@ -3,6 +3,56 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active. The latest
+xhigh fast/full-access worker batch has been reviewed, integrated, and closed:
+Ohm (`avutil-options` whitespace-only shorthand), Helmholtz
+(`fftools-version` trailing loglevel precedence), Aristotle
+(`avformat-wav-demuxer` missing padding after odd `fmt ` chunk), and Zeno
+(`avformat-image2-demuxer` start_number max/overflow range). The main thread
+also added AVPacket raw unknown-flag preservation and fixed `fate-runner`
+changed-path selection for `fuzz/corpus/avformat_image2/`. No approval prompts
+were used.
+
+This batch added bounded strict-parity evidence for `avutil-packet`,
+`avutil-options`, `avformat-wav-demuxer`, `avformat-image2-demuxer`,
+`avformat-framecrc-muxer`, `fftools-version`, `fftools-option-parser`,
+`fftools-ffmpeg-image2-sequence-framecrc-null`, and
+`fftools-ffmpeg-image2-start-number`. No component was promoted to `complete`;
+strict completion remains 11/96 components, about 11.5%.
+
+Latest committed slice: `e42b1bd8 Pin orchestrated status and parser edge
+parity`. Pending coherent slice: `Pin raw packet flags and edge oracle parity`,
+covering worker evidence, image2 corpus changed-selection, ledger, docs, state,
+and validation.
+
+Latest validation commands for the current orchestrated evidence batch passed:
+focused local unit tests for `avutil` packet flags and AVOption
+set-from-string, `avformat` WAV and image2, `fftools` version/loglevel and
+image2 start-number overflow, full `fate-runner` tests, `fate-runner
+status --next 12`, `fate-runner run --changed --dry-run`,
+`cargo fmt --all -- --check`, core clippy for `avutil`, `avformat`,
+`fftools`, and `fate-runner`, fuzz clippy for `avutil_core_models`,
+`avutil_metadata_options`, `avformat_wav`, and `avformat_image2`, `xtask
+guard-runtime`, `xtask oracle-doctor`, and pinned differential mapping runs for
+the new packet, options, WAV, image2 max/overflow, and version-loglevel rows.
+WSL one-run fuzz smokes passed for `avutil_metadata_options`, `avformat_wav`,
+and `avformat_image2`.
+
+Latest failing or limited commands for this batch: a combined WSL
+`cargo fuzz run` command including `avutil_core_models`,
+`avutil_metadata_options`, `avformat_wav`, and `avformat_image2` exceeded the
+local timeout while rebuilding fresh sanitizer artifacts for
+`avutil_core_models`; the lingering WSL cargo/rustc processes were stopped and
+no crash artifact was observed. Three local `cargo test` attempts also used
+invalid multiple-filter syntax; they were rerun as separate valid filters and
+passed.
+
+Current focus component: `avutil-packet` remains the top priority incomplete
+component (`fate_pass`). Next 3 concrete actions: identify the next missing
+AVPacket completion requirement, add a bounded oracle/fuzz/FATE evidence row
+without broad stubs, and continue using parallel xhigh workers only for
+disjoint file sets that do not touch orchestrator-owned ledger/state/docs.
+
+Current authoritative turn status: orchestrator workflow is active. The latest
 xhigh fast/full-access worker batch has been reviewed and integrated with a
 main-thread `fate-runner status`/changed-selection slice. Workers completed and
 were closed after integration: Leibniz (`avformat-wav-demuxer` missing padding

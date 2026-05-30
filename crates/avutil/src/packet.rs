@@ -185,8 +185,20 @@ impl PacketFlags {
         }
     }
 
+    pub const fn from_bits_retain(bits: u32) -> Self {
+        Self { bits }
+    }
+
     pub const fn bits(self) -> u32 {
         self.bits
+    }
+
+    pub const fn known_bits(self) -> u32 {
+        self.bits & Self::KNOWN_BITS
+    }
+
+    pub const fn unknown_bits(self) -> u32 {
+        self.bits & !Self::KNOWN_BITS
     }
 
     pub const fn is_empty(self) -> bool {
@@ -5372,6 +5384,10 @@ impl Packet {
         self.flags.set(flag, enabled);
     }
 
+    pub fn set_flags(&mut self, flags: PacketFlags) {
+        self.flags = flags;
+    }
+
     pub fn set_key(&mut self, is_key: bool) {
         self.set_flag(PacketFlags::KEY, is_key);
     }
@@ -6465,6 +6481,18 @@ mod tests {
 
         let truncated = PacketFlags::from_bits_truncate(0xffff_ffff);
         assert_eq!(truncated.bits(), PacketFlags::all().bits());
+
+        let retained = PacketFlags::from_bits_retain(0x4000 | PacketFlags::KEY.bits());
+        assert_eq!(retained.bits(), 0x4001);
+        assert_eq!(retained.known_bits(), PacketFlags::KEY.bits());
+        assert_eq!(retained.unknown_bits(), 0x4000);
+
+        packet.set_flags(retained);
+        assert!(packet.flags().contains(PacketFlags::KEY));
+        assert_eq!(packet.flags().unknown_bits(), 0x4000);
+        packet.set_flag(PacketFlags::KEY, false);
+        assert!(!packet.flags().contains(PacketFlags::KEY));
+        assert_eq!(packet.flags().bits(), 0x4000);
     }
 
     #[test]

@@ -699,6 +699,11 @@ const PATH_RULES: &[PathRule] = &[
         id_prefixes: &[],
     },
     PathRule {
+        path: "fuzz/corpus/avformat_image2/",
+        exact_ids: &["avformat-image2-demuxer", "avformat-image2-muxer"],
+        id_prefixes: &[],
+    },
+    PathRule {
         path: "fuzz/fuzz_targets/avformat_basic_muxers.rs",
         exact_ids: &[
             "avformat-wav-muxer",
@@ -2890,12 +2895,15 @@ priority = 2
     fn changed_selection_maps_fuzz_corpora_to_covered_components() {
         let component_ids = component_ids_from_ledger(&ledger(&[
             "avformat-wav-demuxer",
+            "avformat-image2-demuxer",
+            "avformat-image2-muxer",
             "avformat-yuv4mpegpipe-demuxer",
             "avutil-dict",
             "avutil-options",
         ]));
         let paths = vec![
             "fuzz/corpus/avformat_wav/odd-junk-padding".to_string(),
+            "fuzz/corpus/avformat_image2/max-start-oom".to_string(),
             "fuzz\\corpus\\avformat_yuv4mpegpipe\\unknown_x_extension".to_string(),
             "fuzz/corpus/avutil_metadata_options/set_from_string_explicit_shorthand_error"
                 .to_string(),
@@ -2905,6 +2913,8 @@ priority = 2
             changed_components(&component_ids, &paths),
             vec![
                 "avformat-wav-demuxer".to_string(),
+                "avformat-image2-demuxer".to_string(),
+                "avformat-image2-muxer".to_string(),
                 "avformat-yuv4mpegpipe-demuxer".to_string(),
                 "avutil-dict".to_string(),
                 "avutil-options".to_string(),

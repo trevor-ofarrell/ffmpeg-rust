@@ -1,4 +1,3 @@
-use crate::option_parser::parse_log_level_directive;
 use crate::option_parser::CliParseError;
 use crate::{
     build_io_plan, buildconf_banner, parse_ffmpeg_args, version_banner, CliOption, Endpoint,
@@ -16,6 +15,7 @@ use avutil::{Packet, Rational};
 use std::{fmt, fs, io::Write, path::Path};
 
 const MOV_FORMAT_NAME: &str = "mov,mp4,m4a,3gp,3g2,mj2";
+const IMAGE2_MAX_START_NUMBER: i64 = i32::MAX as i64;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FfmpegOutput {
@@ -336,20 +336,7 @@ fn version_request_trailing_loglevel_warning(args: &[String]) -> Option<String> 
 }
 
 fn trailing_loglevel_warning(args: &[String]) -> Option<String> {
-    let mut index = 0;
-    while index < args.len() {
-        if args[index] == "-loglevel" || args[index] == "-v" {
-            let value = args.get(index + 1)?;
-            if parse_log_level_directive(value).is_none() {
-                return Some(format!("Invalid loglevel \"{value}\""));
-            }
-            index += 2;
-            continue;
-        }
-
-        index += 1;
-    }
-    None
+    crate::option_parser::trailing_loglevel_warning(args)
 }
 
 pub fn ffmpeg_output(args: &[String]) -> Result<FfmpegOutput, FfmpegError> {
@@ -887,6 +874,11 @@ fn parse_image2_input(input: &PlannedFile) -> Result<InputFormat, FfmpegError> {
     reject_options_except(input, "image2", &["f", "r", "framerate", "start_number"])?;
     let frame_rate = parse_image2_frame_rate_option(input)?;
     let start_number = parse_optional_i64_option(input, "start_number", "image2 start number", 0)?;
+    if start_number > IMAGE2_MAX_START_NUMBER {
+        return Err(FfmpegError::invalid_data(
+            "image2 start number must fit in 32-bit signed integer",
+        ));
+    }
     Ok(InputFormat::Image2 {
         frame_rate,
         start_number,
@@ -5532,6 +5524,27 @@ mod tests {
         assert!(output
             .stdout()
             .contains("0,          1,          1,        1,        3"));
+    }
+
+    #[test]
+    fn rejects_image2_input_start_number_above_ffmpeg_int_range_before_file_scan() {
+        let err = ffmpeg_output(&strings(&[
+            "-f",
+            "image2",
+            "-framerate",
+            "25",
+            "-start_number",
+            "2147483648",
+            "-i",
+            "missing-%d.ppm",
+            "-f",
+            "framecrc",
+            "-",
+        ]))
+        .expect_err("image2 input start_number must fit FFmpeg's int range");
+
+        assert!(err.message().contains("image2 start number"));
+        assert!(!err.message().contains("no image2 files matched"));
     }
 
     #[test]

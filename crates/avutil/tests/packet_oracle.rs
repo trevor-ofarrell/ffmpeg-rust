@@ -403,6 +403,8 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         side_data_summary_fields(&move_duplicate_src),
     );
 
+    insert_packet_unknown_flag_rows(&mut rows);
+
     let mut referenced = Packet::default();
     referenced.ref_from(&src);
     rows.insert("packet:ref".to_string(), packet_fields(&referenced));
@@ -543,6 +545,51 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     insert_packet_fifo_rows(&mut rows);
 
     rows
+}
+
+fn insert_packet_unknown_flag_rows(rows: &mut BTreeMap<String, Vec<String>>) {
+    let raw_flags = PacketFlags::from_bits_retain(
+        PacketFlags::KEY.bits() | PacketFlags::DISPOSABLE.bits() | 0x4000,
+    );
+    let mut src = Packet::from_data(vec![0x5a, 0x6b]).unwrap();
+    src.set_pts(Some(321));
+    src.set_dts(Some(123));
+    src.set_duration(17).unwrap();
+    src.set_pos(Some(99)).unwrap();
+    src.set_flags(raw_flags);
+    rows.insert("packet:flags-unknown-src".to_string(), packet_fields(&src));
+
+    let mut copied = Packet::from_data(vec![0xee]).unwrap();
+    copied.copy_props_from(&src);
+    rows.insert(
+        "packet:flags-unknown-copy-props".to_string(),
+        packet_fields(&copied),
+    );
+
+    let mut referenced = Packet::default();
+    referenced.ref_from(&src);
+    rows.insert(
+        "packet:flags-unknown-ref".to_string(),
+        packet_fields(&referenced),
+    );
+
+    let cloned = src.clone();
+    rows.insert(
+        "packet:flags-unknown-clone".to_string(),
+        packet_fields(&cloned),
+    );
+
+    let mut moved_src = src.clone();
+    let mut moved_dst = Packet::default();
+    moved_dst.move_ref_from(&mut moved_src);
+    rows.insert(
+        "packet:flags-unknown-move-dst".to_string(),
+        packet_fields(&moved_dst),
+    );
+    rows.insert(
+        "packet:flags-unknown-move-src".to_string(),
+        packet_fields(&moved_src),
+    );
 }
 
 fn insert_side_data_kind_inventory_row(rows: &mut BTreeMap<String, Vec<String>>) {
@@ -6224,6 +6271,51 @@ int main(void) {
                             duplicate_move_src);
     av_packet_free(&duplicate_move_dst);
     av_packet_free(&duplicate_move_src);
+
+    AVPacket *unknown_flags_src = new_packet();
+    fail_if(av_new_packet(unknown_flags_src, 2) < 0,
+            "av_new_packet unknown flags src failed");
+    unknown_flags_src->data[0] = 0x5a;
+    unknown_flags_src->data[1] = 0x6b;
+    unknown_flags_src->pts = 321;
+    unknown_flags_src->dts = 123;
+    unknown_flags_src->duration = 17;
+    unknown_flags_src->pos = 99;
+    unknown_flags_src->flags =
+        AV_PKT_FLAG_KEY | AV_PKT_FLAG_DISPOSABLE | 0x4000;
+    print_packet("packet:flags-unknown-src", unknown_flags_src);
+
+    AVPacket *unknown_flags_copy = new_packet();
+    fail_if(av_new_packet(unknown_flags_copy, 1) < 0,
+            "av_new_packet unknown flags copy dst failed");
+    unknown_flags_copy->data[0] = 0xee;
+    fail_if(av_packet_copy_props(unknown_flags_copy, unknown_flags_src) < 0,
+            "av_packet_copy_props unknown flags failed");
+    print_packet("packet:flags-unknown-copy-props", unknown_flags_copy);
+
+    AVPacket *unknown_flags_ref = new_packet();
+    fail_if(av_packet_ref(unknown_flags_ref, unknown_flags_src) < 0,
+            "av_packet_ref unknown flags failed");
+    print_packet("packet:flags-unknown-ref", unknown_flags_ref);
+
+    AVPacket *unknown_flags_clone = av_packet_clone(unknown_flags_src);
+    fail_if(!unknown_flags_clone, "av_packet_clone unknown flags failed");
+    print_packet("packet:flags-unknown-clone", unknown_flags_clone);
+
+    AVPacket *unknown_flags_move_src = new_packet();
+    fail_if(av_packet_ref(unknown_flags_move_src, unknown_flags_src) < 0,
+            "av_packet_ref unknown flags move src failed");
+    AVPacket *unknown_flags_move_dst = new_packet();
+    av_packet_move_ref(unknown_flags_move_dst, unknown_flags_move_src);
+    print_packet("packet:flags-unknown-move-dst", unknown_flags_move_dst);
+    print_packet("packet:flags-unknown-move-src", unknown_flags_move_src);
+
+    av_packet_free(&unknown_flags_move_dst);
+    av_packet_free(&unknown_flags_move_src);
+    av_packet_free(&unknown_flags_clone);
+    av_packet_free(&unknown_flags_ref);
+    av_packet_free(&unknown_flags_copy);
+    av_packet_free(&unknown_flags_src);
 
     AVPacket *custom_padding_src = packet_with_custom_padding();
     uint8_t *custom_padding_ptr = custom_padding_src->data;

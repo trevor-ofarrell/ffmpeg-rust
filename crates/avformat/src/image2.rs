@@ -2,6 +2,7 @@ use avutil::{AvError, AvResult, Packet, Rational};
 use std::collections::BTreeMap;
 
 const MAX_RENDERED_PATTERN_PATH_BYTES: usize = 4096;
+const MAX_START_NUMBER: i64 = i32::MAX as i64;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Image2Pattern {
@@ -266,6 +267,7 @@ impl Image2Demuxer {
         frame_rate: Rational,
     ) -> AvResult<Self> {
         validate_frame_rate(frame_rate)?;
+        validate_start_number(start_number)?;
         if start_number < 0 {
             return Err(AvError::invalid_argument(
                 "image2 start number must not be negative",
@@ -335,6 +337,7 @@ impl Image2Muxer {
         frame_rate: Rational,
     ) -> AvResult<Self> {
         validate_frame_rate(frame_rate)?;
+        validate_start_number(start_number)?;
         if start_number < 0 {
             return Err(AvError::invalid_argument(
                 "image2 start number must not be negative",
@@ -518,6 +521,15 @@ fn validate_frame_rate(frame_rate: Rational) -> AvResult<()> {
     if frame_rate.num() <= 0 || frame_rate.den() <= 0 {
         return Err(AvError::invalid_argument(
             "image2 frame rate must be positive",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_start_number(start_number: i64) -> AvResult<()> {
+    if start_number > MAX_START_NUMBER {
+        return Err(AvError::invalid_argument(
+            "image2 start number must fit in 32-bit signed integer",
         ));
     }
     Ok(())
@@ -905,6 +917,49 @@ mod tests {
             b"frame-00000000000000000002.ppm"
         );
         assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
+    fn reads_single_frame_sequence_entry_at_max_start_number() {
+        let max_frame = i32::MAX as i64;
+        let path = format!("frame-{max_frame}.png");
+        let mut demuxer = Image2Demuxer::open(
+            "frame-%03d.png",
+            vec![entry(&path, b"max")],
+            max_frame,
+            Rational::new(25, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(demuxer.info().start_number(), max_frame);
+        assert_eq!(demuxer.info().frame_count(), 1);
+        assert_eq!(demuxer.frames()[0].number(), max_frame);
+        let packet = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(packet.pts(), Some(0));
+        assert_eq!(packet.dts(), Some(0));
+        assert_eq!(packet.duration(), 1);
+        assert_eq!(packet.data(), b"max");
+        assert_eq!(packet.side_data()[0].data(), path.as_bytes());
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
+    fn rejects_start_numbers_above_32_bit_limit() {
+        let err = Image2Demuxer::open(
+            "frame-%d.png",
+            vec![entry("frame-0.png", b"x")],
+            i64::from(i32::MAX) + 1,
+            Rational::new(1, 1).unwrap(),
+        )
+        .unwrap_err();
+        assert_eq!(err.kind(), avutil::AvErrorKind::InvalidArgument);
+        let err = Image2Muxer::new(
+            "frame-%d.png",
+            i64::from(i32::MAX) + 1,
+            Rational::new(1, 1).unwrap(),
+        )
+        .unwrap_err();
+        assert_eq!(err.kind(), avutil::AvErrorKind::InvalidArgument);
     }
 
     #[test]
