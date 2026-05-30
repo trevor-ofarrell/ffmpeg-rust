@@ -3,28 +3,28 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The
-tree started clean at `master...origin/master [ahead 16]`; required startup
-checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
--- status --next 15` reporting 11/96 strict-complete components (11.5%) and
+tree started clean at `master...origin/master`; required startup checks passed
+with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status
+--next 15` reporting 11/96 strict-complete components (11.5%) and
 `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
 validating the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
 kept the next slice on top-priority `avutil-packet`; no subagents were needed.
 
 Current main-thread slice: pinned libavcodec rows now prove
-`av_packet_copy_props()` preserves a destination `AVPacket` `data` pointer that
-starts at a nonzero offset inside `buf->data`, keeps the destination at the
-same offset with the same visible payload bytes, dirty FFmpeg input-padding
-bytes, and writability, and copies timestamps, flags, side data, opaque pointer
-metadata, `opaque_ref`, stream index, and `time_base` from the source. Rust
-mirrors this through `Packet::copy_props_from()` leaving the destination
-`BufferRef` untouched, focused packet unit coverage, mapped packet oracle rows,
-and a deterministic `avutil_core_models` fixture. `avutil-packet` remains
-`fate_pass`, not
-`complete`; strict completion remains 11/96.
+`av_packet_make_writable()` on a shared ref to an `AVPacket` whose `data`
+pointer starts at a nonzero offset inside `buf->data` detaches the destination
+into a new writable zero-offset padded buffer, preserves visible bytes and
+packet properties, zeroes destination input padding, and leaves the source
+offset-backed buffer plus dirty padding intact after its refcount drops back to
+one. Rust mirrors this through `Packet::make_writable()` and
+`BufferRef::resize_with_padding`, focused packet unit coverage, mapped packet
+oracle rows, and a deterministic `avutil_core_models` fixture.
+`avutil-packet` remains `fate_pass`, not `complete`; strict completion remains
+11/96.
 
-Latest validation commands for this packet offset-copy-props slice passed:
-`cargo fmt --all`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil
-packet_offset_payload_copy_props_preserves_pointer_offset_and_padding --
+Latest validation commands for this packet shared-offset make-writable slice
+passed: `cargo fmt --all`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p
+avutil packet_offset_payload_make_writable_detaches_to_zero_offset --
 --nocapture`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo check --manifest-path
 fuzz/Cargo.toml --bin avutil_core_models`; `CARGO_TARGET_DIR=target-orch-avutil
 cargo test -p avutil --test packet_oracle
@@ -32,23 +32,24 @@ libavcodec_packet_core_lifecycle_matches_packet_model -- --ignored
 --nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner --
 run --mappings tests/differential/mappings.txt --component avutil-packet
 --target oracle-libavcodec-packet-core --oracle-ffmpeg
-./third_party/ffmpeg-oracle/build/bin/ffmpeg`;
-`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run --component
-avutil-packet`; `CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil
---all-targets --all-features -- -D warnings`; `CARGO_TARGET_DIR=target-wsl-fuzz
-cargo clippy --manifest-path fuzz/Cargo.toml --bin avutil_core_models --
--D warnings`; and `RUST_MIN_STACK=33554432 CXXFLAGS='-O1'
-HOST_CXXFLAGS='-O1' CARGO_TARGET_DIR=target-wsl-fuzz
-LSAN_OPTIONS=detect_leaks=0 ASAN_OPTIONS=detect_leaks=0 cargo fuzz run
-avutil_core_models -- -runs=1`. Final guards also passed: `cargo fmt --all --
---check`; `CARGO_TARGET_DIR=target-orch-fate cargo test -p fate-runner
-current_ledger`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask --
-guard-runtime`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask --
-oracle-doctor`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner --
-status --next 15`; and `git diff --check` with CRLF warnings only. The WSL
-fuzz smoke used local leak detection disabled, rebuilt the sanitizer binary in
-4m32s in the stable `target-wsl-fuzz` cache, and completed the three-file seed
-corpus.
+./third_party/ffmpeg-oracle/build/bin/ffmpeg`; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- run --component avutil-packet`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil --all-targets
+--all-features -- -D warnings`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy
+--manifest-path fuzz/Cargo.toml --bin avutil_core_models -- -D warnings`; and
+`RUST_MIN_STACK=33554432 CXXFLAGS='-O1' HOST_CXXFLAGS='-O1'
+CARGO_TARGET_DIR=target-wsl-fuzz LSAN_OPTIONS=detect_leaks=0
+ASAN_OPTIONS=detect_leaks=0 cargo fuzz run avutil_core_models -- -runs=1`.
+Final guards also passed: `cargo fmt --all -- --check`;
+`CARGO_TARGET_DIR=target-orch-fate cargo test -p fate-runner current_ledger`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- guard-runtime`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`; and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15`; and `git diff --check` with CRLF warnings only. The WSL fuzz smoke used
+local leak detection disabled, rebuilt the sanitizer binary in 4m29s in the
+stable `target-wsl-fuzz` cache, and completed the three-file seed corpus.
+Packet-oracle runs must remain serial because the test harness writes a shared
+`target/oracle/avutil-packet` executable.
 
 Current focus component: `avutil-packet` remains the top priority incomplete
 component (`fate_pass`), followed by `avutil-buffer` (`differential_pass`),

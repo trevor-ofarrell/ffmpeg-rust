@@ -168,13 +168,19 @@ The latest cropping oracle rows extend that bounded `Frame::apply_cropping` mode
 
 Read-only refcounted packet payload rows cover the bounded `AV_BUFFER_FLAG_READONLY` split: `av_packet_make_refcounted()` treats the existing buffer as refcounted and leaves its data pointer/non-writable state unchanged, while `av_packet_make_writable()` allocates new writable padded storage and preserves visible payload bytes.
 
-Offset-backed packet rows now cover property-only copying as well as
-ref/clone/move and resize helpers: `av_packet_copy_props()` preserves the
-destination `pkt->data` pointer when it starts inside `pkt->buf->data`, keeps
-dirty input padding and writability unchanged, and copies timestamps, flags,
-side data, opaque metadata, `opaque_ref`, stream index, and `time_base` from
-the source. `Packet::copy_props_from` mirrors that by leaving the
-destination `BufferRef` untouched while replacing packet properties.
+Offset-backed packet rows now cover property-only copying, shared
+make-writable detachment, ref/clone/move, and resize helpers:
+`av_packet_copy_props()` preserves the destination `pkt->data` pointer when it
+starts inside `pkt->buf->data`, keeps dirty input padding and writability
+unchanged, and copies timestamps, flags, side data, opaque metadata,
+`opaque_ref`, stream index, and `time_base` from the source.
+`av_packet_make_writable()` on a shared offset-backed ref detaches the
+destination into a writable zero-offset padded buffer, zeroes destination input
+padding, and leaves the source offset-backed buffer plus dirty padding intact
+after its refcount drops back to one. `Packet::copy_props_from` mirrors the
+property-only path by leaving the destination `BufferRef` untouched, while
+`Packet::make_writable` mirrors the detach path through
+`BufferRef::resize_with_padding`.
 
 Zero-size side-data replacement is pinned for both packet-owned and standalone
 helper surfaces: `av_packet_add_side_data()` and

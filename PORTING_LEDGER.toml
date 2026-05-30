@@ -3,6 +3,12 @@ target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
 # Latest main-thread packet evidence: pinned libavcodec rows now prove
+# av_packet_make_writable() detaches a shared offset pkt->data pointer inside
+# pkt->buf->data into a new writable zero-offset buffer, preserves visible
+# bytes and packet properties, zeroes destination input padding, and leaves the
+# source offset-backed buffer plus dirty padding intact after its refcount drops
+# back to one. This is evidence-strengthening only; no status was promoted.
+# Latest main-thread packet evidence: pinned libavcodec rows now prove
 # av_packet_copy_props() preserves a destination offset pkt->data pointer
 # inside pkt->buf->data, keeps dirty padding and writability, and copies
 # timestamps, flags, side data, opaque metadata, opaque_ref, stream index, and
@@ -605,6 +611,7 @@ unit_tests = [
   "packet::tests::packet_offset_payload_ref_preserves_pointer_offset_and_padding",
   "packet::tests::packet_offset_payload_move_preserves_pointer_offset_and_resets_source",
   "packet::tests::packet_offset_payload_copy_props_preserves_pointer_offset_and_padding",
+  "packet::tests::packet_offset_payload_make_writable_detaches_to_zero_offset",
   "packet::tests::packet_zero_grow_sanitizes_padding_but_noop_shrink_preserves_it",
   "packet::tests::packet_zero_grow_preserves_offset_payload_pointer",
   "packet::tests::packet_grow_preserves_offset_pointer_and_exposes_tail_bytes",
@@ -727,6 +734,14 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: pinned libavcodec AVPacket payload oracle coverage now validates
+# `av_packet_make_writable()` on a shared ref of a destination packet whose
+# `data` starts at a nonzero offset inside `buf->data`. FFmpeg detaches the
+# destination to writable zero-offset padded storage, zeroes destination input
+# padding, leaves the source offset-backed buffer and dirty padding intact after
+# its refcount drops back to one, and preserves packet properties; Rust
+# `Packet::make_writable`, unit coverage, and avutil_core_models fuzz-smoke
+# invariants cover the same detach path.
 # Latest update: pinned libavcodec AVPacket payload oracle coverage now validates
 # `av_packet_copy_props()` on a destination packet whose `data` starts at a
 # nonzero offset inside `buf->data`. FFmpeg preserves the destination offset

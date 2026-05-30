@@ -10,6 +10,16 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  `av_packet_make_writable()` on a shared `AVPacket` ref whose `data` points
+  at an offset inside `buf->data` detaches the destination to writable
+  zero-offset padded storage, preserves visible bytes and packet properties,
+  zeroes destination input padding, and leaves the source offset-backed buffer
+  plus dirty padding intact after its refcount drops back to one. Rust mirrors
+  this through focused unit coverage, the mapped packet oracle, and a
+  deterministic `avutil_core_models` fixture. This strengthens
+  `avutil-packet`; strict completion remains 11/96 and the row remains
+  `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   `av_packet_copy_props()` on a destination `AVPacket` whose `data` points at
   an offset inside `buf->data` preserves that destination offset pointer,
   visible bytes, dirty input padding, and writability while copying timestamps,
