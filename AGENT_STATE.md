@@ -3,6 +3,60 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active with xhigh
+fast/full-access subagents and no approval prompts. The tree started clean at
+`master...origin/master [ahead 70]`; strict completion remains 11/96
+components, about 11.5%. Read-only scouts returned three bounded lanes:
+`avutil-packet` nullable/empty packet FIFO free lifecycle, `avutil-frame` PAL8
+palette side-plane propagation, and `avutil-buffer` threaded ref/unref release
+smoke. The main thread kept the immediate slice on top-priority
+`avutil-packet`.
+
+Current main-thread slice: pinned libavcodec rows now prove
+`av_container_fifo_free(&fifo)` with `fifo == NULL` is a no-op and freeing an
+empty packet FIFO nulls the pointer while preserving zero readable entries.
+Rust mirrors the supported nullable pointer-to-pointer lifecycle through
+`Option<PacketFifo>::take()` unit coverage and the deterministic
+`avutil_core_models` fixture. `avutil-packet` remains `fate_pass`, not
+`complete`; strict completion remains 11/96.
+
+Latest validation commands for this packet FIFO nullable-free slice passed:
+`cargo fmt --all`; `cargo test -p avutil --lib --target-dir
+target-orch-packet-fifo-free-null-unit
+packet_fifo_option_take_matches_av_container_fifo_free_lifecycle --
+--nocapture`; `cargo check --manifest-path fuzz\\Cargo.toml --target-dir
+target-orch-packet-fifo-free-null-fuzz-check --bin avutil_core_models`;
+`$env:FFMPEG_ORACLE='.\\third_party\\ffmpeg-oracle\\build\\bin\\ffmpeg.cmd';
+cargo test -p avutil --target-dir target-orch-packet-fifo-free-null-oracle
+--test packet_oracle libavcodec_packet_core_lifecycle_matches_packet_model --
+--ignored --nocapture`; `cargo run -p fate-runner --target-dir
+target-orch-packet-fifo-free-null-diff -- run --mappings
+tests\\differential\\mappings.txt --component avutil-packet --target
+oracle-libavcodec-packet-core --oracle-ffmpeg
+.\\third_party\\ffmpeg-oracle\\build\\bin\\ffmpeg.cmd`; `cargo run -p
+fate-runner --target-dir target-orch-packet-fifo-free-null-local -- run
+--component avutil-packet`; `cargo clippy -p avutil --all-targets
+--all-features --target-dir target-orch-packet-fifo-free-null-clippy -- -D
+warnings`; `cargo clippy --manifest-path fuzz\\Cargo.toml --target-dir
+target-orch-packet-fifo-free-null-fuzz-clippy --bin avutil_core_models -- -D
+warnings`; and WSL `RUST_MIN_STACK=33554432 CXXFLAGS='-O1'
+HOST_CXXFLAGS='-O1' CARGO_TARGET_DIR=target-wsl-packet-fifo-free-null-fuzz-o1
+cargo fuzz run avutil_core_models -- -runs=1`.
+
+Latest failing or limited commands for this slice: none so far. The oracle
+intentionally does not test `av_container_fifo_free(NULL)` because pinned
+FFmpeg dereferences the pointer-to-pointer argument; only the supported
+nullable pointee shape is modeled. WSL fuzz smoke and final ledger/runtime
+guards passed after a fresh sanitizer rebuild. No behavior failure remains.
+
+Current focus component: `avutil-packet` remains the top priority incomplete
+component (`fate_pass`), followed by `avutil-buffer` (`differential_pass`),
+`avutil-frame` (`differential_pass`), `avutil-logging` (`fate_pass`), and
+`avutil-options` (`fate_pass`). Next 3 concrete actions: run final diff/status
+checks, commit this coherent packet FIFO nullable-free evidence slice if clean,
+then use the next clean-tree window for the queued PAL8 palette side-plane
+slice or buffer threaded ref/unref evidence.
+
+Current authoritative turn status: orchestrator workflow is active with xhigh
 fast/full-access subagents and no approval prompts. The packet-free slice
 started from `master...origin/master [ahead 69]`; strict completion remains
 11/96 components, about 11.5%. Read-only explorers converged on direct

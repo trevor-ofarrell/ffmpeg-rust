@@ -548,6 +548,7 @@ unit_tests = [
   "packet::tests::packet_fifo_unknown_flags_treat_as_move",
   "packet::tests::packet_fifo_invalid_ops_preserve_mixed_queue_order",
   "packet::tests::packet_fifo_drop_releases_queued_moved_payload_and_opaque_ref",
+  "packet::tests::packet_fifo_option_take_matches_av_container_fifo_free_lifecycle",
   "packet::tests::packet_fifo_clear_releases_moved_packets_and_preserves_ref_sources",
   "packet::tests::packet_time_base_defaults_copies_resets_and_rescale_preserves",
 ]
@@ -641,6 +642,13 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest packet FIFO nullable-free update: pinned libavcodec rows now prove
+# `av_container_fifo_free(&fifo)` with `fifo == NULL` is a no-op, and freeing
+# an empty packet FIFO nulls the pointer while preserving zero readable entries.
+# Rust unit coverage uses `Option<PacketFifo>::take()` to mirror that nullable
+# pointer lifecycle, and the deterministic `avutil_core_models` fixture covers
+# the same empty-drop shape. `av_container_fifo_free(NULL)` is intentionally not
+# modeled because pinned FFmpeg dereferences the pointer-to-pointer argument.
 # Latest direct packet-free update: pinned libavcodec rows now prove
 # `av_packet_free(NULL)` and `av_packet_free(&NULL)` are no-ops, and
 # `av_packet_free(&pkt)` on one side of a shared refcounted packet pair nulls

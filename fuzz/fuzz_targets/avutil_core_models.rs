@@ -10972,6 +10972,15 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     let fifo_drain_err = packet_fifo.drain(1).unwrap_err();
     assert_eq!(fifo_drain_err.code(), Some(AvErrorCode::EINVAL));
 
+    let mut none_fifo: Option<PacketFifo> = None;
+    drop(none_fifo.take());
+    assert!(none_fifo.is_none());
+
+    let mut empty_fifo_owner = Some(PacketFifo::new());
+    assert_eq!(empty_fifo_owner.as_ref().unwrap().can_read(), 0);
+    drop(empty_fifo_owner.take());
+    assert!(empty_fifo_owner.is_none());
+
     let fifo_payload_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
     let fifo_opaque_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
     let fifo_payload_capture = Arc::clone(&fifo_payload_releases);

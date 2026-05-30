@@ -2418,6 +2418,24 @@ fn insert_packet_fifo_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         vec![fifo.can_read().to_string()],
     );
 
+    let mut null_fifo: Option<PacketFifo> = None;
+    drop(null_fifo.take());
+    rows.insert(
+        "packet:fifo-free-null-fifo".to_string(),
+        vec![bool_field(null_fifo.is_none())],
+    );
+
+    let mut empty_fifo = Some(PacketFifo::new());
+    rows.insert(
+        "packet:fifo-free-empty-before".to_string(),
+        vec![empty_fifo.as_ref().unwrap().can_read().to_string()],
+    );
+    drop(empty_fifo.take());
+    rows.insert(
+        "packet:fifo-free-empty-after".to_string(),
+        vec![bool_field(empty_fifo.is_none())],
+    );
+
     let payload_releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
     let opaque_releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
     let payload_capture = std::sync::Arc::clone(&payload_releases);
@@ -6788,6 +6806,17 @@ static void exercise_packet_fifo_api(void) {
            av_container_fifo_can_read(fifo));
     av_packet_free(&unknown_flags_dst);
     av_packet_free(&unknown_flags_src);
+
+    AVContainerFifo *null_fifo = NULL;
+    av_container_fifo_free(&null_fifo);
+    printf("packet:fifo-free-null-fifo|%d\n", null_fifo == NULL);
+
+    AVContainerFifo *empty_fifo = av_container_fifo_alloc_avpacket(0);
+    fail_if(!empty_fifo, "fifo empty free allocation failed");
+    printf("packet:fifo-free-empty-before|%zu\n",
+           av_container_fifo_can_read(empty_fifo));
+    av_container_fifo_free(&empty_fifo);
+    printf("packet:fifo-free-empty-after|%d\n", empty_fifo == NULL);
 
     reset_fifo_release_counters();
     AVPacket *free_queued_src = new_packet();

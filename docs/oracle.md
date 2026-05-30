@@ -108,6 +108,8 @@ The latest orchestrated avutil lifecycle smoke first timed out while WSL was sti
 
 The latest direct packet-free WSL fuzz smoke used a fresh `avutil_core_models` target directory and completed after the sanitizer rebuild. That one-input run covers the deterministic `Option<Packet>::take()` / Drop fixture for direct `av_packet_free()` parity: nullable frees are no-ops, freeing one shared owner preserves the other owner, and payload plus `opaque_ref` release callbacks fire after the final owner is dropped.
 
+The latest packet FIFO nullable-free fixture extends `avutil_core_models` with the safe Rust equivalent of `av_container_fifo_free(&fifo)` for `fifo == NULL` and an empty FIFO: `Option<PacketFifo>::take()` keeps `None` as `None`, drops an empty FIFO owner without queued entries, and leaves no release side effects to observe. A fresh-target WSL one-input sanitizer smoke passed after rebuilding `avutil_core_models`.
+
 The latest orchestrated WSL fuzz evidence for the packet/options/WAV/image2
 edge batch includes one-run sanitizer smokes for `avutil_metadata_options`,
 `avformat_wav`, and `avformat_image2` after adding the whitespace shorthand,
@@ -234,6 +236,8 @@ The newest `packet:side-free-preserves-fields` row proves `av_packet_free_side_d
 The newest packet-owned raw shrink rows prove `av_packet_shrink_side_data()` accepts raw side-data type `-1` and shrinks it to zero length, while an oversize shrink for raw `INT_MIN` returns ENOMEM and leaves the entry bytes unchanged.
 
 The newest packet FIFO free rows prove `av_container_fifo_free()` on a packet FIFO with a queued move-written packet releases the queued packet's payload buffer and `opaque_ref` buffer exactly once while leaving the moved-from source packet reset. The Rust `PacketFifo` model covers the same queued-drop lifecycle through `PacketFifo` drop/clear behavior and the `avutil_core_models` deterministic fuzz fixture.
+
+The newest packet FIFO nullable-free rows prove `av_container_fifo_free(&fifo)` with `fifo == NULL` is a no-op and freeing an empty packet FIFO nulls the pointer. The oracle deliberately avoids `av_container_fifo_free(NULL)`, because pinned FFmpeg requires the pointer-to-pointer argument itself to be valid. Rust mirrors the supported nullable-pointee lifecycle with `Option<PacketFifo>::take()` unit coverage and the deterministic `avutil_core_models` fixture.
 
 The newest packet FIFO clear-equivalence rows use `av_container_fifo_drain(fifo, av_container_fifo_can_read(fifo))` because FFmpeg exposes no direct `av_container_fifo_clear()` API. They prove all-draining a mixed move/ref packet queue releases move-written payload and `opaque_ref` storage once, preserves a ref-written source until that source is freed, leaves the FIFO empty, and keeps an empty all-drain no-op. Rust covers the direct `PacketFifo::clear()` helper with unit and deterministic fuzz invariants against the same lifecycle.
 

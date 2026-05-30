@@ -13088,6 +13088,18 @@ mod tests {
     }
 
     #[test]
+    fn packet_fifo_option_take_matches_av_container_fifo_free_lifecycle() {
+        let mut none_fifo: Option<PacketFifo> = None;
+        drop(none_fifo.take());
+        assert!(none_fifo.is_none());
+
+        let mut empty_fifo = Some(PacketFifo::new());
+        assert_eq!(empty_fifo.as_ref().unwrap().can_read(), 0);
+        drop(empty_fifo.take());
+        assert!(empty_fifo.is_none());
+    }
+
+    #[test]
     fn packet_fifo_clear_releases_moved_packets_and_preserves_ref_sources() {
         let mut empty_fifo = PacketFifo::new();
         empty_fifo.clear();

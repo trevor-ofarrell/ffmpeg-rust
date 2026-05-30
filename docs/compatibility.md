@@ -10,6 +10,13 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  `av_container_fifo_free(&fifo)` treats `fifo == NULL` as a no-op and frees an
+  empty packet FIFO by nulling the pointer while keeping zero readable entries.
+  Rust mirrors the nullable pointer-to-pointer lifecycle with
+  `Option<PacketFifo>::take()` plus a deterministic `avutil_core_models`
+  fixture. This strengthens `avutil-packet`; strict completion remains 11/96
+  and the row remains `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   `av_packet_free(NULL)` and `av_packet_free(&NULL)` are no-ops, and direct
   `av_packet_free(&pkt)` on one side of a shared refcounted packet pair nulls
   only that pointer while preserving the other owner. Payload and `opaque_ref`
