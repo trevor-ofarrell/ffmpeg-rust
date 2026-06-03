@@ -11223,6 +11223,27 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(ffmpeg_overflow_rescale_packet.time_base(), Rational::ONE);
     assert_eq!(ffmpeg_overflow_rescale_packet.data(), &[0x91, 0x92]);
 
+    let duration_only_src = Rational::new(1, 48_000).unwrap();
+    let mut duration_only_rescale_packet = Packet::from_data(vec![0x94]).unwrap();
+    duration_only_rescale_packet.set_duration(48_000).unwrap();
+    duration_only_rescale_packet.set_pos(Some(912)).unwrap();
+    duration_only_rescale_packet
+        .set_time_base(duration_only_src)
+        .unwrap();
+    duration_only_rescale_packet.set_flag(PacketFlags::CORRUPT, true);
+    duration_only_rescale_packet
+        .rescale_ts(duration_only_src, rescale_dst)
+        .unwrap();
+    assert_eq!(duration_only_rescale_packet.pts(), None);
+    assert_eq!(duration_only_rescale_packet.dts(), None);
+    assert_eq!(duration_only_rescale_packet.duration(), 1_000);
+    assert_eq!(duration_only_rescale_packet.pos(), Some(912));
+    assert_eq!(duration_only_rescale_packet.time_base(), duration_only_src);
+    assert!(duration_only_rescale_packet
+        .flags()
+        .contains(PacketFlags::CORRUPT));
+    assert_eq!(duration_only_rescale_packet.data(), &[0x94]);
+
     let mut mixed_rescale_packet = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
     mixed_rescale_packet.set_dts(Some(90_000));
     mixed_rescale_packet.set_duration(45_000).unwrap();

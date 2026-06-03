@@ -15097,12 +15097,18 @@ mod tests {
         let dst = Rational::new(1, 1_000).unwrap();
         let mut packet = Packet::new(Vec::new(), 0);
         packet.set_duration(48_000).unwrap();
+        packet.set_pos(Some(912)).unwrap();
+        packet.set_time_base(src).unwrap();
+        packet.set_flag(PacketFlags::CORRUPT, true);
 
         packet.rescale_ts(src, dst).unwrap();
 
         assert_eq!(packet.pts(), None);
         assert_eq!(packet.dts(), None);
         assert_eq!(packet.duration(), 1_000);
+        assert_eq!(packet.pos(), Some(912));
+        assert_eq!(packet.time_base(), src);
+        assert!(packet.flags().contains(PacketFlags::CORRUPT));
 
         let src = Rational::new(1, 90_000).unwrap();
         let dst = Rational::new(1, 1_000).unwrap();

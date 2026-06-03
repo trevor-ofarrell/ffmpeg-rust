@@ -174,6 +174,11 @@ The corpus now includes `packet_rescale_sentinel`, and a bounded WSL 64-run
 temporary corpus copy after the default LeakSanitizer pass reported the local
 ptrace incompatibility.
 
+The latest duration-only rescale row extends the ordinary `Packet::rescale_ts`
+fixture with `packet:rescale-duration-only`: FFmpeg rescales positive duration
+even when PTS and DTS are both `AV_NOPTS_VALUE`, while leaving payload,
+position, flags, stream index, and raw packet time base unchanged.
+
 The latest packet signed-position fixture extends `avutil_core_models` with
 negative `AVPacket.pos` behavior. `Packet::set_pos` accepts signed values such
 as `-2` while preserving `-1` as the public unknown-position sentinel,
@@ -624,7 +629,7 @@ The newest direct packet-free rows prove `av_packet_free(NULL)` and `av_packet_f
 
 The packet bridge rows also include `packet:frame-to-packet-map-inventory` and `packet:packet-to-frame-map-inventory`, proving all 11 pinned FFmpeg 8.1.1 global packet/frame side-data mappings in both directions while preserving expected kind order and payload bytes. They also cover `AV_FRAME_SIDE_DATA_FLAG_REPLACE`, `AV_FRAME_SIDE_DATA_FLAG_UNIQUE`, `AV_FRAME_SIDE_DATA_FLAG_NEW_REF`, and the combined `UNIQUE | REPLACE` flag shape. For `av_packet_side_data_from_frame()` on a duplicate-rich packet side-data array, the pinned FFmpeg 8.1.1 REPLACE, UNIQUE, and combined UNIQUE|REPLACE behavior is packet-specific: the first matching mapped packet side-data entry is replaced and later duplicates are preserved. For `av_packet_side_data_to_frame()`, REPLACE updates the matching frame-side entry in place while preserving nonmatching entry order; UNIQUE and combined UNIQUE|REPLACE follow the frame-owned insertion path by removing matching frame side data, preserving nonmatching entries, and appending the mapped replacement. For NEW_REF, the bounded raw packet/frame side-data conversion surface returns success and produces the same mapped side-data payload shape as the ordinary copied insertion path.
 
-The harness also includes `packet:rescale-mixed`, `packet:rescale-mixed-dts`, `packet:rescale-zero-duration`, `packet:rescale-negative-ts`, `packet:rescale-near-inf-rounding`, and `packet:rescale-negative-near-inf-rounding`, proving `av_packet_rescale_ts()` preserves `AV_NOPTS_VALUE` independently for PTS or DTS, rescales valid timestamps while preserving zero duration, rescales negative PTS/DTS with positive duration, uses nearest-away rounding for positive fractional timestamp/duration rescale plus the negative half-tick PTS row, and avoids changing payload bytes, byte position, flags, stream index, or the packet `time_base` field. The `packet:rescale-overflow` and `packet:rescale-invalid-time-base` rows cover FFmpeg's sentinel-writing edge when the underlying rational rescale returns `INT64_MIN`.
+The harness also includes `packet:rescale-duration-only`, `packet:rescale-mixed`, `packet:rescale-mixed-dts`, `packet:rescale-zero-duration`, `packet:rescale-negative-ts`, `packet:rescale-near-inf-rounding`, and `packet:rescale-negative-near-inf-rounding`, proving `av_packet_rescale_ts()` rescales positive duration even when PTS/DTS remain `AV_NOPTS_VALUE`, preserves `AV_NOPTS_VALUE` independently for PTS or DTS, rescales valid timestamps while preserving zero duration, rescales negative PTS/DTS with positive duration, uses nearest-away rounding for positive fractional timestamp/duration rescale plus the negative half-tick PTS row, and avoids changing payload bytes, byte position, flags, stream index, or the packet `time_base` field. The `packet:rescale-overflow` and `packet:rescale-invalid-time-base` rows cover FFmpeg's sentinel-writing edge when the underlying rational rescale returns `INT64_MIN`.
 
 The harness also includes `packet:copy-props-raw-time-base`,
 `packet:ref-raw-time-base`, `packet:clone-raw-time-base`, and

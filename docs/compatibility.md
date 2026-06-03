@@ -10,6 +10,13 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  `av_packet_rescale_ts()` rescales a positive `AVPacket.duration` even when
+  both PTS and DTS are `AV_NOPTS_VALUE`, while preserving payload, position,
+  flags, stream index, and raw packet time base. Rust mirrors this through
+  focused unit coverage, the mapped packet oracle, and a deterministic
+  `avutil_core_models` invariant. This strengthens `avutil-packet`; strict
+  completion remains 11/96 and the row remains `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   `av_packet_from_data()` creates refcounted packet payload ownership that
   `av_packet_ref()` and `av_packet_clone()` share at the same data pointer,
   leaving shared references non-writable until `av_packet_make_writable()`
@@ -634,7 +641,7 @@
   default zero time base.
 - Latest `avutil-packet` payload coverage adds the `av_grow_packet()` allocation-limit boundary: pinned rows prove FFmpeg returns `AVERROR(ENOMEM)` without mutation when `grow_by` exceeds `INT_MAX - (pkt->size + AV_INPUT_BUFFER_PADDING_SIZE)`, and Rust `Packet::grow_data` now rejects the same boundary before attempting allocation.
 - Latest `avutil-packet` payload coverage adds read-only refcounted buffer parity: pinned rows prove `av_packet_make_refcounted()` leaves an existing read-only `AVBufferRef` attached and non-writable, while `av_packet_make_writable()` detaches to writable padded storage and preserves visible bytes.
-- Latest `avutil-packet` timestamp coverage adds mixed, zero-duration, negative-timestamp, and nearest-away rounding `av_packet_rescale_ts()` rows: pinned `packet:rescale-mixed` proves `AV_NOPTS_VALUE` PTS is preserved while valid DTS and duration are rescaled, pinned `packet:rescale-mixed-dts` proves `AV_NOPTS_VALUE` DTS is preserved while valid PTS and duration are rescaled, pinned `packet:rescale-zero-duration` proves valid PTS/DTS rescale while zero duration stays zero, pinned `packet:rescale-negative-ts` proves negative PTS/DTS and positive duration rescale together, pinned `packet:rescale-near-inf-rounding` proves positive fractional timestamp and duration rescale follows FFmpeg's nearest-away rounding, and pinned `packet:rescale-negative-near-inf-rounding` proves negative half-tick timestamps round away from zero, with payload, position, flags, stream index, and `time_base` left unchanged.
+- Latest `avutil-packet` timestamp coverage adds duration-only, mixed, zero-duration, negative-timestamp, and nearest-away rounding `av_packet_rescale_ts()` rows: pinned `packet:rescale-duration-only` proves positive duration rescales even while PTS/DTS stay `AV_NOPTS_VALUE`, pinned `packet:rescale-mixed` proves `AV_NOPTS_VALUE` PTS is preserved while valid DTS and duration are rescaled, pinned `packet:rescale-mixed-dts` proves `AV_NOPTS_VALUE` DTS is preserved while valid PTS and duration are rescaled, pinned `packet:rescale-zero-duration` proves valid PTS/DTS rescale while zero duration stays zero, pinned `packet:rescale-negative-ts` proves negative PTS/DTS and positive duration rescale together, pinned `packet:rescale-near-inf-rounding` proves positive fractional timestamp and duration rescale follows FFmpeg's nearest-away rounding, and pinned `packet:rescale-negative-near-inf-rounding` proves negative half-tick timestamps round away from zero, with payload, position, flags, stream index, and `time_base` left unchanged.
 - Latest `avutil-packet` rescale boundary coverage adds `packet:rescale-overflow`
   and `packet:rescale-invalid-time-base`: pinned FFmpeg's void
   `av_packet_rescale_ts()` stores `AV_NOPTS_VALUE` in present timing fields

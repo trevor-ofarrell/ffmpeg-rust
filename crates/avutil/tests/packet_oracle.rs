@@ -184,6 +184,24 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         packet_fields(&rescaled_unknown),
     );
 
+    let mut rescaled_duration_only = Packet::new(vec![0x94], 13);
+    rescaled_duration_only.set_duration(48_000).unwrap();
+    rescaled_duration_only.set_pos(Some(912)).unwrap();
+    rescaled_duration_only.set_flag(PacketFlags::CORRUPT, true);
+    rescaled_duration_only
+        .set_time_base(Rational::new(1, 48_000).unwrap())
+        .unwrap();
+    rescaled_duration_only
+        .rescale_ts(
+            Rational::new(1, 48_000).unwrap(),
+            Rational::new(1, 1_000).unwrap(),
+        )
+        .unwrap();
+    rows.insert(
+        "packet:rescale-duration-only".to_string(),
+        packet_fields(&rescaled_duration_only),
+    );
+
     let mut rescaled_mixed = Packet::new(vec![0xaa, 0xbb], 2);
     rescaled_mixed.set_dts(Some(90_000));
     rescaled_mixed.set_duration(45_000).unwrap();
@@ -9202,6 +9220,18 @@ int main(void) {
     pkt->stream_index = 3;
     av_packet_rescale_ts(pkt, (AVRational){ 1, 90000 }, (AVRational){ 1, 1000 });
     print_packet("packet:rescale-unknown", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    fail_if(av_new_packet(pkt, 1) < 0, "av_new_packet duration-only rescale failed");
+    pkt->data[0] = 0x94;
+    pkt->duration = 48000;
+    pkt->pos = 912;
+    pkt->stream_index = 13;
+    pkt->flags = AV_PKT_FLAG_CORRUPT;
+    pkt->time_base = (AVRational){ 1, 48000 };
+    av_packet_rescale_ts(pkt, (AVRational){ 1, 48000 }, (AVRational){ 1, 1000 });
+    print_packet("packet:rescale-duration-only", pkt);
     av_packet_free(&pkt);
 
     pkt = new_packet();
