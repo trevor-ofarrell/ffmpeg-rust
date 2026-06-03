@@ -7,7 +7,8 @@ use crate::frame::{
 };
 use crate::pixel::{AVPALETTE_COUNT, AVPALETTE_SIZE};
 use crate::{
-    rescale_q, AvError, AvErrorCode, AvErrorKind, AvResult, BufferRef, Dictionary, Rational,
+    rescale_q, AvError, AvErrorCode, AvErrorKind, AvResult, BufferRef, Dictionary, MatchMode,
+    Rational, SetMode,
 };
 use std::collections::VecDeque;
 use std::num::NonZeroUsize;
@@ -2644,12 +2645,82 @@ pub fn packet_pack_dictionary(dict: &Dictionary) -> Vec<u8> {
 }
 
 pub fn packet_unpack_dictionary(data: &[u8]) -> AvResult<Dictionary> {
-    let metadata = PacketStringMetadata::parse(data)?;
     let mut dict = Dictionary::new();
-    for entry in metadata.entries() {
-        dict.set(entry.key_str()?, entry.value_str()?)?;
-    }
+    packet_unpack_dictionary_into(data, &mut dict)?;
     Ok(dict)
+}
+
+pub fn packet_unpack_dictionary_into(data: &[u8], dict: &mut Dictionary) -> AvResult<()> {
+    let mut offset = 0;
+    while offset < data.len() {
+        let key_end = find_nul(data, offset).ok_or_else(|| {
+            AvError::invalid_data("packet string metadata key is not NUL terminated")
+        })?;
+        let key_bytes = &data[offset..key_end];
+        if key_bytes.is_empty() {
+            return Err(AvError::invalid_data(
+                "packet string metadata key must not be empty",
+            ));
+        }
+
+        offset = key_end + 1;
+        if offset >= data.len() {
+            return Err(AvError::invalid_data(
+                "packet string metadata key is missing a value",
+            ));
+        }
+
+        let value_end = find_nul(data, offset).ok_or_else(|| {
+            AvError::invalid_data("packet string metadata value is not NUL terminated")
+        })?;
+        let value_bytes = &data[offset..value_end];
+        let key = std::str::from_utf8(key_bytes)
+            .map_err(|_| AvError::invalid_data("packet string metadata key is not valid UTF-8"))?;
+        let value = std::str::from_utf8(value_bytes).map_err(|_| {
+            AvError::invalid_data("packet string metadata value is not valid UTF-8")
+        })?;
+
+        packet_dictionary_set_ffmpeg_order(dict, key, value)?;
+        offset = value_end + 1;
+    }
+
+    Ok(())
+}
+
+fn packet_dictionary_set_ffmpeg_order(
+    dict: &mut Dictionary,
+    key: &str,
+    value: &str,
+) -> AvResult<()> {
+    let Some(index) = dict
+        .entries()
+        .iter()
+        .position(|entry| entry.key().eq_ignore_ascii_case(key))
+    else {
+        dict.set(key, value)?;
+        return Ok(());
+    };
+
+    let mut entries = dict.entries().to_vec();
+    entries.swap_remove(index);
+
+    let mut rebuilt = Dictionary::new();
+    for entry in entries {
+        rebuilt.set_with_mode(
+            entry.key(),
+            entry.value(),
+            MatchMode::CaseInsensitive,
+            SetMode::AllowMultiple,
+        )?;
+    }
+    rebuilt.set_with_mode(
+        key,
+        value,
+        MatchMode::CaseInsensitive,
+        SetMode::AllowMultiple,
+    )?;
+    *dict = rebuilt;
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -9212,6 +9283,117 @@ mod tests {
         let empty = Dictionary::new();
         assert!(packet_pack_dictionary(&empty).is_empty());
         assert!(packet_unpack_dictionary(&[]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn packet_dictionary_unpack_into_matches_incremental_ffmpeg_mutation() {
+        fn seeded_dictionary() -> Dictionary {
+            let mut dict = Dictionary::new();
+            dict.set("title", "old").unwrap();
+            dict.set("keep", "yes").unwrap();
+            dict
+        }
+
+        fn dictionary_pairs(dict: &Dictionary) -> Vec<(&str, &str)> {
+            dict.entries()
+                .iter()
+                .map(|entry| (entry.key(), entry.value()))
+                .collect()
+        }
+
+        let mut dict = seeded_dictionary();
+        packet_unpack_dictionary_into(b"title\0new\0artist\0name\0", &mut dict).unwrap();
+        assert_eq!(
+            dictionary_pairs(&dict),
+            vec![("keep", "yes"), ("title", "new"), ("artist", "name")]
+        );
+
+        let mut dict = seeded_dictionary();
+        dict.set("album", "record").unwrap();
+        packet_unpack_dictionary_into(b"title\0new\0", &mut dict).unwrap();
+        assert_eq!(
+            dictionary_pairs(&dict),
+            vec![("album", "record"), ("keep", "yes"), ("title", "new")]
+        );
+
+        let mut dict = Dictionary::new();
+        dict.set_with_mode(
+            "title",
+            "old",
+            MatchMode::CaseInsensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+        dict.set_with_mode(
+            "keep",
+            "yes",
+            MatchMode::CaseInsensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+        dict.set_with_mode(
+            "TITLE",
+            "older",
+            MatchMode::CaseInsensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+        packet_unpack_dictionary_into(b"title\0new\0", &mut dict).unwrap();
+        assert_eq!(
+            dictionary_pairs(&dict),
+            vec![("TITLE", "older"), ("keep", "yes"), ("title", "new")]
+        );
+
+        let mut dict = seeded_dictionary();
+        packet_unpack_dictionary_into(b"title\0first\0TITLE\0second\0", &mut dict).unwrap();
+        assert_eq!(
+            dictionary_pairs(&dict),
+            vec![("keep", "yes"), ("TITLE", "second")]
+        );
+
+        let mut dict = seeded_dictionary();
+        packet_unpack_dictionary_into(&[], &mut dict).unwrap();
+        assert_eq!(
+            dictionary_pairs(&dict),
+            vec![("title", "old"), ("keep", "yes")]
+        );
+
+        let mut dict = seeded_dictionary();
+        let err = packet_unpack_dictionary_into(b"title\0new", &mut dict).unwrap_err();
+        assert_eq!(err.kind(), crate::AvErrorKind::InvalidData);
+        assert_eq!(err.code(), Some(AvErrorCode::INVALIDDATA));
+        assert_eq!(
+            dictionary_pairs(&dict),
+            vec![("title", "old"), ("keep", "yes")]
+        );
+
+        let mut dict = seeded_dictionary();
+        let err = packet_unpack_dictionary_into(b"artist\0name\0title\0", &mut dict).unwrap_err();
+        assert_eq!(err.kind(), crate::AvErrorKind::InvalidData);
+        assert_eq!(err.code(), Some(AvErrorCode::INVALIDDATA));
+        assert_eq!(
+            dictionary_pairs(&dict),
+            vec![("title", "old"), ("keep", "yes"), ("artist", "name")]
+        );
+
+        let mut dict = seeded_dictionary();
+        let err = packet_unpack_dictionary_into(b"artist\0name\0\0x\0", &mut dict).unwrap_err();
+        assert_eq!(err.kind(), crate::AvErrorKind::InvalidData);
+        assert_eq!(err.code(), Some(AvErrorCode::INVALIDDATA));
+        assert_eq!(
+            dictionary_pairs(&dict),
+            vec![("title", "old"), ("keep", "yes"), ("artist", "name")]
+        );
+
+        let mut dict = seeded_dictionary();
+        let err = packet_unpack_dictionary_into(b"artist\0name\0title\0\xff\xfe\0", &mut dict)
+            .unwrap_err();
+        assert_eq!(err.kind(), crate::AvErrorKind::InvalidData);
+        assert_eq!(err.code(), Some(AvErrorCode::INVALIDDATA));
+        assert_eq!(
+            dictionary_pairs(&dict),
+            vec![("title", "old"), ("keep", "yes"), ("artist", "name")]
+        );
     }
 
     #[test]

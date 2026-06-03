@@ -1343,6 +1343,14 @@ The packet side-data name boundary slice was checked against pinned FFmpeg 8.1.1
 
 The standalone packet side-data duplicate slice now pins `av_packet_side_data_get()`, `av_packet_side_data_add()`, `av_packet_side_data_remove()`, and `av_packet_side_data_free()` on empty and duplicate-type arrays: empty lookup/remove/free preserve empty state; duplicate lookup returns the first matching entry, add replaces the first matching entry, remove scans from the end, removes the last matching entry, swap-fills with the previous tail, and free resets the duplicate-rich array. The standalone flag rows also prove FFmpeg ignores nonzero flags for `av_packet_side_data_new()` and `av_packet_side_data_add()` while retaining first-match replacement and ownership-transfer behavior.
 
+The packet dictionary destination-mutation rows `packet:dict-unpack-into-*`
+pin `av_packet_unpack_dictionary()` when the caller passes a nonempty
+destination dictionary. Valid unpack removes matching existing keys before
+appending replacements using FFmpeg's swap-removal dictionary order, empty
+input is a no-op, malformed first pairs preserve the destination, and malformed
+tails keep earlier successfully unpacked pairs while returning
+`AVERROR_INVALIDDATA`.
+
 The packet side-data padding rows `packet:side-new-padding` and
 `packet:array-new-padding` read the `AV_INPUT_BUFFER_PADDING_SIZE` bytes after
 the visible `AV_PKT_DATA_NEW_EXTRADATA` payload allocated by

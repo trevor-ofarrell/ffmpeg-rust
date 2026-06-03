@@ -6,12 +6,13 @@ use avutil::{
     digest_to_base64, digest_to_hex, flush_global_log_repeated,
     frame_side_data_descriptor_for_value, frame_side_data_name_for_value,
     global_formatted_log_records, global_log, global_log_flags, global_log_level, hash_name, md5,
-    murmur3, packet_pack_dictionary, packet_unpack_dictionary, parse_color, rescale, rescale_delta,
-    rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax, rescale_rnd, rescale_rnd_pass_minmax,
-    ripemd128, ripemd160, ripemd256, ripemd320, set_global_log_callback, set_global_log_flag,
-    set_global_log_flags, set_global_log_level, sha1, sha224, sha256, sha384, sha512, sha512_224,
-    sha512_256, take_global_log_records, Adler32, AmbisonicChannelLayout, AudioFrame, AvError,
-    AvErrorCode, AvErrorKind, AvLogContextPrefix, BufferPool, BufferPoolAllocation,
+    murmur3, packet_pack_dictionary, packet_unpack_dictionary, packet_unpack_dictionary_into,
+    parse_color, rescale, rescale_delta, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax,
+    rescale_rnd, rescale_rnd_pass_minmax, ripemd128, ripemd160, ripemd256, ripemd320,
+    set_global_log_callback, set_global_log_flag, set_global_log_flags, set_global_log_level,
+    sha1, sha224, sha256, sha384, sha512, sha512_224, sha512_256, take_global_log_records,
+    Adler32, AmbisonicChannelLayout, AudioFrame, AvError, AvErrorCode, AvErrorKind,
+    AvLogContextPrefix, BufferPool, BufferPoolAllocation,
     BufferPoolCallbacks, BufferRef, Channel, ChannelCustom, ChannelId, ChannelLayout,
     ChannelLayoutSpec, Crc32, CustomChannelLayout, DefaultCallbackColorState,
     DefaultCallbackPrefixState, Dictionary, Frame, FrameA53ClosedCaptions,
@@ -14275,6 +14276,81 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(duplicate_unpacked.entries()[1].value(), "Name");
     assert!(packet_pack_dictionary(&Dictionary::new()).is_empty());
     assert!(packet_unpack_dictionary(&[]).unwrap().is_empty());
+
+    let mut unpack_into_dict = Dictionary::new();
+    unpack_into_dict.set("title", "old").unwrap();
+    unpack_into_dict.set("keep", "yes").unwrap();
+    packet_unpack_dictionary_into(b"title\0new\0artist\0name\0", &mut unpack_into_dict).unwrap();
+    assert_eq!(unpack_into_dict.len(), 3);
+    assert_eq!(unpack_into_dict.entries()[0].key(), "keep");
+    assert_eq!(unpack_into_dict.entries()[0].value(), "yes");
+    assert_eq!(unpack_into_dict.entries()[1].key(), "title");
+    assert_eq!(unpack_into_dict.entries()[1].value(), "new");
+    assert_eq!(unpack_into_dict.entries()[2].key(), "artist");
+    assert_eq!(unpack_into_dict.entries()[2].value(), "name");
+
+    let mut unpack_into_three = Dictionary::new();
+    unpack_into_three.set("title", "old").unwrap();
+    unpack_into_three.set("keep", "yes").unwrap();
+    unpack_into_three.set("album", "record").unwrap();
+    packet_unpack_dictionary_into(b"title\0new\0", &mut unpack_into_three).unwrap();
+    assert_eq!(unpack_into_three.len(), 3);
+    assert_eq!(unpack_into_three.entries()[0].key(), "album");
+    assert_eq!(unpack_into_three.entries()[0].value(), "record");
+    assert_eq!(unpack_into_three.entries()[1].key(), "keep");
+    assert_eq!(unpack_into_three.entries()[1].value(), "yes");
+    assert_eq!(unpack_into_three.entries()[2].key(), "title");
+    assert_eq!(unpack_into_three.entries()[2].value(), "new");
+
+    let mut unpack_into_duplicate_dest = Dictionary::new();
+    unpack_into_duplicate_dest
+        .set_with_mode(
+            "title",
+            "old",
+            MatchMode::CaseInsensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+    unpack_into_duplicate_dest
+        .set_with_mode(
+            "keep",
+            "yes",
+            MatchMode::CaseInsensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+    unpack_into_duplicate_dest
+        .set_with_mode(
+            "TITLE",
+            "older",
+            MatchMode::CaseInsensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+    packet_unpack_dictionary_into(b"title\0new\0", &mut unpack_into_duplicate_dest).unwrap();
+    assert_eq!(unpack_into_duplicate_dest.len(), 3);
+    assert_eq!(unpack_into_duplicate_dest.entries()[0].key(), "TITLE");
+    assert_eq!(unpack_into_duplicate_dest.entries()[0].value(), "older");
+    assert_eq!(unpack_into_duplicate_dest.entries()[1].key(), "keep");
+    assert_eq!(unpack_into_duplicate_dest.entries()[1].value(), "yes");
+    assert_eq!(unpack_into_duplicate_dest.entries()[2].key(), "title");
+    assert_eq!(unpack_into_duplicate_dest.entries()[2].value(), "new");
+
+    let mut partial_unpack_dict = Dictionary::new();
+    partial_unpack_dict.set("title", "old").unwrap();
+    partial_unpack_dict.set("keep", "yes").unwrap();
+    let err = packet_unpack_dictionary_into(b"artist\0name\0title\0", &mut partial_unpack_dict)
+        .unwrap_err();
+    assert_eq!(err.kind(), AvErrorKind::InvalidData);
+    assert_eq!(err.code(), Some(AvErrorCode::INVALIDDATA));
+    assert_eq!(partial_unpack_dict.len(), 3);
+    assert_eq!(partial_unpack_dict.entries()[0].key(), "title");
+    assert_eq!(partial_unpack_dict.entries()[0].value(), "old");
+    assert_eq!(partial_unpack_dict.entries()[1].key(), "keep");
+    assert_eq!(partial_unpack_dict.entries()[1].value(), "yes");
+    assert_eq!(partial_unpack_dict.entries()[2].key(), "artist");
+    assert_eq!(partial_unpack_dict.entries()[2].value(), "name");
+
     for invalid_dict in [
         b"title\0Clip".as_slice(),
         b"\0Clip\0".as_slice(),

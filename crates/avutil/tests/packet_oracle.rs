@@ -7,9 +7,9 @@ use std::{
 };
 
 use avutil::{
-    packet_pack_dictionary, packet_unpack_dictionary, AvErrorCode, BufferRef, Dictionary, Frame,
-    FrameSideData, FrameSideDataFlags, FrameSideDataKind, MatchMode, Packet,
-    PacketActiveFormatDescription, PacketAmbientViewingEnvironment, PacketAudioServiceType,
+    packet_pack_dictionary, packet_unpack_dictionary, packet_unpack_dictionary_into, AvErrorCode,
+    BufferRef, Dictionary, Frame, FrameSideData, FrameSideDataFlags, FrameSideDataKind, MatchMode,
+    Packet, PacketActiveFormatDescription, PacketAmbientViewingEnvironment, PacketAudioServiceType,
     PacketContentLightMetadata, PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf,
     PacketDoviCompression, PacketDynamicHdr10Plus, PacketEncryptionSubsample, PacketFallbackTrack,
     PacketFifo, PacketFifoFlags, PacketFlags, PacketFrameCropping,
@@ -3571,6 +3571,49 @@ fn insert_dictionary_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     );
 
     for (name, data) in [
+        (
+            "packet:dict-unpack-into-valid",
+            b"title\0new\0artist\0name\0".as_slice(),
+        ),
+        (
+            "packet:dict-unpack-into-duplicate",
+            b"title\0first\0TITLE\0second\0".as_slice(),
+        ),
+        (
+            "packet:dict-unpack-into-replace-first-of-three",
+            b"title\0new\0".as_slice(),
+        ),
+        (
+            "packet:dict-unpack-into-duplicate-dest",
+            b"title\0new\0".as_slice(),
+        ),
+        ("packet:dict-unpack-into-empty", b"".as_slice()),
+        (
+            "packet:dict-unpack-into-missing-final-nul",
+            b"title\0new".as_slice(),
+        ),
+        (
+            "packet:dict-unpack-into-partial-invalid",
+            b"artist\0name\0title\0".as_slice(),
+        ),
+        (
+            "packet:dict-unpack-into-empty-key-after-valid",
+            b"artist\0name\0\0x\0".as_slice(),
+        ),
+    ] {
+        let fields = match name {
+            "packet:dict-unpack-into-replace-first-of-three" => {
+                dictionary_unpack_into_fields_with_seed(data, seeded_unpack_dictionary_three())
+            }
+            "packet:dict-unpack-into-duplicate-dest" => {
+                dictionary_unpack_into_fields_with_seed(data, seeded_duplicate_unpack_dictionary())
+            }
+            _ => dictionary_unpack_into_fields(data),
+        };
+        rows.insert(name.to_string(), fields);
+    }
+
+    for (name, data) in [
         ("packet:dict-unpack-empty-ret", b"".as_slice()),
         (
             "packet:dict-unpack-missing-final-nul-ret",
@@ -5815,6 +5858,45 @@ fn dictionary_fields(dict: &Dictionary) -> Vec<String> {
     fields
 }
 
+fn seeded_unpack_dictionary() -> Dictionary {
+    let mut dict = Dictionary::new();
+    dict.set("title", "old").unwrap();
+    dict.set("keep", "yes").unwrap();
+    dict
+}
+
+fn seeded_unpack_dictionary_three() -> Dictionary {
+    let mut dict = seeded_unpack_dictionary();
+    dict.set("album", "record").unwrap();
+    dict
+}
+
+fn seeded_duplicate_unpack_dictionary() -> Dictionary {
+    let mut dict = Dictionary::new();
+    dict.set_with_mode(
+        "title",
+        "old",
+        MatchMode::CaseInsensitive,
+        avutil::SetMode::AllowMultiple,
+    )
+    .unwrap();
+    dict.set_with_mode(
+        "keep",
+        "yes",
+        MatchMode::CaseInsensitive,
+        avutil::SetMode::AllowMultiple,
+    )
+    .unwrap();
+    dict.set_with_mode(
+        "TITLE",
+        "older",
+        MatchMode::CaseInsensitive,
+        avutil::SetMode::AllowMultiple,
+    )
+    .unwrap();
+    dict
+}
+
 fn dictionary_unpack_ret_fields(data: &[u8]) -> Vec<String> {
     let ret = match packet_unpack_dictionary(data) {
         Ok(_) => 0,
@@ -5826,6 +5908,25 @@ fn dictionary_unpack_ret_fields(data: &[u8]) -> Vec<String> {
         }
     };
     vec![ret.to_string()]
+}
+
+fn dictionary_unpack_into_fields(data: &[u8]) -> Vec<String> {
+    dictionary_unpack_into_fields_with_seed(data, seeded_unpack_dictionary())
+}
+
+fn dictionary_unpack_into_fields_with_seed(data: &[u8], mut dict: Dictionary) -> Vec<String> {
+    let ret = match packet_unpack_dictionary_into(data, &mut dict) {
+        Ok(()) => 0,
+        Err(err) => {
+            assert_eq!(err.code(), Some(AvErrorCode::INVALIDDATA));
+            err.code()
+                .unwrap_or_else(|| panic!("dictionary unpack error without AVERROR code: {err}"))
+                .raw()
+        }
+    };
+    let mut fields = vec![ret.to_string()];
+    fields.extend(dictionary_fields(&dict));
+    fields
 }
 
 fn packet_side_data_type(kind: &PacketSideDataKind) -> String {
@@ -6942,6 +7043,35 @@ static void print_dictionary_unpack_ret(const char *name, const uint8_t *data, s
     int ret = av_packet_unpack_dictionary(data, size, &dict);
     printf("%s|%d\n", name, ret);
     av_dict_free(&dict);
+}
+
+static void print_dictionary_unpack_into_seeded(const char *name, const uint8_t *data, size_t size,
+                                                int seed_kind) {
+    AVDictionary *dict = NULL;
+    const AVDictionaryEntry *entry = NULL;
+    int flags = seed_kind == 2 ? AV_DICT_MULTIKEY : 0;
+    fail_if(av_dict_set(&dict, "title", "old", flags) < 0,
+            "dict unpack-into seed title failed");
+    fail_if(av_dict_set(&dict, "keep", "yes", flags) < 0,
+            "dict unpack-into seed keep failed");
+    if (seed_kind == 1) {
+        fail_if(av_dict_set(&dict, "album", "record", 0) < 0,
+                "dict unpack-into seed album failed");
+    } else if (seed_kind == 2) {
+        fail_if(av_dict_set(&dict, "TITLE", "older", AV_DICT_MULTIKEY) < 0,
+                "dict unpack-into seed duplicate TITLE failed");
+    }
+    int ret = av_packet_unpack_dictionary(data, size, &dict);
+    printf("%s|%d|%d", name, ret, av_dict_count(dict));
+    while ((entry = av_dict_iterate(dict, entry))) {
+        printf("|%s|%s", entry->key, entry->value);
+    }
+    printf("\n");
+    av_dict_free(&dict);
+}
+
+static void print_dictionary_unpack_into(const char *name, const uint8_t *data, size_t size) {
+    print_dictionary_unpack_into_seeded(name, data, size, 0);
 }
 
 static void print_display_rotation_case(double angle, int fractional_label) {
@@ -9166,6 +9296,35 @@ static void exercise_dictionary_api(void) {
     printf("packet:dict-unpack-duplicate-ret|%d\n", ret);
     print_dictionary("packet:dict-unpack-duplicate", unpacked);
     av_dict_free(&unpacked);
+
+    static const uint8_t unpack_into_valid[] = "title\0new\0artist\0name";
+    print_dictionary_unpack_into("packet:dict-unpack-into-valid",
+                                 unpack_into_valid, sizeof(unpack_into_valid));
+    static const uint8_t unpack_into_duplicate[] = "title\0first\0TITLE\0second";
+    print_dictionary_unpack_into("packet:dict-unpack-into-duplicate",
+                                 unpack_into_duplicate, sizeof(unpack_into_duplicate));
+    static const uint8_t unpack_into_replace_first[] = "title\0new";
+    print_dictionary_unpack_into_seeded("packet:dict-unpack-into-replace-first-of-three",
+                                        unpack_into_replace_first,
+                                        sizeof(unpack_into_replace_first), 1);
+    print_dictionary_unpack_into_seeded("packet:dict-unpack-into-duplicate-dest",
+                                        unpack_into_replace_first,
+                                        sizeof(unpack_into_replace_first), 2);
+    print_dictionary_unpack_into("packet:dict-unpack-into-empty", NULL, 0);
+    static const uint8_t unpack_into_missing_final[] = {
+        't', 'i', 't', 'l', 'e', 0, 'n', 'e', 'w'
+    };
+    print_dictionary_unpack_into("packet:dict-unpack-into-missing-final-nul",
+                                 unpack_into_missing_final,
+                                 sizeof(unpack_into_missing_final));
+    static const uint8_t unpack_into_partial_invalid[] = "artist\0name\0title";
+    print_dictionary_unpack_into("packet:dict-unpack-into-partial-invalid",
+                                 unpack_into_partial_invalid,
+                                 sizeof(unpack_into_partial_invalid));
+    static const uint8_t unpack_into_empty_key_after_valid[] = "artist\0name\0\0x";
+    print_dictionary_unpack_into("packet:dict-unpack-into-empty-key-after-valid",
+                                 unpack_into_empty_key_after_valid,
+                                 sizeof(unpack_into_empty_key_after_valid));
 
     print_dictionary_unpack_ret("packet:dict-unpack-empty-ret", NULL, 0);
     static const uint8_t missing_final_nul[] = {
