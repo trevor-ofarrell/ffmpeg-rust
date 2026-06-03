@@ -509,6 +509,21 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                     trailing_pair_separator.get("quality"),
                     Some(&OptionValue::Float(0.5))
                 );
+                let mut repeated_pair_separator = sample_options();
+                let repeated_pair_separator_result = repeated_pair_separator
+                    .set_avoptions_from_string("threads=7::quality=0.25", &[], "=", ":");
+                assert_eq!(
+                    repeated_pair_separator_result.err().and_then(|err| err.code()),
+                    Some(AvErrorCode::EINVAL)
+                );
+                assert_eq!(
+                    repeated_pair_separator.get("threads"),
+                    Some(&OptionValue::Int(7))
+                );
+                assert_eq!(
+                    repeated_pair_separator.get("quality"),
+                    Some(&OptionValue::Float(0.5))
+                );
                 let mut empty_opts = sample_options();
                 assert_eq!(
                     empty_opts.set_avoptions_from_string("", &["threads", "bitexact"], "=", ":",),

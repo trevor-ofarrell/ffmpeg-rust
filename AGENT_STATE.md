@@ -3,6 +3,52 @@
 ## Current Status
 
 Current authoritative turn status: main-thread WSL slice added
+`avutil-options` repeated-pair-separator evidence. Required startup checks passed
+from a clean tree at `master...origin/master [ahead 47]`:
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15` reported 11/96 strict-complete components (11.5%), and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validated the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
+confirmed the top-priority `avutil-packet` shared-shrink blocker, briefly
+audited `avutil-buffer`, and advanced the next unblocked priority-1
+`avutil-options` evidence slice; no worker writes were delegated.
+
+Current main-thread slice: pinned libavutil rows now prove
+`av_opt_set_from_string("threads=7::quality=0.25", NULL, "=", ":")` returns
+`EINVAL` after applying `threads=7`, while leaving the later `quality` option at
+its default. Rust mirrors this with focused unit coverage in
+`OptionSet::set_avoptions_from_string`, an ignored `options_oracle` row, and the
+deterministic `avutil_metadata_options` fuzz fixture. `avutil-options` remains
+`fate_pass`, not complete; strict completion remains 11/96 because broader
+AVOption closure, sustained fuzz execution, and zero-known-limitation review
+remain pending.
+
+Latest validation commands for this options repeated-separator slice passed:
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil
+set_avoptions_from_string_matches_bounded_ffmpeg_shape -- --nocapture`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
+options_oracle libavutil_option_helpers_match_current_model -- --ignored
+--nocapture`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo check --manifest-path
+fuzz/Cargo.toml --bin avutil_metadata_options`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil --all-targets
+--all-features -- -D warnings`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy
+--manifest-path fuzz/Cargo.toml --bin avutil_metadata_options -- -D warnings`;
+`cargo fmt --all -- --check`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p
+fate-runner -- run --mappings tests/differential/mappings.txt --component
+avutil-options --target oracle-libavutil-options --oracle-ffmpeg
+./third_party/ffmpeg-oracle/build/bin/ffmpeg` after escalation allowed the
+pinned FFmpeg FATE cache result write; `CARGO_TARGET_DIR=target-orch-fate cargo
+run -p fate-runner -- run --component avutil-options`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run --mappings
+tests/fate/upstream-mappings.txt --component avutil-options --target fate-opt`
+after escalation allowed the pinned FFmpeg FATE cache result write;
+`CARGO_TARGET_DIR=target-orch-fate cargo test -p fate-runner current_ledger`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- guard-runtime`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15`; and `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask
+-- oracle-doctor`.
+
+Current authoritative turn status: main-thread WSL slice added
 `avutil-logging` exact-size `av_log_format_line2()` evidence. Pinned
 libavutil rows now prove NULL-context and AVClass-context calls where
 `line_size` equals the full would-write length return that full length, copy

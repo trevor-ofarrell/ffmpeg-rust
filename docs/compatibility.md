@@ -9,6 +9,12 @@
 
 ## Compatible Today
 
+- Latest main-thread options evidence: pinned libavutil rows now prove
+  `av_opt_set_from_string("threads=7::quality=0.25", NULL, "=", ":")`
+  returns `EINVAL` after applying `threads=7`, while leaving later `quality`
+  state unchanged at its default. Rust unit, ignored oracle, and deterministic
+  fuzz-fixture coverage mirror this boundary. `avutil-options` remains
+  `fate_pass`; strict completion remains 11/96.
 - Latest main-thread logging evidence: pinned libavutil rows now prove
   `av_log_format_line2()` exact-size copied-buffer behavior for NULL and
   AVClass contexts. When `line_size` equals the full would-write length, FFmpeg

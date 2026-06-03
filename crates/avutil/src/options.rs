@@ -9250,6 +9250,20 @@ mod tests {
             Some(&OptionValue::Float(0.5))
         );
 
+        let mut repeated_pair_separator = sample_options();
+        let err = repeated_pair_separator
+            .set_avoptions_from_string("threads=7::quality=0.25", &[], "=", ":")
+            .unwrap_err();
+        assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
+        assert_eq!(
+            repeated_pair_separator.get("threads"),
+            Some(&OptionValue::Int(7))
+        );
+        assert_eq!(
+            repeated_pair_separator.get("quality"),
+            Some(&OptionValue::Float(0.5))
+        );
+
         let mut escaped = sample_options();
         assert_eq!(
             escaped

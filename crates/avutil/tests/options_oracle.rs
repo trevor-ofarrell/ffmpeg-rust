@@ -749,6 +749,24 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         state_fields(&string_trailing_pair_sep),
     );
 
+    let mut string_repeated_pair_sep = sample_options();
+    insert_row(
+        &mut rows,
+        "ret:set-from-string-repeated-pair-sep",
+        [ret_count(
+            string_repeated_pair_sep.set_avoptions_from_string(
+                "threads=7::quality=0.25",
+                &[],
+                "=",
+                ":",
+            ),
+        )],
+    );
+    rows.insert(
+        "state:set-from-string-repeated-pair-sep".to_string(),
+        state_fields(&string_repeated_pair_sep),
+    );
+
     let mut string_shorthand_overflow = sample_options();
     insert_row(
         &mut rows,
@@ -6089,6 +6107,15 @@ static void print_set_from_string_rows(void) {
     ret = av_opt_set_from_string(&ctx, "threads=7:", NULL, "=", ":");
     printf("ret:set-from-string-trailing-pair-sep|%d\n", ret);
     print_state("state:set-from-string-trailing-pair-sep", &ctx);
+    av_opt_free(&ctx);
+    av_opt_free(&ctx.child);
+
+    init_context(&ctx);
+    ret = av_opt_set_from_string(&ctx,
+                                 "threads=7::quality=0.25",
+                                 NULL, "=", ":");
+    printf("ret:set-from-string-repeated-pair-sep|%d\n", ret);
+    print_state("state:set-from-string-repeated-pair-sep", &ctx);
     av_opt_free(&ctx);
     av_opt_free(&ctx.child);
 }

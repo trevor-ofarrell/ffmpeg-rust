@@ -3796,6 +3796,10 @@ fate_tests = [
 ]
 fuzz_targets = ["avutil_metadata_options"]
 # Latest orchestrated update: pinned libavutil `av_opt_set_from_string()` rows
+# now prove a repeated pair separator in `threads=7::quality=0.25` returns
+# EINVAL after applying `threads=7`, while leaving the later `quality` option at
+# its default. avutil-options remains fate_pass, not complete.
+# Latest orchestrated update: pinned libavutil `av_opt_set_from_string()` rows
 # now prove escaped trailing whitespace remains protected before a pair
 # separator: `metadata=title\ :threads=16` stores `title ` and then applies
 # `threads=16`. avutil-options remains fate_pass, not complete.
