@@ -5734,6 +5734,18 @@ impl Packet {
         Ok(())
     }
 
+    pub fn rescale_ts_ffmpeg(&mut self, src: Rational, dst: Rational) {
+        if self.pts != AV_NOPTS_VALUE {
+            self.pts = ffmpeg_rescale_q_or_nopts(self.pts, src, dst);
+        }
+        if self.dts != AV_NOPTS_VALUE {
+            self.dts = ffmpeg_rescale_q_or_nopts(self.dts, src, dst);
+        }
+        if self.duration > 0 {
+            self.duration = ffmpeg_rescale_q_or_nopts(self.duration, src, dst);
+        }
+    }
+
     fn copy_raw_payload_to_refcounted_storage(&mut self) -> AvResult<()> {
         let data =
             BufferRef::copy_from_slice_with_padding(self.data(), AV_INPUT_BUFFER_PADDING_SIZE)?;
@@ -5940,6 +5952,10 @@ fn pos_option(value: i64) -> Option<i64> {
 
 fn packet_stream_index_from_usize(stream_index: usize) -> i32 {
     i32::try_from(stream_index).unwrap_or(i32::MAX)
+}
+
+fn ffmpeg_rescale_q_or_nopts(value: i64, src: Rational, dst: Rational) -> i64 {
+    rescale_q(value, src, dst).unwrap_or(AV_NOPTS_VALUE)
 }
 
 fn packet_alloc_buffer(size: usize) -> AvResult<BufferRef> {
@@ -15246,6 +15262,44 @@ mod tests {
         assert_eq!(packet.pts(), Some(i64::MAX));
         assert_eq!(packet.dts(), Some(9));
         assert_eq!(packet.duration(), 8);
+    }
+
+    #[test]
+    fn packet_rescale_ffmpeg_shape_maps_invalid_and_overflow_to_nopts() {
+        let mut invalid_tb = Packet::from_data(vec![0x93]).unwrap();
+        invalid_tb.set_dts(Some(90_000));
+        invalid_tb.set_duration(45_000).unwrap();
+        invalid_tb.set_pos(Some(911)).unwrap();
+        invalid_tb.set_flag(PacketFlags::CORRUPT, true);
+        invalid_tb.set_time_base(Rational::from_raw(1, 0)).unwrap();
+
+        invalid_tb.rescale_ts_ffmpeg(Rational::from_raw(1, 0), Rational::new(1, 1_000).unwrap());
+
+        assert_eq!(invalid_tb.pts(), None);
+        assert_eq!(invalid_tb.dts(), None);
+        assert_eq!(invalid_tb.duration(), AV_NOPTS_VALUE);
+        assert_eq!(invalid_tb.pos(), Some(911));
+        assert_eq!(invalid_tb.time_base(), Rational::from_raw(1, 0));
+        assert!(invalid_tb.flags().contains(PacketFlags::CORRUPT));
+        assert_eq!(invalid_tb.data(), &[0x93]);
+
+        let mut overflow = Packet::from_data(vec![0x91, 0x92]).unwrap();
+        overflow.set_pts(Some(i64::MAX));
+        overflow.set_dts(Some(i64::MAX - 1));
+        overflow.set_duration(i64::MAX).unwrap();
+        overflow.set_pos(Some(910)).unwrap();
+        overflow.set_time_base(Rational::ONE).unwrap();
+        overflow.set_flag(PacketFlags::DISPOSABLE, true);
+
+        overflow.rescale_ts_ffmpeg(Rational::ONE, Rational::new(1, 2).unwrap());
+
+        assert_eq!(overflow.pts(), None);
+        assert_eq!(overflow.dts(), None);
+        assert_eq!(overflow.duration(), AV_NOPTS_VALUE);
+        assert_eq!(overflow.pos(), Some(910));
+        assert_eq!(overflow.time_base(), Rational::ONE);
+        assert!(overflow.flags().contains(PacketFlags::DISPOSABLE));
+        assert_eq!(overflow.data(), &[0x91, 0x92]);
     }
 
     #[test]

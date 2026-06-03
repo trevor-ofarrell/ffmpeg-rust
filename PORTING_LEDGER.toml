@@ -277,6 +277,12 @@ default_profile = "ffmpeg-8.1.1-default-native"
 # `AV_LOG_QUIET`, `AV_LOG_PRINT_LEVEL`, and `print_prefix=0` still emits the
 # plain message and leaves the prefix state false.
 # Latest avutil-packet evidence:
+# `packet:rescale-overflow` and `packet:rescale-invalid-time-base` rows now
+# prove pinned FFmpeg's void `av_packet_rescale_ts()` stores `AV_NOPTS_VALUE`
+# in present timing fields when `av_rescale_q()` overflows or sees an invalid
+# time base. Rust exposes this as `Packet::rescale_ts_ffmpeg` while preserving
+# the existing fallible `Packet::rescale_ts` no-mutation error surface.
+# Latest avutil-packet evidence:
 # `packet:rescale-negative-duration`,
 # `packet:copy-props-negative-duration`, `packet:ref-negative-duration`,
 # `packet:clone-negative-duration`, and `packet:move-negative-duration-*`
@@ -619,6 +625,7 @@ unit_tests = [
   "packet::tests::packet_rescale_ignores_unknown_timestamps",
   "packet::tests::packet_rescale_uses_nearest_away_rounding",
   "packet::tests::packet_rescale_errors_do_not_mutate_timing_fields",
+  "packet::tests::packet_rescale_ffmpeg_shape_maps_invalid_and_overflow_to_nopts",
   "packet::tests::packet_negative_duration_copies_refs_clones_and_moves",
   "packet::tests::packet_side_data_kind_inventory_matches_ffmpeg_8_1_1_header",
   "packet::tests::packet_side_data_kind_maps_aliases_and_preserves_unknown_names",
@@ -1419,13 +1426,20 @@ fuzz_targets = ["avutil_core_models"]
 # `packet:clone-negative-stream-index`, and `packet:move-negative-stream-index-*`
 # rows now prove FFmpeg preserves signed negative `AVPacket.stream_index` values
 # through the normal packet lifecycle while move-ref resets the source to zero.
+# Latest rescale overflow addition: `packet:rescale-overflow` and
+# `packet:rescale-invalid-time-base` rows now prove FFmpeg's void
+# `av_packet_rescale_ts()` writes `AV_NOPTS_VALUE` into present PTS/DTS and
+# positive duration fields when the underlying rational rescale overflows or
+# receives an invalid source time base. The safe Rust model keeps
+# `Packet::rescale_ts` as a typed no-mutation error path and exposes
+# `Packet::rescale_ts_ffmpeg` for this C-shaped sentinel-writing behavior.
 # Latest raw-time-base addition: `packet:copy-props-raw-time-base`,
 # `packet:ref-raw-time-base`, `packet:clone-raw-time-base`, and
 # `packet:move-raw-time-base-*` rows now prove FFmpeg preserves raw
 # `AVPacket.time_base` numerator/denominator pairs through packet property
 # lifecycles without rational normalization, including noncanonical, zero/zero,
 # and negative-denominator shapes.
-notes = "FATE pass for the current bounded AVPacket helper surface under the selected ffmpeg-8.1.1-default-native profile. The Rust Packet model covers timestamps, signed duration, signed raw stream_index storage with a nonnegative Rust indexing helper, signed optional byte position with `-1` as the unknown sentinel, raw AVPacket.time_base storage with FFmpeg-style reset defaults, packet flags, BufferRef-backed payload and opaque_ref ownership, padded payload allocation/grow/shrink/refcounted/writable helpers, packet-owned and standalone side-data lifecycle helpers, packet/frame side-data bridge helpers, dictionary pack/unpack helpers, property copy/ref/clone/move/unref lifecycles, packet FIFO lifecycles, and the typed packet side-data payload parsers listed in the unit-test inventory. The ignored packet_oracle harness validates this bounded surface against pinned FFmpeg 8.1.1 libavcodec/libavutil rows, including public packet side-data/flag/picture-type inventories, ABI layout metadata, payload helper boundaries, duplicate side-data behavior, opaque/opaque_ref behavior, FIFO rows, display-matrix helper rows, malformed dictionary rows, signed duration/position/stream_index rows, and raw time_base rows `packet:copy-props-raw-time-base`, `packet:ref-raw-time-base`, `packet:clone-raw-time-base`, and `packet:move-raw-time-base-*`. The mapped differential row `avutil-packet|oracle-libavcodec-packet-core`, local packet FATE-runner unit row, and upstream FFmpeg `fate-avpacket` wrapper pass locally through the pinned oracle/source cache. Build-checked cargo-fuzz target avutil_core_models covers packet timestamp, signed stream-index/position/duration, raw time_base, payload, side-data, dictionary, displaymatrix, FIFO, and lifecycle invariants for the safe Rust model. Not complete: remaining ABI/media-integration vectors, broader packet integration, and sustained fuzz evidence remain pending."
+notes = "FATE pass for the current bounded AVPacket helper surface under the selected ffmpeg-8.1.1-default-native profile. The Rust Packet model covers timestamps, FFmpeg-shaped invalid/overflow rescale sentinel writes through Packet::rescale_ts_ffmpeg, signed duration, signed raw stream_index storage with a nonnegative Rust indexing helper, signed optional byte position with `-1` as the unknown sentinel, raw AVPacket.time_base storage with FFmpeg-style reset defaults, packet flags, BufferRef-backed payload and opaque_ref ownership, padded payload allocation/grow/shrink/refcounted/writable helpers, packet-owned and standalone side-data lifecycle helpers, packet/frame side-data bridge helpers, dictionary pack/unpack helpers, property copy/ref/clone/move/unref lifecycles, packet FIFO lifecycles, and the typed packet side-data payload parsers listed in the unit-test inventory. The ignored packet_oracle harness validates this bounded surface against pinned FFmpeg 8.1.1 libavcodec/libavutil rows, including public packet side-data/flag/picture-type inventories, ABI layout metadata, payload helper boundaries, duplicate side-data behavior, opaque/opaque_ref behavior, FIFO rows, display-matrix helper rows, malformed dictionary rows, signed duration/position/stream_index rows, `packet:rescale-overflow`, `packet:rescale-invalid-time-base`, and raw time_base rows `packet:copy-props-raw-time-base`, `packet:ref-raw-time-base`, `packet:clone-raw-time-base`, and `packet:move-raw-time-base-*`. The mapped differential row `avutil-packet|oracle-libavcodec-packet-core`, local packet FATE-runner unit row, and upstream FFmpeg `fate-avpacket` wrapper pass locally through the pinned oracle/source cache. Build-checked cargo-fuzz target avutil_core_models covers packet timestamp, FFmpeg-shaped invalid/overflow rescale sentinel writes, signed stream-index/position/duration, raw time_base, payload, side-data, dictionary, displaymatrix, FIFO, and lifecycle invariants for the safe Rust model. Not complete: remaining ABI/media-integration vectors, broader packet integration, and sustained fuzz evidence remain pending."
 # Latest empty-array slice: pinned libavcodec rows now validate standalone
 # `av_packet_side_data_get(NULL, 0, type)`, `av_packet_side_data_remove(NULL,
 # &count, type)`, and `av_packet_side_data_free(&ptr, &count)` as empty

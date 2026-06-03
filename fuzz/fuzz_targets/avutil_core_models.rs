@@ -71,7 +71,7 @@ use avutil::{
     AVPALETTE_SIZE, AV_BUFFER_FLAG_READONLY, AV_ERROR_MAX_STRING_SIZE, AV_HASH_MAX_SIZE,
     AV_INPUT_BUFFER_PADDING_SIZE,
     AV_LOG_FORCE_COLOR_ENV, AV_LOG_FORCE_NOCOLOR_ENV, AV_NUM_DATA_POINTERS,
-    AV_PACKET_MAX_PAYLOAD_SIZE, AV_TIME_BASE, AV_TIME_BASE_Q,
+    AV_NOPTS_VALUE, AV_PACKET_MAX_PAYLOAD_SIZE, AV_TIME_BASE, AV_TIME_BASE_Q,
 };
 use libfuzzer_sys::fuzz_target;
 use std::cmp::Ordering;
@@ -11138,13 +11138,11 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     let rescale_dst = Rational::new(1, 1_000).unwrap();
     packet.set_time_base(rescale_src).unwrap();
     assert_eq!(packet.time_base(), rescale_src);
-    assert_eq!(
-        packet
-            .set_time_base(Rational::from_raw(1, 0))
-            .unwrap_err()
-            .kind(),
-        AvErrorKind::InvalidArgument
-    );
+    packet.set_time_base(Rational::from_raw(1, 0)).unwrap();
+    assert_eq!(packet.time_base(), Rational::from_raw(1, 0));
+    packet.set_time_base(Rational::from_raw(2, -4)).unwrap();
+    assert_eq!(packet.time_base(), Rational::from_raw(2, -4));
+    packet.set_time_base(rescale_src).unwrap();
     assert_eq!(packet.time_base(), rescale_src);
     let original_timing = (packet.pts(), packet.dts(), packet.duration());
     let original_pos = packet.pos();
@@ -11183,6 +11181,47 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         (packet.pts(), packet.dts(), packet.duration()),
         rescaled_timing
     );
+
+    let mut ffmpeg_invalid_rescale_packet = Packet::from_data(vec![0x93]).unwrap();
+    ffmpeg_invalid_rescale_packet.set_dts(Some(90_000));
+    ffmpeg_invalid_rescale_packet
+        .set_duration(45_000)
+        .unwrap();
+    ffmpeg_invalid_rescale_packet.set_pos(Some(911)).unwrap();
+    ffmpeg_invalid_rescale_packet
+        .set_time_base(Rational::from_raw(1, 0))
+        .unwrap();
+    ffmpeg_invalid_rescale_packet.rescale_ts_ffmpeg(Rational::from_raw(1, 0), rescale_dst);
+    assert_eq!(ffmpeg_invalid_rescale_packet.pts(), None);
+    assert_eq!(ffmpeg_invalid_rescale_packet.dts(), None);
+    assert_eq!(ffmpeg_invalid_rescale_packet.duration(), AV_NOPTS_VALUE);
+    assert_eq!(ffmpeg_invalid_rescale_packet.pos(), Some(911));
+    assert_eq!(
+        ffmpeg_invalid_rescale_packet.time_base(),
+        Rational::from_raw(1, 0)
+    );
+    assert_eq!(ffmpeg_invalid_rescale_packet.data(), &[0x93]);
+
+    let mut ffmpeg_overflow_rescale_packet = Packet::from_data(vec![0x91, 0x92]).unwrap();
+    ffmpeg_overflow_rescale_packet.set_pts(Some(i64::MAX));
+    ffmpeg_overflow_rescale_packet.set_dts(Some(i64::MAX - 1));
+    ffmpeg_overflow_rescale_packet
+        .set_duration(i64::MAX)
+        .unwrap();
+    ffmpeg_overflow_rescale_packet.set_pos(Some(910)).unwrap();
+    ffmpeg_overflow_rescale_packet
+        .set_time_base(Rational::ONE)
+        .unwrap();
+    ffmpeg_overflow_rescale_packet.rescale_ts_ffmpeg(
+        Rational::ONE,
+        Rational::new(1, 2).unwrap(),
+    );
+    assert_eq!(ffmpeg_overflow_rescale_packet.pts(), None);
+    assert_eq!(ffmpeg_overflow_rescale_packet.dts(), None);
+    assert_eq!(ffmpeg_overflow_rescale_packet.duration(), AV_NOPTS_VALUE);
+    assert_eq!(ffmpeg_overflow_rescale_packet.pos(), Some(910));
+    assert_eq!(ffmpeg_overflow_rescale_packet.time_base(), Rational::ONE);
+    assert_eq!(ffmpeg_overflow_rescale_packet.data(), &[0x91, 0x92]);
 
     let mut mixed_rescale_packet = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
     mixed_rescale_packet.set_dts(Some(90_000));

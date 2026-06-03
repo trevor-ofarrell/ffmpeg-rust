@@ -366,6 +366,34 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         packet_fields(&rescaled_negative_stream_index),
     );
 
+    let mut rescaled_overflow = Packet::new(vec![0x91, 0x92], 11);
+    rescaled_overflow.set_pts(Some(i64::MAX));
+    rescaled_overflow.set_dts(Some(i64::MAX - 1));
+    rescaled_overflow.set_duration(i64::MAX).unwrap();
+    rescaled_overflow.set_pos(Some(910)).unwrap();
+    rescaled_overflow.set_flag(PacketFlags::DISPOSABLE, true);
+    rescaled_overflow.set_time_base(Rational::ONE).unwrap();
+    rescaled_overflow.rescale_ts_ffmpeg(Rational::ONE, Rational::new(1, 2).unwrap());
+    rows.insert(
+        "packet:rescale-overflow".to_string(),
+        packet_fields(&rescaled_overflow),
+    );
+
+    let mut rescaled_invalid_time_base = Packet::new(vec![0x93], 12);
+    rescaled_invalid_time_base.set_dts(Some(90_000));
+    rescaled_invalid_time_base.set_duration(45_000).unwrap();
+    rescaled_invalid_time_base.set_pos(Some(911)).unwrap();
+    rescaled_invalid_time_base.set_flag(PacketFlags::CORRUPT, true);
+    rescaled_invalid_time_base
+        .set_time_base(Rational::from_raw(1, 0))
+        .unwrap();
+    rescaled_invalid_time_base
+        .rescale_ts_ffmpeg(Rational::from_raw(1, 0), Rational::new(1, 1_000).unwrap());
+    rows.insert(
+        "packet:rescale-invalid-time-base".to_string(),
+        packet_fields(&rescaled_invalid_time_base),
+    );
+
     let src = packet_with_common_props();
     let mut copied = Packet::new(vec![0x99, 0x88], 1);
     copied.copy_props_from(&src);
@@ -9310,6 +9338,35 @@ int main(void) {
     pkt->time_base = (AVRational){ 1, 90000 };
     av_packet_rescale_ts(pkt, (AVRational){ 1, 90000 }, (AVRational){ 1, 1000 });
     print_packet("packet:rescale-negative-stream-index", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    fail_if(av_new_packet(pkt, 2) < 0, "av_new_packet overflow rescale failed");
+    pkt->data[0] = 0x91;
+    pkt->data[1] = 0x92;
+    pkt->pts = INT64_MAX;
+    pkt->dts = INT64_MAX - 1;
+    pkt->duration = INT64_MAX;
+    pkt->pos = 910;
+    pkt->stream_index = 11;
+    pkt->flags = AV_PKT_FLAG_DISPOSABLE;
+    pkt->time_base = (AVRational){ 1, 1 };
+    av_packet_rescale_ts(pkt, (AVRational){ 1, 1 }, (AVRational){ 1, 2 });
+    print_packet("packet:rescale-overflow", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    fail_if(av_new_packet(pkt, 1) < 0, "av_new_packet invalid time base rescale failed");
+    pkt->data[0] = 0x93;
+    pkt->pts = AV_NOPTS_VALUE;
+    pkt->dts = 90000;
+    pkt->duration = 45000;
+    pkt->pos = 911;
+    pkt->stream_index = 12;
+    pkt->flags = AV_PKT_FLAG_CORRUPT;
+    pkt->time_base = (AVRational){ 1, 0 };
+    av_packet_rescale_ts(pkt, (AVRational){ 1, 0 }, (AVRational){ 1, 1000 });
+    print_packet("packet:rescale-invalid-time-base", pkt);
     av_packet_free(&pkt);
 
     AVPacket *src = packet_with_common_props();
