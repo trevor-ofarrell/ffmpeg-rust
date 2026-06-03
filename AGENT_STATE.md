@@ -3,31 +3,33 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The
-tree started clean at `master...origin/master [ahead 16]`; required startup
+tree started clean at `master...origin/master [ahead 17]`; required startup
 checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
 -- status --next 15` reporting 11/96 strict-complete components (11.5%) and
 `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
 validating the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
-kept the top-priority `avutil-packet` evidence slice local; no worker writes
+kept the top-priority `avutil-packet` investigation local; no worker writes
 were delegated.
 
-Current main-thread slice: pinned libavcodec rows now prove
-replacement-style `av_packet_from_data()` installs refcounted payload ownership
-while preserving packet properties. `packet:payload-from-data-replace-*`
-verifies follow-on `av_packet_ref()` shares the adopted data pointer,
-`av_packet_make_refcounted()` is a same-pointer no-op, and
-`av_packet_make_writable()` on a shared ref detaches before mutation. Rust
-mirrors this through `Packet::replace_data_from_vec` marking replacement
-payloads as refcounted, focused unit coverage, the mapped packet oracle, and a
-deterministic `avutil_core_models` fixture.
+Current main-thread slice: a pinned libavcodec diagnostic expansion found a
+real shared-shrink parity blocker. FFmpeg 8.1.1 `av_shrink_packet()` on one
+reference of a shared refcounted payload preserves the destination data pointer,
+keeps both packet refs non-writable, and zeroes the truncated tail through bytes
+still visible in the source packet (`packet:payload-shrink-shared-src` printed
+`aabb0000`). The current safe Rust `BufferRef::resize_with_padding` path
+copy-on-write detaches instead, which avoids shared mutation but does not match
+this C edge. The permanent packet oracle row set is unchanged and still passes;
+`packet_shrink_shared_refcounted_matches_ffmpeg_tail_zeroing` is now an ignored
+regression documenting the pending alias-safe shared-storage design gap.
 `avutil-packet` remains `fate_pass`, not `complete`; strict completion remains
-11/96 because broader ABI/media integration vectors and longer sustained fuzz
-evidence remain pending.
+11/96.
 
-Latest validation commands for this replacement from-data packet slice passed:
+Latest validation commands for this shared-shrink blocker slice passed:
 `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil
-packet_replace_data_from_vec_installs_refcounted_storage --
---nocapture`;
+packet_grow_and_shrink_data_preserve_payload_and_padding -- --nocapture`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil
+packet_shrink_shared_refcounted_matches_ffmpeg_tail_zeroing -- --nocapture`
+(0 run, 1 ignored);
 `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
 packet_oracle libavcodec_packet_core_lifecycle_matches_packet_model -- --ignored
 --nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run
@@ -35,25 +37,22 @@ packet_oracle libavcodec_packet_core_lifecycle_matches_packet_model -- --ignored
 oracle-libavcodec-packet-core --oracle-ffmpeg
 ./third_party/ffmpeg-oracle/build/bin/ffmpeg`; `CARGO_TARGET_DIR=target-orch-fate
 cargo run -p fate-runner -- run --component avutil-packet --target
-local-avutil-unit`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo check
---manifest-path fuzz/Cargo.toml --bin avutil_core_models`;
-`CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil --all-targets
---all-features -- -D warnings`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy
---manifest-path fuzz/Cargo.toml --bin avutil_core_models -- -D warnings`;
-`cargo fmt --all -- --check`;
-`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run --mappings
-tests/fate/upstream-mappings.txt --component avutil-packet --target
-fate-avpacket` after rerunning with write permission for the pinned FFmpeg
-build cache; and `LSAN_OPTIONS=detect_leaks=0 CARGO_TARGET_DIR=target-wsl-fuzz
-cargo fuzz run avutil_core_models -- -runs=64`.
+local-avutil-unit`; `CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil --all-targets
+--all-features -- -D warnings`; `cargo fmt --all -- --check`;
+`CARGO_TARGET_DIR=target-orch-fate cargo test -p fate-runner current_ledger`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- guard-runtime`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15`; and `git diff --check`. No fuzz target changed in this blocker-only
+slice, so fuzz execution was not rerun.
 
 Current focus component: `avutil-packet` remains the top priority incomplete
 component (`fate_pass`), followed by `avutil-buffer` (`differential_pass`),
 `avutil-frame` (`differential_pass`), `avutil-logging` (`fate_pass`), and
-`avutil-options` (`fate_pass`). Next concrete packet candidates include
-broader media-integration packet vectors, another AVPacket ABI/lifecycle edge,
-or a move to the next unblocked `avutil-buffer` slice if packet edge work
-stalls.
+`avutil-options` (`fate_pass`). Next concrete packet work should avoid treating
+shared `av_shrink_packet()` as a small local patch and either design the broader
+alias-safe shared-storage model or choose another bounded AVPacket
+ABI/lifecycle/media-integration edge.
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The
 tree started clean at `master...origin/master [ahead 11]`; required startup

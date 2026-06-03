@@ -12336,6 +12336,32 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "documents a pinned FFmpeg av_shrink_packet shared-buffer edge that needs a broader BufferRef interior-mutability design"]
+    fn packet_shrink_shared_refcounted_matches_ffmpeg_tail_zeroing() {
+        let shared_src = Packet::from_data(vec![0xaa, 0xbb, 0xcc, 0xdd]).unwrap();
+        let mut shared_dst = Packet::default();
+        shared_dst.ref_from(&shared_src);
+        let shared_dst_ptr = shared_dst.data_buffer().as_padded_ptr();
+
+        shared_dst.shrink_data(2).unwrap();
+
+        assert_eq!(shared_dst.data_buffer().as_padded_ptr(), shared_dst_ptr);
+        assert!(shared_dst
+            .data_buffer()
+            .shares_storage(shared_src.data_buffer()));
+        assert!(!shared_dst.is_data_writable());
+        assert!(!shared_src.is_data_writable());
+        assert_eq!(shared_src.data(), &[0xaa, 0xbb, 0x00, 0x00]);
+        assert_eq!(shared_dst.data(), &[0xaa, 0xbb]);
+        assert!(shared_dst
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .take(AV_INPUT_BUFFER_PADDING_SIZE)
+            .all(|byte| *byte == 0));
+    }
+
+    #[test]
     fn packet_unpadded_payload_helpers_add_padding_and_preserve_bytes() {
         let mut grown = Packet::new(vec![0xaa, 0xbb], 0);
         grown.grow_data(2).unwrap();
