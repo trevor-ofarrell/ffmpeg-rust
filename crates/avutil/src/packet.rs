@@ -6021,11 +6021,7 @@ fn validate_packet_grow_size(current_size: usize, grow_by: usize) -> AvResult<us
 
 fn validate_packet_grow_size_i32(current_size: usize, grow_by: i32) -> AvResult<usize> {
     if grow_by < 0 {
-        return if current_size == 0 {
-            validate_packet_payload_size_i32(grow_by)
-        } else {
-            Err(packet_grow_size_error())
-        };
+        return Err(packet_grow_size_error());
     }
     validate_packet_grow_size(current_size, grow_by as usize)
 }
@@ -12621,9 +12617,10 @@ mod tests {
 
         let mut empty_negative_grow = Packet::default();
         let err = empty_negative_grow.grow_data_i32(-1).unwrap_err();
-        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
-        assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
+        assert_eq!(err.kind(), AvErrorKind::External);
+        assert_eq!(err.code(), Some(AvErrorCode::ENOMEM));
         assert!(empty_negative_grow.is_empty());
+        assert_eq!(empty_negative_grow.data_buffer().padding_len(), 0);
     }
 
     #[test]

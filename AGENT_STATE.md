@@ -3,7 +3,7 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The
-tree started clean at `master...origin/master [ahead 12]`; required startup
+tree started clean at `master...origin/master [ahead 13]`; required startup
 checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
 -- status --next 15` reporting 11/96 strict-complete components (11.5%) and
 `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
@@ -16,8 +16,10 @@ Current main-thread slice: pinned libavcodec rows now prove negative signed
 `packet:payload-new-packet-negative-*` verifies `av_new_packet(pkt, -1)` returns
 EINVAL without mutating a populated packet. `packet:payload-grow-negative-*`
 verifies `av_grow_packet(pkt, -1)` on a nonempty packet returns ENOMEM without
-mutating packet fields, payload bytes, input padding, or writability. Rust
-mirrors this through explicit `Packet::validate_payload_len_i32`,
+mutating packet fields, payload bytes, input padding, or writability, and
+`packet:payload-grow-empty-negative-*` verifies the same FFmpeg unsigned grow
+guard returns ENOMEM without mutating an empty packet. Rust mirrors this
+through explicit `Packet::validate_payload_len_i32`,
 `Packet::alloc_new_packet_payload_i32`, and `Packet::grow_data_i32` helpers,
 focused unit coverage, the mapped packet oracle, and a deterministic
 `avutil_core_models` fixture. `avutil-packet` remains `fate_pass`, not
@@ -43,8 +45,7 @@ local-avutil-unit`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo check
 tests/fate/upstream-mappings.txt --component avutil-packet --target
 fate-avpacket` after rerunning with write permission for the pinned FFmpeg
 build cache; and `LSAN_OPTIONS=detect_leaks=0 CARGO_TARGET_DIR=target-wsl-fuzz
-cargo fuzz run avutil_core_models -- -runs=64
-/tmp/ffmpegrust-avutil-core-models-corpus.XBDHnT`.
+cargo fuzz run avutil_core_models -- -runs=64`.
 
 Current focus component: `avutil-packet` remains the top priority incomplete
 component (`fate_pass`), followed by `avutil-buffer` (`differential_pass`),

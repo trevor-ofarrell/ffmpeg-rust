@@ -163,8 +163,9 @@ oracle emits matching `packet:payload-new-packet-negative-*` and
 `packet:payload-grow-negative-*` rows: `av_new_packet(pkt, -1)` returns EINVAL
 without mutating a populated packet, while `av_grow_packet(pkt, -1)` on a
 nonempty packet returns ENOMEM without mutating packet fields, payload bytes,
-input padding, or writability. A 64-run WSL `avutil_core_models` smoke passed
-with local leak detection disabled.
+input padding, or writability. `packet:payload-grow-empty-negative-*` proves
+the same ENOMEM return without mutating an empty packet. A 64-run WSL
+`avutil_core_models` smoke passed with local leak detection disabled.
 
 The latest packet signed-stream-index fixture extends `avutil_core_models` with
 negative `AVPacket.stream_index` behavior. `Packet::stream_index_raw` preserves
@@ -664,7 +665,8 @@ The harness also includes negative signed packet payload-size rows:
 EINVAL without mutating a populated packet, and
 `packet:payload-grow-negative-*` proves `av_grow_packet(pkt, -1)` on a nonempty
 packet returns ENOMEM without mutating packet fields, payload bytes, input
-padding, or writability.
+padding, or writability. `packet:payload-grow-empty-negative-*` proves the same
+ENOMEM return without mutating an empty packet.
 
 The harness also includes `packet:payload-from-data-invalid-*` rows. These prove `av_packet_from_data()` returns `AVERROR(EINVAL)` before mutation when `size >= INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE`; the Rust packet constructors and replacement helper use `Packet::validate_payload_len` to reject the same boundary before allocation.
 

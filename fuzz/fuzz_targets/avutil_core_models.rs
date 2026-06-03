@@ -9893,8 +9893,8 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
 
     let mut negative_empty_grow = Packet::default();
     let err = negative_empty_grow.grow_data_i32(-1).unwrap_err();
-    assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
-    assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
+    assert_eq!(err.kind(), AvErrorKind::External);
+    assert_eq!(err.code(), Some(AvErrorCode::ENOMEM));
     assert!(negative_empty_grow.is_empty());
 
     let shrink_to = usize::from(cursor.next().unwrap_or_default()) % (padded_packet.len() + 1);

@@ -918,8 +918,10 @@ fuzz_targets = ["avutil_core_models"]
 # EINVAL without mutating a populated packet, while
 # `packet:payload-grow-negative-*` proves `av_grow_packet(pkt, -1)` on a
 # nonempty packet returns ENOMEM without mutating packet fields, payload bytes,
-# padding, or writability. Focused unit coverage and avutil_core_models
-# invariants mirror the bounded behavior through explicit `*_i32` helpers.
+# padding, or writability, and `packet:payload-grow-empty-negative-*` proves
+# the same FFmpeg unsigned grow guard returns ENOMEM without mutating an empty
+# packet. Focused unit coverage and avutil_core_models invariants mirror the
+# bounded behavior through explicit `*_i32` helpers.
 # Latest update: pinned libavcodec AVPacket payload oracle coverage now
 # validates `av_packet_from_data()` follow-on refcounted lifecycle. The
 # `packet:payload-from-data-ref-*`, `packet:payload-from-data-clone*`, and

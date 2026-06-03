@@ -2293,6 +2293,17 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_fields(&grow_negative),
     );
 
+    let mut grow_empty_negative = Packet::default();
+    let grow_empty_negative_ret = grow_empty_negative.grow_data_i32(-1).unwrap_err();
+    rows.insert(
+        "packet:payload-grow-empty-negative-ret".to_string(),
+        vec![grow_empty_negative_ret.code().unwrap().raw().to_string()],
+    );
+    rows.insert(
+        "packet:payload-grow-empty-negative-preserve".to_string(),
+        payload_visible_fields(&grow_empty_negative),
+    );
+
     grow.shrink_data(2).unwrap();
     rows.insert("packet:payload-shrink".to_string(), payload_fields(&grow));
 
@@ -8206,6 +8217,12 @@ static void exercise_payload_api(void) {
     printf("packet:payload-grow-negative-ret|%d\n", ret);
     print_packet("packet:payload-grow-negative-preserve", pkt);
     print_payload("packet:payload-grow-negative-payload", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    ret = av_grow_packet(pkt, -1);
+    printf("packet:payload-grow-empty-negative-ret|%d\n", ret);
+    print_payload_visible("packet:payload-grow-empty-negative-preserve", pkt);
     av_packet_free(&pkt);
 
     pkt = new_packet();
