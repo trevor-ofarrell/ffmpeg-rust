@@ -3,6 +3,54 @@
 ## Current Status
 
 Current authoritative turn status: main-thread WSL slice added
+`avutil-packet` nullable dictionary unpack evidence. Required startup checks
+passed from a clean tree at `master...origin/master [ahead 50]`:
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15` reported 11/96 strict-complete components (11.5%), and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validated the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
+kept the top-priority `avutil-packet` shared-shrink blocker unchanged and
+advanced a bounded unblocked packet evidence gap; no worker writes were
+delegated.
+
+Current main-thread slice: pinned libavcodec rows now prove
+`av_packet_unpack_dictionary(NULL, nonzero_size, &dict)` and
+`av_packet_unpack_dictionary(data, size, NULL)` return success without
+mutating dictionary state. Rust now exposes nullable dictionary unpack helpers,
+focused unit coverage verifies NULL data/dict no-op behavior and normal
+delegation, the ignored packet oracle emits the matching rows, and
+`avutil_core_models` deterministic invariants cover the same C-boundary exits.
+`avutil-packet` remains `fate_pass`, not complete; strict completion remains
+11/96 because the shared refcounted `av_shrink_packet()` tail-zeroing blocker,
+remaining ABI/media-integration vectors, broader packet integration, and longer
+sustained fuzz evidence remain pending.
+
+Latest validation commands for this packet nullable dictionary unpack slice
+passed: `cargo fmt --all`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p
+avutil packet_dictionary_nullable_unpack_matches_c_noop_shape -- --nocapture`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
+packet_oracle libavcodec_packet_core_lifecycle_matches_packet_model --
+--ignored --nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p
+fate-runner -- run --mappings tests/differential/mappings.txt --component
+avutil-packet --target oracle-libavcodec-packet-core --oracle-ffmpeg
+./third_party/ffmpeg-oracle/build/bin/ffmpeg`; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- run --component avutil-packet`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run --mappings
+tests/fate/upstream-mappings.txt --component avutil-packet --target
+fate-avpacket` after allowing the pinned FFmpeg source/build cache to write its
+FATE result file; `CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil
+--all-targets --all-features -- -D warnings`; `CARGO_TARGET_DIR=target-wsl-fuzz
+cargo check --manifest-path fuzz/Cargo.toml --bin avutil_core_models`;
+`CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy --manifest-path fuzz/Cargo.toml
+--bin avutil_core_models -- -D warnings`; `cargo fmt --all -- --check`; and
+`git diff --check` with CRLF conversion warnings only. Final guards also
+passed: `CARGO_TARGET_DIR=target-orch-fate cargo test -p fate-runner
+current_ledger`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask --
+guard-runtime`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner --
+status --next 15`; and `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask
+-- oracle-doctor`.
+
+Current authoritative turn status: main-thread WSL slice added
 `avutil-buffer` legacy zero-size custom-pool evidence. Required startup checks
 passed from a clean tree at `master...origin/master [ahead 49]`:
 `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next

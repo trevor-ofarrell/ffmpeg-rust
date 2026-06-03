@@ -99,7 +99,8 @@ pub use options::{
     OptionQuery, OptionRange, OptionSearchFlags, OptionSerializeFlags, OptionSet, OptionValue,
 };
 pub use packet::{
-    packet_pack_dictionary, packet_unpack_dictionary, packet_unpack_dictionary_into, Packet,
+    packet_pack_dictionary, packet_unpack_dictionary, packet_unpack_dictionary_into,
+    packet_unpack_dictionary_nullable, packet_unpack_dictionary_nullable_into, Packet,
     PacketA53ClosedCaptions, PacketAbiField, PacketAbiLayout, PacketActiveFormatDescription,
     PacketAmbientViewingEnvironment, PacketAudioServiceType, PacketContentLightMetadata,
     PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf, PacketDoviCompression,

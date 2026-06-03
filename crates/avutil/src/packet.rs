@@ -2650,6 +2650,22 @@ pub fn packet_unpack_dictionary(data: &[u8]) -> AvResult<Dictionary> {
     Ok(dict)
 }
 
+pub fn packet_unpack_dictionary_nullable(data: Option<&[u8]>) -> AvResult<Dictionary> {
+    let mut dict = Dictionary::new();
+    packet_unpack_dictionary_nullable_into(data, Some(&mut dict))?;
+    Ok(dict)
+}
+
+pub fn packet_unpack_dictionary_nullable_into(
+    data: Option<&[u8]>,
+    dict: Option<&mut Dictionary>,
+) -> AvResult<()> {
+    match (data, dict) {
+        (Some(data), Some(dict)) => packet_unpack_dictionary_into(data, dict),
+        _ => Ok(()),
+    }
+}
+
 pub fn packet_unpack_dictionary_into(data: &[u8], dict: &mut Dictionary) -> AvResult<()> {
     let mut offset = 0;
     while offset < data.len() {
@@ -9336,6 +9352,49 @@ mod tests {
         let empty = Dictionary::new();
         assert!(packet_pack_dictionary(&empty).is_empty());
         assert!(packet_unpack_dictionary(&[]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn packet_dictionary_nullable_unpack_matches_c_noop_shape() {
+        fn seeded_dictionary() -> Dictionary {
+            let mut dict = Dictionary::new();
+            dict.set("title", "old").unwrap();
+            dict.set("keep", "yes").unwrap();
+            dict
+        }
+
+        fn dictionary_pairs(dict: &Dictionary) -> Vec<(&str, &str)> {
+            dict.entries()
+                .iter()
+                .map(|entry| (entry.key(), entry.value()))
+                .collect()
+        }
+
+        let mut null_data_dict = seeded_dictionary();
+        packet_unpack_dictionary_nullable_into(None, Some(&mut null_data_dict)).unwrap();
+        assert_eq!(
+            dictionary_pairs(&null_data_dict),
+            vec![("title", "old"), ("keep", "yes")]
+        );
+
+        packet_unpack_dictionary_nullable_into(Some(b"title\0Clip\0"), None).unwrap();
+
+        let mut delegated = seeded_dictionary();
+        packet_unpack_dictionary_nullable_into(Some(b"title\0new\0"), Some(&mut delegated))
+            .unwrap();
+        assert_eq!(
+            dictionary_pairs(&delegated),
+            vec![("keep", "yes"), ("title", "new")]
+        );
+
+        assert!(packet_unpack_dictionary_nullable(None).unwrap().is_empty());
+        assert_eq!(
+            packet_unpack_dictionary_nullable(Some(b"title\0Clip\0"))
+                .unwrap()
+                .entries()[0]
+                .value(),
+            "Clip"
+        );
     }
 
     #[test]

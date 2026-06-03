@@ -745,6 +745,7 @@ unit_tests = [
   "packet::tests::packet_side_data_rejects_malformed_string_metadata_payloads",
   "packet::tests::packet_dictionary_pack_unpack_uses_string_metadata_wire_format",
   "packet::tests::packet_dictionary_unpack_into_matches_incremental_ffmpeg_mutation",
+  "packet::tests::packet_dictionary_nullable_unpack_matches_c_noop_shape",
   "packet::tests::packet_dictionary_unpack_rejects_malformed_or_non_utf8_metadata",
   "packet::tests::packet_side_data_parses_encryption_info_payload",
   "packet::tests::packet_side_data_rejects_malformed_encryption_info_payload",
@@ -998,6 +999,11 @@ fuzz_targets = ["avutil_core_models"]
 # pairs while returning AVERROR_INVALIDDATA. Focused unit coverage and
 # avutil_core_models invariants mirror this through
 # `packet_unpack_dictionary_into`.
+# Latest update: pinned libavcodec dictionary rows now validate nullable
+# no-op `av_packet_unpack_dictionary()` behavior for `data == NULL` with a
+# nonzero size and for `dict == NULL` with valid data. Both return success
+# without mutating dictionary state, and Rust nullable helpers plus
+# avutil_core_models invariants mirror those C-boundary exits.
 # Latest update: pinned libavcodec AVPacket payload oracle coverage now proves
 # nullable zero-size `av_packet_from_data(pkt, NULL, 0)` storage transfers
 # through `av_packet_move_ref()` and resets through `av_packet_unref()`. The

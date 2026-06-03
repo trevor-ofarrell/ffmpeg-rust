@@ -7,9 +7,10 @@ use std::{
 };
 
 use avutil::{
-    packet_pack_dictionary, packet_unpack_dictionary, packet_unpack_dictionary_into, AvErrorCode,
-    BufferRef, Dictionary, Frame, FrameSideData, FrameSideDataFlags, FrameSideDataKind, MatchMode,
-    Packet, PacketActiveFormatDescription, PacketAmbientViewingEnvironment, PacketAudioServiceType,
+    packet_pack_dictionary, packet_unpack_dictionary, packet_unpack_dictionary_into,
+    packet_unpack_dictionary_nullable_into, AvErrorCode, BufferRef, Dictionary, Frame,
+    FrameSideData, FrameSideDataFlags, FrameSideDataKind, MatchMode, Packet,
+    PacketActiveFormatDescription, PacketAmbientViewingEnvironment, PacketAudioServiceType,
     PacketContentLightMetadata, PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf,
     PacketDoviCompression, PacketDynamicHdr10Plus, PacketEncryptionSubsample, PacketFallbackTrack,
     PacketFifo, PacketFifoFlags, PacketFlags, PacketFrameCropping,
@@ -3698,6 +3699,21 @@ fn insert_dictionary_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         rows.insert(name.to_string(), fields);
     }
 
+    let mut null_data_dict = seeded_unpack_dictionary();
+    packet_unpack_dictionary_nullable_into(None, Some(&mut null_data_dict)).unwrap();
+    let mut null_data_fields = vec!["0".to_string()];
+    null_data_fields.extend(dictionary_fields(&null_data_dict));
+    rows.insert(
+        "packet:dict-unpack-into-null-data-nonzero".to_string(),
+        null_data_fields,
+    );
+
+    packet_unpack_dictionary_nullable_into(Some(b"title\0Clip\0"), None).unwrap();
+    rows.insert(
+        "packet:dict-unpack-null-dict-ret".to_string(),
+        vec!["0".to_string()],
+    );
+
     for (name, data) in [
         ("packet:dict-unpack-empty-ret", b"".as_slice()),
         (
@@ -7230,6 +7246,13 @@ static void print_dictionary_unpack_ret(const char *name, const uint8_t *data, s
     av_dict_free(&dict);
 }
 
+static void print_dictionary_unpack_null_dict_ret(const char *name,
+                                                  const uint8_t *data,
+                                                  size_t size) {
+    int ret = av_packet_unpack_dictionary(data, size, NULL);
+    printf("%s|%d\n", name, ret);
+}
+
 static void print_dictionary_unpack_into_seeded(const char *name, const uint8_t *data, size_t size,
                                                 int seed_kind) {
     AVDictionary *dict = NULL;
@@ -9542,6 +9565,12 @@ static void exercise_dictionary_api(void) {
                                         unpack_into_replace_first,
                                         sizeof(unpack_into_replace_first), 2);
     print_dictionary_unpack_into("packet:dict-unpack-into-empty", NULL, 0);
+    print_dictionary_unpack_into("packet:dict-unpack-into-null-data-nonzero",
+                                 NULL, 7);
+    static const uint8_t valid_null_dict[] = "title\0Clip";
+    print_dictionary_unpack_null_dict_ret("packet:dict-unpack-null-dict-ret",
+                                          valid_null_dict,
+                                          sizeof(valid_null_dict));
     static const uint8_t unpack_into_missing_final[] = {
         't', 'i', 't', 'l', 'e', 0, 'n', 'e', 'w'
     };

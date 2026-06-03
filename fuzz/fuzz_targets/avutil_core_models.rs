@@ -7,12 +7,12 @@ use avutil::{
     frame_side_data_descriptor_for_value, frame_side_data_name_for_value,
     global_formatted_log_records, global_log, global_log_flags, global_log_level, hash_name, md5,
     murmur3, packet_pack_dictionary, packet_unpack_dictionary, packet_unpack_dictionary_into,
-    parse_color, rescale, rescale_delta, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax,
-    rescale_rnd, rescale_rnd_pass_minmax, ripemd128, ripemd160, ripemd256, ripemd320,
-    set_global_log_callback, set_global_log_flag, set_global_log_flags, set_global_log_level,
-    sha1, sha224, sha256, sha384, sha512, sha512_224, sha512_256, take_global_log_records,
-    Adler32, AmbisonicChannelLayout, AudioFrame, AvError, AvErrorCode, AvErrorKind,
-    AvLogContextPrefix, BufferPool, BufferPoolAllocation,
+    packet_unpack_dictionary_nullable, packet_unpack_dictionary_nullable_into, parse_color,
+    rescale, rescale_delta, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax, rescale_rnd,
+    rescale_rnd_pass_minmax, ripemd128, ripemd160, ripemd256, ripemd320, set_global_log_callback,
+    set_global_log_flag, set_global_log_flags, set_global_log_level, sha1, sha224, sha256, sha384,
+    sha512, sha512_224, sha512_256, take_global_log_records, Adler32, AmbisonicChannelLayout,
+    AudioFrame, AvError, AvErrorCode, AvErrorKind, AvLogContextPrefix, BufferPool, BufferPoolAllocation,
     BufferPoolCallbacks, BufferRef, Channel, ChannelCustom, ChannelId, ChannelLayout,
     ChannelLayoutSpec, Crc32, CustomChannelLayout, DefaultCallbackColorState,
     DefaultCallbackPrefixState, Dictionary, Frame, FrameA53ClosedCaptions,
@@ -15559,6 +15559,18 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(duplicate_unpacked.entries()[1].value(), "Name");
     assert!(packet_pack_dictionary(&Dictionary::new()).is_empty());
     assert!(packet_unpack_dictionary(&[]).unwrap().is_empty());
+    assert!(packet_unpack_dictionary_nullable(None).unwrap().is_empty());
+
+    let mut nullable_unpack_dict = Dictionary::new();
+    nullable_unpack_dict.set("title", "old").unwrap();
+    nullable_unpack_dict.set("keep", "yes").unwrap();
+    packet_unpack_dictionary_nullable_into(None, Some(&mut nullable_unpack_dict)).unwrap();
+    assert_eq!(nullable_unpack_dict.len(), 2);
+    assert_eq!(nullable_unpack_dict.entries()[0].key(), "title");
+    assert_eq!(nullable_unpack_dict.entries()[0].value(), "old");
+    assert_eq!(nullable_unpack_dict.entries()[1].key(), "keep");
+    assert_eq!(nullable_unpack_dict.entries()[1].value(), "yes");
+    packet_unpack_dictionary_nullable_into(Some(b"title\0Clip\0"), None).unwrap();
 
     let mut unpack_into_dict = Dictionary::new();
     unpack_into_dict.set("title", "old").unwrap();

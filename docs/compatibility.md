@@ -9,6 +9,13 @@
 
 ## Compatible Today
 
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
+  `av_packet_unpack_dictionary(NULL, nonzero_size, &dict)` and
+  `av_packet_unpack_dictionary(data, size, NULL)` return success without
+  mutating dictionary state. Rust exposes nullable dictionary unpack helpers
+  and mirrors the boundary in focused unit, oracle, and deterministic fuzz
+  evidence. `avutil-packet` remains `fate_pass`; strict completion remains
+  11/96.
 - Latest main-thread buffer evidence: pinned libavutil rows now prove
   `av_buffer_pool_init(0, alloc)` calls a legacy custom allocator once with
   size zero, returns writable empty refs with NULL pool opaque data, reuses the

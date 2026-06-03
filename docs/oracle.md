@@ -623,6 +623,13 @@ The newest nullable-zero side-data rows prove packet-owned
 `av_packet_side_data_add(..., NULL, 0, flags)` stores a zero-size entry while
 `av_packet_side_data_get()` still returns that entry pointer.
 
+The newest nullable dictionary unpack rows prove
+`av_packet_unpack_dictionary(NULL, nonzero_size, &dict)` and
+`av_packet_unpack_dictionary(data, size, NULL)` both return success without
+mutating dictionary state. Rust mirrors this through
+`packet_unpack_dictionary_nullable_into`, focused unit coverage, the mapped
+packet oracle, and `avutil_core_models` deterministic invariants.
+
 The newest zero-size side-data lifecycle rows prove `av_packet_copy_props()`,
 `av_packet_ref()`, `av_packet_clone()`, and `av_packet_move_ref()` preserve a
 zero-size `AV_PKT_DATA_NEW_EXTRADATA` record with lookup present and size zero;
