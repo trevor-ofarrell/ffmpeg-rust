@@ -1673,6 +1673,7 @@ unit_tests = [
   "buffer::tests::null_data_zero_opaque_buffer_preserves_c_pointer_shape",
   "buffer::tests::null_data_zero_refs_detach_to_ordinary_empty_buffers",
   "buffer::tests::null_data_zero_realloc_preserves_same_size_and_detaches_on_grow",
+  "buffer::tests::null_data_zero_readonly_detaches_and_reallocates_like_ffmpeg",
   "buffer::tests::zero_length_readonly_opaque_data_buffer_detaches_and_releases_owner",
   "buffer::tests::readonly_opaque_data_buffers_release_original_bytes_on_detach",
   "buffer::tests::zeroed_buffer_allocates_requested_zero_bytes",
@@ -1745,6 +1746,15 @@ fate_tests = [
   "not_applicable: upstream FFmpeg FATE has no standalone AVBufferRef/AVBufferPool API target; covered by unit tests plus pinned libavutil differential oracle",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest nullable-zero readonly create slice: pinned libavutil rows now prove
+# `av_buffer_create(NULL, 0, free, opaque, AV_BUFFER_FLAG_READONLY)` succeeds
+# with `AVBufferRef.data == NULL`, size zero, non-writable state, and opaque
+# lookup. `av_buffer_make_writable()` detaches it to an ordinary non-NULL
+# writable empty buffer while releasing the original owner, same-size realloc
+# preserves the NULL pointer and readonly owner until unref, and grow realloc
+# releases the owner immediately while clearing opaque lookup. Rust models this
+# through the nullable-zero readonly constructor, focused unit coverage, mapped
+# oracle rows, and deterministic `avutil_core_models` coverage.
 # Latest nullable-zero create slice: pinned libavutil rows now prove
 # `av_buffer_create(NULL, 0, free, opaque, flags=0)` succeeds with
 # `AVBufferRef.data == NULL` and size zero. `av_buffer_ref()` preserves the

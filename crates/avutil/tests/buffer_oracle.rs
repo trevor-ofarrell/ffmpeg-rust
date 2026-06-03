@@ -397,6 +397,121 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         release_fields(&create_null_zero_realloc_grow_released),
     );
 
+    let create_null_zero_readonly_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_null_zero_readonly_capture = Arc::clone(&create_null_zero_readonly_released);
+    let mut create_null_zero_readonly =
+        BufferRef::from_null_data_zero_with_opaque_release_callback_readonly(
+            661usize,
+            move |opaque, bytes| {
+                create_null_zero_readonly_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        );
+    rows.insert(
+        "buffer:create-null-zero-readonly".to_string(),
+        buffer_fields_with_data_null_and_opaque(&create_null_zero_readonly),
+    );
+    create_null_zero_readonly.make_writable().unwrap();
+    rows.insert(
+        "buffer:create-null-zero-readonly-make-writable-ret".to_string(),
+        vec![
+            "0".to_string(),
+            create_null_zero_readonly_released
+                .lock()
+                .unwrap()
+                .len()
+                .to_string(),
+        ],
+    );
+    rows.insert(
+        "buffer:create-null-zero-readonly-after".to_string(),
+        buffer_fields_with_data_null_and_opaque(&create_null_zero_readonly),
+    );
+    rows.insert(
+        "buffer:create-null-zero-readonly-release".to_string(),
+        release_fields(&create_null_zero_readonly_released),
+    );
+
+    let create_null_zero_readonly_realloc_same_released =
+        Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_null_zero_readonly_realloc_same_capture =
+        Arc::clone(&create_null_zero_readonly_realloc_same_released);
+    let mut create_null_zero_readonly_realloc_same = Some(
+        BufferRef::from_null_data_zero_with_opaque_release_callback_readonly(
+            662usize,
+            move |opaque, bytes| {
+                create_null_zero_readonly_realloc_same_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        ),
+    );
+    let create_null_zero_readonly_realloc_same_before = create_null_zero_readonly_realloc_same
+        .as_ref()
+        .unwrap()
+        .as_ptr();
+    BufferRef::realloc(&mut create_null_zero_readonly_realloc_same, 0).unwrap();
+    let create_null_zero_readonly_realloc_same = create_null_zero_readonly_realloc_same
+        .expect("same-size readonly realloc keeps destination");
+    rows.insert(
+        "buffer:create-null-zero-readonly-realloc-same-ret".to_string(),
+        vec![
+            "0".to_string(),
+            bool_field(
+                create_null_zero_readonly_realloc_same_before
+                    == create_null_zero_readonly_realloc_same.as_ptr(),
+            ),
+        ],
+    );
+    rows.insert(
+        "buffer:create-null-zero-readonly-realloc-same".to_string(),
+        buffer_fields_with_data_null_and_opaque(&create_null_zero_readonly_realloc_same),
+    );
+    drop(create_null_zero_readonly_realloc_same);
+    rows.insert(
+        "buffer:create-null-zero-readonly-realloc-same-release".to_string(),
+        release_fields(&create_null_zero_readonly_realloc_same_released),
+    );
+
+    let create_null_zero_readonly_realloc_grow_released =
+        Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_null_zero_readonly_realloc_grow_capture =
+        Arc::clone(&create_null_zero_readonly_realloc_grow_released);
+    let mut create_null_zero_readonly_realloc_grow = Some(
+        BufferRef::from_null_data_zero_with_opaque_release_callback_readonly(
+            663usize,
+            move |opaque, bytes| {
+                create_null_zero_readonly_realloc_grow_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        ),
+    );
+    BufferRef::realloc(&mut create_null_zero_readonly_realloc_grow, 2).unwrap();
+    let create_null_zero_readonly_realloc_grow =
+        create_null_zero_readonly_realloc_grow.expect("grow readonly realloc keeps destination");
+    rows.insert(
+        "buffer:create-null-zero-readonly-realloc-grow-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:create-null-zero-readonly-realloc-grow".to_string(),
+        buffer_shape_fields_with_data_null_and_opaque(&create_null_zero_readonly_realloc_grow),
+    );
+    rows.insert(
+        "buffer:create-null-zero-readonly-realloc-grow-release-before-unref".to_string(),
+        release_fields(&create_null_zero_readonly_realloc_grow_released),
+    );
+    drop(create_null_zero_readonly_realloc_grow);
+    rows.insert(
+        "buffer:create-null-zero-readonly-realloc-grow-release-after-unref".to_string(),
+        release_fields(&create_null_zero_readonly_realloc_grow_released),
+    );
+
     let mut create_default_opaque = BufferRef::from_vec_with_opaque(vec![34, 35, 36], 322usize);
     rows.insert(
         "buffer:create-default-opaque".to_string(),
@@ -4495,6 +4610,65 @@ int main(void) {
     av_buffer_unref(&create_null_zero_realloc_grow);
     print_create_release(
         "buffer:create-null-zero-realloc-grow-release-after-unref");
+
+    reset_create_release();
+    last_create_release_size = 0;
+    AVBufferRef *create_null_zero_readonly =
+        av_buffer_create(NULL, 0, test_create_free,
+                         (void *)(uintptr_t)661,
+                         AV_BUFFER_FLAG_READONLY);
+    fail_if(!create_null_zero_readonly,
+            "av_buffer_create null zero readonly failed");
+    print_buffer_opaque_data_null("buffer:create-null-zero-readonly",
+                                  create_null_zero_readonly);
+    ret = av_buffer_make_writable(&create_null_zero_readonly);
+    printf("buffer:create-null-zero-readonly-make-writable-ret|%d|%d\n",
+           ret, create_release_count);
+    print_buffer_opaque_data_null("buffer:create-null-zero-readonly-after",
+                                  create_null_zero_readonly);
+    print_create_release("buffer:create-null-zero-readonly-release");
+    av_buffer_unref(&create_null_zero_readonly);
+
+    reset_create_release();
+    last_create_release_size = 0;
+    AVBufferRef *create_null_zero_readonly_realloc_same =
+        av_buffer_create(NULL, 0, test_create_free,
+                         (void *)(uintptr_t)662,
+                         AV_BUFFER_FLAG_READONLY);
+    fail_if(!create_null_zero_readonly_realloc_same,
+            "av_buffer_create null zero readonly realloc same failed");
+    uint8_t *create_null_zero_readonly_realloc_same_before =
+        create_null_zero_readonly_realloc_same->data;
+    ret = av_buffer_realloc(&create_null_zero_readonly_realloc_same, 0);
+    printf("buffer:create-null-zero-readonly-realloc-same-ret|%d|%d\n",
+           ret,
+           create_null_zero_readonly_realloc_same_before ==
+               create_null_zero_readonly_realloc_same->data);
+    print_buffer_opaque_data_null(
+        "buffer:create-null-zero-readonly-realloc-same",
+        create_null_zero_readonly_realloc_same);
+    av_buffer_unref(&create_null_zero_readonly_realloc_same);
+    print_create_release(
+        "buffer:create-null-zero-readonly-realloc-same-release");
+
+    reset_create_release();
+    last_create_release_size = 0;
+    AVBufferRef *create_null_zero_readonly_realloc_grow =
+        av_buffer_create(NULL, 0, test_create_free,
+                         (void *)(uintptr_t)663,
+                         AV_BUFFER_FLAG_READONLY);
+    fail_if(!create_null_zero_readonly_realloc_grow,
+            "av_buffer_create null zero readonly realloc grow failed");
+    ret = av_buffer_realloc(&create_null_zero_readonly_realloc_grow, 2);
+    printf("buffer:create-null-zero-readonly-realloc-grow-ret|%d\n", ret);
+    print_buffer_opaque_shape_data_null(
+        "buffer:create-null-zero-readonly-realloc-grow",
+        create_null_zero_readonly_realloc_grow);
+    print_create_release(
+        "buffer:create-null-zero-readonly-realloc-grow-release-before-unref");
+    av_buffer_unref(&create_null_zero_readonly_realloc_grow);
+    print_create_release(
+        "buffer:create-null-zero-readonly-realloc-grow-release-after-unref");
 
     static const uint8_t create_default_opaque_bytes[] = { 34, 35, 36 };
     uint8_t *create_default_opaque_data =

@@ -2633,6 +2633,83 @@ mod tests {
     }
 
     #[test]
+    fn null_data_zero_readonly_detaches_and_reallocates_like_ffmpeg() {
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let capture = std::sync::Arc::clone(&released);
+        let mut buffer = BufferRef::from_null_data_zero_with_opaque_release_callback_readonly(
+            661usize,
+            move |opaque, bytes| {
+                capture.lock().unwrap().push((opaque, bytes));
+            },
+        );
+
+        assert_eq!(buffer.len(), 0);
+        assert_eq!(buffer.allocated_len(), 0);
+        assert!(buffer.as_slice().is_empty());
+        assert!(buffer.is_data_ptr_null());
+        assert!(buffer.as_ptr().is_null());
+        assert!(buffer.as_padded_ptr().is_null());
+        assert!(buffer.is_readonly());
+        assert!(!buffer.is_writable());
+        assert_eq!(buffer.opaque_ref::<usize>(), Some(&661));
+
+        buffer.make_writable().unwrap();
+        assert!(!buffer.is_data_ptr_null());
+        assert!(!buffer.as_ptr().is_null());
+        assert!(buffer.as_slice().is_empty());
+        assert!(!buffer.is_readonly());
+        assert!(buffer.is_writable());
+        assert!(buffer.opaque_ref::<usize>().is_none());
+        assert_eq!(*released.lock().unwrap(), vec![(661, Vec::new())]);
+
+        let same_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let same_capture = std::sync::Arc::clone(&same_released);
+        let mut same = Some(
+            BufferRef::from_null_data_zero_with_opaque_release_callback_readonly(
+                662usize,
+                move |opaque, bytes| {
+                    same_capture.lock().unwrap().push((opaque, bytes));
+                },
+            ),
+        );
+        let same_ptr = same.as_ref().unwrap().as_ptr();
+
+        BufferRef::realloc(&mut same, 0).unwrap();
+        let same = same.expect("same-size readonly realloc keeps destination");
+        assert!(same.is_data_ptr_null());
+        assert_eq!(same.as_ptr(), same_ptr);
+        assert!(same.is_readonly());
+        assert!(!same.is_writable());
+        assert_eq!(same.opaque_ref::<usize>(), Some(&662));
+        assert!(same_released.lock().unwrap().is_empty());
+        drop(same);
+        assert_eq!(*same_released.lock().unwrap(), vec![(662, Vec::new())]);
+
+        let grow_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let grow_capture = std::sync::Arc::clone(&grow_released);
+        let mut grow = Some(
+            BufferRef::from_null_data_zero_with_opaque_release_callback_readonly(
+                663usize,
+                move |opaque, bytes| {
+                    grow_capture.lock().unwrap().push((opaque, bytes));
+                },
+            ),
+        );
+
+        BufferRef::realloc(&mut grow, 2).unwrap();
+        let grow = grow.expect("grow readonly realloc keeps destination");
+        assert_eq!(grow.as_slice(), &[0, 0]);
+        assert!(!grow.is_data_ptr_null());
+        assert!(!grow.as_ptr().is_null());
+        assert!(!grow.is_readonly());
+        assert!(grow.is_writable());
+        assert!(grow.opaque_ref::<usize>().is_none());
+        assert_eq!(*grow_released.lock().unwrap(), vec![(663, Vec::new())]);
+    }
+
+    #[test]
     fn zero_length_readonly_opaque_data_buffer_detaches_and_releases_owner() {
         let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
         let capture = std::sync::Arc::clone(&released);

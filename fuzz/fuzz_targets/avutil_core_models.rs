@@ -1064,6 +1064,100 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         *null_zero_released.lock().unwrap(),
         vec![(payload_len, Vec::new())]
     );
+    let null_zero_readonly_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let null_zero_readonly_capture = Arc::clone(&null_zero_readonly_released);
+    let mut null_zero_readonly =
+        BufferRef::from_null_data_zero_with_opaque_release_callback_readonly(
+            payload_len.wrapping_add(1),
+            move |opaque, bytes| {
+                null_zero_readonly_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        );
+    assert_eq!(null_zero_readonly.len(), 0);
+    assert_eq!(null_zero_readonly.allocated_len(), 0);
+    assert!(null_zero_readonly.is_data_ptr_null());
+    assert!(null_zero_readonly.as_ptr().is_null());
+    assert!(null_zero_readonly.as_padded_ptr().is_null());
+    assert!(null_zero_readonly.is_readonly());
+    assert!(!null_zero_readonly.is_writable());
+    assert_eq!(
+        null_zero_readonly.opaque_ref::<usize>(),
+        Some(&payload_len.wrapping_add(1))
+    );
+    null_zero_readonly.make_writable().unwrap();
+    assert!(!null_zero_readonly.is_data_ptr_null());
+    assert!(!null_zero_readonly.as_ptr().is_null());
+    assert!(null_zero_readonly.as_slice().is_empty());
+    assert!(!null_zero_readonly.is_readonly());
+    assert!(null_zero_readonly.is_writable());
+    assert!(null_zero_readonly.opaque_ref::<usize>().is_none());
+    assert_eq!(
+        *null_zero_readonly_released.lock().unwrap(),
+        vec![(payload_len.wrapping_add(1), Vec::new())]
+    );
+
+    let null_zero_readonly_same_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let null_zero_readonly_same_capture = Arc::clone(&null_zero_readonly_same_released);
+    let mut null_zero_readonly_same = Some(
+        BufferRef::from_null_data_zero_with_opaque_release_callback_readonly(
+            payload_len.wrapping_add(2),
+            move |opaque, bytes| {
+                null_zero_readonly_same_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        ),
+    );
+    let null_zero_readonly_same_ptr = null_zero_readonly_same.as_ref().unwrap().as_ptr();
+    BufferRef::realloc(&mut null_zero_readonly_same, 0).unwrap();
+    let null_zero_readonly_same = null_zero_readonly_same.unwrap();
+    assert!(null_zero_readonly_same.is_data_ptr_null());
+    assert_eq!(null_zero_readonly_same.as_ptr(), null_zero_readonly_same_ptr);
+    assert!(null_zero_readonly_same.is_readonly());
+    assert!(!null_zero_readonly_same.is_writable());
+    assert_eq!(
+        null_zero_readonly_same.opaque_ref::<usize>(),
+        Some(&payload_len.wrapping_add(2))
+    );
+    assert!(null_zero_readonly_same_released
+        .lock()
+        .unwrap()
+        .is_empty());
+    drop(null_zero_readonly_same);
+    assert_eq!(
+        *null_zero_readonly_same_released.lock().unwrap(),
+        vec![(payload_len.wrapping_add(2), Vec::new())]
+    );
+
+    let null_zero_readonly_grow_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let null_zero_readonly_grow_capture = Arc::clone(&null_zero_readonly_grow_released);
+    let mut null_zero_readonly_grow = Some(
+        BufferRef::from_null_data_zero_with_opaque_release_callback_readonly(
+            payload_len.wrapping_add(3),
+            move |opaque, bytes| {
+                null_zero_readonly_grow_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        ),
+    );
+    BufferRef::realloc(&mut null_zero_readonly_grow, 2).unwrap();
+    let null_zero_readonly_grow = null_zero_readonly_grow.unwrap();
+    assert_eq!(null_zero_readonly_grow.as_slice(), &[0, 0]);
+    assert!(!null_zero_readonly_grow.is_data_ptr_null());
+    assert!(!null_zero_readonly_grow.as_ptr().is_null());
+    assert!(!null_zero_readonly_grow.is_readonly());
+    assert!(null_zero_readonly_grow.is_writable());
+    assert!(null_zero_readonly_grow.opaque_ref::<usize>().is_none());
+    assert_eq!(
+        *null_zero_readonly_grow_released.lock().unwrap(),
+        vec![(payload_len.wrapping_add(3), Vec::new())]
+    );
     let zeroed_huge = BufferRef::zeroed(usize::MAX).unwrap_err();
     assert_eq!(zeroed_huge.kind(), AvErrorKind::External);
     assert_eq!(zeroed_huge.code(), Some(AvErrorCode::ENOMEM));
