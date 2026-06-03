@@ -311,6 +311,19 @@ impl PixelFormatDescriptor {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PixelFormatColorType {
+    NotApplicable,
+    Rgb,
+    Gray,
+    Yuv,
+    YuvJpeg,
+    Xyz,
+}
+
+const PIXEL_FORMAT_SCORE_MAX: i64 = i32::MAX as i64;
+const PIXEL_FORMAT_SCORE_BASE: i64 = (i32::MAX - 1) as i64;
+
 impl PixelFormat {
     pub const ALL: &'static [Self] = &[
         Self::Gray8,
@@ -867,6 +880,52 @@ impl PixelFormat {
             "ohcodec" => Some(Self::OhCodec),
             _ => None,
         }
+    }
+
+    pub fn find_best_of_2(
+        dst1: Option<Self>,
+        dst2: Option<Self>,
+        src: Self,
+        has_alpha: bool,
+    ) -> Option<Self> {
+        match (dst1, dst2) {
+            (None, None) => None,
+            (None, Some(format)) | (Some(format), None) => Some(format),
+            (Some(left), Some(right)) => {
+                let left_score = left.conversion_score_from(src, has_alpha);
+                let right_score = right.conversion_score_from(src, has_alpha);
+
+                if left_score == right_score {
+                    let left_bpp = left.padded_storage_bits_per_pixel();
+                    let right_bpp = right.padded_storage_bits_per_pixel();
+                    if right_bpp != left_bpp {
+                        if right_bpp < left_bpp {
+                            Some(right)
+                        } else {
+                            Some(left)
+                        }
+                    } else if right.component_count() < left.component_count() {
+                        Some(right)
+                    } else {
+                        Some(left)
+                    }
+                } else if left_score < right_score {
+                    Some(right)
+                } else {
+                    Some(left)
+                }
+            }
+        }
+    }
+
+    pub fn find_best(
+        candidates: impl IntoIterator<Item = Self>,
+        src: Self,
+        has_alpha: bool,
+    ) -> Option<Self> {
+        candidates.into_iter().fold(None, |best, candidate| {
+            Self::find_best_of_2(best, Some(candidate), src, has_alpha)
+        })
     }
 
     fn hardware_name(self) -> Option<&'static str> {
@@ -4384,6 +4443,147 @@ impl PixelFormat {
         self.descriptor().packed_bytes_per_pixel
     }
 
+    fn conversion_score_from(self, src: Self, has_alpha: bool) -> i64 {
+        if self.is_hardware() || src.is_hardware() {
+            return if self == src { -1 } else { -2 };
+        }
+
+        if self == src {
+            return PIXEL_FORMAT_SCORE_MAX;
+        }
+
+        let src_depths = src.component_bit_depths();
+        let dst_depths = self.component_bit_depths();
+        if src_depths.is_empty() || dst_depths.is_empty() {
+            return -3;
+        }
+
+        let src_color = src.conversion_color_type();
+        let dst_color = self.conversion_color_type();
+        let src_desc = src.descriptor();
+        let dst_desc = self.descriptor();
+        let mut score = PIXEL_FORMAT_SCORE_BASE;
+        let nb_components = if self == Self::Pal8 {
+            src_depths.len().min(4)
+        } else {
+            src_depths.len().min(dst_depths.len())
+        };
+
+        for component in 0..nb_components {
+            let depth_minus_one = if self == Self::Pal8 {
+                7 / nb_components
+            } else {
+                usize::from(dst_depths[component].saturating_sub(1))
+            };
+            let src_depth_minus_one = i32::from(src_depths[component]) - 1;
+            let depth_delta = src_depth_minus_one - depth_minus_one as i32;
+            if depth_delta > 0 {
+                score -= 65_536_i64 >> depth_minus_one;
+            } else if depth_delta < 0 {
+                score += i64::from(depth_delta);
+            }
+        }
+
+        if dst_desc.log2_chroma_w > src_desc.log2_chroma_w {
+            score -= 256_i64 << dst_desc.log2_chroma_w;
+        }
+        if dst_desc.log2_chroma_h > src_desc.log2_chroma_h {
+            score -= 256_i64 << dst_desc.log2_chroma_h;
+        }
+        if dst_desc.log2_chroma_w == 1
+            && src_desc.log2_chroma_w == 0
+            && dst_desc.log2_chroma_h == 1
+            && src_desc.log2_chroma_h == 0
+        {
+            score += 512;
+        }
+
+        if dst_desc.log2_chroma_w < src_desc.log2_chroma_w {
+            score -= 1_i64 << (src_desc.log2_chroma_w - dst_desc.log2_chroma_w);
+        }
+        if dst_desc.log2_chroma_h < src_desc.log2_chroma_h {
+            score -= 1_i64 << (src_desc.log2_chroma_h - dst_desc.log2_chroma_h);
+        }
+        if dst_desc.log2_chroma_w == 1
+            && src_desc.log2_chroma_w == 2
+            && dst_desc.log2_chroma_h == 1
+            && src_desc.log2_chroma_h == 2
+        {
+            score += 4;
+        }
+
+        if self.loses_colorspace_from(src) {
+            let shift = usize::from(dst_depths[0].min(src_depths[0]).saturating_sub(1));
+            score -= (nb_components as i64 * 65_536) >> shift;
+        }
+
+        if dst_color == PixelFormatColorType::Gray && src_color != PixelFormatColorType::Gray {
+            score -= 2 * 65_536;
+        }
+        if !self.has_alpha() && src.has_alpha() && has_alpha {
+            score -= 65_536;
+        }
+        if self == Self::Pal8
+            && src != Self::Pal8
+            && (src_color != PixelFormatColorType::Gray || (src.has_alpha() && has_alpha))
+        {
+            score -= 65_536;
+        }
+
+        score
+    }
+
+    fn conversion_color_type(self) -> PixelFormatColorType {
+        if self.is_paletted() {
+            return PixelFormatColorType::Rgb;
+        }
+        if self.component_count() == 1 || self.component_count() == 2 {
+            return PixelFormatColorType::Gray;
+        }
+        if self.name().starts_with("yuvj") {
+            return PixelFormatColorType::YuvJpeg;
+        }
+        match self.class() {
+            PixelFormatClass::Rgb => PixelFormatColorType::Rgb,
+            PixelFormatClass::Gray => PixelFormatColorType::Gray,
+            PixelFormatClass::Xyz => PixelFormatColorType::Xyz,
+            PixelFormatClass::Yuv => PixelFormatColorType::Yuv,
+            PixelFormatClass::Hardware => PixelFormatColorType::NotApplicable,
+        }
+    }
+
+    fn loses_colorspace_from(self, src: Self) -> bool {
+        let src_color = src.conversion_color_type();
+        match self.conversion_color_type() {
+            PixelFormatColorType::Rgb => {
+                src_color != PixelFormatColorType::Rgb && src_color != PixelFormatColorType::Gray
+            }
+            PixelFormatColorType::Gray => src_color != PixelFormatColorType::Gray,
+            PixelFormatColorType::Yuv => src_color != PixelFormatColorType::Yuv,
+            PixelFormatColorType::YuvJpeg => {
+                src_color != PixelFormatColorType::YuvJpeg
+                    && src_color != PixelFormatColorType::Yuv
+                    && src_color != PixelFormatColorType::Gray
+            }
+            PixelFormatColorType::Xyz | PixelFormatColorType::NotApplicable => {
+                src_color != self.conversion_color_type()
+            }
+        }
+    }
+
+    fn padded_storage_bits_per_pixel(self) -> i64 {
+        if self.is_hardware() {
+            return 0;
+        }
+        let width = 16_usize;
+        let height = 16_usize;
+        let pixels = (width * height) as i64;
+        let bytes = self
+            .frame_size(width, height)
+            .expect("16x16 is valid for all non-hardware pixel format descriptors");
+        (bytes as i64 * 8) / pixels
+    }
+
     pub fn plane_sizes(self, width: usize, height: usize) -> AvResult<Vec<usize>> {
         if self.is_hardware() {
             return Err(AvError::unsupported(format!(
@@ -5043,6 +5243,277 @@ mod tests {
 
     fn bpp(bits: u8) -> Rational {
         Rational::from_raw(i32::from(bits), 1)
+    }
+
+    fn native(le: PixelFormat, be: PixelFormat) -> PixelFormat {
+        if cfg!(target_endian = "little") {
+            le
+        } else {
+            be
+        }
+    }
+
+    fn assert_best_format(candidates: &[PixelFormat], input: PixelFormat, expected: PixelFormat) {
+        assert_eq!(
+            PixelFormat::find_best(candidates.iter().copied(), input, false),
+            Some(expected),
+            "best pixel format diverged for `{}`",
+            input.name()
+        );
+    }
+
+    #[test]
+    fn pixel_formats_find_best_matches_upstream_fate_vectors() {
+        let gray10 = native(PixelFormat::Gray10Le, PixelFormat::Gray10Be);
+        let gray16 = native(PixelFormat::Gray16Le, PixelFormat::Gray16Be);
+        let yuv420p10 = native(PixelFormat::Yuv420p10Le, PixelFormat::Yuv420p10Be);
+        let yuv420p16 = native(PixelFormat::Yuv420p16Le, PixelFormat::Yuv420p16Be);
+        let yuv422p10 = native(PixelFormat::Yuv422p10Le, PixelFormat::Yuv422p10Be);
+        let yuv422p16 = native(PixelFormat::Yuv422p16Le, PixelFormat::Yuv422p16Be);
+        let yuv444p10 = native(PixelFormat::Yuv444p10Le, PixelFormat::Yuv444p10Be);
+        let yuv444p16 = native(PixelFormat::Yuv444p16Le, PixelFormat::Yuv444p16Be);
+        let rgb565 = native(PixelFormat::Rgb565Le, PixelFormat::Rgb565Be);
+        let rgb48 = native(PixelFormat::Rgb48Le, PixelFormat::Rgb48Be);
+        let bgr565 = native(PixelFormat::Bgr565Le, PixelFormat::Bgr565Be);
+
+        let base = vec![
+            PixelFormat::MonoWhite,
+            PixelFormat::Gray8,
+            gray10,
+            gray16,
+            PixelFormat::Yuv420p,
+            yuv420p10,
+            yuv420p16,
+            PixelFormat::Yuv422p,
+            yuv422p10,
+            yuv422p16,
+            PixelFormat::Yuv444p,
+            yuv444p10,
+            yuv444p16,
+            rgb565,
+            PixelFormat::Rgb24,
+            rgb48,
+            PixelFormat::Vdpau,
+            PixelFormat::Vaapi,
+        ];
+
+        for &format in &base {
+            assert_best_format(&base, format, format);
+        }
+        for (input, expected) in [
+            (PixelFormat::MonoBlack, PixelFormat::MonoWhite),
+            (PixelFormat::Nv12, PixelFormat::Yuv420p),
+            (native(PixelFormat::P010Le, PixelFormat::P010Be), yuv420p10),
+            (native(PixelFormat::P012Le, PixelFormat::P012Be), yuv420p16),
+            (native(PixelFormat::P016Le, PixelFormat::P016Be), yuv420p16),
+            (native(PixelFormat::P210Le, PixelFormat::P210Be), yuv422p10),
+            (native(PixelFormat::P212Le, PixelFormat::P212Be), yuv422p16),
+            (native(PixelFormat::P216Le, PixelFormat::P216Be), yuv422p16),
+            (native(PixelFormat::P410Le, PixelFormat::P410Be), yuv444p10),
+            (native(PixelFormat::P412Le, PixelFormat::P412Be), yuv444p16),
+            (native(PixelFormat::P416Le, PixelFormat::P416Be), yuv444p16),
+            (PixelFormat::Nv16, PixelFormat::Yuv422p),
+            (native(PixelFormat::Nv20Le, PixelFormat::Nv20Be), yuv422p10),
+            (PixelFormat::Nv24, PixelFormat::Yuv444p),
+            (PixelFormat::Yuyv422, PixelFormat::Yuv422p),
+            (PixelFormat::Uyvy422, PixelFormat::Yuv422p),
+            (PixelFormat::Vyu444, PixelFormat::Yuv444p),
+            (bgr565, rgb565),
+            (PixelFormat::Bgr24, PixelFormat::Rgb24),
+            (PixelFormat::Gbrp, PixelFormat::Rgb24),
+            (PixelFormat::ZeroRgb, PixelFormat::Rgb24),
+            (native(PixelFormat::Gbrp16Le, PixelFormat::Gbrp16Be), rgb48),
+            (PixelFormat::Vuyx, PixelFormat::Yuv444p),
+            (PixelFormat::Ya8, PixelFormat::Gray8),
+            (native(PixelFormat::Ya16Le, PixelFormat::Ya16Be), gray16),
+            (PixelFormat::Yuva420p, PixelFormat::Yuv420p),
+            (PixelFormat::Yuva422p, PixelFormat::Yuv422p),
+            (PixelFormat::Yuva444p, PixelFormat::Yuv444p),
+            (PixelFormat::Vuya, PixelFormat::Yuv444p),
+            (PixelFormat::Ayuv, PixelFormat::Yuv444p),
+            (PixelFormat::Uyva, PixelFormat::Yuv444p),
+            (
+                native(PixelFormat::Ayuv64Le, PixelFormat::Ayuv64Be),
+                yuv444p16,
+            ),
+            (PixelFormat::Rgba, PixelFormat::Rgb24),
+            (PixelFormat::Abgr, PixelFormat::Rgb24),
+            (PixelFormat::Gbrap, PixelFormat::Rgb24),
+            (native(PixelFormat::Rgba64Le, PixelFormat::Rgba64Be), rgb48),
+            (native(PixelFormat::Bgra64Le, PixelFormat::Bgra64Be), rgb48),
+            (
+                native(PixelFormat::Gbrap16Le, PixelFormat::Gbrap16Be),
+                rgb48,
+            ),
+            (native(PixelFormat::Gray12Le, PixelFormat::Gray12Be), gray16),
+            (PixelFormat::Yuv410p, PixelFormat::Yuv420p),
+            (PixelFormat::Yuv411p, PixelFormat::Yuv422p),
+            (PixelFormat::Uyyvyy411, PixelFormat::Yuv422p),
+            (PixelFormat::Yuv440p, PixelFormat::Yuv444p),
+            (
+                native(PixelFormat::Yuv440p10Le, PixelFormat::Yuv440p10Be),
+                yuv444p10,
+            ),
+            (
+                native(PixelFormat::Yuv440p12Le, PixelFormat::Yuv440p12Be),
+                yuv444p16,
+            ),
+            (
+                native(PixelFormat::Yuv420p9Le, PixelFormat::Yuv420p9Be),
+                yuv420p10,
+            ),
+            (
+                native(PixelFormat::Yuv420p12Le, PixelFormat::Yuv420p12Be),
+                yuv420p16,
+            ),
+            (
+                native(PixelFormat::Yuv444p9Le, PixelFormat::Yuv444p9Be),
+                yuv444p10,
+            ),
+            (
+                native(PixelFormat::Yuv444p12Le, PixelFormat::Yuv444p12Be),
+                yuv444p16,
+            ),
+            (PixelFormat::Bgr4, rgb565),
+            (native(PixelFormat::Rgb444Le, PixelFormat::Rgb444Be), rgb565),
+            (native(PixelFormat::Rgb555Le, PixelFormat::Rgb555Be), rgb565),
+            (native(PixelFormat::Gbrp10Le, PixelFormat::Gbrp10Be), rgb48),
+            (
+                native(PixelFormat::Gbrap10Le, PixelFormat::Gbrap10Be),
+                rgb48,
+            ),
+            (
+                native(PixelFormat::Gbrap12Le, PixelFormat::Gbrap12Be),
+                rgb48,
+            ),
+            (PixelFormat::Gray10Be, gray10),
+            (PixelFormat::Gray10Le, gray10),
+            (PixelFormat::Gray16Be, gray16),
+            (PixelFormat::Gray16Le, gray16),
+            (PixelFormat::Yuv422p10Be, yuv422p10),
+            (PixelFormat::Yuv422p10Le, yuv422p10),
+            (PixelFormat::Yuv444p16Be, yuv444p16),
+            (PixelFormat::Yuv444p16Le, yuv444p16),
+            (PixelFormat::Rgb565Be, rgb565),
+            (PixelFormat::Rgb565Le, rgb565),
+            (PixelFormat::Rgb48Be, rgb48),
+            (PixelFormat::Rgb48Le, rgb48),
+            (PixelFormat::Dxva2Vld, PixelFormat::Vdpau),
+        ] {
+            assert_best_format(&base, input, expected);
+        }
+
+        let p010 = native(PixelFormat::P010Le, PixelFormat::P010Be);
+        let p012 = native(PixelFormat::P012Le, PixelFormat::P012Be);
+        let p016 = native(PixelFormat::P016Le, PixelFormat::P016Be);
+        let p210 = native(PixelFormat::P210Le, PixelFormat::P210Be);
+        let p216 = native(PixelFormat::P216Le, PixelFormat::P216Be);
+        let p410 = native(PixelFormat::P410Le, PixelFormat::P410Be);
+        let p416 = native(PixelFormat::P416Le, PixelFormat::P416Be);
+        let semiplanar = vec![
+            p016,
+            p012,
+            p010,
+            p216,
+            p210,
+            PixelFormat::Nv16,
+            p416,
+            p410,
+            PixelFormat::Nv24,
+            PixelFormat::Nv12,
+        ];
+        for &format in &semiplanar {
+            assert_best_format(&semiplanar, format, format);
+        }
+        for (input, expected) in [
+            (PixelFormat::Yuv420p, PixelFormat::Nv12),
+            (yuv420p10, p010),
+            (
+                native(PixelFormat::Yuv420p12Le, PixelFormat::Yuv420p12Be),
+                p012,
+            ),
+            (yuv420p16, p016),
+            (
+                native(PixelFormat::Yuv420p9Le, PixelFormat::Yuv420p9Be),
+                p010,
+            ),
+            (PixelFormat::Yuv422p, PixelFormat::Nv16),
+            (yuv422p10, p210),
+            (
+                native(PixelFormat::Yuv422p12Le, PixelFormat::Yuv422p12Be),
+                p216,
+            ),
+            (yuv422p16, p216),
+            (PixelFormat::Yuv444p, PixelFormat::Nv24),
+            (yuv444p10, p410),
+            (
+                native(PixelFormat::Yuv444p12Le, PixelFormat::Yuv444p12Be),
+                p416,
+            ),
+            (yuv444p16, p416),
+        ] {
+            assert_best_format(&semiplanar, input, expected);
+        }
+
+        let xv48 = native(PixelFormat::Xv48Le, PixelFormat::Xv48Be);
+        let xv36 = native(PixelFormat::Xv36Le, PixelFormat::Xv36Be);
+        let xv30 = native(PixelFormat::Xv30Le, PixelFormat::Xv30Be);
+        let y216 = native(PixelFormat::Y216Le, PixelFormat::Y216Be);
+        let y212 = native(PixelFormat::Y212Le, PixelFormat::Y212Be);
+        let y210 = native(PixelFormat::Y210Le, PixelFormat::Y210Be);
+        let packed = vec![
+            xv48,
+            xv36,
+            xv30,
+            PixelFormat::Vuyx,
+            y216,
+            y212,
+            y210,
+            PixelFormat::Yuyv422,
+        ];
+        for &format in &packed {
+            assert_best_format(&packed, format, format);
+        }
+        for (input, expected) in [
+            (PixelFormat::Yuv444p, PixelFormat::Vuyx),
+            (yuv444p10, xv30),
+            (
+                native(PixelFormat::Yuv444p12Le, PixelFormat::Yuv444p12Be),
+                xv36,
+            ),
+            (yuv444p16, xv48),
+            (PixelFormat::Yuv422p, PixelFormat::Yuyv422),
+            (yuv422p10, y210),
+            (
+                native(PixelFormat::Yuv422p12Le, PixelFormat::Yuv422p12Be),
+                y212,
+            ),
+            (yuv422p16, y216),
+        ] {
+            assert_best_format(&packed, input, expected);
+        }
+
+        let subsampled = [
+            PixelFormat::Yuv411p,
+            PixelFormat::Yuv420p,
+            PixelFormat::Yuv422p,
+            PixelFormat::Yuv444p,
+        ];
+        for &format in &subsampled {
+            assert_best_format(&subsampled, format, format);
+        }
+        assert_best_format(&subsampled, PixelFormat::Yuv410p, PixelFormat::Yuv420p);
+
+        let depthchroma = [
+            native(PixelFormat::Yuv420p14Le, PixelFormat::Yuv420p14Be),
+            native(PixelFormat::Yuv422p14Le, PixelFormat::Yuv422p14Be),
+            yuv444p16,
+        ];
+        for &format in &depthchroma {
+            assert_best_format(&depthchroma, format, format);
+        }
+        assert_best_format(&depthchroma, yuv420p16, yuv444p16);
+        assert_best_format(&depthchroma, yuv422p16, yuv444p16);
     }
 
     #[test]

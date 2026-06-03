@@ -169,6 +169,8 @@ fn libavutil_pixel_format_name_lookup_matches_bounded_model() {
             "av_get_pix_fmt lookup diverged for `{input}`"
         );
     }
+
+    assert_libavutil_best_rows_match_bounded_model(&rows);
 }
 
 #[test]
@@ -305,6 +307,331 @@ fn row_fields<'a>(rows: &'a BTreeMap<String, Vec<String>>, name: &str) -> &'a [S
         .unwrap_or_else(|| panic!("missing oracle row `{name}`"))
 }
 
+fn assert_libavutil_best_rows_match_bounded_model(rows: &BTreeMap<String, Vec<String>>) {
+    let gray10 = native(PixelFormat::Gray10Le, PixelFormat::Gray10Be);
+    let gray16 = native(PixelFormat::Gray16Le, PixelFormat::Gray16Be);
+    let yuv420p10 = native(PixelFormat::Yuv420p10Le, PixelFormat::Yuv420p10Be);
+    let yuv420p16 = native(PixelFormat::Yuv420p16Le, PixelFormat::Yuv420p16Be);
+    let yuv422p10 = native(PixelFormat::Yuv422p10Le, PixelFormat::Yuv422p10Be);
+    let yuv422p16 = native(PixelFormat::Yuv422p16Le, PixelFormat::Yuv422p16Be);
+    let yuv444p10 = native(PixelFormat::Yuv444p10Le, PixelFormat::Yuv444p10Be);
+    let yuv444p16 = native(PixelFormat::Yuv444p16Le, PixelFormat::Yuv444p16Be);
+    let rgb565 = native(PixelFormat::Rgb565Le, PixelFormat::Rgb565Be);
+    let rgb48 = native(PixelFormat::Rgb48Le, PixelFormat::Rgb48Be);
+    let bgr565 = native(PixelFormat::Bgr565Le, PixelFormat::Bgr565Be);
+
+    let base = vec![
+        PixelFormat::MonoWhite,
+        PixelFormat::Gray8,
+        gray10,
+        gray16,
+        PixelFormat::Yuv420p,
+        yuv420p10,
+        yuv420p16,
+        PixelFormat::Yuv422p,
+        yuv422p10,
+        yuv422p16,
+        PixelFormat::Yuv444p,
+        yuv444p10,
+        yuv444p16,
+        rgb565,
+        PixelFormat::Rgb24,
+        rgb48,
+        PixelFormat::Vdpau,
+        PixelFormat::Vaapi,
+    ];
+
+    assert_same_best_rows(rows, "base", &base);
+    assert_best_cases(
+        rows,
+        "base",
+        &base,
+        &[
+            ("monob", PixelFormat::MonoBlack),
+            ("nv12", PixelFormat::Nv12),
+            ("p010", native(PixelFormat::P010Le, PixelFormat::P010Be)),
+            ("p012", native(PixelFormat::P012Le, PixelFormat::P012Be)),
+            ("p016", native(PixelFormat::P016Le, PixelFormat::P016Be)),
+            ("p210", native(PixelFormat::P210Le, PixelFormat::P210Be)),
+            ("p212", native(PixelFormat::P212Le, PixelFormat::P212Be)),
+            ("p216", native(PixelFormat::P216Le, PixelFormat::P216Be)),
+            ("p410", native(PixelFormat::P410Le, PixelFormat::P410Be)),
+            ("p412", native(PixelFormat::P412Le, PixelFormat::P412Be)),
+            ("p416", native(PixelFormat::P416Le, PixelFormat::P416Be)),
+            ("nv16", PixelFormat::Nv16),
+            ("nv20", native(PixelFormat::Nv20Le, PixelFormat::Nv20Be)),
+            ("nv24", PixelFormat::Nv24),
+            ("yuyv422", PixelFormat::Yuyv422),
+            ("uyvy422", PixelFormat::Uyvy422),
+            ("vyu444", PixelFormat::Vyu444),
+            ("bgr565", bgr565),
+            ("bgr24", PixelFormat::Bgr24),
+            ("gbrp", PixelFormat::Gbrp),
+            ("0rgb", PixelFormat::ZeroRgb),
+            (
+                "gbrp16",
+                native(PixelFormat::Gbrp16Le, PixelFormat::Gbrp16Be),
+            ),
+            ("vuyx", PixelFormat::Vuyx),
+            ("ya8", PixelFormat::Ya8),
+            ("ya16", native(PixelFormat::Ya16Le, PixelFormat::Ya16Be)),
+            ("yuva420p", PixelFormat::Yuva420p),
+            ("yuva422p", PixelFormat::Yuva422p),
+            ("yuva444p", PixelFormat::Yuva444p),
+            ("vuya", PixelFormat::Vuya),
+            ("ayuv", PixelFormat::Ayuv),
+            ("uyva", PixelFormat::Uyva),
+            (
+                "ayuv64",
+                native(PixelFormat::Ayuv64Le, PixelFormat::Ayuv64Be),
+            ),
+            ("rgba", PixelFormat::Rgba),
+            ("abgr", PixelFormat::Abgr),
+            ("gbrap", PixelFormat::Gbrap),
+            (
+                "rgba64",
+                native(PixelFormat::Rgba64Le, PixelFormat::Rgba64Be),
+            ),
+            (
+                "bgra64",
+                native(PixelFormat::Bgra64Le, PixelFormat::Bgra64Be),
+            ),
+            (
+                "gbrap16",
+                native(PixelFormat::Gbrap16Le, PixelFormat::Gbrap16Be),
+            ),
+            (
+                "gray12",
+                native(PixelFormat::Gray12Le, PixelFormat::Gray12Be),
+            ),
+            ("yuv410p", PixelFormat::Yuv410p),
+            ("yuv411p", PixelFormat::Yuv411p),
+            ("uyyvyy411", PixelFormat::Uyyvyy411),
+            ("yuv440p", PixelFormat::Yuv440p),
+            (
+                "yuv440p10",
+                native(PixelFormat::Yuv440p10Le, PixelFormat::Yuv440p10Be),
+            ),
+            (
+                "yuv440p12",
+                native(PixelFormat::Yuv440p12Le, PixelFormat::Yuv440p12Be),
+            ),
+            (
+                "yuv420p9",
+                native(PixelFormat::Yuv420p9Le, PixelFormat::Yuv420p9Be),
+            ),
+            (
+                "yuv420p12",
+                native(PixelFormat::Yuv420p12Le, PixelFormat::Yuv420p12Be),
+            ),
+            (
+                "yuv444p9",
+                native(PixelFormat::Yuv444p9Le, PixelFormat::Yuv444p9Be),
+            ),
+            (
+                "yuv444p12",
+                native(PixelFormat::Yuv444p12Le, PixelFormat::Yuv444p12Be),
+            ),
+            ("bgr4", PixelFormat::Bgr4),
+            (
+                "rgb444",
+                native(PixelFormat::Rgb444Le, PixelFormat::Rgb444Be),
+            ),
+            (
+                "rgb555",
+                native(PixelFormat::Rgb555Le, PixelFormat::Rgb555Be),
+            ),
+            (
+                "gbrp10",
+                native(PixelFormat::Gbrp10Le, PixelFormat::Gbrp10Be),
+            ),
+            (
+                "gbrap10",
+                native(PixelFormat::Gbrap10Le, PixelFormat::Gbrap10Be),
+            ),
+            (
+                "gbrap12",
+                native(PixelFormat::Gbrap12Le, PixelFormat::Gbrap12Be),
+            ),
+            ("gray10be", PixelFormat::Gray10Be),
+            ("gray10le", PixelFormat::Gray10Le),
+            ("gray16be", PixelFormat::Gray16Be),
+            ("gray16le", PixelFormat::Gray16Le),
+            ("yuv422p10be", PixelFormat::Yuv422p10Be),
+            ("yuv422p10le", PixelFormat::Yuv422p10Le),
+            ("yuv444p16be", PixelFormat::Yuv444p16Be),
+            ("yuv444p16le", PixelFormat::Yuv444p16Le),
+            ("rgb565be", PixelFormat::Rgb565Be),
+            ("rgb565le", PixelFormat::Rgb565Le),
+            ("rgb48be", PixelFormat::Rgb48Be),
+            ("rgb48le", PixelFormat::Rgb48Le),
+            ("dxva2_vld", PixelFormat::Dxva2Vld),
+        ],
+    );
+
+    let p010 = native(PixelFormat::P010Le, PixelFormat::P010Be);
+    let p012 = native(PixelFormat::P012Le, PixelFormat::P012Be);
+    let p016 = native(PixelFormat::P016Le, PixelFormat::P016Be);
+    let p210 = native(PixelFormat::P210Le, PixelFormat::P210Be);
+    let p216 = native(PixelFormat::P216Le, PixelFormat::P216Be);
+    let p410 = native(PixelFormat::P410Le, PixelFormat::P410Be);
+    let p416 = native(PixelFormat::P416Le, PixelFormat::P416Be);
+    let semiplanar = vec![
+        p016,
+        p012,
+        p010,
+        p216,
+        p210,
+        PixelFormat::Nv16,
+        p416,
+        p410,
+        PixelFormat::Nv24,
+        PixelFormat::Nv12,
+    ];
+    assert_same_best_rows(rows, "semiplanar", &semiplanar);
+    assert_best_cases(
+        rows,
+        "semiplanar",
+        &semiplanar,
+        &[
+            ("yuv420p", PixelFormat::Yuv420p),
+            ("yuv420p10", yuv420p10),
+            (
+                "yuv420p12",
+                native(PixelFormat::Yuv420p12Le, PixelFormat::Yuv420p12Be),
+            ),
+            ("yuv420p16", yuv420p16),
+            (
+                "yuv420p9",
+                native(PixelFormat::Yuv420p9Le, PixelFormat::Yuv420p9Be),
+            ),
+            ("yuv422p", PixelFormat::Yuv422p),
+            ("yuv422p10", yuv422p10),
+            (
+                "yuv422p12",
+                native(PixelFormat::Yuv422p12Le, PixelFormat::Yuv422p12Be),
+            ),
+            ("yuv422p16", yuv422p16),
+            ("yuv444p", PixelFormat::Yuv444p),
+            ("yuv444p10", yuv444p10),
+            (
+                "yuv444p12",
+                native(PixelFormat::Yuv444p12Le, PixelFormat::Yuv444p12Be),
+            ),
+            ("yuv444p16", yuv444p16),
+        ],
+    );
+
+    let xv48 = native(PixelFormat::Xv48Le, PixelFormat::Xv48Be);
+    let xv36 = native(PixelFormat::Xv36Le, PixelFormat::Xv36Be);
+    let xv30 = native(PixelFormat::Xv30Le, PixelFormat::Xv30Be);
+    let y216 = native(PixelFormat::Y216Le, PixelFormat::Y216Be);
+    let y212 = native(PixelFormat::Y212Le, PixelFormat::Y212Be);
+    let y210 = native(PixelFormat::Y210Le, PixelFormat::Y210Be);
+    let packed = vec![
+        xv48,
+        xv36,
+        xv30,
+        PixelFormat::Vuyx,
+        y216,
+        y212,
+        y210,
+        PixelFormat::Yuyv422,
+    ];
+    assert_same_best_rows(rows, "packed", &packed);
+    assert_best_cases(
+        rows,
+        "packed",
+        &packed,
+        &[
+            ("yuv444p", PixelFormat::Yuv444p),
+            ("yuv444p10", yuv444p10),
+            (
+                "yuv444p12",
+                native(PixelFormat::Yuv444p12Le, PixelFormat::Yuv444p12Be),
+            ),
+            ("yuv444p16", yuv444p16),
+            ("yuv422p", PixelFormat::Yuv422p),
+            ("yuv422p10", yuv422p10),
+            (
+                "yuv422p12",
+                native(PixelFormat::Yuv422p12Le, PixelFormat::Yuv422p12Be),
+            ),
+            ("yuv422p16", yuv422p16),
+        ],
+    );
+
+    let subsampled = [
+        PixelFormat::Yuv411p,
+        PixelFormat::Yuv420p,
+        PixelFormat::Yuv422p,
+        PixelFormat::Yuv444p,
+    ];
+    assert_same_best_rows(rows, "subsampled", &subsampled);
+    assert_best_cases(
+        rows,
+        "subsampled",
+        &subsampled,
+        &[("yuv410p", PixelFormat::Yuv410p)],
+    );
+
+    let depthchroma = [
+        native(PixelFormat::Yuv420p14Le, PixelFormat::Yuv420p14Be),
+        native(PixelFormat::Yuv422p14Le, PixelFormat::Yuv422p14Be),
+        yuv444p16,
+    ];
+    assert_same_best_rows(rows, "depthchroma", &depthchroma);
+    assert_best_cases(
+        rows,
+        "depthchroma",
+        &depthchroma,
+        &[("yuv420p16", yuv420p16), ("yuv422p16", yuv422p16)],
+    );
+}
+
+fn assert_same_best_rows(
+    rows: &BTreeMap<String, Vec<String>>,
+    group: &str,
+    candidates: &[PixelFormat],
+) {
+    for (index, &input) in candidates.iter().enumerate() {
+        assert_best_row(rows, group, &format!("same-{index}"), candidates, input);
+    }
+}
+
+fn assert_best_cases(
+    rows: &BTreeMap<String, Vec<String>>,
+    group: &str,
+    candidates: &[PixelFormat],
+    cases: &[(&str, PixelFormat)],
+) {
+    for &(id, input) in cases {
+        assert_best_row(rows, group, id, candidates, input);
+    }
+}
+
+fn assert_best_row(
+    rows: &BTreeMap<String, Vec<String>>,
+    group: &str,
+    id: &str,
+    candidates: &[PixelFormat],
+    input: PixelFormat,
+) {
+    let expected = PixelFormat::find_best(candidates.iter().copied(), input, false)
+        .unwrap_or_else(|| panic!("missing bounded best pixel format for `{}`", input.name()));
+    let key = format!("best:{group}:{id}");
+    let expected_fields = [input.name().to_string(), expected.name().to_string()];
+    assert_eq!(row_fields(rows, &key), &expected_fields, "{key} diverged");
+}
+
+fn native(le: PixelFormat, be: PixelFormat) -> PixelFormat {
+    if cfg!(target_endian = "little") {
+        le
+    } else {
+        be
+    }
+}
+
 fn compile_and_run_oracle(
     include_dir: &Path,
     libavutil: &Path,
@@ -361,6 +688,103 @@ static void print_lookup(const char *input) {
     printf("lookup:%s|%d|%s\n", input, fmt != AV_PIX_FMT_NONE, name ? name : "");
 }
 
+#define ARRAY_ELEMS(array) ((int)(sizeof(array) / sizeof((array)[0])))
+
+static const enum AVPixelFormat pixfmt_list[] = {
+    AV_PIX_FMT_MONOWHITE,
+    AV_PIX_FMT_GRAY8,
+    AV_PIX_FMT_GRAY10,
+    AV_PIX_FMT_GRAY16,
+    AV_PIX_FMT_YUV420P,
+    AV_PIX_FMT_YUV420P10,
+    AV_PIX_FMT_YUV420P16,
+    AV_PIX_FMT_YUV422P,
+    AV_PIX_FMT_YUV422P10,
+    AV_PIX_FMT_YUV422P16,
+    AV_PIX_FMT_YUV444P,
+    AV_PIX_FMT_YUV444P10,
+    AV_PIX_FMT_YUV444P16,
+    AV_PIX_FMT_RGB565,
+    AV_PIX_FMT_RGB24,
+    AV_PIX_FMT_RGB48,
+    AV_PIX_FMT_VDPAU,
+    AV_PIX_FMT_VAAPI,
+};
+
+static const enum AVPixelFormat semiplanar_list[] = {
+    AV_PIX_FMT_P016,
+    AV_PIX_FMT_P012,
+    AV_PIX_FMT_P010,
+    AV_PIX_FMT_P216,
+    AV_PIX_FMT_P210,
+    AV_PIX_FMT_NV16,
+    AV_PIX_FMT_P416,
+    AV_PIX_FMT_P410,
+    AV_PIX_FMT_NV24,
+    AV_PIX_FMT_NV12,
+};
+
+static const enum AVPixelFormat packed_list[] = {
+    AV_PIX_FMT_XV48,
+    AV_PIX_FMT_XV36,
+    AV_PIX_FMT_XV30,
+    AV_PIX_FMT_VUYX,
+    AV_PIX_FMT_Y216,
+    AV_PIX_FMT_Y212,
+    AV_PIX_FMT_Y210,
+    AV_PIX_FMT_YUYV422,
+};
+
+static const enum AVPixelFormat subsampled_list[] = {
+    AV_PIX_FMT_YUV411P,
+    AV_PIX_FMT_YUV420P,
+    AV_PIX_FMT_YUV422P,
+    AV_PIX_FMT_YUV444P,
+};
+
+static const enum AVPixelFormat depthchroma_list[] = {
+    AV_PIX_FMT_YUV420P14,
+    AV_PIX_FMT_YUV422P14,
+    AV_PIX_FMT_YUV444P16,
+};
+
+static enum AVPixelFormat find_best(const enum AVPixelFormat *list,
+                                    int count,
+                                    enum AVPixelFormat input) {
+    enum AVPixelFormat best = AV_PIX_FMT_NONE;
+    for (int i = 0; i < count; i++)
+        best = av_find_best_pix_fmt_of_2(best, list[i], input, 0, NULL);
+    return best;
+}
+
+static void print_best_case(const char *group,
+                            const char *id,
+                            enum AVPixelFormat input,
+                            const enum AVPixelFormat *list,
+                            int count) {
+    enum AVPixelFormat best = find_best(list, count, input);
+    const char *input_name = av_get_pix_fmt_name(input);
+    const char *best_name = av_get_pix_fmt_name(best);
+    printf("best:%s:%s|%s|%s\n",
+           group,
+           id,
+           input_name ? input_name : "",
+           best_name ? best_name : "");
+}
+
+static void print_best_same(const char *group,
+                            const enum AVPixelFormat *list,
+                            int count) {
+    char id[32];
+    for (int i = 0; i < count; i++) {
+        snprintf(id, sizeof(id), "same-%d", i);
+        print_best_case(group, id, list[i], list, count);
+    }
+}
+
+#define PRINT_BEST(group, id, input, list) \
+    print_best_case(group, id, input, list, ARRAY_ELEMS(list))
+
 int main(void) {
     print_lookup("gray");
     print_lookup("gray8");
@@ -384,6 +808,108 @@ int main(void) {
     print_lookup("yf32le");
     print_lookup("vaapi");
     print_lookup("not_a_pix_fmt");
+
+    print_best_same("base", pixfmt_list, ARRAY_ELEMS(pixfmt_list));
+    PRINT_BEST("base", "monob", AV_PIX_FMT_MONOBLACK, pixfmt_list);
+    PRINT_BEST("base", "nv12", AV_PIX_FMT_NV12, pixfmt_list);
+    PRINT_BEST("base", "p010", AV_PIX_FMT_P010, pixfmt_list);
+    PRINT_BEST("base", "p012", AV_PIX_FMT_P012, pixfmt_list);
+    PRINT_BEST("base", "p016", AV_PIX_FMT_P016, pixfmt_list);
+    PRINT_BEST("base", "p210", AV_PIX_FMT_P210, pixfmt_list);
+    PRINT_BEST("base", "p212", AV_PIX_FMT_P212, pixfmt_list);
+    PRINT_BEST("base", "p216", AV_PIX_FMT_P216, pixfmt_list);
+    PRINT_BEST("base", "p410", AV_PIX_FMT_P410, pixfmt_list);
+    PRINT_BEST("base", "p412", AV_PIX_FMT_P412, pixfmt_list);
+    PRINT_BEST("base", "p416", AV_PIX_FMT_P416, pixfmt_list);
+    PRINT_BEST("base", "nv16", AV_PIX_FMT_NV16, pixfmt_list);
+    PRINT_BEST("base", "nv20", AV_PIX_FMT_NV20, pixfmt_list);
+    PRINT_BEST("base", "nv24", AV_PIX_FMT_NV24, pixfmt_list);
+    PRINT_BEST("base", "yuyv422", AV_PIX_FMT_YUYV422, pixfmt_list);
+    PRINT_BEST("base", "uyvy422", AV_PIX_FMT_UYVY422, pixfmt_list);
+    PRINT_BEST("base", "vyu444", AV_PIX_FMT_VYU444, pixfmt_list);
+    PRINT_BEST("base", "bgr565", AV_PIX_FMT_BGR565, pixfmt_list);
+    PRINT_BEST("base", "bgr24", AV_PIX_FMT_BGR24, pixfmt_list);
+    PRINT_BEST("base", "gbrp", AV_PIX_FMT_GBRP, pixfmt_list);
+    PRINT_BEST("base", "0rgb", AV_PIX_FMT_0RGB, pixfmt_list);
+    PRINT_BEST("base", "gbrp16", AV_PIX_FMT_GBRP16, pixfmt_list);
+    PRINT_BEST("base", "vuyx", AV_PIX_FMT_VUYX, pixfmt_list);
+    PRINT_BEST("base", "ya8", AV_PIX_FMT_YA8, pixfmt_list);
+    PRINT_BEST("base", "ya16", AV_PIX_FMT_YA16, pixfmt_list);
+    PRINT_BEST("base", "yuva420p", AV_PIX_FMT_YUVA420P, pixfmt_list);
+    PRINT_BEST("base", "yuva422p", AV_PIX_FMT_YUVA422P, pixfmt_list);
+    PRINT_BEST("base", "yuva444p", AV_PIX_FMT_YUVA444P, pixfmt_list);
+    PRINT_BEST("base", "vuya", AV_PIX_FMT_VUYA, pixfmt_list);
+    PRINT_BEST("base", "ayuv", AV_PIX_FMT_AYUV, pixfmt_list);
+    PRINT_BEST("base", "uyva", AV_PIX_FMT_UYVA, pixfmt_list);
+    PRINT_BEST("base", "ayuv64", AV_PIX_FMT_AYUV64, pixfmt_list);
+    PRINT_BEST("base", "rgba", AV_PIX_FMT_RGBA, pixfmt_list);
+    PRINT_BEST("base", "abgr", AV_PIX_FMT_ABGR, pixfmt_list);
+    PRINT_BEST("base", "gbrap", AV_PIX_FMT_GBRAP, pixfmt_list);
+    PRINT_BEST("base", "rgba64", AV_PIX_FMT_RGBA64, pixfmt_list);
+    PRINT_BEST("base", "bgra64", AV_PIX_FMT_BGRA64, pixfmt_list);
+    PRINT_BEST("base", "gbrap16", AV_PIX_FMT_GBRAP16, pixfmt_list);
+    PRINT_BEST("base", "gray12", AV_PIX_FMT_GRAY12, pixfmt_list);
+    PRINT_BEST("base", "yuv410p", AV_PIX_FMT_YUV410P, pixfmt_list);
+    PRINT_BEST("base", "yuv411p", AV_PIX_FMT_YUV411P, pixfmt_list);
+    PRINT_BEST("base", "uyyvyy411", AV_PIX_FMT_UYYVYY411, pixfmt_list);
+    PRINT_BEST("base", "yuv440p", AV_PIX_FMT_YUV440P, pixfmt_list);
+    PRINT_BEST("base", "yuv440p10", AV_PIX_FMT_YUV440P10, pixfmt_list);
+    PRINT_BEST("base", "yuv440p12", AV_PIX_FMT_YUV440P12, pixfmt_list);
+    PRINT_BEST("base", "yuv420p9", AV_PIX_FMT_YUV420P9, pixfmt_list);
+    PRINT_BEST("base", "yuv420p12", AV_PIX_FMT_YUV420P12, pixfmt_list);
+    PRINT_BEST("base", "yuv444p9", AV_PIX_FMT_YUV444P9, pixfmt_list);
+    PRINT_BEST("base", "yuv444p12", AV_PIX_FMT_YUV444P12, pixfmt_list);
+    PRINT_BEST("base", "bgr4", AV_PIX_FMT_BGR4, pixfmt_list);
+    PRINT_BEST("base", "rgb444", AV_PIX_FMT_RGB444, pixfmt_list);
+    PRINT_BEST("base", "rgb555", AV_PIX_FMT_RGB555, pixfmt_list);
+    PRINT_BEST("base", "gbrp10", AV_PIX_FMT_GBRP10, pixfmt_list);
+    PRINT_BEST("base", "gbrap10", AV_PIX_FMT_GBRAP10, pixfmt_list);
+    PRINT_BEST("base", "gbrap12", AV_PIX_FMT_GBRAP12, pixfmt_list);
+    PRINT_BEST("base", "gray10be", AV_PIX_FMT_GRAY10BE, pixfmt_list);
+    PRINT_BEST("base", "gray10le", AV_PIX_FMT_GRAY10LE, pixfmt_list);
+    PRINT_BEST("base", "gray16be", AV_PIX_FMT_GRAY16BE, pixfmt_list);
+    PRINT_BEST("base", "gray16le", AV_PIX_FMT_GRAY16LE, pixfmt_list);
+    PRINT_BEST("base", "yuv422p10be", AV_PIX_FMT_YUV422P10BE, pixfmt_list);
+    PRINT_BEST("base", "yuv422p10le", AV_PIX_FMT_YUV422P10LE, pixfmt_list);
+    PRINT_BEST("base", "yuv444p16be", AV_PIX_FMT_YUV444P16BE, pixfmt_list);
+    PRINT_BEST("base", "yuv444p16le", AV_PIX_FMT_YUV444P16LE, pixfmt_list);
+    PRINT_BEST("base", "rgb565be", AV_PIX_FMT_RGB565BE, pixfmt_list);
+    PRINT_BEST("base", "rgb565le", AV_PIX_FMT_RGB565LE, pixfmt_list);
+    PRINT_BEST("base", "rgb48be", AV_PIX_FMT_RGB48BE, pixfmt_list);
+    PRINT_BEST("base", "rgb48le", AV_PIX_FMT_RGB48LE, pixfmt_list);
+    PRINT_BEST("base", "dxva2_vld", AV_PIX_FMT_DXVA2_VLD, pixfmt_list);
+
+    print_best_same("semiplanar", semiplanar_list, ARRAY_ELEMS(semiplanar_list));
+    PRINT_BEST("semiplanar", "yuv420p", AV_PIX_FMT_YUV420P, semiplanar_list);
+    PRINT_BEST("semiplanar", "yuv420p10", AV_PIX_FMT_YUV420P10, semiplanar_list);
+    PRINT_BEST("semiplanar", "yuv420p12", AV_PIX_FMT_YUV420P12, semiplanar_list);
+    PRINT_BEST("semiplanar", "yuv420p16", AV_PIX_FMT_YUV420P16, semiplanar_list);
+    PRINT_BEST("semiplanar", "yuv420p9", AV_PIX_FMT_YUV420P9, semiplanar_list);
+    PRINT_BEST("semiplanar", "yuv422p", AV_PIX_FMT_YUV422P, semiplanar_list);
+    PRINT_BEST("semiplanar", "yuv422p10", AV_PIX_FMT_YUV422P10, semiplanar_list);
+    PRINT_BEST("semiplanar", "yuv422p12", AV_PIX_FMT_YUV422P12, semiplanar_list);
+    PRINT_BEST("semiplanar", "yuv422p16", AV_PIX_FMT_YUV422P16, semiplanar_list);
+    PRINT_BEST("semiplanar", "yuv444p", AV_PIX_FMT_YUV444P, semiplanar_list);
+    PRINT_BEST("semiplanar", "yuv444p10", AV_PIX_FMT_YUV444P10, semiplanar_list);
+    PRINT_BEST("semiplanar", "yuv444p12", AV_PIX_FMT_YUV444P12, semiplanar_list);
+    PRINT_BEST("semiplanar", "yuv444p16", AV_PIX_FMT_YUV444P16, semiplanar_list);
+
+    print_best_same("packed", packed_list, ARRAY_ELEMS(packed_list));
+    PRINT_BEST("packed", "yuv444p", AV_PIX_FMT_YUV444P, packed_list);
+    PRINT_BEST("packed", "yuv444p10", AV_PIX_FMT_YUV444P10, packed_list);
+    PRINT_BEST("packed", "yuv444p12", AV_PIX_FMT_YUV444P12, packed_list);
+    PRINT_BEST("packed", "yuv444p16", AV_PIX_FMT_YUV444P16, packed_list);
+    PRINT_BEST("packed", "yuv422p", AV_PIX_FMT_YUV422P, packed_list);
+    PRINT_BEST("packed", "yuv422p10", AV_PIX_FMT_YUV422P10, packed_list);
+    PRINT_BEST("packed", "yuv422p12", AV_PIX_FMT_YUV422P12, packed_list);
+    PRINT_BEST("packed", "yuv422p16", AV_PIX_FMT_YUV422P16, packed_list);
+
+    print_best_same("subsampled", subsampled_list, ARRAY_ELEMS(subsampled_list));
+    PRINT_BEST("subsampled", "yuv410p", AV_PIX_FMT_YUV410P, subsampled_list);
+
+    print_best_same("depthchroma", depthchroma_list, ARRAY_ELEMS(depthchroma_list));
+    PRINT_BEST("depthchroma", "yuv420p16", AV_PIX_FMT_YUV420P16, depthchroma_list);
+    PRINT_BEST("depthchroma", "yuv422p16", AV_PIX_FMT_YUV422P16, depthchroma_list);
     return 0;
 }
 "#

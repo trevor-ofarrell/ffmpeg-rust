@@ -3,57 +3,51 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The
-tree started clean at `master...origin/master [ahead 40]`; required startup
+tree started clean at `master...origin/master [ahead 45]`; required startup
 checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
 -- status --next 15` reporting 11/96 strict-complete components (11.5%) and
 `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
 validating the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
 confirmed `avutil-packet` remains blocked on shared-shrink alias-safe storage
-and advanced the next unblocked priority-1 component, `avutil-buffer`; no worker
-writes were delegated.
+and advanced the next unblocked priority-1 evidence slice,
+`avutil-pixel-format`; no worker writes were delegated.
 
-Current main-thread slice: pinned libavutil rows now prove nullable-zero
-custom-owner self-replace behavior for writable and READONLY
-`av_buffer_create(NULL, 0, free, opaque, flags)` refs. `av_buffer_replace(&buf,
-buf)` succeeds without early custom-owner release, preserves NULL data-pointer
-shape, opaque lookup, refcount 1, and writable/readonly state according to the
-READONLY flag, then releases only when the final self-replaced ref is unreffed.
-Rust mirrors this with focused unit coverage, the mapped buffer oracle, and
-deterministic `avutil_core_models` coverage. `avutil-buffer` remains
-`differential_pass`, not `complete`; strict completion remains 11/96 because
-broader ABI/lifetime closure, hardware/device ownership integration, and
-standalone upstream FATE inapplicability remain open.
+Current main-thread slice: the shared pixel model now exposes bounded
+`PixelFormat::find_best_of_2` and `PixelFormat::find_best` helpers matching the
+upstream `fate-pixfmt_best` vector set. The pinned libavutil oracle now emits
+matching `av_find_best_pix_fmt_of_2()` rows for the same base, semi-planar,
+packed, subsampled, and depth/chroma candidate families, and
+`tests/fate/upstream-mappings.txt` carries `avutil-pixel-format|fate-pixfmt_best`
+through an ignored upstream FATE wrapper. `avutil-pixel-format` is promoted
+from `differential_pass` to `fate_pass`, not `complete`; strict completion
+remains 11/96 because full descriptor/inventory parity, broader conversion
+behavior, hardware frame/device integration, zero known limitations, and
+sustained fuzz campaigns remain pending.
 
-Latest validation commands for this nullable-zero self-replace buffer slice
-passed: `cargo fmt --all`; `CARGO_TARGET_DIR=target-orch-avutil
-cargo test -p avutil buffer_ref_replace_and_unref_handle_nullable_c_api_shape --
---nocapture`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo check --manifest-path
-fuzz/Cargo.toml --bin avutil_core_models`; `CARGO_TARGET_DIR=target-orch-avutil
-cargo test -p avutil --test buffer_oracle
-libavutil_buffer_refs_match_current_model -- --ignored --nocapture`;
-`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run --mappings
-tests/differential/mappings.txt --component avutil-buffer --target
-oracle-libavutil-buffer --oracle-ffmpeg
+Latest validation commands for this pixel-format best-selection slice passed:
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --lib pixel`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
+pixel_format_oracle -- --ignored`; `CARGO_TARGET_DIR=target-orch-fate cargo run
+-p fate-runner -- run --mappings tests/differential/mappings.txt --component
+avutil-pixel-format --target oracle-ffmpeg-pix-fmts-subset --oracle-ffmpeg
 ./third_party/ffmpeg-oracle/build/bin/ffmpeg`; `CARGO_TARGET_DIR=target-orch-fate
-cargo run -p fate-runner -- run --component avutil-buffer --target
-local-avutil-unit`; `CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil
---all-targets --all-features -- -D warnings`; `CARGO_TARGET_DIR=target-wsl-fuzz
-cargo clippy --manifest-path fuzz/Cargo.toml --bin avutil_core_models -- -D
-warnings`; `cargo fmt --all -- --check`; `CARGO_TARGET_DIR=target-orch-fate
-cargo test -p fate-runner current_ledger`; `CARGO_TARGET_DIR=target-orch-fate
-cargo run -p xtask -- guard-runtime`; `CARGO_TARGET_DIR=target-orch-fate cargo
-run -p xtask -- oracle-doctor`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p
-fate-runner -- status --next 15`; and `git diff --check` with CRLF warnings
-only. Top-level oracle scratch `target/` directories created by the ignored
-oracle runs were removed; stable `target-orch-avutil`, `target-orch-fate`, and
-`target-wsl-fuzz` caches remain.
+cargo run -p fate-runner -- run --component avutil-pixel-format`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
+pixel_format_fate upstream_fate_pixfmt_best_passes -- --ignored` after
+escalation allowed the pinned FFmpeg build cache to write dependency/object
+files; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run
+--mappings tests/fate/upstream-mappings.txt --component avutil-pixel-format
+--target fate-pixfmt_best` after escalation allowed FATE to write its result
+file; `CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil --all-targets
+--all-features -- -D warnings`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo check
+--manifest-path fuzz/Cargo.toml --bin avutil_core_models`; and `cargo fmt
+--all -- --check`.
 
 Current focus component: `avutil-packet` remains the top priority incomplete
 component (`fate_pass`) because the shared `av_shrink_packet()` behavior needs a
-broader alias-safe shared-storage design. Next highest unblocked candidate is
-still `avutil-buffer` (`differential_pass`) unless the ledger shows a newly
-smaller buffer closure slice; after that, `avutil-frame` is the next priority-1
-candidate.
+broader alias-safe shared-storage design. Next highest priority incomplete
+rows are `avutil-buffer`, `avutil-frame`, `avutil-logging`, and
+`avutil-options`, all already at `fate_pass` pending closure work.
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The
 tree started clean at `master...origin/master [ahead 29]`; required startup

@@ -9,6 +9,15 @@
 
 ## Compatible Today
 
+- Latest main-thread pixel-format status: the bounded `PixelFormat::find_best`
+  / `find_best_of_2` model now matches the upstream `fate-pixfmt_best` vector
+  set, the pinned libavutil oracle validates `av_find_best_pix_fmt_of_2` rows
+  across the same candidate families, and upstream FFmpeg `fate-pixfmt_best`
+  passes through `tests/fate/upstream-mappings.txt`. This promotes
+  `avutil-pixel-format` from `differential_pass` to `fate_pass`, not
+  `complete`; full `AVPixFmtDescriptor` inventory parity, broader conversion
+  behavior, hardware frame/device integration, and sustained fuzz evidence
+  remain pending. Strict completion remains 11/96.
 - Latest main-thread channel-layout status: local unit coverage, the mapped
   pinned `avutil-channel-layout|oracle-ffmpeg-layouts` differential row, and
   upstream FFmpeg `fate-channel_layout` all pass through the pinned WSL

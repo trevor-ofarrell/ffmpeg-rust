@@ -3877,9 +3877,9 @@ id = "avutil-pixel-format"
 kind = "pixfmt"
 ffmpeg_name = "AVPixelFormat"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "differential_pass"
+status = "fate_pass"
 priority = 1
-oracle_command = "cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-pixel-format --target oracle-ffmpeg-pix-fmts-subset --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd"
+oracle_command = "cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-pixel-format --target oracle-ffmpeg-pix-fmts-subset --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg"
 rust_command = "cargo test -p avutil --lib pixel"
 unit_tests = [
   "pixel::tests::pixel_formats_report_ffmpeg_names_and_layout",
@@ -3888,14 +3888,26 @@ unit_tests = [
   "pixel::tests::pixel_formats_split_frame_payloads_by_plane",
   "pixel::tests::pixel_formats_reject_invalid_dimensions_and_payload_sizes",
   "pixel::tests::pixel_formats_from_av_get_pix_fmt_name_handles_invalid_and_extended_inputs",
+  "pixel::tests::pixel_formats_find_best_matches_upstream_fate_vectors",
 ]
 differential_tests = [
   "tests/differential/mappings.txt:avutil-pixel-format|oracle-ffmpeg-pix-fmts-subset",
   "crates/avutil/tests/pixel_format_oracle.rs::ffmpeg_pixel_format_inventory_contains_current_pixel_format_subset",
+  "crates/avutil/tests/pixel_format_oracle.rs::libavutil_pixel_format_name_lookup_matches_bounded_model",
 ]
-fate_tests = ["tests/fate/mappings.txt:avutil-pixel-format|local-avutil-unit"]
+fate_tests = [
+  "tests/fate/mappings.txt:avutil-pixel-format|local-avutil-unit",
+  "tests/fate/upstream-mappings.txt:avutil-pixel-format|fate-pixfmt_best",
+  "crates/avutil/tests/pixel_format_fate.rs::upstream_fate_pixfmt_best_passes",
+]
 fuzz_targets = ["avutil_core_models"]
-notes = "Differential pass for the current bounded shared pixel-format subset under the selected ffmpeg-8.1.1-default-native profile. The model covers the current Rust PixelFormat::ALL software inventory plus PixelFormat::HARDWARE identity inventory with FFmpeg-style names and descriptor metadata for class, component count, uniform or explicitly nonuniform component bit-depth vectors, logical bits per pixel, plane counts, packed/planar storage, alpha, float, paletted, packed byte-size, chroma geometry, frame-size math, line-size math, and plane splitting. The ignored pixel_format_oracle harness runs pinned `ffmpeg -hide_banner -pix_fmts` through the local oracle and checks that every current Rust descriptor name appears with matching component count, integer bits-per-pixel where exactly modeled, BIT_DEPTHS values, paletted flag, and hardware flag for PixelFormat::HARDWARE rows. This oracle exposed and corrected Bayer CFA bit-depth vectors: 8-bit Bayer formats report `2-4-2`, and 16-bit Bayer formats report `4-8-4`; low-bit RGB and RGB565/BGR565 vectors are also modeled explicitly. This slice also corrects `xv36le`/`xv36be` storage to eight bytes per pixel while preserving 36 logical bpp. Unit tests cover names, descriptors, frame/plane sizing, line sizing, split behavior, invalid dimensions, and invalid payload lengths. The avutil_core_models fuzz target covers pixel-format lookup and descriptor invariants, including the explicit nonuniform component-bit-depth vectors, hardware identity zero-layout invariants, no-byte-stride classification for planar and bit-packed single-plane formats, and planar GBRA alpha classification; it has passed WSL smoke execution plus a warmed 4096-run sanitizer fuzz execution after replaying the saved crash seed for the stale invariant. This row remains below complete because the oracle is still a subset inventory check, not full AVPixFmtDescriptor parity or full FFmpeg pixel inventory parity; upstream FATE media coverage, conversion behavior, full hardware frame/device integration, and zero known limitations are still pending. The local FATE-runner smoke mapping executes the pixel unit filter only and does not count as upstream FATE parity."
+notes = "FATE pass for the current bounded shared pixel-format subset under the selected ffmpeg-8.1.1-default-native profile. The model covers the current Rust PixelFormat::ALL software inventory plus PixelFormat::HARDWARE identity inventory with FFmpeg-style names and descriptor metadata for class, component count, uniform or explicitly nonuniform component bit-depth vectors, logical bits per pixel, plane counts, packed/planar storage, alpha, float, paletted, packed byte-size, chroma geometry, frame-size math, line-size math, plane splitting, and bounded `av_find_best_pix_fmt_of_2`-style best-format selection through `PixelFormat::find_best_of_2` / `find_best`. The ignored pixel_format_oracle harness runs pinned `ffmpeg -hide_banner -pix_fmts` through the local oracle and checks that every current Rust descriptor name appears with matching component count, integer bits-per-pixel where exactly modeled, BIT_DEPTHS values, paletted flag, bitstream flag, and hardware flag for PixelFormat::HARDWARE rows; its pinned libavutil helper also validates bounded `av_get_pix_fmt()` lookup rows and `av_find_best_pix_fmt_of_2()` rows for the upstream `fate-pixfmt_best` base, semi-planar, packed, subsampled, and depth/chroma candidate families. Unit tests cover names, descriptors, frame/plane sizing, line sizing, split behavior, invalid dimensions, invalid payload lengths, and the upstream `fate-pixfmt_best` vector set. The upstream `tests/fate/upstream-mappings.txt:avutil-pixel-format|fate-pixfmt_best` row passes through the pinned FFmpeg WSL build cache. The avutil_core_models fuzz target covers pixel-format lookup and descriptor invariants, including the explicit nonuniform component-bit-depth vectors, hardware identity zero-layout invariants, no-byte-stride classification for planar and bit-packed single-plane formats, and planar GBRA alpha classification; it has passed WSL smoke execution plus a warmed 4096-run sanitizer fuzz execution after replaying the saved crash seed for the stale invariant, and the harness build was rechecked for this slice. This row remains below complete because full AVPixFmtDescriptor parity, full FFmpeg pixel inventory coverage, broader conversion behavior, full hardware frame/device integration, zero known limitations, and long-running fuzz campaigns remain pending."
+# Latest orchestrated update: bounded `PixelFormat::find_best_of_2` and
+# `PixelFormat::find_best` now match the upstream `fate-pixfmt_best` vector set.
+# The pinned libavutil oracle validates matching `av_find_best_pix_fmt_of_2`
+# rows across the same candidate families, and the upstream
+# `avutil-pixel-format|fate-pixfmt_best` mapping passes through the pinned WSL
+# FFmpeg build cache.
 # Latest orchestrated update: pinned libavutil `av_get_pix_fmt()` lookup rows
 # now prove explicit-endian `x2rgb10be`, `x2bgr10be`, `x2rgb10le`, and
 # `x2bgr10le` names resolve to the matching packed RGB/BGR formats, while
@@ -3931,7 +3943,7 @@ notes = "Differential pass for the current bounded shared pixel-format subset un
 # Prior update: The shared pixel model covers FFmpeg 8.1.1 yuva420p, yuva422p, and yuva444p as 8-bit four-plane YUVA formats with full-resolution alpha, log2 chroma (1,1), (1,0), or (0,0), and 20/24/32 average bpp descriptors.
 # Older update: The shared pixel model covers FFmpeg 8.1.1 yuv440p10le/be and yuv440p12le/be as planar YUV 4:4:0 names with log2 chroma (0,1), 20 or 24 average bpp, and three two-byte-per-sample planes.
 # Older update: the shared pixel model also covers FFmpeg 8.1.1 paletted 8-bit pal8 rawvideo index payloads, AVPALETTE_COUNT/AVPALETTE_SIZE constants, and a paletted descriptor flag; full AVFrame data[1] palette propagation remains pending.
-blocked_reason = "The current subset inventory oracle and WSL avutil_core_models smoke passed locally, but full AVPixFmtDescriptor parity, full FFmpeg pixel inventory coverage, FATE media parity, conversion behavior beyond hardware identity metadata, full hardware frame/device integration, and long-running fuzz campaigns remain pending."
+blocked_reason = "The current subset inventory oracle, bounded best-format oracle, upstream fate-pixfmt_best row, and WSL avutil_core_models smoke/build evidence passed locally, but full AVPixFmtDescriptor parity, full FFmpeg pixel inventory coverage, broader conversion behavior beyond best-format selection and hardware identity metadata, full hardware frame/device integration, zero known limitations, and long-running fuzz campaigns remain pending."
 
 [[component]]
 id = "avutil-sample-format"
