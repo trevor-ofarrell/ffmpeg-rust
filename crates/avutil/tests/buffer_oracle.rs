@@ -3067,6 +3067,74 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     );
     drop(init2_zero_default_pool_free_values);
 
+    let legacy_zero_allocations = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let legacy_zero_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let legacy_zero_allocate_capture = Arc::clone(&legacy_zero_allocations);
+    let legacy_zero_release_capture = Arc::clone(&legacy_zero_releases);
+    let legacy_zero_pool = BufferPool::with_callbacks(
+        0,
+        0,
+        BufferPoolCallbacks::new(
+            move |allocated_len| {
+                legacy_zero_allocate_capture
+                    .lock()
+                    .unwrap()
+                    .push(allocated_len);
+                Ok(vec![0x51; allocated_len])
+            },
+            move |storage| {
+                legacy_zero_release_capture.lock().unwrap().push(storage);
+            },
+        ),
+    )
+    .unwrap();
+    let legacy_zero_first = legacy_zero_pool.get().unwrap();
+    rows.insert(
+        "pool-legacy-zero:first".to_string(),
+        buffer_fields(&legacy_zero_first),
+    );
+    rows.insert(
+        "pool-legacy-zero:first-opaque".to_string(),
+        vec![bool_field(
+            legacy_zero_first.pool_opaque_ref::<usize>().is_none(),
+        )],
+    );
+    rows.insert(
+        "pool-legacy-zero:first-allocs".to_string(),
+        vec![legacy_zero_allocations.lock().unwrap().len().to_string()],
+    );
+    drop(legacy_zero_first);
+    rows.insert(
+        "pool-legacy-zero:after-first-unref".to_string(),
+        vec![legacy_zero_releases.lock().unwrap().len().to_string()],
+    );
+    let legacy_zero_reuse = legacy_zero_pool.get().unwrap();
+    rows.insert(
+        "pool-legacy-zero:reuse".to_string(),
+        buffer_fields(&legacy_zero_reuse),
+    );
+    rows.insert(
+        "pool-legacy-zero:reuse-opaque".to_string(),
+        vec![bool_field(
+            legacy_zero_reuse.pool_opaque_ref::<usize>().is_none(),
+        )],
+    );
+    rows.insert(
+        "pool-legacy-zero:reuse-allocs".to_string(),
+        vec![legacy_zero_allocations.lock().unwrap().len().to_string()],
+    );
+    drop(legacy_zero_reuse);
+    drop(legacy_zero_pool);
+    let legacy_zero_release_values = legacy_zero_releases.lock().unwrap();
+    rows.insert(
+        "pool-legacy-zero:uninit-release".to_string(),
+        vec![
+            legacy_zero_release_values.len().to_string(),
+            hex(&legacy_zero_release_values[0]),
+        ],
+    );
+    drop(legacy_zero_release_values);
+
     let legacy_allocations = Arc::new(Mutex::new(Vec::<usize>::new()));
     let legacy_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
     let legacy_allocate_capture = Arc::clone(&legacy_allocations);
@@ -5213,6 +5281,30 @@ static AVBufferRef *test_pool_alloc_legacy(size_t size) {
     return av_buffer_create(data, size, test_pool_free_legacy, NULL, 0);
 }
 
+static void test_pool_free_legacy_zero(void *opaque, uint8_t *data) {
+    (void)opaque;
+    int event = pool_release_count++;
+    if (pool_event_count < MAX_POOL_EVENTS)
+        pool_event_log[pool_event_count++] = 1;
+    last_pool_release_id = 0;
+    last_pool_release_size = 0;
+    if (event < MAX_POOL_RELEASE_EVENTS) {
+        pool_release_ids[event] = 0;
+        pool_release_sizes[event] = 0;
+    }
+    av_free(data);
+}
+
+static AVBufferRef *test_pool_alloc_legacy_zero(size_t size) {
+    uint8_t *data;
+    fail_if(size != 0, "legacy zero pool allocator received nonzero size");
+    data = av_malloc(1);
+    fail_if(!data, "av_malloc legacy zero pool data failed");
+    data[0] = 0;
+    pool_alloc_count++;
+    return av_buffer_create(data, size, test_pool_free_legacy_zero, NULL, 0);
+}
+
 static AVBufferRef *test_pool_alloc_multi_spare(void *opaque, size_t size) {
     uint8_t *data = av_malloc(size);
     fail_if(!data, "av_malloc multi-spare pool data failed");
@@ -7263,6 +7355,31 @@ int main(void) {
     av_buffer_pool_uninit(&init2_zero_default_pool);
     printf("pool-init2-zero-default:pool-free|%d|%" PRIuPTR "\n",
            pool_free_count, last_pool_free_id);
+
+    reset_pool_counters();
+    AVBufferPool *legacy_zero_pool =
+        av_buffer_pool_init(0, test_pool_alloc_legacy_zero);
+    fail_if(!legacy_zero_pool, "av_buffer_pool_init legacy zero failed");
+    AVBufferRef *legacy_zero_first = av_buffer_pool_get(legacy_zero_pool);
+    fail_if(!legacy_zero_first, "av_buffer_pool_get legacy zero first failed");
+    print_buffer("pool-legacy-zero:first", legacy_zero_first);
+    printf("pool-legacy-zero:first-opaque|%d\n",
+           av_buffer_pool_buffer_get_opaque(legacy_zero_first) == NULL);
+    printf("pool-legacy-zero:first-allocs|%d\n", pool_alloc_count);
+    av_buffer_unref(&legacy_zero_first);
+    printf("pool-legacy-zero:after-first-unref|%d\n", pool_release_count);
+    AVBufferRef *legacy_zero_reuse = av_buffer_pool_get(legacy_zero_pool);
+    fail_if(!legacy_zero_reuse, "av_buffer_pool_get legacy zero reuse failed");
+    print_buffer("pool-legacy-zero:reuse", legacy_zero_reuse);
+    printf("pool-legacy-zero:reuse-opaque|%d\n",
+           av_buffer_pool_buffer_get_opaque(legacy_zero_reuse) == NULL);
+    printf("pool-legacy-zero:reuse-allocs|%d\n", pool_alloc_count);
+    av_buffer_unref(&legacy_zero_reuse);
+    av_buffer_pool_uninit(&legacy_zero_pool);
+    printf("pool-legacy-zero:uninit-release|%d|",
+           pool_release_count);
+    print_hex(last_pool_release, last_pool_release_size);
+    printf("\n");
 
     reset_pool_counters();
     AVBufferPool *legacy_pool =

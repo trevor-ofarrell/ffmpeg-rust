@@ -3,6 +3,49 @@
 ## Current Status
 
 Current authoritative turn status: main-thread WSL slice added
+`avutil-buffer` legacy zero-size custom-pool evidence. Required startup checks
+passed from a clean tree at `master...origin/master [ahead 49]`:
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15` reported 11/96 strict-complete components (11.5%), and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validated the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
+kept the top-priority `avutil-packet` shared-shrink blocker unchanged and
+advanced the next unblocked priority-1 `avutil-buffer` evidence slice; no
+worker writes were delegated.
+
+Current main-thread slice: pinned libavutil rows now prove
+`av_buffer_pool_init(0, alloc)` calls the legacy custom allocator once with
+size zero, returns writable empty refs with NULL pool opaque data, reuses the
+empty spare without a second allocation, and releases empty storage at pool
+uninit. Rust expected rows, a focused unit test, and deterministic
+`avutil_core_models` invariants mirror this boundary. `avutil-buffer` remains
+`fate_pass`, not complete; strict completion remains 11/96 because broader
+ABI/lifetime parity, hardware/device ownership integration, and zero known
+limitation review remain pending.
+
+Latest validation commands for this buffer legacy zero-size custom-pool slice
+passed: `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil
+legacy_zero_size_custom_buffer_pool_has_no_pool_opaque_or_owner_free --
+--nocapture`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
+buffer_oracle libavutil_buffer_refs_match_current_model -- --ignored
+--nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner --
+run --mappings tests/differential/mappings.txt --component avutil-buffer
+--target oracle-libavutil-buffer --oracle-ffmpeg
+./third_party/ffmpeg-oracle/build/bin/ffmpeg`; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- run --component avutil-buffer`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil --all-targets
+--all-features -- -D warnings`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo check
+--manifest-path fuzz/Cargo.toml --bin avutil_core_models`;
+`CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy --manifest-path fuzz/Cargo.toml
+--bin avutil_core_models -- -D warnings`; `cargo fmt --all -- --check`;
+`git diff --check` with CRLF conversion warnings only;
+`CARGO_TARGET_DIR=target-orch-fate cargo test -p fate-runner current_ledger`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- guard-runtime`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15`; and `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask --
+oracle-doctor`. A preparatory `cargo fmt --all` also completed successfully.
+
+Current authoritative turn status: main-thread WSL slice added
 `avutil-frame` Dolby Vision native-layout evidence. Required startup checks
 passed from a clean tree at `master...origin/master [ahead 48]`:
 `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next

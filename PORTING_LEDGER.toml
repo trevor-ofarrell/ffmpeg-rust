@@ -1737,6 +1737,7 @@ unit_tests = [
   "buffer::tests::buffer_pool_recycle_rejections_release_or_retain_by_ownership",
   "buffer::tests::buffer_pool_rejects_overflowing_shapes",
   "buffer::tests::custom_buffer_pool_copy_on_write_detaches_without_recycling_copy",
+  "buffer::tests::legacy_zero_size_custom_buffer_pool_has_no_pool_opaque_or_owner_free",
 ]
 differential_tests = [
   "tests/differential/mappings.txt:avutil-buffer|oracle-libavutil-buffer",
@@ -1747,6 +1748,12 @@ fate_tests = [
   "not_applicable: upstream FFmpeg FATE has no standalone AVBufferRef/AVBufferPool API target; covered by unit tests plus pinned libavutil differential oracle",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest legacy zero-size custom-pool slice: pinned libavutil rows now prove
+# `av_buffer_pool_init(0, alloc)` calls the legacy allocator once with size
+# zero, returns writable empty refs with NULL pool opaque data, reuses the empty
+# spare without a second allocation, and releases empty storage at pool uninit.
+# Rust unit/fuzz invariants mirror this boundary. This is evidence-strengthening
+# only; no status was promoted.
 # Latest non-null zero-size owner ref/replace slice: pinned libavutil rows now
 # prove `av_buffer_ref()` and `av_buffer_replace(&dst, src)` with a NULL
 # destination preserve the distinct `av_buffer_create(data, 0, free, opaque,

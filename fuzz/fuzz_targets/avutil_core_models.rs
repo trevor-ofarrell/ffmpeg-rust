@@ -4078,6 +4078,47 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         vec![legacy_expected_release]
     );
 
+    let legacy_zero_allocations = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let legacy_zero_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let legacy_zero_allocate_capture = Arc::clone(&legacy_zero_allocations);
+    let legacy_zero_release_capture = Arc::clone(&legacy_zero_releases);
+    let legacy_zero_pool = BufferPool::with_callbacks(
+        0,
+        0,
+        BufferPoolCallbacks::new(
+            move |allocated_len| {
+                legacy_zero_allocate_capture
+                    .lock()
+                    .unwrap()
+                    .push(allocated_len);
+                Ok(vec![0x51; allocated_len])
+            },
+            move |storage| {
+                legacy_zero_release_capture.lock().unwrap().push(storage);
+            },
+        ),
+    )
+    .unwrap();
+    let legacy_zero_first = legacy_zero_pool.get().unwrap();
+    assert_eq!(*legacy_zero_allocations.lock().unwrap(), vec![0]);
+    assert_eq!(legacy_zero_first.as_slice(), &[]);
+    assert!(legacy_zero_first.is_writable());
+    assert!(legacy_zero_first.pool_opaque_ref::<usize>().is_none());
+    drop(legacy_zero_first);
+    assert!(legacy_zero_releases.lock().unwrap().is_empty());
+    assert_eq!(legacy_zero_pool.available_count().unwrap(), 1);
+    let legacy_zero_reuse = legacy_zero_pool.get().unwrap();
+    assert_eq!(*legacy_zero_allocations.lock().unwrap(), vec![0]);
+    assert_eq!(legacy_zero_reuse.as_slice(), &[]);
+    assert!(legacy_zero_reuse.is_writable());
+    assert!(legacy_zero_reuse.pool_opaque_ref::<usize>().is_none());
+    drop(legacy_zero_reuse);
+    drop(legacy_zero_pool);
+    assert_eq!(
+        *legacy_zero_releases.lock().unwrap(),
+        vec![Vec::<u8>::new()]
+    );
+
     let multi_spare_allocations = Arc::new(Mutex::new(0u8));
     let multi_spare_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
     let multi_spare_allocate_capture = Arc::clone(&multi_spare_allocations);
