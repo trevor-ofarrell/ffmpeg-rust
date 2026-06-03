@@ -228,6 +228,93 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         release_fields(&create_zero_released),
     );
 
+    let create_zero_ref_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_zero_ref_capture = Arc::clone(&create_zero_ref_released);
+    let create_zero_ref_src = BufferRef::from_vec_with_opaque_release_callback(
+        Vec::new(),
+        677usize,
+        move |opaque, bytes| {
+            create_zero_ref_capture
+                .lock()
+                .unwrap()
+                .push((opaque, bytes));
+        },
+    );
+    let create_zero_ref_dst = BufferRef::ref_from(&create_zero_ref_src);
+    rows.insert(
+        "buffer:create-zero-ref-src".to_string(),
+        buffer_fields_with_data_null_and_opaque(&create_zero_ref_src),
+    );
+    rows.insert(
+        "buffer:create-zero-ref-dst".to_string(),
+        buffer_fields_with_data_null_and_opaque(&create_zero_ref_dst),
+    );
+    rows.insert(
+        "buffer:create-zero-ref-shares".to_string(),
+        vec![
+            bool_field(create_zero_ref_src.shares_storage(&create_zero_ref_dst)),
+            bool_field(std::ptr::eq(
+                create_zero_ref_src.as_ptr(),
+                create_zero_ref_dst.as_ptr(),
+            )),
+        ],
+    );
+    drop(create_zero_ref_dst);
+    rows.insert(
+        "buffer:create-zero-ref-release-before-src-unref".to_string(),
+        vec![create_zero_ref_released.lock().unwrap().len().to_string()],
+    );
+    drop(create_zero_ref_src);
+    rows.insert(
+        "buffer:create-zero-ref-release".to_string(),
+        release_fields(&create_zero_ref_released),
+    );
+
+    let replace_zero_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let replace_zero_capture = Arc::clone(&replace_zero_released);
+    let replace_zero_src = BufferRef::from_vec_with_opaque_release_callback(
+        Vec::new(),
+        679usize,
+        move |opaque, bytes| {
+            replace_zero_capture.lock().unwrap().push((opaque, bytes));
+        },
+    );
+    let mut replace_zero_dst = None;
+    BufferRef::replace(&mut replace_zero_dst, Some(&replace_zero_src));
+    let replace_zero_dst = replace_zero_dst.expect("zero-size replace dst");
+    rows.insert(
+        "buffer:replace-zero-null-dst-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:replace-zero-null-dst-src".to_string(),
+        buffer_fields_with_data_null_and_opaque(&replace_zero_src),
+    );
+    rows.insert(
+        "buffer:replace-zero-null-dst".to_string(),
+        buffer_fields_with_data_null_and_opaque(&replace_zero_dst),
+    );
+    rows.insert(
+        "buffer:replace-zero-null-dst-shares".to_string(),
+        vec![
+            bool_field(replace_zero_src.shares_storage(&replace_zero_dst)),
+            bool_field(std::ptr::eq(
+                replace_zero_src.as_ptr(),
+                replace_zero_dst.as_ptr(),
+            )),
+        ],
+    );
+    drop(replace_zero_dst);
+    rows.insert(
+        "buffer:replace-zero-null-dst-release-before-src-unref".to_string(),
+        vec![replace_zero_released.lock().unwrap().len().to_string()],
+    );
+    drop(replace_zero_src);
+    rows.insert(
+        "buffer:replace-zero-null-dst-release".to_string(),
+        release_fields(&replace_zero_released),
+    );
+
     let create_null_zero_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let create_null_zero_capture = Arc::clone(&create_null_zero_released);
     let create_null_zero = BufferRef::from_null_data_zero_with_opaque_release_callback(
@@ -1138,6 +1225,108 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     rows.insert(
         "buffer:create-zero-readonly-release".to_string(),
         release_fields(&create_zero_readonly_released),
+    );
+
+    let create_zero_readonly_ref_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_zero_readonly_ref_capture = Arc::clone(&create_zero_readonly_ref_released);
+    let create_zero_readonly_ref_src = BufferRef::from_vec_with_opaque_release_callback_readonly(
+        Vec::new(),
+        678usize,
+        move |opaque, bytes| {
+            create_zero_readonly_ref_capture
+                .lock()
+                .unwrap()
+                .push((opaque, bytes));
+        },
+    );
+    let create_zero_readonly_ref_dst = BufferRef::ref_from(&create_zero_readonly_ref_src);
+    rows.insert(
+        "buffer:create-zero-readonly-ref-src".to_string(),
+        buffer_fields_with_data_null_and_opaque(&create_zero_readonly_ref_src),
+    );
+    rows.insert(
+        "buffer:create-zero-readonly-ref-dst".to_string(),
+        buffer_fields_with_data_null_and_opaque(&create_zero_readonly_ref_dst),
+    );
+    rows.insert(
+        "buffer:create-zero-readonly-ref-shares".to_string(),
+        vec![
+            bool_field(create_zero_readonly_ref_src.shares_storage(&create_zero_readonly_ref_dst)),
+            bool_field(std::ptr::eq(
+                create_zero_readonly_ref_src.as_ptr(),
+                create_zero_readonly_ref_dst.as_ptr(),
+            )),
+        ],
+    );
+    drop(create_zero_readonly_ref_dst);
+    rows.insert(
+        "buffer:create-zero-readonly-ref-release-before-src-unref".to_string(),
+        vec![create_zero_readonly_ref_released
+            .lock()
+            .unwrap()
+            .len()
+            .to_string()],
+    );
+    drop(create_zero_readonly_ref_src);
+    rows.insert(
+        "buffer:create-zero-readonly-ref-release".to_string(),
+        release_fields(&create_zero_readonly_ref_released),
+    );
+
+    let replace_zero_readonly_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let replace_zero_readonly_capture = Arc::clone(&replace_zero_readonly_released);
+    let replace_zero_readonly_src = BufferRef::from_vec_with_opaque_release_callback_readonly(
+        Vec::new(),
+        680usize,
+        move |opaque, bytes| {
+            replace_zero_readonly_capture
+                .lock()
+                .unwrap()
+                .push((opaque, bytes));
+        },
+    );
+    let mut replace_zero_readonly_dst = None;
+    BufferRef::replace(
+        &mut replace_zero_readonly_dst,
+        Some(&replace_zero_readonly_src),
+    );
+    let replace_zero_readonly_dst =
+        replace_zero_readonly_dst.expect("readonly zero-size replace dst");
+    rows.insert(
+        "buffer:replace-zero-readonly-null-dst-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:replace-zero-readonly-null-dst-src".to_string(),
+        buffer_fields_with_data_null_and_opaque(&replace_zero_readonly_src),
+    );
+    rows.insert(
+        "buffer:replace-zero-readonly-null-dst".to_string(),
+        buffer_fields_with_data_null_and_opaque(&replace_zero_readonly_dst),
+    );
+    rows.insert(
+        "buffer:replace-zero-readonly-null-dst-shares".to_string(),
+        vec![
+            bool_field(replace_zero_readonly_src.shares_storage(&replace_zero_readonly_dst)),
+            bool_field(std::ptr::eq(
+                replace_zero_readonly_src.as_ptr(),
+                replace_zero_readonly_dst.as_ptr(),
+            )),
+        ],
+    );
+    drop(replace_zero_readonly_dst);
+    rows.insert(
+        "buffer:replace-zero-readonly-null-dst-release-before-src-unref".to_string(),
+        vec![replace_zero_readonly_released
+            .lock()
+            .unwrap()
+            .len()
+            .to_string()],
+    );
+    drop(replace_zero_readonly_src);
+    rows.insert(
+        "buffer:replace-zero-readonly-null-dst-release".to_string(),
+        release_fields(&replace_zero_readonly_released),
     );
 
     let create_readonly_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
@@ -5344,6 +5533,57 @@ int main(void) {
     print_create_release("buffer:create-zero-release");
 
     reset_create_release();
+    uint8_t *create_zero_ref_data = av_malloc(1);
+    fail_if(!create_zero_ref_data, "av_malloc create_zero_ref_data failed");
+    create_zero_ref_data[0] = 0xac;
+    last_create_release_size = 0;
+    AVBufferRef *create_zero_ref_src =
+        av_buffer_create(create_zero_ref_data, 0, test_create_free,
+                         (void *)(uintptr_t)677, 0);
+    fail_if(!create_zero_ref_src, "av_buffer_create zero ref src failed");
+    AVBufferRef *create_zero_ref_dst =
+        av_buffer_ref(create_zero_ref_src);
+    fail_if(!create_zero_ref_dst, "av_buffer_ref zero ref dst failed");
+    print_buffer_opaque_data_null("buffer:create-zero-ref-src",
+                                  create_zero_ref_src);
+    print_buffer_opaque_data_null("buffer:create-zero-ref-dst",
+                                  create_zero_ref_dst);
+    printf("buffer:create-zero-ref-shares|%d|%d\n",
+           create_zero_ref_src->data == create_zero_ref_dst->data,
+           create_zero_ref_src->data == create_zero_ref_dst->data);
+    av_buffer_unref(&create_zero_ref_dst);
+    printf("buffer:create-zero-ref-release-before-src-unref|%d\n",
+           create_release_count);
+    av_buffer_unref(&create_zero_ref_src);
+    print_create_release("buffer:create-zero-ref-release");
+
+    reset_create_release();
+    uint8_t *replace_zero_data = av_malloc(1);
+    fail_if(!replace_zero_data, "av_malloc replace_zero_data failed");
+    replace_zero_data[0] = 0xad;
+    last_create_release_size = 0;
+    AVBufferRef *replace_zero_src =
+        av_buffer_create(replace_zero_data, 0, test_create_free,
+                         (void *)(uintptr_t)679, 0);
+    fail_if(!replace_zero_src, "av_buffer_create replace_zero src failed");
+    AVBufferRef *replace_zero_dst = NULL;
+    ret = av_buffer_replace(&replace_zero_dst, replace_zero_src);
+    printf("buffer:replace-zero-null-dst-ret|%d\n", ret);
+    fail_if(ret < 0, "av_buffer_replace zero null dst failed");
+    print_buffer_opaque_data_null("buffer:replace-zero-null-dst-src",
+                                  replace_zero_src);
+    print_buffer_opaque_data_null("buffer:replace-zero-null-dst",
+                                  replace_zero_dst);
+    printf("buffer:replace-zero-null-dst-shares|%d|%d\n",
+           replace_zero_src->data == replace_zero_dst->data,
+           replace_zero_src->data == replace_zero_dst->data);
+    av_buffer_unref(&replace_zero_dst);
+    printf("buffer:replace-zero-null-dst-release-before-src-unref|%d\n",
+           create_release_count);
+    av_buffer_unref(&replace_zero_src);
+    print_create_release("buffer:replace-zero-null-dst-release");
+
+    reset_create_release();
     last_create_release_size = 0;
     AVBufferRef *create_null_zero =
         av_buffer_create(NULL, 0, test_create_free,
@@ -5905,6 +6145,67 @@ int main(void) {
                         create_zero_readonly);
     print_create_release("buffer:create-zero-readonly-release");
     av_buffer_unref(&create_zero_readonly);
+
+    reset_create_release();
+    uint8_t *create_zero_readonly_ref_data = av_malloc(1);
+    fail_if(!create_zero_readonly_ref_data,
+            "av_malloc create_zero_readonly_ref_data failed");
+    create_zero_readonly_ref_data[0] = 0xce;
+    last_create_release_size = 0;
+    AVBufferRef *create_zero_readonly_ref_src =
+        av_buffer_create(create_zero_readonly_ref_data, 0, test_create_free,
+                         (void *)(uintptr_t)678, AV_BUFFER_FLAG_READONLY);
+    fail_if(!create_zero_readonly_ref_src,
+            "av_buffer_create zero readonly ref src failed");
+    AVBufferRef *create_zero_readonly_ref_dst =
+        av_buffer_ref(create_zero_readonly_ref_src);
+    fail_if(!create_zero_readonly_ref_dst,
+            "av_buffer_ref zero readonly ref dst failed");
+    print_buffer_opaque_data_null("buffer:create-zero-readonly-ref-src",
+                                  create_zero_readonly_ref_src);
+    print_buffer_opaque_data_null("buffer:create-zero-readonly-ref-dst",
+                                  create_zero_readonly_ref_dst);
+    printf("buffer:create-zero-readonly-ref-shares|%d|%d\n",
+           create_zero_readonly_ref_src->data ==
+               create_zero_readonly_ref_dst->data,
+           create_zero_readonly_ref_src->data ==
+               create_zero_readonly_ref_dst->data);
+    av_buffer_unref(&create_zero_readonly_ref_dst);
+    printf("buffer:create-zero-readonly-ref-release-before-src-unref|%d\n",
+           create_release_count);
+    av_buffer_unref(&create_zero_readonly_ref_src);
+    print_create_release("buffer:create-zero-readonly-ref-release");
+
+    reset_create_release();
+    uint8_t *replace_zero_readonly_data = av_malloc(1);
+    fail_if(!replace_zero_readonly_data,
+            "av_malloc replace_zero_readonly_data failed");
+    replace_zero_readonly_data[0] = 0xcf;
+    last_create_release_size = 0;
+    AVBufferRef *replace_zero_readonly_src =
+        av_buffer_create(replace_zero_readonly_data, 0, test_create_free,
+                         (void *)(uintptr_t)680, AV_BUFFER_FLAG_READONLY);
+    fail_if(!replace_zero_readonly_src,
+            "av_buffer_create replace zero readonly src failed");
+    AVBufferRef *replace_zero_readonly_dst = NULL;
+    ret = av_buffer_replace(&replace_zero_readonly_dst,
+                            replace_zero_readonly_src);
+    printf("buffer:replace-zero-readonly-null-dst-ret|%d\n", ret);
+    fail_if(ret < 0, "av_buffer_replace zero readonly null dst failed");
+    print_buffer_opaque_data_null("buffer:replace-zero-readonly-null-dst-src",
+                                  replace_zero_readonly_src);
+    print_buffer_opaque_data_null("buffer:replace-zero-readonly-null-dst",
+                                  replace_zero_readonly_dst);
+    printf("buffer:replace-zero-readonly-null-dst-shares|%d|%d\n",
+           replace_zero_readonly_src->data ==
+               replace_zero_readonly_dst->data,
+           replace_zero_readonly_src->data ==
+               replace_zero_readonly_dst->data);
+    av_buffer_unref(&replace_zero_readonly_dst);
+    printf("buffer:replace-zero-readonly-null-dst-release-before-src-unref|%d\n",
+           create_release_count);
+    av_buffer_unref(&replace_zero_readonly_src);
+    print_create_release("buffer:replace-zero-readonly-null-dst-release");
 
     reset_create_release();
     static const uint8_t create_readonly_bytes[] = { 21, 22, 23 };

@@ -1684,6 +1684,7 @@ unit_tests = [
   "buffer::tests::buffer_storage_identity_tracks_refs_slices_and_detach",
   "buffer::tests::buffer_storage_identity_distinguishes_equal_independent_bytes",
   "buffer::tests::buffer_ref_replace_and_unref_handle_nullable_c_api_shape",
+  "buffer::tests::zero_length_nonnull_owner_refs_and_replace_preserve_shape",
   "buffer::tests::buffer_ref_make_writable_exposes_fallible_c_api_shape",
   "buffer::tests::buffer_ref_realloc_handles_nullable_c_api_shape",
   "buffer::tests::buffer_ref_slices_model_offset_data_and_size_refs",
@@ -1746,6 +1747,14 @@ fate_tests = [
   "not_applicable: upstream FFmpeg FATE has no standalone AVBufferRef/AVBufferPool API target; covered by unit tests plus pinned libavutil differential oracle",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest non-null zero-size owner ref/replace slice: pinned libavutil rows now
+# prove `av_buffer_ref()` and `av_buffer_replace(&dst, src)` with a NULL
+# destination preserve the distinct `av_buffer_create(data, 0, free, opaque,
+# flags)` shape where `ref->data` is non-NULL even though size is zero. Writable
+# and READONLY owners keep opaque lookup, shared storage, refcount 2, and
+# writable/readonly state according to flags until the destination is unreffed;
+# release callbacks run only after the final source unref. This is
+# evidence-strengthening only; no status was promoted.
 # Latest nullable-zero self-replace slice: pinned libavutil rows now prove
 # `av_buffer_replace(&buf, buf)` on writable and READONLY
 # `av_buffer_create(NULL, 0, free, opaque, flags)` refs succeeds without

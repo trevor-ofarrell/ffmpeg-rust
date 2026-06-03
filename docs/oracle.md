@@ -139,6 +139,14 @@ The latest buffer zero-size default `init2` fixture adds
 for empty buffers, exposes NULL per-buffer pool opaque data, reuses the empty
 spare, and runs the owner pool_free callback once at pool uninit.
 
+The latest buffer non-null zero-size owner fixture adds
+`buffer:create-zero-ref-*`, `buffer:replace-zero-null-dst-*`, and READONLY
+variants. The pinned libavutil oracle proves `av_buffer_create(data, 0, free,
+opaque, flags)` preserves a non-NULL `AVBufferRef.data` pointer through
+`av_buffer_ref()` and `av_buffer_replace()` into a NULL destination, while
+sharing storage, preserving opaque lookup, and delaying the release callback
+until the final source unref.
+
 The latest buffer offset-pool same-size realloc fixture extends
 `avutil_core_models` with a first checkout whose visible range starts inside a
 custom-pool backing allocation. The pinned libavutil buffer oracle emits
