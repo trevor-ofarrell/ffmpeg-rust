@@ -12208,6 +12208,20 @@ mod tests {
         packet.shrink_data(99).unwrap();
         assert_eq!(packet.data(), &[0xaa, 0xbb]);
 
+        let mut empty_zero = Packet::default();
+        empty_zero.grow_data(0).unwrap();
+        assert!(empty_zero.data().is_empty());
+        assert_eq!(
+            empty_zero.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(empty_zero
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+        assert!(empty_zero.is_data_writable());
+
         let mut empty = Packet::default();
         empty.grow_data(3).unwrap();
         assert_eq!(empty.data(), &[0, 0, 0]);

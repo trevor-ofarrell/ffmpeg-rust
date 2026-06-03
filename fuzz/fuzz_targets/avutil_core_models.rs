@@ -9846,6 +9846,20 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .all(|byte| *byte == 0));
     assert!(empty_writable_packet.is_data_writable());
 
+    let mut empty_zero_grow_packet = Packet::default();
+    empty_zero_grow_packet.grow_data(0).unwrap();
+    assert!(empty_zero_grow_packet.is_empty());
+    assert_eq!(
+        empty_zero_grow_packet.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(empty_zero_grow_packet
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    assert!(empty_zero_grow_packet.is_data_writable());
+
     let grow_by = usize::from(cursor.next().unwrap_or_default() % 8);
     padded_packet.grow_data(grow_by).unwrap();
     assert_eq!(&padded_packet.data()[..payload.len()], payload.as_slice());

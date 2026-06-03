@@ -9,6 +9,13 @@
 
 ## Compatible Today
 
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
+  `av_grow_packet(pkt, 0)` on a default empty packet with `buf == NULL`
+  succeeds by installing writable refcounted storage with zero visible bytes
+  and zeroed input padding. Rust mirrors this through `Packet::grow_data(0)`
+  on `Packet::default()`, focused unit coverage, the mapped packet oracle, and
+  `avutil_core_models`. This strengthens `avutil-packet`; strict completion
+  remains 11/96 and the row remains `fate_pass`.
 - Latest main-thread packet evidence: pinned libavcodec rows now prove signed
   `int` payload-size boundaries for public packet helpers. `av_new_packet(pkt,
   -1)` returns EINVAL without mutating a populated packet, while

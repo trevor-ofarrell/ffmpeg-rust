@@ -2,6 +2,12 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest main-thread packet evidence: pinned libavcodec rows now prove
+# `av_grow_packet(pkt, 0)` on a default empty packet with `buf == NULL` still
+# succeeds by installing writable refcounted storage with zero visible bytes and
+# zeroed input padding. Rust mirrors this through `Packet::grow_data(0)` on
+# `Packet::default()`. This is evidence-strengthening only; no status was
+# promoted.
 # Latest main-thread packet evidence: pinned libavcodec rows now prove signed
 # FFmpeg `int` payload-size API boundaries. `av_new_packet(pkt, -1)` returns
 # EINVAL without mutating a populated packet, while `av_grow_packet(pkt, -1)`
@@ -912,6 +918,11 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: pinned libavcodec AVPacket payload oracle coverage now proves
+# `av_grow_packet(pkt, 0)` on a default empty packet succeeds by allocating
+# writable refcounted padded storage with zero visible bytes and zeroed input
+# padding. Focused unit coverage and avutil_core_models invariants mirror the
+# bounded behavior through `Packet::grow_data(0)`.
 # Latest update: pinned libavcodec AVPacket payload oracle coverage now
 # validates negative signed `int` size boundaries for public C payload helpers.
 # `packet:payload-new-packet-negative-*` proves `av_new_packet(pkt, -1)` returns

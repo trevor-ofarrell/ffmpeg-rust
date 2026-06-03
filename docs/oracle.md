@@ -110,6 +110,12 @@ cargo-fuzz smoke for this slice timed out before libFuzzer completion output,
 so the deterministic fixture is recorded with build/clippy coverage until a
 later warmed smoke can pass.
 
+The latest packet empty zero-growth fixture extends `avutil_core_models` with
+`Packet::default().grow_data(0)`. The pinned libavcodec packet oracle emits the
+matching `packet:payload-grow-empty-zero*` rows, proving
+`av_grow_packet(pkt, 0)` succeeds for a default empty packet by installing
+writable refcounted storage with zero visible bytes and zeroed input padding.
+
 The latest packet raw no-buffer release fixture extends `avutil_core_models`
 with `Packet::unref()` and `Option<Packet>::take()` over external read-only
 caller storage at a nonzero visible offset. The pinned libavcodec packet oracle
@@ -743,7 +749,16 @@ prove `av_packet_unref()` resets an offset-backed packet to default fields and
 releases the original backing allocation base with prefix, payload, and dirty
 padding bytes still observable by the release callback.
 
-The harness also includes `packet:payload-grow-empty*`, `packet:payload-shrink-oversize`, and `packet:payload-shrink-zero` rows. These prove empty-packet growth returns success with the requested size, zeroed input padding, and writable refcounted storage; oversize `av_shrink_packet()` is a no-op; and shrink-to-zero keeps a writable padded buffer while zeroing the exposed padding window. FFmpeg's newly visible bytes after `av_grow_packet()` are allocator-dependent, so growth rows compare stable prefix bytes where present, size, padding, and writability rather than all grown payload bytes. The Rust model intentionally zeroes newly grown bytes for deterministic safe ownership.
+The harness also includes `packet:payload-grow-empty-zero*`,
+`packet:payload-grow-empty*`, `packet:payload-shrink-oversize`, and
+`packet:payload-shrink-zero` rows. These prove empty-packet zero growth and
+positive growth both return success with zeroed input padding and writable
+refcounted storage; oversize `av_shrink_packet()` is a no-op; and
+shrink-to-zero keeps a writable padded buffer while zeroing the exposed padding
+window. FFmpeg's newly visible bytes after positive `av_grow_packet()` are
+allocator-dependent, so growth rows compare stable prefix bytes where present,
+size, padding, and writability rather than all grown payload bytes. The Rust
+model intentionally zeroes newly grown bytes for deterministic safe ownership.
 
 The harness also includes `packet:payload-grow-zero-offset-padding*` rows. These prove zero-growth on a packet whose visible payload starts at an offset inside its refcounted buffer preserves the offset data pointer and visible bytes while zeroing the FFmpeg input-padding window.
 
