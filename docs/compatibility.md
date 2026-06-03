@@ -9,6 +9,13 @@
 
 ## Compatible Today
 
+- Latest main-thread buffer status: the local `avutil-buffer|local-avutil-unit`
+  FATE smoke row and mapped `avutil-buffer|oracle-libavutil-buffer`
+  differential row pass under the pinned FFmpeg 8.1.1 oracle. Because upstream
+  FFmpeg has no standalone AVBufferRef/AVBufferPool FATE target, the ledger
+  keeps the documented inapplicability and promotes `avutil-buffer` from
+  `differential_pass` to `fate_pass`, not `complete`. Strict completion remains
+  11/96.
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
   nonzero `av_container_fifo_alloc_avpacket(flags)` allocation flags are
   ignored. Mixed REF/USER/high allocation bits still create an empty FIFO, and

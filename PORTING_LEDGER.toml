@@ -1638,7 +1638,7 @@ id = "avutil-buffer"
 kind = "utility"
 ffmpeg_name = "AVBufferRef"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "differential_pass"
+status = "fate_pass"
 priority = 1
 oracle_command = "cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-buffer --target oracle-libavutil-buffer --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd"
 rust_command = "cargo test -p avutil buffer"
@@ -2076,6 +2076,11 @@ fuzz_targets = ["avutil_core_models"]
 # Upstream FFmpeg 8.1.1 FATE has no standalone AVBufferRef/AVBufferPool target;
 # the local smoke mapping is retained and strict completion still requires the
 # remaining lifetime/ABI closure below.
+# Latest status promotion: the local `avutil-buffer|local-avutil-unit` FATE
+# smoke row and mapped `avutil-buffer|oracle-libavutil-buffer` differential row
+# pass under the pinned FFmpeg 8.1.1 oracle, and the row already documents the
+# upstream AVBufferRef/AVBufferPool FATE inapplicability. This advances
+# avutil-buffer to fate_pass without marking it complete.
 # Previous ABI slice: pinned libavutil oracle coverage validates public
 # `AVBufferRef` layout through `buffer:abi-avbufferref-layout`, proving the
 # default-native size, alignment, and `buffer`/`data`/`size` field offsets and

@@ -1138,6 +1138,11 @@ cargo test -p avutil --test buffer_oracle -- --ignored
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-buffer --target oracle-libavutil-buffer --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
 ```
 
+The ledger also records `tests/fate/mappings.txt:avutil-buffer|local-avutil-unit`.
+That local FATE smoke row passes, and upstream FFmpeg 8.1.1 has no standalone
+AVBufferRef/AVBufferPool FATE target, so the documented disposition supports
+`avutil-buffer` as `fate_pass` without claiming strict completion.
+
 The latest buffer oracle rows add nullable-zero create coverage:
 `av_buffer_create(NULL, 0, free, opaque, 0)` returns a valid zero-size ref with
 `ref->data == NULL`. `av_buffer_ref()` and `av_buffer_replace()` into a NULL
