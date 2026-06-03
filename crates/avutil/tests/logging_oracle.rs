@@ -348,6 +348,13 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
     let (small, _) = rust_format_line2(LogLevel::Warning, "plain", LogFlags::PRINT_LEVEL, true, 8);
     rows.insert("format-line2-small-line", escape_row_text(small.bytes()));
 
+    let (exact_size, _) =
+        rust_format_line2(LogLevel::Warning, "plain", LogFlags::PRINT_LEVEL, true, 15);
+    rows.insert(
+        "format-line2-exact-size-line",
+        escape_row_text(exact_size.bytes()),
+    );
+
     let (size1, _) = rust_format_line2(LogLevel::Warning, "plain", LogFlags::PRINT_LEVEL, true, 1);
     rows.insert("format-line2-size1-line", escape_row_text(size1.bytes()));
 
@@ -407,6 +414,19 @@ fn expected_text_rows() -> BTreeMap<&'static str, String> {
     rows.insert(
         "format-line2-context-size1-line",
         escape_row_text(context_size1.bytes()),
+    );
+    let exact_size_context = AvLogContextPrefix::new("rustctx", "<ptr>");
+    let (context_exact_size, _) = rust_format_line2_context_with_context(
+        LogLevel::Warning,
+        "ctxmsg",
+        LogFlags::PRINT_LEVEL,
+        true,
+        34,
+        &exact_size_context,
+    );
+    rows.insert(
+        "format-line2-context-exact-size-line",
+        escape_row_text(context_exact_size.bytes()),
     );
 
     let (time, _) = rust_format_line2(LogLevel::Warning, "plain", LogFlags::PRINT_TIME, true, 128);
@@ -1364,6 +1384,21 @@ fn add_format_line2_int_rows(rows: &mut BTreeMap<&'static str, i32>) {
     rows.insert("format-line2-small-prefix", bool_to_i32(small_prefix));
     rows.insert("format-line2-small-len", usize_to_i32(small.bytes().len()));
 
+    let (exact_size, exact_size_prefix) =
+        rust_format_line2(LogLevel::Warning, "plain", LogFlags::PRINT_LEVEL, true, 15);
+    rows.insert(
+        "format-line2-exact-size-ret",
+        usize_to_i32(exact_size.full_len()),
+    );
+    rows.insert(
+        "format-line2-exact-size-prefix",
+        bool_to_i32(exact_size_prefix),
+    );
+    rows.insert(
+        "format-line2-exact-size-len",
+        usize_to_i32(exact_size.bytes().len()),
+    );
+
     let (null_zero, null_zero_prefix) =
         rust_format_line2(LogLevel::Warning, "plain", LogFlags::PRINT_LEVEL, true, 0);
     rows.insert(
@@ -1438,6 +1473,26 @@ fn add_format_line2_int_rows(rows: &mut BTreeMap<&'static str, i32>) {
     rows.insert(
         "format-line2-context-size1-len",
         usize_to_i32(context_size1.bytes().len()),
+    );
+    let (context_exact_size, context_exact_size_state) = rust_format_line2_context_with_context(
+        LogLevel::Warning,
+        "ctxmsg",
+        LogFlags::PRINT_LEVEL,
+        true,
+        43,
+        &size1_context,
+    );
+    rows.insert(
+        "format-line2-context-exact-size-ret",
+        usize_to_i32(context_exact_size.full_len()),
+    );
+    rows.insert(
+        "format-line2-context-exact-size-prefix",
+        bool_to_i32(context_exact_size_state),
+    );
+    rows.insert(
+        "format-line2-context-exact-size-len",
+        usize_to_i32(context_exact_size.bytes().len()),
     );
     let (context_null_zero, context_null_zero_prefix) = rust_format_line2_context_with_context(
         LogLevel::Warning,
@@ -2693,6 +2748,16 @@ static void print_format_line2_rows(void) {
     ROW("format-line2-small-len", strlen(small));
     ROW_STR("format-line2-small-line", small);
 
+    char exact_size[15];
+    memset(exact_size, 'X', sizeof(exact_size));
+    print_prefix = 1;
+    ret = call_format_line2(NULL, exact_size, sizeof(exact_size), &print_prefix,
+                            AV_LOG_WARNING, "%s", "plain");
+    ROW("format-line2-exact-size-ret", ret);
+    ROW("format-line2-exact-size-prefix", print_prefix);
+    ROW("format-line2-exact-size-len", strlen(exact_size));
+    ROW_STR("format-line2-exact-size-line", exact_size);
+
     print_prefix = 1;
     ret = call_format_line2(NULL, NULL, 0, &print_prefix,
                             AV_LOG_WARNING, "%s", "plain");
@@ -2787,6 +2852,17 @@ static void print_format_line2_rows(void) {
     ROW("format-line2-context-size1-prefix", print_prefix);
     ROW("format-line2-context-size1-len", strlen(small));
     ROW_STR("format-line2-context-size1-line", small);
+
+    char context_exact_size[43];
+    memset(context_exact_size, 'X', sizeof(context_exact_size));
+    print_prefix = 1;
+    ret = call_format_line2(&ctx, context_exact_size, sizeof(context_exact_size),
+                            &print_prefix, AV_LOG_WARNING, "%s", "ctxmsg");
+    ROW("format-line2-context-exact-size-ret", ret);
+    ROW("format-line2-context-exact-size-prefix", print_prefix);
+    ROW("format-line2-context-exact-size-len", strlen(context_exact_size));
+    ROW_STR_NORMALIZED_CONTEXT("format-line2-context-exact-size-line",
+                               context_exact_size);
 
     memset(line, 'X', sizeof(line));
     print_prefix = 1;

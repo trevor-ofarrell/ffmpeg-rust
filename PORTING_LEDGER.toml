@@ -3091,6 +3091,12 @@ fuzz_targets = ["avutil_core_models"]
 # replacement, record-clear, callback-clear, global-reset, and reinstall
 # behavior through observable dispatch counts/messages rather than pointer
 # identity. `avutil_core_models` mirrors the deterministic callback lifecycle.
+# Latest main-thread logging evidence: pinned libavutil rows now prove
+# `av_log_format_line2()` exact-size copied-buffer behavior for NULL and
+# AVClass contexts: when `line_size` equals the full would-write length, FFmpeg
+# returns that full length, copies one fewer visible byte plus the NUL, clears
+# `print_prefix`, and the Rust model reports truncation. Unit, oracle, and
+# deterministic `avutil_core_models` coverage mirror this boundary.
 # Latest delegated TERM-color update: pinned libavutil default-callback rows now
 # prove a no-force pseudo-terminal with `TERM=xterm-color` resolves to BASIC
 # color output for the warning-level row, distinct from the 256-color

@@ -2521,6 +2521,15 @@ mod tests {
         assert!(!prefix);
 
         prefix = true;
+        let exact_size = LogRecord::new(LogLevel::Warning, "decoder", "plain")
+            .format_av_log_line2_null_context(LogFlags::PRINT_LEVEL, &mut prefix, 15)
+            .unwrap();
+        assert_eq!(exact_size.full_len(), 15);
+        assert_eq!(exact_size.bytes(), b"[warning] plai");
+        assert!(exact_size.truncated());
+        assert!(!prefix);
+
+        prefix = true;
         let null_zero = LogRecord::new(LogLevel::Warning, "decoder", "plain")
             .format_av_log_line2_null_context(LogFlags::PRINT_LEVEL, &mut prefix, 0)
             .unwrap();
@@ -2615,6 +2624,18 @@ mod tests {
         assert_eq!(tiny.full_len(), 43);
         assert_eq!(tiny.bytes(), b"");
         assert!(tiny.truncated());
+        assert!(!prefix);
+
+        prefix = true;
+        let exact_size = LogRecord::new(LogLevel::Warning, "decoder", "ctxmsg")
+            .format_av_log_line2_context(&size1_context, LogFlags::PRINT_LEVEL, &mut prefix, 43)
+            .unwrap();
+        assert_eq!(exact_size.full_len(), 43);
+        assert_eq!(
+            exact_size.bytes(),
+            b"[rustctx @ 0x123456789abc] [warning] ctxms"
+        );
+        assert!(exact_size.truncated());
         assert!(!prefix);
 
         prefix = true;

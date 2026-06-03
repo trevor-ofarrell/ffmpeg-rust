@@ -9,6 +9,13 @@
 
 ## Compatible Today
 
+- Latest main-thread logging evidence: pinned libavutil rows now prove
+  `av_log_format_line2()` exact-size copied-buffer behavior for NULL and
+  AVClass contexts. When `line_size` equals the full would-write length, FFmpeg
+  returns that full length, copies one fewer visible byte plus the C terminator,
+  clears `print_prefix`, and the Rust `AvLogFormatLine2` model reports
+  truncation. This strengthens `avutil-logging`; strict completion remains
+  11/96 and the row remains `fate_pass`.
 - Latest main-thread pixel-format status: the bounded `PixelFormat::find_best`
   / `find_best_of_2` model now matches the upstream `fate-pixfmt_best` vector
   set, the pinned libavutil oracle validates `av_find_best_pix_fmt_of_2` rows

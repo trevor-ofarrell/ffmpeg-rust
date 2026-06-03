@@ -5402,6 +5402,15 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     assert!(!line2_prefix);
 
     line2_prefix = true;
+    let line2_exact_size = LogRecord::new(LogLevel::Warning, "decoder", "plain")
+        .format_av_log_line2_null_context(LogFlags::PRINT_LEVEL, &mut line2_prefix, 15)
+        .unwrap();
+    assert_eq!(line2_exact_size.bytes(), b"[warning] plai");
+    assert_eq!(line2_exact_size.full_len(), 15);
+    assert!(line2_exact_size.truncated());
+    assert!(!line2_prefix);
+
+    line2_prefix = true;
     let quiet_line2 = LogRecord::new(LogLevel::Quiet, "decoder", "quiet")
         .format_av_log_line2_null_context(LogFlags::PRINT_LEVEL, &mut line2_prefix, 128)
         .unwrap();
@@ -5471,6 +5480,24 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     assert_eq!(context_line2.full_len(), 34);
     assert!(!context_line2.truncated());
     assert!(!line2_prefix);
+
+    line2_prefix = true;
+    let context_line2_exact_size = LogRecord::new(LogLevel::Warning, "decoder", "ctxmsg")
+        .format_av_log_line2_context(
+            &context_prefix,
+            LogFlags::PRINT_LEVEL,
+            &mut line2_prefix,
+            34,
+        )
+        .unwrap();
+    assert_eq!(
+        context_line2_exact_size.bytes(),
+        b"[rustctx @ <ptr>] [warning] ctxms"
+    );
+    assert_eq!(context_line2_exact_size.full_len(), 34);
+    assert!(context_line2_exact_size.truncated());
+    assert!(!line2_prefix);
+
     line2_prefix = true;
     let context_line2_newline = LogRecord::new(LogLevel::Info, "ffmpeg", "withnl\n")
         .format_av_log_line2_context(

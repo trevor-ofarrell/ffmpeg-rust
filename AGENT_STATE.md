@@ -2,6 +2,17 @@
 
 ## Current Status
 
+Current authoritative turn status: main-thread WSL slice added
+`avutil-logging` exact-size `av_log_format_line2()` evidence. Pinned
+libavutil rows now prove NULL-context and AVClass-context calls where
+`line_size` equals the full would-write length return that full length, copy
+one fewer visible byte plus the C terminator, clear `print_prefix`, and map to
+the Rust model's truncated `AvLogFormatLine2`. Focused unit coverage, the
+ignored logging oracle, and `avutil_core_models` deterministic invariants cover
+the same boundary. `avutil-logging` remains `fate_pass`, not complete; strict
+completion remains 11/96 pending broader exported callback ABI and platform
+localtime/color policy closure.
+
 Current authoritative turn status: orchestrator workflow is active on WSL. The
 tree started clean at `master...origin/master [ahead 45]`; required startup
 checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
