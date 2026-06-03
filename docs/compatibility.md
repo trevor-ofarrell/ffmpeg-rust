@@ -9,6 +9,13 @@
 
 ## Compatible Today
 
+- Latest main-thread channel-layout status: local unit coverage, the mapped
+  pinned `avutil-channel-layout|oracle-ffmpeg-layouts` differential row, and
+  upstream FFmpeg `fate-channel_layout` all pass through the pinned WSL
+  oracle/build cache. This promotes `avutil-channel-layout` from
+  `differential_pass` to `fate_pass`, not `complete`; long-tail parser,
+  retype, ambisonic-order, and sustained fuzz evidence remain pending. Strict
+  completion remains 11/96.
 - Latest main-thread frame status: upstream FFmpeg `fate-side_data_array`
   passes from the pinned WSL build cache through
   `tests/fate/upstream-mappings.txt` as `avutil-frame|fate-side_data_array`.

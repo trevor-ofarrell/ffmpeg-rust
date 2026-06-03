@@ -4021,7 +4021,7 @@ id = "avutil-channel-layout"
 kind = "channel_layout"
 ffmpeg_name = "AVChannelLayout"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "differential_pass"
+status = "fate_pass"
 priority = 1
 oracle_command = "ffmpeg -layouts"
 rust_command = "cargo test -p avutil channel_layout"
@@ -4106,6 +4106,7 @@ fuzz_targets = ["avutil_core_models"]
 # Latest zero-order ambisonic oracle note: the parser oracle now pins invalid leading/empty separator rows, invalid `2 channels ` trailing-junk rejection, plus-hex ambisonic order (`ambisonic +0x1`), zero-order native-mask/list extras (`ambisonic 0+0x5`, `ambisonic -0+0x5`, `ambisonic -0+FL+FC`), and the compare oracle now pins the corresponding plus-order, signed-zero, zero-order native-extra equivalence and difference rows. The deterministic avutil_core_models fixture mirrors those rows.
 # Latest default/check oracle note: the ignored `channel_layout_oracle::libavutil_channel_layout_default_vectors_match_current_model` harness now pins `av_channel_layout_default()` plus `av_channel_layout_check()` rows for negative/zero invalid counts, source-order native defaults for 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, and 24 channels, and count-only unspecified fallbacks for 9, 11, 13, 15, 17, 23, 25, and 64 channels. The deterministic avutil_core_models fixture mirrors those rows.
 # Latest upstream FATE note: pinned FFmpeg source contains tests/fate/libavutil.mak `fate-channel_layout`, backed by libavutil/tests/channel_layout; it passes locally through the WSL build cache and is wired through tests/fate/upstream-mappings.txt.
+# Latest status note: `avutil-channel-layout` is promoted from `differential_pass` to `fate_pass` based on passing local unit/FATE smoke coverage, the mapped pinned oracle row, and upstream `fate-channel_layout`. This is not a completion claim.
 # Remaining channel-layout work: broader custom/ambisonic order semantics beyond the current raw-ID native-mask subset, full AV_CHANNEL_ORDER_AMBISONIC oracle calibration, long-tail parser/retype/compare oracle vectors, and sustained fuzz execution.
 # Latest fuzz-target coverage note: the deterministic avutil_core_models fixtures now cover parser-facing exact-case native names, uppercase base-0 USR/AMBI channel strings, and rejection of lowercase or case-mismatched channel/layout strings such as `fl+fr`, `ambi0`, `usr0`, and `STEREO`.
 # Latest deterministic compare fixture note: avutil_core_models now mirrors the new compare oracle rows for native, custom, unspecified, ambisonic, and raw-mask equivalence cases.
