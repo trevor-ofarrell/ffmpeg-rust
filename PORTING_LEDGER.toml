@@ -1746,6 +1746,15 @@ fate_tests = [
   "not_applicable: upstream FFmpeg FATE has no standalone AVBufferRef/AVBufferPool API target; covered by unit tests plus pinned libavutil differential oracle",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest shared nullable-zero realloc slice: pinned libavutil rows now prove
+# `av_buffer_realloc()` on one reference of shared
+# `av_buffer_create(NULL, 0, free, opaque, flags)` storage detaches only the
+# destination to ordinary writable non-NULL storage. The source keeps its NULL
+# data pointer, opaque owner, refcount 1, and writable/readonly state according
+# to the READONLY flag; release is delayed until the final source unref. Rust
+# mirrors both writable and readonly shared nullable-zero grow paths with
+# focused units, mapped oracle rows, and deterministic `avutil_core_models`
+# coverage. This is evidence-strengthening only; no status was promoted.
 # Latest nullable-zero readonly create slice: pinned libavutil rows now prove
 # `av_buffer_create(NULL, 0, free, opaque, AV_BUFFER_FLAG_READONLY)` succeeds
 # with `AVBufferRef.data == NULL`, size zero, non-writable state, and opaque

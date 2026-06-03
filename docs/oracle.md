@@ -1146,6 +1146,14 @@ empty storage while releasing the original owner. Same-size realloc preserves
 the NULL data pointer and readonly owner until unref, while grow realloc
 releases the owner immediately and clears destination opaque lookup.
 
+The latest buffer oracle rows add shared nullable-zero grow-realloc coverage:
+`av_buffer_realloc()` on one reference of shared
+`av_buffer_create(NULL, 0, free, opaque, flags)` storage detaches only the
+destination to ordinary writable non-NULL storage. The source remains live with
+`ref->data == NULL`, refcount 1, opaque lookup, and writable or readonly state
+according to the READONLY flag; the custom release callback runs only after the
+final source unref.
+
 The latest buffer oracle rows add outstanding two-reference pool-uninit coverage: `av_buffer_pool_uninit()` with two refs sharing one custom-pool allocation does not run release or pool-free callbacks at uninit time or after the first unref, then the final unref releases the buffer bytes exactly once before running the pool-free callback.
 
 The latest Rust-only `BufferPool::recycle` rejection lifecycle rows have no direct public FFmpeg C API equivalent; they are therefore covered by unit and deterministic fuzz invariants, while the pinned buffer oracle and mapped `avutil-buffer|oracle-libavutil-buffer` row are rerun as broader regressions.

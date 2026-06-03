@@ -397,6 +397,70 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         release_fields(&create_null_zero_realloc_grow_released),
     );
 
+    let create_null_zero_shared_realloc_grow_released =
+        Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_null_zero_shared_realloc_grow_capture =
+        Arc::clone(&create_null_zero_shared_realloc_grow_released);
+    let create_null_zero_shared_realloc_grow_src =
+        BufferRef::from_null_data_zero_with_opaque_release_callback(
+            664usize,
+            move |opaque, bytes| {
+                create_null_zero_shared_realloc_grow_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        );
+    let mut create_null_zero_shared_realloc_grow_dst = Some(BufferRef::ref_from(
+        &create_null_zero_shared_realloc_grow_src,
+    ));
+    BufferRef::realloc(&mut create_null_zero_shared_realloc_grow_dst, 2).unwrap();
+    let create_null_zero_shared_realloc_grow_dst =
+        create_null_zero_shared_realloc_grow_dst.expect("shared grow realloc keeps destination");
+    rows.insert(
+        "buffer:create-null-zero-shared-realloc-grow-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:create-null-zero-shared-realloc-grow-src".to_string(),
+        buffer_fields_with_data_null_and_opaque(&create_null_zero_shared_realloc_grow_src),
+    );
+    rows.insert(
+        "buffer:create-null-zero-shared-realloc-grow-dst".to_string(),
+        buffer_shape_fields_with_data_null_and_opaque(&create_null_zero_shared_realloc_grow_dst),
+    );
+    rows.insert(
+        "buffer:create-null-zero-shared-realloc-grow-shares".to_string(),
+        vec![
+            bool_field(
+                create_null_zero_shared_realloc_grow_src
+                    .shares_storage(&create_null_zero_shared_realloc_grow_dst),
+            ),
+            create_null_zero_shared_realloc_grow_src
+                .strong_count()
+                .to_string(),
+            create_null_zero_shared_realloc_grow_released
+                .lock()
+                .unwrap()
+                .len()
+                .to_string(),
+        ],
+    );
+    drop(create_null_zero_shared_realloc_grow_dst);
+    rows.insert(
+        "buffer:create-null-zero-shared-realloc-grow-release-before-src-unref".to_string(),
+        vec![create_null_zero_shared_realloc_grow_released
+            .lock()
+            .unwrap()
+            .len()
+            .to_string()],
+    );
+    drop(create_null_zero_shared_realloc_grow_src);
+    rows.insert(
+        "buffer:create-null-zero-shared-realloc-grow-release".to_string(),
+        release_fields(&create_null_zero_shared_realloc_grow_released),
+    );
+
     let create_null_zero_readonly_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let create_null_zero_readonly_capture = Arc::clone(&create_null_zero_readonly_released);
     let mut create_null_zero_readonly =
@@ -510,6 +574,73 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     rows.insert(
         "buffer:create-null-zero-readonly-realloc-grow-release-after-unref".to_string(),
         release_fields(&create_null_zero_readonly_realloc_grow_released),
+    );
+
+    let create_null_zero_readonly_shared_realloc_grow_released =
+        Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_null_zero_readonly_shared_realloc_grow_capture =
+        Arc::clone(&create_null_zero_readonly_shared_realloc_grow_released);
+    let create_null_zero_readonly_shared_realloc_grow_src =
+        BufferRef::from_null_data_zero_with_opaque_release_callback_readonly(
+            665usize,
+            move |opaque, bytes| {
+                create_null_zero_readonly_shared_realloc_grow_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        );
+    let mut create_null_zero_readonly_shared_realloc_grow_dst = Some(BufferRef::ref_from(
+        &create_null_zero_readonly_shared_realloc_grow_src,
+    ));
+    BufferRef::realloc(&mut create_null_zero_readonly_shared_realloc_grow_dst, 2).unwrap();
+    let create_null_zero_readonly_shared_realloc_grow_dst =
+        create_null_zero_readonly_shared_realloc_grow_dst
+            .expect("shared readonly grow realloc keeps destination");
+    rows.insert(
+        "buffer:create-null-zero-readonly-shared-realloc-grow-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:create-null-zero-readonly-shared-realloc-grow-src".to_string(),
+        buffer_fields_with_data_null_and_opaque(&create_null_zero_readonly_shared_realloc_grow_src),
+    );
+    rows.insert(
+        "buffer:create-null-zero-readonly-shared-realloc-grow-dst".to_string(),
+        buffer_shape_fields_with_data_null_and_opaque(
+            &create_null_zero_readonly_shared_realloc_grow_dst,
+        ),
+    );
+    rows.insert(
+        "buffer:create-null-zero-readonly-shared-realloc-grow-shares".to_string(),
+        vec![
+            bool_field(
+                create_null_zero_readonly_shared_realloc_grow_src
+                    .shares_storage(&create_null_zero_readonly_shared_realloc_grow_dst),
+            ),
+            create_null_zero_readonly_shared_realloc_grow_src
+                .strong_count()
+                .to_string(),
+            create_null_zero_readonly_shared_realloc_grow_released
+                .lock()
+                .unwrap()
+                .len()
+                .to_string(),
+        ],
+    );
+    drop(create_null_zero_readonly_shared_realloc_grow_dst);
+    rows.insert(
+        "buffer:create-null-zero-readonly-shared-realloc-grow-release-before-src-unref".to_string(),
+        vec![create_null_zero_readonly_shared_realloc_grow_released
+            .lock()
+            .unwrap()
+            .len()
+            .to_string()],
+    );
+    drop(create_null_zero_readonly_shared_realloc_grow_src);
+    rows.insert(
+        "buffer:create-null-zero-readonly-shared-realloc-grow-release".to_string(),
+        release_fields(&create_null_zero_readonly_shared_realloc_grow_released),
     );
 
     let mut create_default_opaque = BufferRef::from_vec_with_opaque(vec![34, 35, 36], 322usize);
@@ -4613,6 +4744,37 @@ int main(void) {
 
     reset_create_release();
     last_create_release_size = 0;
+    AVBufferRef *create_null_zero_shared_realloc_grow_src =
+        av_buffer_create(NULL, 0, test_create_free,
+                         (void *)(uintptr_t)664, 0);
+    fail_if(!create_null_zero_shared_realloc_grow_src,
+            "av_buffer_create null zero shared realloc grow src failed");
+    AVBufferRef *create_null_zero_shared_realloc_grow_dst =
+        av_buffer_ref(create_null_zero_shared_realloc_grow_src);
+    fail_if(!create_null_zero_shared_realloc_grow_dst,
+            "av_buffer_ref null zero shared realloc grow failed");
+    ret = av_buffer_realloc(&create_null_zero_shared_realloc_grow_dst, 2);
+    printf("buffer:create-null-zero-shared-realloc-grow-ret|%d\n", ret);
+    print_buffer_opaque_data_null(
+        "buffer:create-null-zero-shared-realloc-grow-src",
+        create_null_zero_shared_realloc_grow_src);
+    print_buffer_opaque_shape_data_null(
+        "buffer:create-null-zero-shared-realloc-grow-dst",
+        create_null_zero_shared_realloc_grow_dst);
+    printf("buffer:create-null-zero-shared-realloc-grow-shares|%d|%d|%d\n",
+           create_null_zero_shared_realloc_grow_src->buffer ==
+               create_null_zero_shared_realloc_grow_dst->buffer,
+           av_buffer_get_ref_count(create_null_zero_shared_realloc_grow_src),
+           create_release_count);
+    av_buffer_unref(&create_null_zero_shared_realloc_grow_dst);
+    printf("buffer:create-null-zero-shared-realloc-grow-release-before-src-unref|%d\n",
+           create_release_count);
+    av_buffer_unref(&create_null_zero_shared_realloc_grow_src);
+    print_create_release(
+        "buffer:create-null-zero-shared-realloc-grow-release");
+
+    reset_create_release();
+    last_create_release_size = 0;
     AVBufferRef *create_null_zero_readonly =
         av_buffer_create(NULL, 0, test_create_free,
                          (void *)(uintptr_t)661,
@@ -4669,6 +4831,44 @@ int main(void) {
     av_buffer_unref(&create_null_zero_readonly_realloc_grow);
     print_create_release(
         "buffer:create-null-zero-readonly-realloc-grow-release-after-unref");
+
+    reset_create_release();
+    last_create_release_size = 0;
+    AVBufferRef *create_null_zero_readonly_shared_realloc_grow_src =
+        av_buffer_create(NULL, 0, test_create_free,
+                         (void *)(uintptr_t)665,
+                         AV_BUFFER_FLAG_READONLY);
+    fail_if(!create_null_zero_readonly_shared_realloc_grow_src,
+            "av_buffer_create null zero readonly shared realloc grow src failed");
+    AVBufferRef *create_null_zero_readonly_shared_realloc_grow_dst =
+        av_buffer_ref(create_null_zero_readonly_shared_realloc_grow_src);
+    fail_if(!create_null_zero_readonly_shared_realloc_grow_dst,
+            "av_buffer_ref null zero readonly shared realloc grow failed");
+    ret = av_buffer_realloc(
+        &create_null_zero_readonly_shared_realloc_grow_dst, 2);
+    printf(
+        "buffer:create-null-zero-readonly-shared-realloc-grow-ret|%d\n",
+        ret);
+    print_buffer_opaque_data_null(
+        "buffer:create-null-zero-readonly-shared-realloc-grow-src",
+        create_null_zero_readonly_shared_realloc_grow_src);
+    print_buffer_opaque_shape_data_null(
+        "buffer:create-null-zero-readonly-shared-realloc-grow-dst",
+        create_null_zero_readonly_shared_realloc_grow_dst);
+    printf(
+        "buffer:create-null-zero-readonly-shared-realloc-grow-shares|%d|%d|%d\n",
+        create_null_zero_readonly_shared_realloc_grow_src->buffer ==
+            create_null_zero_readonly_shared_realloc_grow_dst->buffer,
+        av_buffer_get_ref_count(
+            create_null_zero_readonly_shared_realloc_grow_src),
+        create_release_count);
+    av_buffer_unref(&create_null_zero_readonly_shared_realloc_grow_dst);
+    printf(
+        "buffer:create-null-zero-readonly-shared-realloc-grow-release-before-src-unref|%d\n",
+        create_release_count);
+    av_buffer_unref(&create_null_zero_readonly_shared_realloc_grow_src);
+    print_create_release(
+        "buffer:create-null-zero-readonly-shared-realloc-grow-release");
 
     static const uint8_t create_default_opaque_bytes[] = { 34, 35, 36 };
     uint8_t *create_default_opaque_data =

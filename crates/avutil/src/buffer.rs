@@ -2630,6 +2630,39 @@ mod tests {
         assert!(!grow.as_ptr().is_null());
         assert!(grow.opaque_ref::<usize>().is_none());
         assert_eq!(*grow_released.lock().unwrap(), vec![(660, Vec::new())]);
+
+        let shared_grow_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let shared_grow_capture = std::sync::Arc::clone(&shared_grow_released);
+        let shared_source = BufferRef::from_null_data_zero_with_opaque_release_callback(
+            664usize,
+            move |opaque, bytes| {
+                shared_grow_capture.lock().unwrap().push((opaque, bytes));
+            },
+        );
+        let mut shared_grow = Some(BufferRef::ref_from(&shared_source));
+
+        BufferRef::realloc(&mut shared_grow, 2).unwrap();
+        let shared_grow = shared_grow.expect("shared grow realloc keeps destination");
+        assert!(shared_source.is_data_ptr_null());
+        assert!(shared_source.as_ptr().is_null());
+        assert_eq!(shared_source.opaque_ref::<usize>(), Some(&664));
+        assert_eq!(shared_source.strong_count(), 1);
+        assert!(shared_source.is_writable());
+        assert_eq!(shared_grow.as_slice(), &[0, 0]);
+        assert!(!shared_grow.is_data_ptr_null());
+        assert!(!shared_grow.as_ptr().is_null());
+        assert!(shared_grow.is_writable());
+        assert!(shared_grow.opaque_ref::<usize>().is_none());
+        assert!(!shared_source.shares_storage(&shared_grow));
+        assert!(shared_grow_released.lock().unwrap().is_empty());
+        drop(shared_grow);
+        assert!(shared_grow_released.lock().unwrap().is_empty());
+        drop(shared_source);
+        assert_eq!(
+            *shared_grow_released.lock().unwrap(),
+            vec![(664, Vec::new())]
+        );
     }
 
     #[test]
@@ -2707,6 +2740,41 @@ mod tests {
         assert!(grow.is_writable());
         assert!(grow.opaque_ref::<usize>().is_none());
         assert_eq!(*grow_released.lock().unwrap(), vec![(663, Vec::new())]);
+
+        let shared_grow_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let shared_grow_capture = std::sync::Arc::clone(&shared_grow_released);
+        let shared_source = BufferRef::from_null_data_zero_with_opaque_release_callback_readonly(
+            665usize,
+            move |opaque, bytes| {
+                shared_grow_capture.lock().unwrap().push((opaque, bytes));
+            },
+        );
+        let mut shared_grow = Some(BufferRef::ref_from(&shared_source));
+
+        BufferRef::realloc(&mut shared_grow, 2).unwrap();
+        let shared_grow = shared_grow.expect("shared readonly grow realloc keeps destination");
+        assert!(shared_source.is_data_ptr_null());
+        assert!(shared_source.as_ptr().is_null());
+        assert!(shared_source.is_readonly());
+        assert!(!shared_source.is_writable());
+        assert_eq!(shared_source.opaque_ref::<usize>(), Some(&665));
+        assert_eq!(shared_source.strong_count(), 1);
+        assert_eq!(shared_grow.as_slice(), &[0, 0]);
+        assert!(!shared_grow.is_data_ptr_null());
+        assert!(!shared_grow.as_ptr().is_null());
+        assert!(!shared_grow.is_readonly());
+        assert!(shared_grow.is_writable());
+        assert!(shared_grow.opaque_ref::<usize>().is_none());
+        assert!(!shared_source.shares_storage(&shared_grow));
+        assert!(shared_grow_released.lock().unwrap().is_empty());
+        drop(shared_grow);
+        assert!(shared_grow_released.lock().unwrap().is_empty());
+        drop(shared_source);
+        assert_eq!(
+            *shared_grow_released.lock().unwrap(),
+            vec![(665, Vec::new())]
+        );
     }
 
     #[test]

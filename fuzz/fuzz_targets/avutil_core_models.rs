@@ -1064,6 +1064,55 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         *null_zero_released.lock().unwrap(),
         vec![(payload_len, Vec::new())]
     );
+    let null_zero_shared_realloc_released =
+        Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let null_zero_shared_realloc_capture = Arc::clone(&null_zero_shared_realloc_released);
+    let null_zero_shared_realloc_source =
+        BufferRef::from_null_data_zero_with_opaque_release_callback(
+            payload_len.wrapping_add(4),
+            move |opaque, bytes| {
+                null_zero_shared_realloc_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        );
+    let mut null_zero_shared_realloc_destination =
+        Some(BufferRef::ref_from(&null_zero_shared_realloc_source));
+    BufferRef::realloc(&mut null_zero_shared_realloc_destination, 2).unwrap();
+    let null_zero_shared_realloc_destination =
+        null_zero_shared_realloc_destination.expect("shared nullable-zero realloc keeps dst");
+    assert!(null_zero_shared_realloc_source.is_data_ptr_null());
+    assert!(null_zero_shared_realloc_source.as_ptr().is_null());
+    assert_eq!(
+        null_zero_shared_realloc_source.opaque_ref::<usize>(),
+        Some(&payload_len.wrapping_add(4))
+    );
+    assert_eq!(null_zero_shared_realloc_source.strong_count(), 1);
+    assert!(null_zero_shared_realloc_source.is_writable());
+    assert_eq!(null_zero_shared_realloc_destination.as_slice(), &[0, 0]);
+    assert!(!null_zero_shared_realloc_destination.is_data_ptr_null());
+    assert!(!null_zero_shared_realloc_destination.as_ptr().is_null());
+    assert!(null_zero_shared_realloc_destination.is_writable());
+    assert!(null_zero_shared_realloc_destination
+        .opaque_ref::<usize>()
+        .is_none());
+    assert!(!null_zero_shared_realloc_source
+        .shares_storage(&null_zero_shared_realloc_destination));
+    assert!(null_zero_shared_realloc_released
+        .lock()
+        .unwrap()
+        .is_empty());
+    drop(null_zero_shared_realloc_destination);
+    assert!(null_zero_shared_realloc_released
+        .lock()
+        .unwrap()
+        .is_empty());
+    drop(null_zero_shared_realloc_source);
+    assert_eq!(
+        *null_zero_shared_realloc_released.lock().unwrap(),
+        vec![(payload_len.wrapping_add(4), Vec::new())]
+    );
     let null_zero_readonly_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let null_zero_readonly_capture = Arc::clone(&null_zero_readonly_released);
     let mut null_zero_readonly =
@@ -1157,6 +1206,67 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     assert_eq!(
         *null_zero_readonly_grow_released.lock().unwrap(),
         vec![(payload_len.wrapping_add(3), Vec::new())]
+    );
+    let null_zero_readonly_shared_realloc_released =
+        Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let null_zero_readonly_shared_realloc_capture =
+        Arc::clone(&null_zero_readonly_shared_realloc_released);
+    let null_zero_readonly_shared_realloc_source =
+        BufferRef::from_null_data_zero_with_opaque_release_callback_readonly(
+            payload_len.wrapping_add(5),
+            move |opaque, bytes| {
+                null_zero_readonly_shared_realloc_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        );
+    let mut null_zero_readonly_shared_realloc_destination = Some(BufferRef::ref_from(
+        &null_zero_readonly_shared_realloc_source,
+    ));
+    BufferRef::realloc(&mut null_zero_readonly_shared_realloc_destination, 2).unwrap();
+    let null_zero_readonly_shared_realloc_destination =
+        null_zero_readonly_shared_realloc_destination
+            .expect("shared readonly nullable-zero realloc keeps dst");
+    assert!(null_zero_readonly_shared_realloc_source.is_data_ptr_null());
+    assert!(null_zero_readonly_shared_realloc_source.as_ptr().is_null());
+    assert!(null_zero_readonly_shared_realloc_source.is_readonly());
+    assert!(!null_zero_readonly_shared_realloc_source.is_writable());
+    assert_eq!(
+        null_zero_readonly_shared_realloc_source.opaque_ref::<usize>(),
+        Some(&payload_len.wrapping_add(5))
+    );
+    assert_eq!(null_zero_readonly_shared_realloc_source.strong_count(), 1);
+    assert_eq!(
+        null_zero_readonly_shared_realloc_destination.as_slice(),
+        &[0, 0]
+    );
+    assert!(!null_zero_readonly_shared_realloc_destination.is_data_ptr_null());
+    assert!(!null_zero_readonly_shared_realloc_destination
+        .as_ptr()
+        .is_null());
+    assert!(!null_zero_readonly_shared_realloc_destination.is_readonly());
+    assert!(null_zero_readonly_shared_realloc_destination.is_writable());
+    assert!(null_zero_readonly_shared_realloc_destination
+        .opaque_ref::<usize>()
+        .is_none());
+    assert!(!null_zero_readonly_shared_realloc_source
+        .shares_storage(&null_zero_readonly_shared_realloc_destination));
+    assert!(null_zero_readonly_shared_realloc_released
+        .lock()
+        .unwrap()
+        .is_empty());
+    drop(null_zero_readonly_shared_realloc_destination);
+    assert!(null_zero_readonly_shared_realloc_released
+        .lock()
+        .unwrap()
+        .is_empty());
+    drop(null_zero_readonly_shared_realloc_source);
+    assert_eq!(
+        *null_zero_readonly_shared_realloc_released
+            .lock()
+            .unwrap(),
+        vec![(payload_len.wrapping_add(5), Vec::new())]
     );
     let zeroed_huge = BufferRef::zeroed(usize::MAX).unwrap_err();
     assert_eq!(zeroed_huge.kind(), AvErrorKind::External);
