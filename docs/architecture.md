@@ -100,8 +100,12 @@ visible payload bytes at the current data pointer into new zero-offset padded
 `av_grow_packet()` follows that copy-to-zero-offset storage shape, while raw
 offset `av_shrink_packet()` preserves the caller data pointer, keeps
 `pkt->buf == NULL`, truncates the visible size, and zeroes the new input
-padding window. The safe Rust `Packet::new(...)` path models that visible
-raw-payload behavior without exposing borrowed packet data pointers;
+padding window. Raw offset `av_packet_unref()` and `av_packet_free(&pkt)`
+reset/null the packet without freeing or mutating the caller-owned storage; the
+safe Rust analogue is `Packet::with_raw_buffer` over external read-only storage
+retained by the caller plus `Packet::unref()` or `Option<Packet>::take()`. The
+safe Rust `Packet::new(...)` path models that visible raw-payload behavior
+without exposing borrowed packet data pointers;
 explicit-owner offset `BufferRef` fixtures separately document the safe padding
 path, where ref/clone detach to zero-offset padded storage while helper calls
 on uniquely owned offset storage preserve the known owner and visible offset,

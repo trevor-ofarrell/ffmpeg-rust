@@ -10596,6 +10596,85 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         vec![offset_unref_expected_storage]
     );
 
+    let mut raw_unref_storage = vec![0xa0, 0xa1, 0xa2];
+    raw_unref_storage.extend_from_slice(&payload);
+    raw_unref_storage.resize(3 + payload.len() + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+    let raw_unref_expected_storage = raw_unref_storage.clone();
+    let raw_unref_external: Arc<[u8]> = raw_unref_storage.into();
+    let mut raw_unref_packet = Packet::with_raw_buffer(
+        BufferRef::from_shared_slice_readonly(Arc::clone(&raw_unref_external))
+            .into_ref_slice(3, payload.len())
+            .unwrap(),
+        7,
+    );
+    assert_eq!(raw_unref_packet.data(), payload.as_slice());
+    assert_eq!(raw_unref_packet.data_buffer().offset(), 3);
+    assert!(!raw_unref_packet.is_data_writable());
+    assert_eq!(Arc::strong_count(&raw_unref_external), 2);
+    raw_unref_packet.set_pts(Some(123));
+    raw_unref_packet.set_dts(Some(111));
+    raw_unref_packet.set_duration(12).unwrap();
+    raw_unref_packet.set_pos(Some(456)).unwrap();
+    raw_unref_packet.set_flag(PacketFlags::KEY, true);
+    raw_unref_packet.set_flag(PacketFlags::DISPOSABLE, true);
+    raw_unref_packet
+        .set_time_base(Rational::new(1, 1_000).unwrap())
+        .unwrap();
+    raw_unref_packet.push_side_data(SideData::new_extradata(vec![0x33, 0x44]).unwrap());
+    raw_unref_packet.set_opaque(Some(PacketOpaque::new(0x1234).unwrap()));
+    raw_unref_packet.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad])));
+    raw_unref_packet.unref();
+    assert!(raw_unref_packet.is_empty());
+    assert_eq!(raw_unref_packet.data_buffer().padding_len(), 0);
+    assert_eq!(raw_unref_packet.stream_index(), 0);
+    assert_eq!(raw_unref_packet.pts(), None);
+    assert_eq!(raw_unref_packet.dts(), None);
+    assert_eq!(raw_unref_packet.duration(), 0);
+    assert_eq!(raw_unref_packet.pos(), None);
+    assert!(raw_unref_packet.flags().is_empty());
+    assert!(raw_unref_packet.side_data().is_empty());
+    assert!(raw_unref_packet.opaque().is_none());
+    assert!(raw_unref_packet.opaque_ref().is_none());
+    assert_eq!(raw_unref_packet.time_base(), Rational::ZERO);
+    assert_eq!(
+        raw_unref_external.as_ref(),
+        raw_unref_expected_storage.as_slice()
+    );
+    assert_eq!(Arc::strong_count(&raw_unref_external), 1);
+
+    let mut raw_free_storage = vec![0xa0, 0xa1, 0xa2];
+    raw_free_storage.extend_from_slice(&payload);
+    raw_free_storage.resize(3 + payload.len() + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+    let raw_free_expected_storage = raw_free_storage.clone();
+    let raw_free_external: Arc<[u8]> = raw_free_storage.into();
+    let mut raw_free_packet = Some(Packet::with_raw_buffer(
+        BufferRef::from_shared_slice_readonly(Arc::clone(&raw_free_external))
+            .into_ref_slice(3, payload.len())
+            .unwrap(),
+        7,
+    ));
+    let raw_free_packet_ref = raw_free_packet.as_mut().unwrap();
+    raw_free_packet_ref.set_pts(Some(123));
+    raw_free_packet_ref.set_dts(Some(111));
+    raw_free_packet_ref.set_duration(12).unwrap();
+    raw_free_packet_ref.set_pos(Some(456)).unwrap();
+    raw_free_packet_ref.set_flag(PacketFlags::KEY, true);
+    raw_free_packet_ref.set_flag(PacketFlags::DISPOSABLE, true);
+    raw_free_packet_ref
+        .set_time_base(Rational::new(1, 1_000).unwrap())
+        .unwrap();
+    raw_free_packet_ref.push_side_data(SideData::new_extradata(vec![0x33, 0x44]).unwrap());
+    raw_free_packet_ref.set_opaque(Some(PacketOpaque::new(0x1234).unwrap()));
+    raw_free_packet_ref.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad])));
+    assert_eq!(Arc::strong_count(&raw_free_external), 2);
+    drop(raw_free_packet.take());
+    assert!(raw_free_packet.is_none());
+    assert_eq!(
+        raw_free_external.as_ref(),
+        raw_free_expected_storage.as_slice()
+    );
+    assert_eq!(Arc::strong_count(&raw_free_external), 1);
+
     let mut offset_ref_storage = vec![0xa0, 0xa1, 0xa2];
     offset_ref_storage.extend_from_slice(&payload);
     offset_ref_storage.resize(3 + payload.len() + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);

@@ -3,6 +3,7 @@ use std::{
     env, fs,
     path::{Path, PathBuf},
     process::Command,
+    sync::Arc,
 };
 
 use avutil::{
@@ -2125,6 +2126,47 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:payload-shrink-unrefcounted-offset".to_string(),
         payload_unowned_fields(&shrink_unrefcounted_offset),
+    );
+
+    let mut unref_unowned_offset_storage = vec![0xa0, 0xa1, 0xa2, 0x11, 0x22];
+    unref_unowned_offset_storage.resize(3 + 2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+    let unref_unowned_offset_storage: Arc<[u8]> = unref_unowned_offset_storage.into();
+    let mut unref_unowned_offset = Packet::with_raw_buffer(
+        BufferRef::from_shared_slice_readonly(Arc::clone(&unref_unowned_offset_storage))
+            .into_ref_slice(3, 2)
+            .unwrap(),
+        7,
+    );
+    set_common_packet_props(&mut unref_unowned_offset);
+    unref_unowned_offset.unref();
+    rows.insert(
+        "packet:payload-unref-unrefcounted-offset".to_string(),
+        packet_fields(&unref_unowned_offset),
+    );
+    rows.insert(
+        "packet:payload-unref-unrefcounted-offset-storage".to_string(),
+        raw_caller_storage_fields(unref_unowned_offset_storage.as_ref(), 5),
+    );
+
+    let mut free_unowned_offset_storage = vec![0xa0, 0xa1, 0xa2, 0x11, 0x22];
+    free_unowned_offset_storage.resize(3 + 2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+    let free_unowned_offset_storage: Arc<[u8]> = free_unowned_offset_storage.into();
+    let mut free_unowned_offset = Some(Packet::with_raw_buffer(
+        BufferRef::from_shared_slice_readonly(Arc::clone(&free_unowned_offset_storage))
+            .into_ref_slice(3, 2)
+            .unwrap(),
+        7,
+    ));
+    set_common_packet_props(free_unowned_offset.as_mut().unwrap());
+    drop(free_unowned_offset.take());
+    let mut free_unowned_offset_fields = vec![bool_field(free_unowned_offset.is_none())];
+    free_unowned_offset_fields.extend(raw_caller_storage_fields(
+        free_unowned_offset_storage.as_ref(),
+        5,
+    ));
+    rows.insert(
+        "packet:payload-free-unrefcounted-offset".to_string(),
+        free_unowned_offset_fields,
     );
 
     let src = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
@@ -5009,6 +5051,18 @@ fn payload_unowned_fields(packet: &Packet) -> Vec<String> {
     ]
 }
 
+fn raw_caller_storage_fields(storage: &[u8], prefix_payload_len: usize) -> Vec<String> {
+    assert!(
+        prefix_payload_len < storage.len(),
+        "caller storage fixture should include at least one padding byte"
+    );
+    vec![
+        hex_or_dash(&storage[..prefix_payload_len]),
+        hex_or_dash(&storage[prefix_payload_len..prefix_payload_len + 1]),
+        hex_or_dash(&storage[storage.len() - 1..]),
+    ]
+}
+
 fn payload_layout_fields(bytes: &[u8], offsets: &[usize]) -> Vec<String> {
     let mut fields = vec![bytes.len().to_string(), hex_or_dash(bytes)];
     fields.extend(offsets.iter().map(ToString::to_string));
@@ -6220,6 +6274,16 @@ static void print_payload_unowned(const char *name, const AVPacket *pkt) {
     print_hex_or_dash(pkt->data ? pkt->data + pkt->size : NULL,
                       AV_INPUT_BUFFER_PADDING_SIZE);
     printf("\n");
+}
+
+static void print_raw_caller_storage_fields(const uint8_t *data,
+                                            int prefix_payload_len,
+                                            int total_len) {
+    print_hex_or_dash(data, prefix_payload_len);
+    printf("|");
+    print_hex_or_dash(data + prefix_payload_len, 1);
+    printf("|");
+    print_hex_or_dash(data + total_len - 1, 1);
 }
 
 static void print_dictionary_payload(const char *name, const uint8_t *data, size_t size) {
@@ -7848,6 +7912,42 @@ static void exercise_payload_api(void) {
            pkt->data == shrink_offset_raw_ptr);
     print_payload_unowned("packet:payload-shrink-unrefcounted-offset", pkt);
     av_packet_free(&pkt);
+
+    pkt = new_packet();
+    uint8_t unref_offset_raw[3 + 2 + AV_INPUT_BUFFER_PADDING_SIZE];
+    memset(unref_offset_raw, 0x5a, sizeof(unref_offset_raw));
+    unref_offset_raw[0] = 0xa0;
+    unref_offset_raw[1] = 0xa1;
+    unref_offset_raw[2] = 0xa2;
+    unref_offset_raw[3] = 0x11;
+    unref_offset_raw[4] = 0x22;
+    pkt->data = unref_offset_raw + 3;
+    pkt->size = 2;
+    set_common_packet_props(pkt);
+    av_packet_unref(pkt);
+    print_packet("packet:payload-unref-unrefcounted-offset", pkt);
+    printf("packet:payload-unref-unrefcounted-offset-storage|");
+    print_raw_caller_storage_fields(unref_offset_raw, 5,
+                                    (int)sizeof(unref_offset_raw));
+    printf("\n");
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    uint8_t free_offset_raw[3 + 2 + AV_INPUT_BUFFER_PADDING_SIZE];
+    memset(free_offset_raw, 0x5a, sizeof(free_offset_raw));
+    free_offset_raw[0] = 0xa0;
+    free_offset_raw[1] = 0xa1;
+    free_offset_raw[2] = 0xa2;
+    free_offset_raw[3] = 0x11;
+    free_offset_raw[4] = 0x22;
+    pkt->data = free_offset_raw + 3;
+    pkt->size = 2;
+    set_common_packet_props(pkt);
+    av_packet_free(&pkt);
+    printf("packet:payload-free-unrefcounted-offset|%d|", pkt == NULL);
+    print_raw_caller_storage_fields(free_offset_raw, 5,
+                                    (int)sizeof(free_offset_raw));
+    printf("\n");
 
     AVPacket *src = new_packet();
     fail_if(av_new_packet(src, 2) < 0, "av_new_packet writable src failed");

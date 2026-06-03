@@ -12902,6 +12902,80 @@ mod tests {
     }
 
     #[test]
+    fn packet_raw_no_buffer_unref_and_drop_preserve_caller_storage() {
+        fn caller_storage() -> Arc<[u8]> {
+            let mut storage = vec![0xa0, 0xa1, 0xa2, 0x11, 0x22];
+            storage.resize(3 + 2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+            storage.into()
+        }
+
+        fn raw_offset_packet(storage: &Arc<[u8]>) -> Packet {
+            Packet::with_raw_buffer(
+                BufferRef::from_shared_slice_readonly(Arc::clone(storage))
+                    .into_ref_slice(3, 2)
+                    .unwrap(),
+                7,
+            )
+        }
+
+        fn populate_common_props(packet: &mut Packet) {
+            packet.set_pts(Some(123));
+            packet.set_dts(Some(111));
+            packet.set_duration(12).unwrap();
+            packet.set_pos(Some(456)).unwrap();
+            packet.set_flag(PacketFlags::KEY, true);
+            packet.set_flag(PacketFlags::DISPOSABLE, true);
+            packet
+                .set_time_base(Rational::new(1, 1_000).unwrap())
+                .unwrap();
+            packet.push_side_data(SideData::new_extradata(vec![0x33, 0x44]).unwrap());
+            packet.set_opaque(Some(PacketOpaque::new(0x1234).unwrap()));
+            packet.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad])));
+        }
+
+        fn assert_caller_storage_unchanged(storage: &Arc<[u8]>) {
+            assert_eq!(&storage[..5], &[0xa0, 0xa1, 0xa2, 0x11, 0x22]);
+            assert_eq!(storage[5], 0x5a);
+            assert_eq!(*storage.last().unwrap(), 0x5a);
+            assert_eq!(Arc::strong_count(storage), 1);
+        }
+
+        let unref_storage = caller_storage();
+        let mut packet = raw_offset_packet(&unref_storage);
+        assert_eq!(packet.data(), &[0x11, 0x22]);
+        assert_eq!(packet.data_buffer().offset(), 3);
+        assert!(!packet.is_data_writable());
+        assert_eq!(Arc::strong_count(&unref_storage), 2);
+        populate_common_props(&mut packet);
+
+        packet.unref();
+
+        assert!(packet.is_empty());
+        assert_eq!(packet.data_buffer().padding_len(), 0);
+        assert_eq!(packet.stream_index(), 0);
+        assert_eq!(packet.pts(), None);
+        assert_eq!(packet.dts(), None);
+        assert_eq!(packet.duration(), 0);
+        assert_eq!(packet.pos(), None);
+        assert!(packet.flags().is_empty());
+        assert!(packet.side_data().is_empty());
+        assert!(packet.opaque().is_none());
+        assert!(packet.opaque_ref().is_none());
+        assert_eq!(packet.time_base(), Rational::ZERO);
+        assert_caller_storage_unchanged(&unref_storage);
+
+        let free_storage = caller_storage();
+        let mut packet = Some(raw_offset_packet(&free_storage));
+        populate_common_props(packet.as_mut().unwrap());
+        assert_eq!(Arc::strong_count(&free_storage), 2);
+
+        drop(packet.take());
+
+        assert!(packet.is_none());
+        assert_caller_storage_unchanged(&free_storage);
+    }
+
+    #[test]
     fn packet_zero_grow_sanitizes_padding_but_noop_shrink_preserves_it() {
         let mut grow_storage = vec![0x11, 0x22];
         grow_storage.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);

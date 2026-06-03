@@ -9,6 +9,14 @@
 
 ## Compatible Today
 
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
+  `av_packet_unref()` and `av_packet_free(&pkt)` on raw no-buffer packets whose
+  `data` pointer starts at a nonzero offset inside caller storage reset/null
+  packet ownership without freeing or mutating the caller storage. Rust mirrors
+  this through `Packet::with_raw_buffer` over external read-only storage,
+  focused unit coverage, and a deterministic `avutil_core_models` fixture.
+  This strengthens `avutil-packet`; strict completion remains 11/96 and the
+  row remains `fate_pass`.
 - Latest main-thread packet evidence: existing pinned libavcodec
   `packet:flags-unknown-*` rows now have focused Rust lifecycle coverage.
   Unknown raw `AVPacket.flags` bits survive `av_packet_copy_props()`,
