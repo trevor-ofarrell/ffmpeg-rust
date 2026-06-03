@@ -18057,6 +18057,28 @@ fn exercise_fixtures() {
             .round() as i32,
         -90
     );
+    for (angle, expected_rotation) in [
+        (0.5, 0),
+        (1.5, -1),
+        (44.5, -44),
+        (89.5, -90),
+        (179.5, -180),
+        (180.5, 180),
+        (359.5, 0),
+        (360.0, 0),
+        (-0.5, 0),
+        (-179.5, 180),
+        (-360.0, 0),
+        (720.0, 0),
+        (-720.0, 0),
+        (1080.5, 0),
+    ] {
+        let matrix = PacketDisplayMatrix::from_clockwise_rotation_degrees(angle).unwrap();
+        assert_eq!(
+            matrix.counterclockwise_rotation_degrees().unwrap().round() as i32,
+            expected_rotation
+        );
+    }
     assert!(PacketDisplayMatrix::new([0; 9])
         .counterclockwise_rotation_degrees()
         .is_none());

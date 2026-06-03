@@ -674,7 +674,7 @@ The packet oracle now also includes a `packet:payload-layout-content-light` row 
 
 The packet oracle now also includes a `packet:payload-layout-spherical` row for `AV_PKT_DATA_SPHERICAL`, proving the native `AVSphericalMapping` payload length and projection/orientation/bounds/padding field offsets used by `PacketSphericalMapping`.
 
-The packet oracle now also includes `packet:payload-layout-displaymatrix`, `packet:display-rotation-set-get`, `packet:display-rotation-singular`, `packet:display-rotation-get-affine`, and `packet:display-flip` rows for `AV_PKT_DATA_DISPLAYMATRIX`, proving the native 9-element `int32_t` array payload length, element offsets, finite-angle rotation helper shape, axis-normalized affine rotation extraction, singular-axis handling, and horizontal/vertical flip sign handling used by `PacketDisplayMatrix`.
+The packet oracle now also includes `packet:payload-layout-displaymatrix`, `packet:display-rotation-set-get`, `packet:display-rotation-boundaries`, `packet:display-rotation-singular`, `packet:display-rotation-get-affine`, and `packet:display-flip` rows for `AV_PKT_DATA_DISPLAYMATRIX`, proving the native 9-element `int32_t` array payload length, element offsets, finite-angle rotation helper shape, fractional/near-boundary/wraparound rotation behavior, axis-normalized affine rotation extraction, singular-axis handling, and horizontal/vertical flip sign handling used by `PacketDisplayMatrix`.
 
 The packet oracle now also includes a `packet:payload-layout-stereo3d` row for `AV_PKT_DATA_STEREO3D`, proving the native `AVStereo3D` payload length and type/flags/view/primary-eye/baseline/rational field offsets used by `PacketStereo3d`.
 

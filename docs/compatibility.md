@@ -9,6 +9,14 @@
 
 ## Compatible Today
 
+- Latest main-thread packet evidence: pinned libavutil display-matrix rows now
+  prove `av_display_rotation_set()` / `av_display_rotation_get()` behavior for
+  fractional, near-boundary, and wraparound clockwise angles through
+  `packet:display-rotation-boundaries`. Rust mirrors the fixed-point matrix
+  construction and rounded counterclockwise extraction with focused unit
+  coverage and deterministic `avutil_core_models` invariants. This strengthens
+  `avutil-packet`; strict completion remains 11/96 and the row remains
+  `fate_pass`.
 - Latest main-thread buffer evidence: pinned libavutil rows now prove
   `av_buffer_pool_init2(0, opaque, custom_alloc, pool_free)` invokes the custom
   allocator once with size zero, preserves per-buffer pool opaque data on first
@@ -637,7 +645,7 @@
 - Latest `avutil-packet` coverage adds native mastering-display side-data layout parity: the pinned packet oracle row `packet:payload-layout-mastering-display` proves `AV_PKT_DATA_MASTERING_DISPLAY_METADATA` uses the native 88-byte `AVMasteringDisplayMetadata` shape with display primaries at offset 0, white point at offset 48, min luminance at offset 64, max luminance at offset 72, `has_primaries` at offset 80, and `has_luminance` at offset 84.
 - Latest `avutil-packet` coverage adds native ambient viewing environment side-data layout parity: the pinned packet oracle row `packet:payload-layout-ambient-viewing-environment` proves `AV_PKT_DATA_AMBIENT_VIEWING_ENVIRONMENT` uses the native 24-byte `AVAmbientViewingEnvironment` shape with ambient illuminance at offset 0, ambient light x at offset 8, and ambient light y at offset 16.
 - Latest `avutil-packet` coverage adds native spherical side-data layout parity: the pinned packet oracle row `packet:payload-layout-spherical` proves `AV_PKT_DATA_SPHERICAL` uses the native 36-byte `AVSphericalMapping` shape with projection at offset 0, yaw/pitch/roll at offsets 4/8/12, bounds at offsets 16/20/24/28, and padding at offset 32.
-- Latest `avutil-packet` coverage adds displaymatrix side-data layout plus rotation and flip helper parity: the pinned packet oracle rows `packet:payload-layout-displaymatrix`, `packet:display-rotation-set-get`, `packet:display-rotation-singular`, and `packet:display-flip` prove `AV_PKT_DATA_DISPLAYMATRIX` uses a native 36-byte `int32_t[9]` array shape with elements at offsets 0, 4, 8, 12, 16, 20, 24, 28, and 32, and that the bounded Rust `PacketDisplayMatrix` helpers match FFmpeg's finite-angle matrix construction, rounded counterclockwise rotation extraction, singular-matrix detection, and horizontal/vertical flip sign handling.
+- Latest `avutil-packet` coverage adds displaymatrix side-data layout plus rotation and flip helper parity: the pinned packet oracle rows `packet:payload-layout-displaymatrix`, `packet:display-rotation-set-get`, `packet:display-rotation-boundaries`, `packet:display-rotation-singular`, and `packet:display-flip` prove `AV_PKT_DATA_DISPLAYMATRIX` uses a native 36-byte `int32_t[9]` array shape with elements at offsets 0, 4, 8, 12, 16, 20, 24, 28, and 32, and that the bounded Rust `PacketDisplayMatrix` helpers match FFmpeg's finite-angle matrix construction, fractional/near-boundary/wraparound rotation behavior, rounded counterclockwise rotation extraction, singular-matrix detection, and horizontal/vertical flip sign handling.
 - Latest `avutil-packet` coverage adds native stereo3d side-data layout parity: the pinned packet oracle row `packet:payload-layout-stereo3d` proves `AV_PKT_DATA_STEREO3D` uses the native 36-byte `AVStereo3D` shape with type at offset 0, flags at offset 4, view at offset 8, primary eye at offset 12, baseline at offset 16, horizontal disparity adjustment at offset 20, and horizontal field of view at offset 28.
 - Latest `avutil-packet` coverage adds native Dynamic HDR10+ side-data layout parity: the pinned packet oracle row `packet:payload-layout-dynamic-hdr10-plus` proves `AV_PKT_DATA_DYNAMIC_HDR10_PLUS` uses the native 11304-byte `AVDynamicHDRPlus` envelope with the current top-level parameter-array, targeted-display peak-luminance, and mastering-display peak-luminance offsets.
 - Latest `avutil-packet` coverage adds packet-owned side-data capacity and ownership parity for `av_packet_add_side_data()` and `av_packet_new_side_data()`: replacing an existing side-data kind still succeeds when the packet already has `AV_PKT_DATA_NB` entries and consumes caller ownership, appending a new kind fails with `ERANGE` without changing the packet while preserving caller ownership, and new-side-data allocation reports failure at that capacity.

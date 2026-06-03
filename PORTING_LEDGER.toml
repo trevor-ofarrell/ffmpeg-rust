@@ -2,6 +2,13 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest main-thread packet evidence: pinned libavutil display matrix rows now
+# prove `av_display_rotation_set()` / `av_display_rotation_get()` behavior for
+# fractional, near-boundary, and wraparound clockwise angles through
+# `packet:display-rotation-boundaries`. Rust unit and deterministic
+# `avutil_core_models` coverage mirror the same rounded counterclockwise
+# extraction shape. This is evidence-strengthening only; no status was
+# promoted.
 # Latest main-thread packet evidence: pinned libavcodec rows now prove
 # `AVPacket.stream_index` is signed `int` packet state. Rust stores the raw
 # signed value for oracle parity, preserves negative values through
@@ -1317,6 +1324,11 @@ fuzz_targets = ["avutil_core_models"]
 # Latest update: pinned libavcodec AVPacket side-data oracle coverage validates packet-owned `av_packet_add_side_data()` ownership on capacity failure through `packet:side-add-capacity-overflow-owned`. FFmpeg returns ERANGE for a new type at `AV_PKT_DATA_NB` capacity while leaving the caller-owned buffer valid; Rust `Packet::try_add_side_data_owned` now consumes caller ownership only after the capacity check succeeds, with unit and avutil_core_models fuzz-smoke fixtures covering success consumption and failure preservation.
 # Latest update: pinned libavcodec AVPacket side-data oracle coverage validates a capacity distinction between packet-owned side data and standalone `AVPacketSideData` arrays. Packet-owned `av_packet_add_side_data()` still rejects a new type at `AV_PKT_DATA_NB` with ERANGE, while standalone `av_packet_side_data_add()` accepts an out-of-range raw type past `AV_PKT_DATA_NB` and `av_packet_side_data_new()` can then replace that same raw type without growing the array. Rust `PacketSideDataList` now keeps that standalone behavior separate from the packet-owned capacity-checked API, with unit and avutil_core_models fuzz-smoke coverage.
 # Latest update: pinned libavutil display matrix oracle coverage validates av_display_rotation_get() for PacketDisplayMatrix through packet:display-rotation-get-affine rows. Rust now normalizes both matrix axes before extracting rotation, and unit plus avutil_core_models fuzz-smoke fixtures cover raw affine extraction and x-axis/y-axis singular None behavior.
+# Latest update: pinned libavutil display matrix oracle coverage validates
+# av_display_rotation_set()/av_display_rotation_get() for fractional,
+# near-boundary, and wraparound clockwise angles through
+# packet:display-rotation-boundaries. Unit and deterministic avutil_core_models
+# fixtures cover the same rounded counterclockwise extraction shape.
 # Latest update: pinned libavcodec AVPacket side-data oracle coverage validates av_packet_side_data_name() NULL behavior at INT_MIN, packet-owned av_packet_get_side_data()/av_packet_new_side_data()/av_packet_add_side_data()/av_packet_shrink_side_data() duplicate-type behavior through packet:side-*duplicate* rows, and standalone av_packet_side_data_get()/new()/add()/remove() duplicate-type behavior through packet:array-*duplicate* rows. Rust unit tests and avutil_core_models fuzz-smoke fixtures now cover the same side-data name boundary plus packet-owned first-match lookup/new/replacement/shrink and standalone first-match lookup/new/replacement plus last-match swap removal shape.
 # Latest update: pinned libavutil display matrix oracle coverage validates av_display_matrix_flip() for PacketDisplayMatrix through packet:display-flip rows. Rust unit and avutil_core_models fuzz-smoke fixtures cover horizontal, vertical, and combined flips for identity, pure 90-degree rotation, and raw affine matrices.
 # Latest update: pinned libavutil display matrix oracle coverage validates av_display_rotation_set()/av_display_rotation_get() for PacketDisplayMatrix through packet:display-rotation-set-get and packet:display-rotation-singular rows. Rust unit and avutil_core_models fuzz-smoke fixtures cover the same finite-angle matrices, rounded counterclockwise rotation extraction, singular None, and non-finite angle rejection.

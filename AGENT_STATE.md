@@ -3,6 +3,58 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The
+tree started clean at `master...origin/master [ahead 5]`; required startup
+checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
+-- status --next 15` reporting 11/96 strict-complete components (11.5%) and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validating the pinned FFmpeg 8.1.1 oracle and ABI versions. Three read-only
+explorer reports were reviewed; the main-thread slice stayed local and no
+worker writes were delegated.
+
+Current main-thread slice: pinned libavutil display-matrix rows now prove
+`av_display_rotation_set()` / `av_display_rotation_get()` behavior for
+fractional, near-boundary, and wraparound clockwise angles through
+`packet:display-rotation-boundaries`. Rust mirrors this with exact fixed-point
+matrix unit assertions and deterministic `avutil_core_models` rounded
+counterclockwise extraction invariants. `avutil-packet` remains `fate_pass`,
+not `complete`; strict completion remains 11/96.
+
+Latest validation commands for this display-rotation boundary slice passed:
+`cargo fmt --all`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil
+packet_display_matrix_rotation_helpers_match_ffmpeg_shape -- --nocapture`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
+packet_oracle libavcodec_packet_core_lifecycle_matches_packet_model --
+--ignored --nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p
+fate-runner -- run --mappings tests/differential/mappings.txt --component
+avutil-packet --target oracle-libavcodec-packet-core --oracle-ffmpeg
+./third_party/ffmpeg-oracle/build/bin/ffmpeg`; `CARGO_TARGET_DIR=target-wsl-fuzz
+cargo check --manifest-path fuzz/Cargo.toml --bin avutil_core_models`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil --all-targets
+--all-features -- -D warnings`; `CARGO_TARGET_DIR=target-orch-fate cargo run
+-p fate-runner -- run --component avutil-packet --target local-avutil-unit`;
+`CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy --manifest-path fuzz/Cargo.toml
+--bin avutil_core_models -- -D warnings`; `cargo fmt --all -- --check`; and,
+after allowing the pinned FFmpeg cache to write `tests/data/fate/avpacket`,
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run --mappings
+tests/fate/upstream-mappings.txt --component avutil-packet --target
+fate-avpacket`. The first sandboxed upstream FATE attempt failed only because
+the oracle cache was read-only. A bounded `timeout 240s env
+CARGO_TARGET_DIR=target-wsl-fuzz RUST_MIN_STACK=33554432
+LSAN_OPTIONS=detect_leaks=0 ASAN_OPTIONS=detect_leaks=0 cargo fuzz run
+avutil_core_models -- -runs=1` attempt timed out before libFuzzer completion
+output, so the deterministic fixture is recorded with build/clippy coverage
+until a warmed smoke can pass.
+
+Current focus component: `avutil-packet` remains the top priority incomplete
+component (`fate_pass`), followed by `avutil-buffer` (`differential_pass`),
+`avutil-frame` (`differential_pass`), `avutil-logging` (`fate_pass`), and
+`avutil-options` (`fate_pass`). Next concrete packet candidates from read-only
+audits include raw `AVPacket.time_base` storage preservation, follow-up
+`av_packet_from_data()` ref-sharing behavior, zero-size side-data visible
+emptiness, malformed no-buffer pointer/size states, and extreme timestamp
+rescale overflow rows.
+
+Current authoritative turn status: orchestrator workflow is active on WSL. The
 tree started clean at `master...origin/master [ahead 2]`; required startup
 checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
 -- status --next 15` reporting 11/96 strict-complete components (11.5%) and

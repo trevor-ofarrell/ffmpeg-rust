@@ -1314,6 +1314,10 @@ fn insert_side_data_payload_layout_rows(rows: &mut BTreeMap<String, Vec<String>>
         display_rotation_fields(&[0.0, 90.0, -90.0, 180.0, 45.0, -45.0]),
     );
     rows.insert(
+        "packet:display-rotation-boundaries".to_string(),
+        display_rotation_boundary_fields(),
+    );
+    rows.insert(
         "packet:display-rotation-singular".to_string(),
         vec![u8::from(
             PacketDisplayMatrix::new([0; PacketDisplayMatrix::ELEMENTS])
@@ -5175,11 +5179,25 @@ fn payload_layout_fields(bytes: &[u8], offsets: &[usize]) -> Vec<String> {
 }
 
 fn display_rotation_fields(angles: &[f64]) -> Vec<String> {
+    display_rotation_fields_with_precision(angles, 0)
+}
+
+fn display_rotation_boundary_fields() -> Vec<String> {
+    display_rotation_fields_with_precision(
+        &[
+            0.5, 1.5, 44.5, 89.5, 179.5, 180.5, 359.5, 360.0, -0.5, -179.5, -360.0, 720.0, -720.0,
+            1080.5,
+        ],
+        1,
+    )
+}
+
+fn display_rotation_fields_with_precision(angles: &[f64], precision: usize) -> Vec<String> {
     let mut fields = Vec::new();
     for &angle in angles {
         let matrix = PacketDisplayMatrix::from_clockwise_rotation_degrees(angle)
             .unwrap_or_else(|err| panic!("display rotation matrix for {angle}: {err}"));
-        fields.push(format!("{angle:.0}"));
+        fields.push(format!("{:.*}", precision, angle));
         fields.extend(matrix.elements().iter().map(ToString::to_string));
         fields.push(rounded_rotation_field(
             matrix.counterclockwise_rotation_degrees(),
@@ -6413,11 +6431,14 @@ static void print_dictionary_unpack_ret(const char *name, const uint8_t *data, s
     av_dict_free(&dict);
 }
 
-static void print_display_rotation_case(double angle) {
+static void print_display_rotation_case(double angle, int fractional_label) {
     int32_t matrix[9];
     av_display_rotation_set(matrix, angle);
     double rotation = av_display_rotation_get(matrix);
-    printf("|%.0f", angle);
+    if (fractional_label)
+        printf("|%.1f", angle);
+    else
+        printf("|%.0f", angle);
     for (int i = 0; i < 9; i++)
         printf("|%d", matrix[i]);
     printf("|");
@@ -6429,17 +6450,36 @@ static void print_display_rotation_case(double angle) {
 
 static void print_display_rotation_helpers(void) {
     printf("packet:display-rotation-set-get");
-    print_display_rotation_case(0.0);
-    print_display_rotation_case(90.0);
-    print_display_rotation_case(-90.0);
-    print_display_rotation_case(180.0);
-    print_display_rotation_case(45.0);
-    print_display_rotation_case(-45.0);
+    print_display_rotation_case(0.0, 0);
+    print_display_rotation_case(90.0, 0);
+    print_display_rotation_case(-90.0, 0);
+    print_display_rotation_case(180.0, 0);
+    print_display_rotation_case(45.0, 0);
+    print_display_rotation_case(-45.0, 0);
     printf("\n");
 
     int32_t singular[9] = { 0 };
     printf("packet:display-rotation-singular|%d\n",
            isnan(av_display_rotation_get(singular)) ? 1 : 0);
+}
+
+static void print_display_rotation_boundary_helpers(void) {
+    printf("packet:display-rotation-boundaries");
+    print_display_rotation_case(0.5, 1);
+    print_display_rotation_case(1.5, 1);
+    print_display_rotation_case(44.5, 1);
+    print_display_rotation_case(89.5, 1);
+    print_display_rotation_case(179.5, 1);
+    print_display_rotation_case(180.5, 1);
+    print_display_rotation_case(359.5, 1);
+    print_display_rotation_case(360.0, 1);
+    print_display_rotation_case(-0.5, 1);
+    print_display_rotation_case(-179.5, 1);
+    print_display_rotation_case(-360.0, 1);
+    print_display_rotation_case(720.0, 1);
+    print_display_rotation_case(-720.0, 1);
+    print_display_rotation_case(1080.5, 1);
+    printf("\n");
 }
 
 static void print_display_rotation_get_case(const char *name, const int32_t matrix[9]) {
@@ -8941,6 +8981,7 @@ int main(void) {
     print_packet_abi_layout();
     print_side_data_payload_layouts();
     print_display_rotation_helpers();
+    print_display_rotation_boundary_helpers();
     print_display_rotation_get_affine_helpers();
     print_display_flip_helpers();
 
