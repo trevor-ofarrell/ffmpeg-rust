@@ -5694,6 +5694,7 @@ impl Packet {
         self.pos = AV_PACKET_POS_UNKNOWN;
         self.stream_index = 0;
         self.flags = PacketFlags::empty();
+        self.data_ownership = PacketPayloadOwnership::RawNoBuffer;
         self.side_data.clear();
         self.opaque = None;
         self.opaque_ref = None;
@@ -14250,6 +14251,8 @@ mod tests {
     #[test]
     fn packet_legacy_init_resets_fields_but_preserves_payload() {
         let mut packet = Packet::from_data(vec![1, 2, 3]).unwrap();
+        assert!(packet.has_refcounted_data_buffer());
+        let data_ptr = packet.data_buffer().as_padded_ptr();
         packet.set_pts(Some(12));
         packet.set_dts(Some(10));
         packet.set_duration(5).unwrap();
@@ -14266,6 +14269,7 @@ mod tests {
         packet.init_legacy();
 
         assert_eq!(packet.data(), &[1, 2, 3]);
+        assert!(!packet.has_refcounted_data_buffer());
         assert_eq!(packet.stream_index(), 0);
         assert_eq!(packet.pts(), None);
         assert_eq!(packet.dts(), None);
@@ -14276,6 +14280,21 @@ mod tests {
         assert!(packet.side_data().is_empty());
         assert!(packet.opaque().is_none());
         assert!(packet.opaque_ref().is_none());
+
+        packet.make_refcounted().unwrap();
+        assert_eq!(packet.data(), &[1, 2, 3]);
+        assert!(packet.has_refcounted_data_buffer());
+        assert_ne!(packet.data_buffer().as_padded_ptr(), data_ptr);
+        assert_eq!(
+            packet.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(packet
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+        assert!(packet.is_data_writable());
     }
 
     #[test]

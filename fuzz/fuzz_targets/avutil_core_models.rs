@@ -9874,6 +9874,36 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .all(|byte| *byte == 0));
     assert!(empty_zero_grow_packet.is_data_writable());
 
+    let mut legacy_init_packet = Packet::from_data(payload.clone()).unwrap();
+    let legacy_init_data_ptr = legacy_init_packet.data_buffer().as_padded_ptr();
+    legacy_init_packet
+        .push_side_data(SideData::new_extradata(vec![0x11, 0x22]).unwrap());
+    legacy_init_packet.set_opaque_address(0x1234);
+    legacy_init_packet.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad])));
+    legacy_init_packet.init_legacy();
+    assert_eq!(legacy_init_packet.data(), payload.as_slice());
+    assert!(!legacy_init_packet.has_refcounted_data_buffer());
+    assert!(legacy_init_packet.side_data().is_empty());
+    assert!(legacy_init_packet.opaque().is_none());
+    assert!(legacy_init_packet.opaque_ref().is_none());
+    assert_eq!(legacy_init_packet.time_base(), Rational::ZERO);
+    legacy_init_packet.make_refcounted().unwrap();
+    assert_eq!(legacy_init_packet.data(), payload.as_slice());
+    assert!(legacy_init_packet.has_refcounted_data_buffer());
+    assert_ne!(
+        legacy_init_packet.data_buffer().as_padded_ptr(),
+        legacy_init_data_ptr
+    );
+    assert_eq!(
+        legacy_init_packet.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(legacy_init_packet
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+
     let null_zero_packet = Packet::from_null_data_zero().unwrap();
     assert!(null_zero_packet.is_empty());
     assert!(null_zero_packet.is_data_ptr_null());

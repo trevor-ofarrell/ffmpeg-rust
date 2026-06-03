@@ -153,9 +153,35 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         "packet:default".to_string(),
         packet_fields(&Packet::default()),
     );
-    let mut init = packet_with_common_props();
+    let mut init = packet_with_common_refcounted_props();
+    let init_data_ptr = init.data_buffer().as_padded_ptr();
     init.init_legacy();
     rows.insert("packet:init".to_string(), packet_fields(&init));
+    rows.insert(
+        "packet:init-payload".to_string(),
+        payload_unowned_fields(&init),
+    );
+    rows.insert(
+        "packet:init-payload-has-buf".to_string(),
+        vec![u8::from(init.has_refcounted_data_buffer()).to_string()],
+    );
+    init.make_refcounted().unwrap();
+    rows.insert(
+        "packet:init-make-refcounted-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:init-make-refcounted-same-ptr".to_string(),
+        vec![u8::from(init.data_buffer().as_padded_ptr() == init_data_ptr).to_string()],
+    );
+    rows.insert(
+        "packet:init-make-refcounted".to_string(),
+        packet_fields(&init),
+    );
+    rows.insert(
+        "packet:init-make-refcounted-payload".to_string(),
+        payload_fields(&init),
+    );
     insert_side_data_kind_inventory_row(&mut rows);
     insert_side_data_name_boundary_row(&mut rows);
     insert_flag_inventory_row(&mut rows);
@@ -5340,6 +5366,12 @@ fn packet_with_common_props() -> Packet {
     packet
 }
 
+fn packet_with_common_refcounted_props() -> Packet {
+    let mut packet = Packet::from_data(vec![0xaa, 0xbb, 0xcc]).unwrap();
+    set_common_packet_props(&mut packet);
+    packet
+}
+
 fn packet_with_common_props_no_payload() -> Packet {
     let mut packet = Packet::new(Vec::new(), 7);
     set_common_packet_props(&mut packet);
@@ -9647,9 +9679,19 @@ int main(void) {
     av_packet_free(&pkt);
 
     pkt = packet_with_common_props();
+    uint8_t *init_data_ptr = pkt->data;
     av_init_packet(pkt);
     print_packet("packet:init", pkt);
-    av_free(pkt);
+    print_payload_unowned("packet:init-payload", pkt);
+    printf("packet:init-payload-has-buf|%d\n", pkt->buf != NULL);
+    int init_ref_ret = av_packet_make_refcounted(pkt);
+    printf("packet:init-make-refcounted-ret|%d\n", init_ref_ret);
+    fail_if(init_ref_ret < 0, "av_packet_make_refcounted legacy init failed");
+    printf("packet:init-make-refcounted-same-ptr|%d\n",
+           pkt->data == init_data_ptr);
+    print_packet("packet:init-make-refcounted", pkt);
+    print_payload("packet:init-make-refcounted-payload", pkt);
+    av_packet_free(&pkt);
 
     print_side_data_kind_inventory();
     print_side_data_name_boundaries();
