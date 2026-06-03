@@ -3,6 +3,60 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The
+tree started clean at `master...origin/master [ahead 23]`; required startup
+checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
+-- status --next 15` reporting 11/96 strict-complete components (11.5%) and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validating the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
+kept the top-priority `avutil-packet` FIFO evidence slice local; no worker
+writes were delegated.
+
+Current main-thread slice: pinned libavcodec rows now prove nonzero
+`av_container_fifo_alloc_avpacket(flags)` allocation flags are ignored. Mixed
+REF/USER/high allocation bits still create an empty FIFO, and zero operation
+flags still move a packet through it. Rust mirrors this with
+`PacketFifo::with_flags`, focused unit coverage, the mapped packet oracle, and
+`avutil_core_models` deterministic plus fuzz-smoke coverage. `avutil-packet`
+remains `fate_pass`, not `complete`; strict completion remains 11/96 because
+the shared-shrink alias-safe storage blocker and broader packet integration
+work remain pending.
+
+Latest validation commands for this FIFO allocation-flags slice passed:
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil
+packet_fifo_allocation_flags_are_ignored -- --nocapture`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test packet_oracle
+libavcodec_packet_core_lifecycle_matches_packet_model -- --ignored
+--nocapture`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo check --manifest-path
+fuzz/Cargo.toml --bin avutil_core_models`; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt
+--component avutil-packet --target oracle-libavcodec-packet-core
+--oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run --component
+avutil-packet --target local-avutil-unit`; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- run --mappings tests/fate/upstream-mappings.txt
+--component avutil-packet --target fate-avpacket` after escalation allowed the
+pinned FFmpeg build cache to write its expected FATE output; `cargo fmt --all
+-- --check`; `CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil
+--all-targets --all-features -- -D warnings`; `CARGO_TARGET_DIR=target-wsl-fuzz
+cargo clippy --manifest-path fuzz/Cargo.toml --bin avutil_core_models --
+-D warnings`; `CARGO_TARGET_DIR=target-orch-fate cargo test -p fate-runner
+current_ledger`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask --
+guard-runtime`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask --
+oracle-doctor`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
+-- status --next 15`; `git diff --check` (CRLF conversion warnings only); and
+`LSAN_OPTIONS=detect_leaks=0 CARGO_TARGET_DIR=target-wsl-fuzz cargo fuzz run
+avutil_core_models -- -runs=64`. The ignored packet oracle created
+`target/oracle/avutil-packet`; the top-level `target` scratch directory was
+removed after the oracle runs. The fuzz smoke generated extra local corpus
+files, which were removed before commit.
+
+Current focus component: `avutil-packet` remains the top priority incomplete
+component (`fate_pass`) because the shared `av_shrink_packet()` behavior needs a
+broader alias-safe shared-storage design. Next highest unblocked candidates are
+`avutil-buffer` (`differential_pass`) and `avutil-frame`
+(`differential_pass`).
+
+Current authoritative turn status: orchestrator workflow is active on WSL. The
 tree started clean at `master...origin/master [ahead 22]`; required startup
 checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
 -- status --next 15` reporting 11/96 strict-complete components (11.5%) and

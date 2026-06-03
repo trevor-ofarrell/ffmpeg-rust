@@ -357,6 +357,14 @@ The latest orchestrated avutil lifecycle smoke first timed out while WSL was sti
 
 The latest direct packet-free WSL fuzz smoke used a fresh `avutil_core_models` target directory and completed after the sanitizer rebuild. That one-input run covers the deterministic `Option<Packet>::take()` / Drop fixture for direct `av_packet_free()` parity: nullable frees are no-ops, freeing one shared owner preserves the other owner, and payload plus `opaque_ref` release callbacks fire after the final owner is dropped.
 
+The latest packet FIFO allocation-flags fixture extends `avutil_core_models`
+with `PacketFifo::with_flags(PacketFifoFlags::REF | PacketFifoFlags::USER |
+unknown-high-bits)`. The pinned libavcodec rows prove
+`av_container_fifo_alloc_avpacket(flags)` ignores those allocation flags:
+the FIFO starts empty, and zero operation flags still move a packet through
+the queue. A warmed 64-run WSL `avutil_core_models` cargo-fuzz smoke passed
+with leak detection disabled after rebuilding the release fuzz target.
+
 The latest packet FIFO nullable-free fixture extends `avutil_core_models` with the safe Rust equivalent of `av_container_fifo_free(&fifo)` for `fifo == NULL` and an empty FIFO: `Option<PacketFifo>::take()` keeps `None` as `None`, drops an empty FIFO owner without queued entries, and leaves no release side effects to observe. A fresh-target WSL one-input sanitizer smoke passed after rebuilding `avutil_core_models`.
 
 The latest packet FIFO partial-drain fixture extends `avutil_core_models` with

@@ -3597,6 +3597,42 @@ fn insert_packet_fifo_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         vec![fifo.can_read().to_string()],
     );
 
+    let alloc_flags =
+        PacketFifoFlags::REF | PacketFifoFlags::USER | PacketFifoFlags::from_bits(0x8000_007a);
+    let mut alloc_flags_fifo = PacketFifo::with_flags(alloc_flags);
+    rows.insert(
+        "packet:fifo-alloc-flags-can-read".to_string(),
+        vec![alloc_flags_fifo.can_read().to_string()],
+    );
+    let mut alloc_flags_src = packet_with_common_props();
+    alloc_flags_fifo.write_move(&mut alloc_flags_src).unwrap();
+    rows.insert(
+        "packet:fifo-alloc-flags-write-move-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:fifo-alloc-flags-write-move-src".to_string(),
+        packet_fields(&alloc_flags_src),
+    );
+    rows.insert(
+        "packet:fifo-alloc-flags-after-write-can-read".to_string(),
+        vec![alloc_flags_fifo.can_read().to_string()],
+    );
+    let mut alloc_flags_dst = Packet::default();
+    alloc_flags_fifo.read_move(&mut alloc_flags_dst).unwrap();
+    rows.insert(
+        "packet:fifo-alloc-flags-read-move-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:fifo-alloc-flags-read-move-dst".to_string(),
+        packet_fields(&alloc_flags_dst),
+    );
+    rows.insert(
+        "packet:fifo-alloc-flags-after-read-can-read".to_string(),
+        vec![alloc_flags_fifo.can_read().to_string()],
+    );
+
     let mut move_src = packet_with_common_props();
     fifo.write_move(&mut move_src).unwrap();
     rows.insert(
@@ -9157,8 +9193,32 @@ static void exercise_packet_fifo_api(void) {
     fail_if(!fifo, "av_container_fifo_alloc_avpacket failed");
     printf("packet:fifo-new-can-read|%zu\n", av_container_fifo_can_read(fifo));
 
+    int ret;
+    AVContainerFifo *alloc_flags_fifo =
+        av_container_fifo_alloc_avpacket(0x8001007bu);
+    fail_if(!alloc_flags_fifo, "av_container_fifo_alloc_avpacket flags failed");
+    printf("packet:fifo-alloc-flags-can-read|%zu\n",
+           av_container_fifo_can_read(alloc_flags_fifo));
+    AVPacket *alloc_flags_src = packet_with_common_props();
+    ret = av_container_fifo_write(alloc_flags_fifo, alloc_flags_src, 0);
+    printf("packet:fifo-alloc-flags-write-move-ret|%d\n", ret);
+    fail_if(ret < 0, "av_container_fifo_write alloc flags move failed");
+    print_packet("packet:fifo-alloc-flags-write-move-src", alloc_flags_src);
+    printf("packet:fifo-alloc-flags-after-write-can-read|%zu\n",
+           av_container_fifo_can_read(alloc_flags_fifo));
+    AVPacket *alloc_flags_dst = new_packet();
+    ret = av_container_fifo_read(alloc_flags_fifo, alloc_flags_dst, 0);
+    printf("packet:fifo-alloc-flags-read-move-ret|%d\n", ret);
+    fail_if(ret < 0, "av_container_fifo_read alloc flags move failed");
+    print_packet("packet:fifo-alloc-flags-read-move-dst", alloc_flags_dst);
+    printf("packet:fifo-alloc-flags-after-read-can-read|%zu\n",
+           av_container_fifo_can_read(alloc_flags_fifo));
+    av_packet_free(&alloc_flags_dst);
+    av_packet_free(&alloc_flags_src);
+    av_container_fifo_free(&alloc_flags_fifo);
+
     AVPacket *move_src = packet_with_common_props();
-    int ret = av_container_fifo_write(fifo, move_src, 0);
+    ret = av_container_fifo_write(fifo, move_src, 0);
     printf("packet:fifo-write-move-ret|%d\n", ret);
     fail_if(ret < 0, "av_container_fifo_write move failed");
     print_packet("packet:fifo-write-move-src", move_src);

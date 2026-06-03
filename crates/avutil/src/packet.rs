@@ -5829,6 +5829,10 @@ impl PacketFifo {
         Self::default()
     }
 
+    pub fn with_flags(_flags: PacketFifoFlags) -> Self {
+        Self::new()
+    }
+
     pub fn can_read(&self) -> usize {
         self.entries.len()
     }
@@ -14335,6 +14339,45 @@ mod tests {
             .iter()
             .all(|byte| *byte == 0));
         assert!(packet.is_data_writable());
+    }
+
+    #[test]
+    fn packet_fifo_allocation_flags_are_ignored() {
+        let alloc_flags =
+            PacketFifoFlags::REF | PacketFifoFlags::USER | PacketFifoFlags::from_bits(0x8000_007a);
+        let mut fifo = PacketFifo::with_flags(alloc_flags);
+        assert!(fifo.is_empty());
+        assert_eq!(fifo.can_read(), 0);
+
+        let mut moved = Packet::from_data(vec![0xa5, 0x5a]).unwrap();
+        moved.set_pts(Some(12));
+        let moved_payload = moved.data_buffer().clone();
+        fifo.write_move(&mut moved).unwrap();
+        assert!(moved.is_empty());
+        assert_eq!(fifo.can_read(), 1);
+
+        let mut moved_dst = Packet::default();
+        fifo.read_move(&mut moved_dst).unwrap();
+        assert_eq!(fifo.can_read(), 0);
+        assert_eq!(moved_dst.data(), &[0xa5, 0x5a]);
+        assert_eq!(moved_dst.pts(), Some(12));
+        assert!(moved_dst.data_buffer().shares_storage(&moved_payload));
+
+        let referenced = Packet::from_data(vec![0xc3]).unwrap();
+        let referenced_payload = referenced.data_buffer().clone();
+        fifo.write_ref(&referenced).unwrap();
+        assert_eq!(referenced.data(), &[0xc3]);
+        assert_eq!(fifo.can_read(), 1);
+
+        let mut referenced_dst = Packet::default();
+        fifo.read_ref(&mut referenced_dst).unwrap();
+        assert_eq!(fifo.can_read(), 0);
+        assert_eq!(referenced.data(), &[0xc3]);
+        assert_eq!(referenced_dst.data(), &[0xc3]);
+        assert!(referenced.data_buffer().shares_storage(&referenced_payload));
+        assert!(referenced_dst
+            .data_buffer()
+            .shares_storage(&referenced_payload));
     }
 
     #[test]

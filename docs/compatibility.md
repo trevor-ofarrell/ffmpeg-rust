@@ -10,6 +10,15 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  nonzero `av_container_fifo_alloc_avpacket(flags)` allocation flags are
+  ignored. Mixed REF/USER/high allocation bits still create an empty FIFO, and
+  zero operation flags still move a packet through it. Rust mirrors this with
+  `PacketFifo::with_flags`, focused unit coverage, the mapped packet oracle,
+  a deterministic `avutil_core_models` invariant, and a warmed 64-run WSL
+  cargo-fuzz smoke with leak detection disabled. This strengthens
+  `avutil-packet`; strict completion remains 11/96 and the row remains
+  `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   `av_packet_new_side_data()` and standalone `av_packet_side_data_new()`
   return NULL for `SIZE_MAX` visible sizes without mutating existing
   packet-owned side data or standalone side-data arrays. Rust mirrors this as

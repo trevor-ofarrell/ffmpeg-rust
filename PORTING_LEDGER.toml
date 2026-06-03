@@ -9,6 +9,13 @@ default_profile = "ffmpeg-8.1.1-default-native"
 # existing entries. This is evidence-strengthening only; no status was
 # promoted.
 # Latest main-thread packet evidence: pinned libavcodec rows now prove
+# nonzero `av_container_fifo_alloc_avpacket(flags)` allocation flags are
+# ignored. Mixed REF/USER/high allocation bits still create an empty FIFO, and
+# zero operation flags still move a packet through the FIFO. Rust exposes
+# `PacketFifo::with_flags` for that C-shaped constructor while preserving
+# operation-flag semantics, with unit, oracle, and WSL fuzz-smoke coverage.
+# This is evidence-strengthening only; no status was promoted.
+# Latest main-thread packet evidence: pinned libavcodec rows now prove
 # `av_init_packet()` preserves visible payload data/size but clears
 # `AVPacket.buf`, converting the payload to raw no-buffer ownership. A
 # follow-on `av_packet_make_refcounted()` then allocates fresh padded storage,
@@ -832,6 +839,7 @@ unit_tests = [
   "packet::tests::packet_zero_size_opaque_ref_reset_helpers_match_ffmpeg_shape",
   "packet::tests::packet_drop_and_option_take_match_av_packet_free_lifecycle",
   "packet::tests::packet_legacy_init_resets_fields_but_preserves_payload",
+  "packet::tests::packet_fifo_allocation_flags_are_ignored",
   "packet::tests::packet_fifo_moves_refs_peeks_reads_and_drains_packets",
   "packet::tests::packet_fifo_unknown_flags_treat_as_move",
   "packet::tests::packet_fifo_invalid_ops_preserve_mixed_queue_order",

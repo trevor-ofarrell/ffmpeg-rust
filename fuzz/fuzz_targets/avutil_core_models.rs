@@ -12465,6 +12465,25 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(packet_fifo.can_read(), 0);
     assert!(packet_fifo.is_empty());
 
+    let fifo_alloc_flags =
+        PacketFifoFlags::REF | PacketFifoFlags::USER | PacketFifoFlags::from_bits(0x8000_007a);
+    let mut flagged_packet_fifo = PacketFifo::with_flags(fifo_alloc_flags);
+    assert_eq!(flagged_packet_fifo.can_read(), 0);
+    assert!(flagged_packet_fifo.is_empty());
+    let fifo_alloc_payload = vec![cursor.next().unwrap_or_default()];
+    let mut fifo_alloc_src = Packet::from_data(fifo_alloc_payload.clone()).unwrap();
+    let fifo_alloc_storage = fifo_alloc_src.data_buffer().clone();
+    flagged_packet_fifo.write_move(&mut fifo_alloc_src).unwrap();
+    assert!(fifo_alloc_src.is_empty());
+    assert_eq!(flagged_packet_fifo.can_read(), 1);
+    let mut fifo_alloc_dst = Packet::default();
+    flagged_packet_fifo.read_move(&mut fifo_alloc_dst).unwrap();
+    assert_eq!(flagged_packet_fifo.can_read(), 0);
+    assert_eq!(fifo_alloc_dst.data(), fifo_alloc_payload.as_slice());
+    assert!(fifo_alloc_dst
+        .data_buffer()
+        .shares_storage(&fifo_alloc_storage));
+
     let fifo_move_payload = vec![cursor.next().unwrap_or_default()];
     let mut fifo_move_src = Packet::from_data(fifo_move_payload.clone()).unwrap();
     fifo_move_src.set_pts(Some(i64::from(cursor.next().unwrap_or_default())));
