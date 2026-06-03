@@ -1952,6 +1952,66 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         )],
     );
 
+    let replace_null_zero_null_dst_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let replace_null_zero_null_dst_capture = Arc::clone(&replace_null_zero_null_dst_released);
+    let replace_null_zero_null_dst_source =
+        BufferRef::from_null_data_zero_with_opaque_release_callback(
+            671usize,
+            move |opaque, bytes| {
+                replace_null_zero_null_dst_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        );
+    let mut replace_null_zero_null_dst = None;
+    BufferRef::replace(
+        &mut replace_null_zero_null_dst,
+        Some(&replace_null_zero_null_dst_source),
+    );
+    let replace_null_zero_null_dst =
+        replace_null_zero_null_dst.expect("replace nullable-zero into null dst");
+    rows.insert(
+        "buffer:replace-null-zero-null-dst-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:replace-null-zero-null-dst-src".to_string(),
+        buffer_fields_with_data_null_and_opaque(&replace_null_zero_null_dst_source),
+    );
+    rows.insert(
+        "buffer:replace-null-zero-null-dst".to_string(),
+        buffer_fields_with_data_null_and_opaque(&replace_null_zero_null_dst),
+    );
+    rows.insert(
+        "buffer:replace-null-zero-null-dst-shares".to_string(),
+        vec![
+            bool_field(
+                replace_null_zero_null_dst_source.shares_storage(&replace_null_zero_null_dst),
+            ),
+            replace_null_zero_null_dst_source.strong_count().to_string(),
+            replace_null_zero_null_dst_released
+                .lock()
+                .unwrap()
+                .len()
+                .to_string(),
+        ],
+    );
+    drop(replace_null_zero_null_dst);
+    rows.insert(
+        "buffer:replace-null-zero-null-dst-release-before-src-unref".to_string(),
+        vec![replace_null_zero_null_dst_released
+            .lock()
+            .unwrap()
+            .len()
+            .to_string()],
+    );
+    drop(replace_null_zero_null_dst_source);
+    rows.insert(
+        "buffer:replace-null-zero-null-dst-release".to_string(),
+        release_fields(&replace_null_zero_null_dst_released),
+    );
+
     let replace_equiv_src = BufferRef::from_vec(vec![1, 4, 9]);
     let mut replace_equiv_dst = Some(BufferRef::ref_from(&replace_equiv_src));
     BufferRef::replace(&mut replace_equiv_dst, Some(&replace_equiv_src));
@@ -6023,6 +6083,35 @@ int main(void) {
            replace_null_source->data == replace_null_dst->data);
     av_buffer_unref(&replace_null_dst);
     av_buffer_unref(&replace_null_source);
+
+    reset_create_release();
+    last_create_release_size = 0;
+    AVBufferRef *replace_null_zero_null_dst_source =
+        av_buffer_create(NULL, 0, test_create_free,
+                         (void *)(uintptr_t)671, 0);
+    AVBufferRef *replace_null_zero_null_dst = NULL;
+    fail_if(!replace_null_zero_null_dst_source,
+            "av_buffer_create replace nullable-zero null dst source failed");
+    ret = av_buffer_replace(&replace_null_zero_null_dst,
+                            replace_null_zero_null_dst_source);
+    fail_if(ret < 0 || !replace_null_zero_null_dst,
+            "av_buffer_replace nullable-zero null dst failed");
+    printf("buffer:replace-null-zero-null-dst-ret|%d\n", ret);
+    print_buffer_opaque_data_null(
+        "buffer:replace-null-zero-null-dst-src",
+        replace_null_zero_null_dst_source);
+    print_buffer_opaque_data_null("buffer:replace-null-zero-null-dst",
+                                  replace_null_zero_null_dst);
+    printf("buffer:replace-null-zero-null-dst-shares|%d|%d|%d\n",
+           replace_null_zero_null_dst_source->buffer ==
+               replace_null_zero_null_dst->buffer,
+           av_buffer_get_ref_count(replace_null_zero_null_dst_source),
+           create_release_count);
+    av_buffer_unref(&replace_null_zero_null_dst);
+    printf("buffer:replace-null-zero-null-dst-release-before-src-unref|%d\n",
+           create_release_count);
+    av_buffer_unref(&replace_null_zero_null_dst_source);
+    print_create_release("buffer:replace-null-zero-null-dst-release");
 
     static const uint8_t replace_equiv_bytes[] = { 1, 4, 9 };
     AVBufferRef *replace_equiv_src = av_buffer_allocz(3);

@@ -1746,6 +1746,14 @@ fate_tests = [
   "not_applicable: upstream FFmpeg FATE has no standalone AVBufferRef/AVBufferPool API target; covered by unit tests plus pinned libavutil differential oracle",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest nullable-zero replace slice: pinned libavutil rows now prove
+# `av_buffer_replace(&dst, src)` with a NULL destination and
+# `av_buffer_create(NULL, 0, free, opaque, 0)` source preserves NULL data
+# pointers, size zero, opaque lookup, shared storage, refcount 2, and shared
+# non-writability while both refs are live. Unreffing the destination does not
+# release the custom owner; the source becomes uniquely writable again and the
+# release callback runs only after the final source unref. This is
+# evidence-strengthening only; no status was promoted.
 # Latest nullable-zero writable ref-owner slice: pinned libavutil rows now
 # prove `av_buffer_ref()` on
 # `av_buffer_create(NULL, 0, free, opaque, 0)` preserves NULL data pointers,

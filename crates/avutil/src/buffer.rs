@@ -3192,6 +3192,37 @@ mod tests {
         assert!(copied.shares_storage(&source));
         assert_eq!(source.strong_count(), 2);
 
+        let null_zero_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let null_zero_capture = std::sync::Arc::clone(&null_zero_released);
+        let null_zero_source = BufferRef::from_null_data_zero_with_opaque_release_callback(
+            671usize,
+            move |opaque, bytes| {
+                null_zero_capture.lock().unwrap().push((opaque, bytes));
+            },
+        );
+        let mut null_zero_dst = None;
+        BufferRef::replace(&mut null_zero_dst, Some(&null_zero_source));
+        let null_zero_dst = null_zero_dst.expect("replace into null dst keeps destination");
+        assert!(null_zero_source.is_data_ptr_null());
+        assert!(null_zero_dst.is_data_ptr_null());
+        assert!(null_zero_source.as_ptr().is_null());
+        assert!(null_zero_dst.as_ptr().is_null());
+        assert!(null_zero_source.shares_storage(&null_zero_dst));
+        assert_eq!(null_zero_source.strong_count(), 2);
+        assert_eq!(null_zero_dst.strong_count(), 2);
+        assert_eq!(null_zero_source.opaque_ref::<usize>(), Some(&671));
+        assert_eq!(null_zero_dst.opaque_ref::<usize>(), Some(&671));
+        assert!(!null_zero_source.is_writable());
+        assert!(!null_zero_dst.is_writable());
+        assert!(null_zero_released.lock().unwrap().is_empty());
+        drop(null_zero_dst);
+        assert!(null_zero_released.lock().unwrap().is_empty());
+        assert_eq!(null_zero_source.strong_count(), 1);
+        assert!(null_zero_source.is_writable());
+        drop(null_zero_source);
+        assert_eq!(*null_zero_released.lock().unwrap(), vec![(671, Vec::new())]);
+
         let replacement = BufferRef::from_vec(vec![4, 5]);
         let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
         let release_capture = std::sync::Arc::clone(&released);

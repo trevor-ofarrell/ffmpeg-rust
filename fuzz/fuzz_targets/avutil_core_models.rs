@@ -1106,6 +1106,51 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         *null_zero_ref_released.lock().unwrap(),
         vec![(payload_len.wrapping_add(10), Vec::new())]
     );
+    let null_zero_replace_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let null_zero_replace_capture = Arc::clone(&null_zero_replace_released);
+    let null_zero_replace_source = BufferRef::from_null_data_zero_with_opaque_release_callback(
+        payload_len.wrapping_add(11),
+        move |opaque, bytes| {
+            null_zero_replace_capture
+                .lock()
+                .unwrap()
+                .push((opaque, bytes));
+        },
+    );
+    let mut null_zero_replace_destination = None;
+    BufferRef::replace(
+        &mut null_zero_replace_destination,
+        Some(&null_zero_replace_source),
+    );
+    let null_zero_replace_destination =
+        null_zero_replace_destination.expect("nullable-zero replace creates destination");
+    assert!(null_zero_replace_source.is_data_ptr_null());
+    assert!(null_zero_replace_destination.is_data_ptr_null());
+    assert!(null_zero_replace_source.as_ptr().is_null());
+    assert!(null_zero_replace_destination.as_ptr().is_null());
+    assert!(null_zero_replace_source.shares_storage(&null_zero_replace_destination));
+    assert_eq!(null_zero_replace_source.strong_count(), 2);
+    assert_eq!(null_zero_replace_destination.strong_count(), 2);
+    assert_eq!(
+        null_zero_replace_source.opaque_ref::<usize>(),
+        Some(&payload_len.wrapping_add(11))
+    );
+    assert_eq!(
+        null_zero_replace_destination.opaque_ref::<usize>(),
+        Some(&payload_len.wrapping_add(11))
+    );
+    assert!(!null_zero_replace_source.is_writable());
+    assert!(!null_zero_replace_destination.is_writable());
+    assert!(null_zero_replace_released.lock().unwrap().is_empty());
+    drop(null_zero_replace_destination);
+    assert!(null_zero_replace_released.lock().unwrap().is_empty());
+    assert_eq!(null_zero_replace_source.strong_count(), 1);
+    assert!(null_zero_replace_source.is_writable());
+    drop(null_zero_replace_source);
+    assert_eq!(
+        *null_zero_replace_released.lock().unwrap(),
+        vec![(payload_len.wrapping_add(11), Vec::new())]
+    );
     let null_zero_shared_realloc_released =
         Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let null_zero_shared_realloc_capture = Arc::clone(&null_zero_shared_realloc_released);
