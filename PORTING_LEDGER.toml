@@ -1670,6 +1670,9 @@ unit_tests = [
   "buffer::tests::buffer_create_unknown_flags_only_respect_readonly_bit",
   "buffer::tests::default_free_opaque_data_buffers_preserve_opaque_until_detach",
   "buffer::tests::zero_length_opaque_data_buffer_preserves_owner_until_release",
+  "buffer::tests::null_data_zero_opaque_buffer_preserves_c_pointer_shape",
+  "buffer::tests::null_data_zero_refs_detach_to_ordinary_empty_buffers",
+  "buffer::tests::null_data_zero_realloc_preserves_same_size_and_detaches_on_grow",
   "buffer::tests::zero_length_readonly_opaque_data_buffer_detaches_and_releases_owner",
   "buffer::tests::readonly_opaque_data_buffers_release_original_bytes_on_detach",
   "buffer::tests::zeroed_buffer_allocates_requested_zero_bytes",
@@ -1742,6 +1745,15 @@ fate_tests = [
   "not_applicable: upstream FFmpeg FATE has no standalone AVBufferRef/AVBufferPool API target; covered by unit tests plus pinned libavutil differential oracle",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest nullable-zero create slice: pinned libavutil rows now prove
+# `av_buffer_create(NULL, 0, free, opaque, flags=0)` succeeds with
+# `AVBufferRef.data == NULL` and size zero. `av_buffer_ref()` preserves the
+# NULL data pointer, unique `av_buffer_make_writable()` is a no-op, shared
+# make-writable detaches only the destination to an ordinary non-NULL empty
+# buffer, same-size realloc preserves the NULL pointer, and grow realloc
+# releases the original owner and clears opaque lookup. Rust models this with a
+# logical nullable-zero flag on `BufferRef`, focused units, the mapped oracle,
+# and deterministic `avutil_core_models` coverage.
 # Latest create-flags slice: pinned libavutil rows now prove
 # `av_buffer_create(..., flags=0x4000)` ignores unknown flag bits and creates a
 # writable owner, while `AV_BUFFER_FLAG_READONLY | 0x4000` keeps the same

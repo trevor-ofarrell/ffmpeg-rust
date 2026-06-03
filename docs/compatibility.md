@@ -85,6 +85,17 @@
   `avutil_core_models`, upstream `fate-avpacket`, and a 64-run WSL fuzz smoke
   with leak detection disabled. This strengthens `avutil-packet`; strict
   completion remains 11/96 and the row remains `fate_pass`.
+- Latest main-thread buffer evidence: pinned libavutil rows now prove
+  `av_buffer_create(NULL, 0, free, opaque, 0)` succeeds as a distinct
+  zero-size `AVBufferRef` with `data == NULL`. Ref and same-size realloc
+  preserve that NULL data pointer, unique make-writable is a no-op, shared
+  make-writable detaches only the destination to ordinary non-NULL empty
+  storage, and grow realloc releases the original owner while clearing
+  destination opaque lookup. Rust mirrors this with a logical nullable-zero
+  `BufferRef` flag, focused unit coverage, the mapped buffer oracle, and
+  deterministic `avutil_core_models` coverage. This strengthens
+  `avutil-buffer`; strict completion remains 11/96 and the row remains
+  `differential_pass`.
 - Latest main-thread buffer evidence: Rust now exposes fallible
   `BufferRef::try_make_mut` / `BufferRef::make_writable` helpers for the
   C-shaped `av_buffer_make_writable()` return surface. The pinned libavutil

@@ -1036,6 +1036,34 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     assert_eq!(zeroed_empty.len(), 0);
     assert_eq!(zeroed_empty.allocated_len(), 0);
     assert!(zeroed_empty.is_writable());
+    let null_zero_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let null_zero_capture = Arc::clone(&null_zero_released);
+    let null_zero = BufferRef::from_null_data_zero_with_opaque_release_callback(
+        payload_len,
+        move |opaque, bytes| {
+            null_zero_capture.lock().unwrap().push((opaque, bytes));
+        },
+    );
+    assert_eq!(null_zero.len(), 0);
+    assert_eq!(null_zero.allocated_len(), 0);
+    assert!(null_zero.is_data_ptr_null());
+    assert!(null_zero.as_ptr().is_null());
+    assert!(null_zero.as_padded_ptr().is_null());
+    assert_eq!(null_zero.opaque_ref::<usize>(), Some(&payload_len));
+    let mut null_zero_detached = BufferRef::ref_from(&null_zero);
+    assert!(null_zero_detached.is_data_ptr_null());
+    null_zero_detached.make_writable().unwrap();
+    assert!(null_zero.is_data_ptr_null());
+    assert!(!null_zero_detached.is_data_ptr_null());
+    assert!(!null_zero_detached.as_ptr().is_null());
+    assert!(!null_zero.shares_storage(&null_zero_detached));
+    drop(null_zero_detached);
+    assert!(null_zero_released.lock().unwrap().is_empty());
+    drop(null_zero);
+    assert_eq!(
+        *null_zero_released.lock().unwrap(),
+        vec![(payload_len, Vec::new())]
+    );
     let zeroed_huge = BufferRef::zeroed(usize::MAX).unwrap_err();
     assert_eq!(zeroed_huge.kind(), AvErrorKind::External);
     assert_eq!(zeroed_huge.code(), Some(AvErrorCode::ENOMEM));

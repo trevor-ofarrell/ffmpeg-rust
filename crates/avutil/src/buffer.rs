@@ -301,6 +301,7 @@ pub struct BufferRef {
     data: Arc<BufferStorage>,
     offset: usize,
     len: usize,
+    data_ptr_null: bool,
 }
 
 impl PartialEq for BufferRef {
@@ -318,6 +319,7 @@ impl BufferRef {
             data: Arc::new(BufferStorage::new(data)),
             offset: 0,
             len,
+            data_ptr_null: false,
         }
     }
 
@@ -327,6 +329,7 @@ impl BufferRef {
             data: Arc::new(BufferStorage::readonly(data)),
             offset: 0,
             len,
+            data_ptr_null: false,
         }
     }
 
@@ -341,6 +344,7 @@ impl BufferRef {
             data: Arc::new(BufferStorage::readonly(data)),
             offset: 0,
             len,
+            data_ptr_null: false,
         })
     }
 
@@ -350,6 +354,7 @@ impl BufferRef {
             data: Arc::new(BufferStorage::static_readonly(data)),
             offset: 0,
             len,
+            data_ptr_null: false,
         }
     }
 
@@ -364,6 +369,7 @@ impl BufferRef {
             data: Arc::new(BufferStorage::static_readonly(data)),
             offset: 0,
             len,
+            data_ptr_null: false,
         })
     }
 
@@ -373,6 +379,7 @@ impl BufferRef {
             data: Arc::new(BufferStorage::shared_readonly(data)),
             offset: 0,
             len,
+            data_ptr_null: false,
         }
     }
 
@@ -387,6 +394,7 @@ impl BufferRef {
             data: Arc::new(BufferStorage::shared_readonly(data)),
             offset: 0,
             len,
+            data_ptr_null: false,
         })
     }
 
@@ -406,6 +414,7 @@ impl BufferRef {
             )),
             offset: 0,
             len,
+            data_ptr_null: false,
         }
     }
 
@@ -431,6 +440,7 @@ impl BufferRef {
             )),
             offset: 0,
             len,
+            data_ptr_null: false,
         })
     }
 
@@ -443,6 +453,7 @@ impl BufferRef {
             data: Arc::new(BufferStorage::with_release_callback(data, on_release)),
             offset: 0,
             len,
+            data_ptr_null: false,
         }
     }
 
@@ -457,6 +468,7 @@ impl BufferRef {
             )),
             offset: 0,
             len,
+            data_ptr_null: false,
         }
     }
 
@@ -480,6 +492,7 @@ impl BufferRef {
             )),
             offset: 0,
             len,
+            data_ptr_null: false,
         }
     }
 
@@ -522,7 +535,83 @@ impl BufferRef {
             )),
             offset: 0,
             len,
+            data_ptr_null: false,
         }
+    }
+
+    pub fn from_null_data_zero_with_opaque<T>(opaque: T) -> Self
+    where
+        T: Any + Send + Sync + 'static,
+    {
+        Self::from_null_data_zero_with_opaque_flags(opaque, 0)
+    }
+
+    pub fn from_null_data_zero_with_opaque_flags<T>(opaque: T, flags: i32) -> Self
+    where
+        T: Any + Send + Sync + 'static,
+    {
+        Self {
+            data: Arc::new(BufferStorage::with_opaque(
+                Vec::new(),
+                opaque,
+                buffer_create_flags_readonly(flags),
+            )),
+            offset: 0,
+            len: 0,
+            data_ptr_null: true,
+        }
+    }
+
+    pub fn from_null_data_zero_with_opaque_readonly<T>(opaque: T) -> Self
+    where
+        T: Any + Send + Sync + 'static,
+    {
+        Self::from_null_data_zero_with_opaque_flags(opaque, AV_BUFFER_FLAG_READONLY)
+    }
+
+    pub fn from_null_data_zero_with_opaque_release_callback<T, F>(opaque: T, on_release: F) -> Self
+    where
+        T: Any + Send + Sync + 'static,
+        F: FnOnce(T, Vec<u8>) + Send + Sync + 'static,
+    {
+        Self::from_null_data_zero_with_opaque_release_callback_flags(opaque, 0, on_release)
+    }
+
+    pub fn from_null_data_zero_with_opaque_release_callback_flags<T, F>(
+        opaque: T,
+        flags: i32,
+        on_release: F,
+    ) -> Self
+    where
+        T: Any + Send + Sync + 'static,
+        F: FnOnce(T, Vec<u8>) + Send + Sync + 'static,
+    {
+        Self {
+            data: Arc::new(BufferStorage::with_opaque_data_release(
+                Vec::new(),
+                opaque,
+                on_release,
+                buffer_create_flags_readonly(flags),
+            )),
+            offset: 0,
+            len: 0,
+            data_ptr_null: true,
+        }
+    }
+
+    pub fn from_null_data_zero_with_opaque_release_callback_readonly<T, F>(
+        opaque: T,
+        on_release: F,
+    ) -> Self
+    where
+        T: Any + Send + Sync + 'static,
+        F: FnOnce(T, Vec<u8>) + Send + Sync + 'static,
+    {
+        Self::from_null_data_zero_with_opaque_release_callback_flags(
+            opaque,
+            AV_BUFFER_FLAG_READONLY,
+            on_release,
+        )
     }
 
     pub fn from_vec_with_opaque_release_callback_readonly<T, F>(
@@ -564,6 +653,7 @@ impl BufferRef {
             )),
             offset: 0,
             len,
+            data_ptr_null: false,
         })
     }
 
@@ -589,6 +679,7 @@ impl BufferRef {
             )),
             offset: 0,
             len,
+            data_ptr_null: false,
         })
     }
 
@@ -610,6 +701,7 @@ impl BufferRef {
             data: Arc::new(BufferStorage::with_release_callback(data, on_release)),
             offset: 0,
             len,
+            data_ptr_null: false,
         })
     }
 
@@ -633,6 +725,7 @@ impl BufferRef {
             )),
             offset: 0,
             len,
+            data_ptr_null: false,
         })
     }
 
@@ -654,6 +747,7 @@ impl BufferRef {
             data: Arc::new(BufferStorage::new(storage)),
             offset: 0,
             len: data.len(),
+            data_ptr_null: false,
         })
     }
 
@@ -667,6 +761,7 @@ impl BufferRef {
             data: Arc::new(BufferStorage::new(data)),
             offset: 0,
             len: size,
+            data_ptr_null: false,
         })
     }
 
@@ -687,6 +782,9 @@ impl BufferRef {
     }
 
     pub fn as_ptr(&self) -> *const u8 {
+        if self.is_data_ptr_null() {
+            return std::ptr::null();
+        }
         self.as_slice().as_ptr()
     }
 
@@ -695,6 +793,9 @@ impl BufferRef {
     }
 
     pub fn as_padded_ptr(&self) -> *const u8 {
+        if self.is_data_ptr_null() {
+            return std::ptr::null();
+        }
         self.as_padded_slice().as_ptr()
     }
 
@@ -708,6 +809,10 @@ impl BufferRef {
 
     pub fn padding_slice(&self) -> &[u8] {
         &self.as_padded_slice()[self.len..]
+    }
+
+    pub fn is_data_ptr_null(&self) -> bool {
+        self.data_ptr_null
     }
 
     pub fn strong_count(&self) -> usize {
@@ -765,6 +870,7 @@ impl BufferRef {
             };
             self.data = Arc::new(BufferStorage::new(bytes));
             self.offset = 0;
+            self.data_ptr_null = false;
         }
         let bytes = Arc::get_mut(&mut self.data)
             .expect("buffer storage is unique after copy-on-write")
@@ -821,6 +927,9 @@ impl BufferRef {
             bytes.resize(required_len, 0);
             bytes[self.offset + len..].fill(0);
             self.len = len;
+            if len != 0 || total_len != 0 {
+                self.data_ptr_null = false;
+            }
             return Ok(());
         }
 
@@ -828,6 +937,7 @@ impl BufferRef {
         self.data = Arc::new(BufferStorage::new(bytes));
         self.offset = 0;
         self.len = len;
+        self.data_ptr_null = false;
         Ok(())
     }
 
@@ -856,6 +966,7 @@ impl BufferRef {
                     data: Arc::new(BufferStorage::reallocatable(data)),
                     offset: 0,
                     len,
+                    data_ptr_null: false,
                 });
                 Ok(())
             }
@@ -877,6 +988,9 @@ impl BufferRef {
             }
             bytes.resize(len, 0);
             self.len = len;
+            if len != 0 {
+                self.data_ptr_null = false;
+            }
             return Ok(());
         }
 
@@ -884,6 +998,7 @@ impl BufferRef {
         self.data = Arc::new(BufferStorage::reallocatable(bytes));
         self.offset = 0;
         self.len = len;
+        self.data_ptr_null = false;
         Ok(())
     }
 
@@ -915,6 +1030,7 @@ impl BufferRef {
             data: Arc::clone(&self.data),
             offset: self.offset + offset,
             len,
+            data_ptr_null: self.data_ptr_null && offset == 0 && len == 0,
         })
     }
 
@@ -933,6 +1049,7 @@ impl BufferRef {
             data: self.data,
             offset: self.offset + offset,
             len,
+            data_ptr_null: self.data_ptr_null && offset == 0 && len == 0,
         })
     }
 
@@ -1455,6 +1572,7 @@ impl BufferPool {
                     data: Arc::new(BufferStorage::with_pool(storage, &self.inner)),
                     offset,
                     len,
+                    data_ptr_null: false,
                 })
             }
             None => {
@@ -1465,13 +1583,16 @@ impl BufferPool {
                     data: Arc::new(BufferStorage::with_pool(storage, &self.inner)),
                     offset,
                     len,
+                    data_ptr_null: false,
                 })
             }
         }
     }
 
     pub fn recycle(&self, buffer: BufferRef) -> AvResult<()> {
-        let BufferRef { data, offset, len } = buffer;
+        let BufferRef {
+            data, offset, len, ..
+        } = buffer;
         if offset != 0 || len != self.len() || data.len() != self.allocated_len() {
             return Err(AvError::invalid_argument(format!(
                 "buffer shape offset {offset} len {len}/{} does not match pool shape {}/{}",
@@ -2404,6 +2525,111 @@ mod tests {
 
         drop(zero);
         assert_eq!(*released.lock().unwrap(), vec![(321, Vec::new())]);
+    }
+
+    #[test]
+    fn null_data_zero_opaque_buffer_preserves_c_pointer_shape() {
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let capture = std::sync::Arc::clone(&released);
+        let mut buffer = BufferRef::from_null_data_zero_with_opaque_release_callback(
+            655usize,
+            move |opaque, bytes| {
+                capture.lock().unwrap().push((opaque, bytes));
+            },
+        );
+
+        assert_eq!(buffer.len(), 0);
+        assert_eq!(buffer.allocated_len(), 0);
+        assert!(buffer.as_slice().is_empty());
+        assert!(buffer.is_data_ptr_null());
+        assert!(buffer.as_ptr().is_null());
+        assert!(buffer.as_padded_ptr().is_null());
+        assert!(buffer.is_writable());
+        assert_eq!(buffer.opaque_ref::<usize>(), Some(&655));
+
+        let before = buffer.as_ptr();
+        buffer.make_writable().unwrap();
+        assert!(buffer.is_data_ptr_null());
+        assert_eq!(buffer.as_ptr(), before);
+        assert!(released.lock().unwrap().is_empty());
+
+        drop(buffer);
+        assert_eq!(*released.lock().unwrap(), vec![(655, Vec::new())]);
+    }
+
+    #[test]
+    fn null_data_zero_refs_detach_to_ordinary_empty_buffers() {
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let capture = std::sync::Arc::clone(&released);
+        let source = BufferRef::from_null_data_zero_with_opaque_release_callback(
+            658usize,
+            move |opaque, bytes| {
+                capture.lock().unwrap().push((opaque, bytes));
+            },
+        );
+        let mut detached = BufferRef::ref_from(&source);
+
+        assert!(source.is_data_ptr_null());
+        assert!(detached.is_data_ptr_null());
+        assert!(source.as_ptr().is_null());
+        assert!(detached.as_ptr().is_null());
+        assert!(source.shares_storage(&detached));
+        assert_eq!(source.strong_count(), 2);
+
+        assert!(detached.make_mut().is_empty());
+        assert!(source.is_data_ptr_null());
+        assert!(!detached.is_data_ptr_null());
+        assert!(!detached.as_ptr().is_null());
+        assert!(!source.shares_storage(&detached));
+        assert_eq!(source.strong_count(), 1);
+        assert_eq!(detached.strong_count(), 1);
+        assert!(released.lock().unwrap().is_empty());
+
+        drop(detached);
+        assert!(released.lock().unwrap().is_empty());
+        drop(source);
+        assert_eq!(*released.lock().unwrap(), vec![(658, Vec::new())]);
+    }
+
+    #[test]
+    fn null_data_zero_realloc_preserves_same_size_and_detaches_on_grow() {
+        let same_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let same_capture = std::sync::Arc::clone(&same_released);
+        let mut same = Some(BufferRef::from_null_data_zero_with_opaque_release_callback(
+            659usize,
+            move |opaque, bytes| {
+                same_capture.lock().unwrap().push((opaque, bytes));
+            },
+        ));
+        let same_ptr = same.as_ref().unwrap().as_ptr();
+
+        BufferRef::realloc(&mut same, 0).unwrap();
+        let same = same.expect("same-size realloc keeps destination");
+        assert!(same.is_data_ptr_null());
+        assert_eq!(same.as_ptr(), same_ptr);
+        assert_eq!(same.opaque_ref::<usize>(), Some(&659));
+        assert!(same_released.lock().unwrap().is_empty());
+        drop(same);
+        assert_eq!(*same_released.lock().unwrap(), vec![(659, Vec::new())]);
+
+        let grow_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let grow_capture = std::sync::Arc::clone(&grow_released);
+        let mut grow = Some(BufferRef::from_null_data_zero_with_opaque_release_callback(
+            660usize,
+            move |opaque, bytes| {
+                grow_capture.lock().unwrap().push((opaque, bytes));
+            },
+        ));
+
+        BufferRef::realloc(&mut grow, 2).unwrap();
+        let grow = grow.expect("grow realloc keeps destination");
+        assert_eq!(grow.as_slice(), &[0, 0]);
+        assert!(!grow.is_data_ptr_null());
+        assert!(!grow.as_ptr().is_null());
+        assert!(grow.opaque_ref::<usize>().is_none());
+        assert_eq!(*grow_released.lock().unwrap(), vec![(660, Vec::new())]);
     }
 
     #[test]

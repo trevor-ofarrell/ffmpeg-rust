@@ -228,6 +228,175 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         release_fields(&create_zero_released),
     );
 
+    let create_null_zero_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_null_zero_capture = Arc::clone(&create_null_zero_released);
+    let create_null_zero = BufferRef::from_null_data_zero_with_opaque_release_callback(
+        655usize,
+        move |opaque, bytes| {
+            create_null_zero_capture
+                .lock()
+                .unwrap()
+                .push((opaque, bytes));
+        },
+    );
+    rows.insert(
+        "buffer:create-null-zero".to_string(),
+        buffer_fields_with_data_null_and_opaque(&create_null_zero),
+    );
+    drop(create_null_zero);
+    rows.insert(
+        "buffer:create-null-zero-release".to_string(),
+        release_fields(&create_null_zero_released),
+    );
+
+    let create_null_zero_ref_src = BufferRef::from_null_data_zero_with_opaque(656usize);
+    let create_null_zero_ref_dst = BufferRef::ref_from(&create_null_zero_ref_src);
+    rows.insert(
+        "buffer:create-null-zero-ref-src".to_string(),
+        buffer_fields_with_data_null_and_opaque(&create_null_zero_ref_src),
+    );
+    rows.insert(
+        "buffer:create-null-zero-ref-dst".to_string(),
+        buffer_fields_with_data_null_and_opaque(&create_null_zero_ref_dst),
+    );
+    rows.insert(
+        "buffer:create-null-zero-ref-shares".to_string(),
+        vec![
+            bool_field(create_null_zero_ref_src.as_ptr() == create_null_zero_ref_dst.as_ptr()),
+            create_null_zero_ref_src.strong_count().to_string(),
+        ],
+    );
+
+    let mut create_null_zero_unique = BufferRef::from_null_data_zero_with_opaque(657usize);
+    let create_null_zero_unique_before = create_null_zero_unique.as_ptr();
+    create_null_zero_unique.make_writable().unwrap();
+    rows.insert(
+        "buffer:create-null-zero-make-writable-ret".to_string(),
+        vec![
+            "0".to_string(),
+            bool_field(create_null_zero_unique_before == create_null_zero_unique.as_ptr()),
+        ],
+    );
+    rows.insert(
+        "buffer:create-null-zero-make-writable".to_string(),
+        buffer_fields_with_data_null_and_opaque(&create_null_zero_unique),
+    );
+
+    let create_null_zero_shared_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_null_zero_shared_capture = Arc::clone(&create_null_zero_shared_released);
+    let create_null_zero_shared_src = BufferRef::from_null_data_zero_with_opaque_release_callback(
+        658usize,
+        move |opaque, bytes| {
+            create_null_zero_shared_capture
+                .lock()
+                .unwrap()
+                .push((opaque, bytes));
+        },
+    );
+    let mut create_null_zero_shared_dst = BufferRef::ref_from(&create_null_zero_shared_src);
+    create_null_zero_shared_dst.make_writable().unwrap();
+    rows.insert(
+        "buffer:create-null-zero-shared-make-writable-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:create-null-zero-shared-src".to_string(),
+        buffer_fields_with_data_null_and_opaque(&create_null_zero_shared_src),
+    );
+    rows.insert(
+        "buffer:create-null-zero-shared-dst".to_string(),
+        buffer_fields_with_data_null_and_opaque(&create_null_zero_shared_dst),
+    );
+    rows.insert(
+        "buffer:create-null-zero-shared-shares".to_string(),
+        vec![
+            bool_field(create_null_zero_shared_src.shares_storage(&create_null_zero_shared_dst)),
+            create_null_zero_shared_src.strong_count().to_string(),
+            create_null_zero_shared_released
+                .lock()
+                .unwrap()
+                .len()
+                .to_string(),
+        ],
+    );
+    drop(create_null_zero_shared_dst);
+    drop(create_null_zero_shared_src);
+    rows.insert(
+        "buffer:create-null-zero-shared-release".to_string(),
+        release_fields(&create_null_zero_shared_released),
+    );
+
+    let create_null_zero_realloc_same_released =
+        Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_null_zero_realloc_same_capture = Arc::clone(&create_null_zero_realloc_same_released);
+    let mut create_null_zero_realloc_same =
+        Some(BufferRef::from_null_data_zero_with_opaque_release_callback(
+            659usize,
+            move |opaque, bytes| {
+                create_null_zero_realloc_same_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        ));
+    let create_null_zero_realloc_same_before =
+        create_null_zero_realloc_same.as_ref().unwrap().as_ptr();
+    BufferRef::realloc(&mut create_null_zero_realloc_same, 0).unwrap();
+    let create_null_zero_realloc_same =
+        create_null_zero_realloc_same.expect("same-size realloc keeps destination");
+    rows.insert(
+        "buffer:create-null-zero-realloc-same-ret".to_string(),
+        vec![
+            "0".to_string(),
+            bool_field(
+                create_null_zero_realloc_same_before == create_null_zero_realloc_same.as_ptr(),
+            ),
+        ],
+    );
+    rows.insert(
+        "buffer:create-null-zero-realloc-same".to_string(),
+        buffer_fields_with_data_null_and_opaque(&create_null_zero_realloc_same),
+    );
+    drop(create_null_zero_realloc_same);
+    rows.insert(
+        "buffer:create-null-zero-realloc-same-release".to_string(),
+        release_fields(&create_null_zero_realloc_same_released),
+    );
+
+    let create_null_zero_realloc_grow_released =
+        Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_null_zero_realloc_grow_capture = Arc::clone(&create_null_zero_realloc_grow_released);
+    let mut create_null_zero_realloc_grow =
+        Some(BufferRef::from_null_data_zero_with_opaque_release_callback(
+            660usize,
+            move |opaque, bytes| {
+                create_null_zero_realloc_grow_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        ));
+    BufferRef::realloc(&mut create_null_zero_realloc_grow, 2).unwrap();
+    let create_null_zero_realloc_grow =
+        create_null_zero_realloc_grow.expect("grow realloc keeps destination");
+    rows.insert(
+        "buffer:create-null-zero-realloc-grow-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:create-null-zero-realloc-grow".to_string(),
+        buffer_shape_fields_with_data_null_and_opaque(&create_null_zero_realloc_grow),
+    );
+    rows.insert(
+        "buffer:create-null-zero-realloc-grow-release-before-unref".to_string(),
+        release_fields(&create_null_zero_realloc_grow_released),
+    );
+    drop(create_null_zero_realloc_grow);
+    rows.insert(
+        "buffer:create-null-zero-realloc-grow-release-after-unref".to_string(),
+        release_fields(&create_null_zero_realloc_grow_released),
+    );
+
     let mut create_default_opaque = BufferRef::from_vec_with_opaque(vec![34, 35, 36], 322usize);
     rows.insert(
         "buffer:create-default-opaque".to_string(),
@@ -3591,6 +3760,38 @@ fn buffer_fields_with_opaque(buffer: &BufferRef) -> Vec<String> {
     fields
 }
 
+fn buffer_fields_with_data_null_and_opaque(buffer: &BufferRef) -> Vec<String> {
+    let mut fields = vec![
+        buffer.len().to_string(),
+        bool_field(buffer.is_data_ptr_null()),
+        hex(buffer.as_slice()),
+        buffer.strong_count().to_string(),
+        bool_field(buffer.is_writable()),
+    ];
+    fields.push(
+        buffer
+            .opaque_ref::<usize>()
+            .copied()
+            .unwrap_or_default()
+            .to_string(),
+    );
+    fields
+}
+
+fn buffer_shape_fields_with_data_null_and_opaque(buffer: &BufferRef) -> Vec<String> {
+    vec![
+        buffer.len().to_string(),
+        bool_field(buffer.is_data_ptr_null()),
+        buffer.strong_count().to_string(),
+        bool_field(buffer.is_writable()),
+        buffer
+            .opaque_ref::<usize>()
+            .copied()
+            .unwrap_or_default()
+            .to_string(),
+    ]
+}
+
 fn release_fields(released: &ReleaseRows) -> Vec<String> {
     let released = released.lock().unwrap();
     let (opaque, bytes) = released.first().expect("expected release row");
@@ -3990,6 +4191,27 @@ static void print_buffer_opaque(const char *label, const AVBufferRef *buf) {
            (unsigned long long)(uintptr_t)(buf ? av_buffer_get_opaque(buf) : NULL));
 }
 
+static void print_buffer_opaque_data_null(const char *label, const AVBufferRef *buf) {
+    printf("%s|%zu|%d|", label, buf ? buf->size : 0,
+           buf ? buf->data == NULL : 1);
+    if (buf && buf->data)
+        print_hex(buf->data, buf->size);
+    printf("|%d|%d|%llu\n",
+           buf ? av_buffer_get_ref_count(buf) : 0,
+           buf ? av_buffer_is_writable(buf) : 0,
+           (unsigned long long)(uintptr_t)(buf ? av_buffer_get_opaque(buf) : NULL));
+}
+
+static void print_buffer_opaque_shape_data_null(const char *label, const AVBufferRef *buf) {
+    printf("%s|%zu|%d|%d|%d|%llu\n",
+           label,
+           buf ? buf->size : 0,
+           buf ? buf->data == NULL : 1,
+           buf ? av_buffer_get_ref_count(buf) : 0,
+           buf ? av_buffer_is_writable(buf) : 0,
+           (unsigned long long)(uintptr_t)(buf ? av_buffer_get_opaque(buf) : NULL));
+}
+
 static void print_create_release(const char *label) {
     printf("%s|%d|%llu|",
            label,
@@ -4170,6 +4392,109 @@ int main(void) {
     print_buffer_opaque("buffer:create-zero", create_zero);
     av_buffer_unref(&create_zero);
     print_create_release("buffer:create-zero-release");
+
+    reset_create_release();
+    last_create_release_size = 0;
+    AVBufferRef *create_null_zero =
+        av_buffer_create(NULL, 0, test_create_free,
+                         (void *)(uintptr_t)655, 0);
+    fail_if(!create_null_zero, "av_buffer_create null zero failed");
+    print_buffer_opaque_data_null("buffer:create-null-zero",
+                                  create_null_zero);
+    av_buffer_unref(&create_null_zero);
+    print_create_release("buffer:create-null-zero-release");
+
+    AVBufferRef *create_null_zero_ref_src =
+        av_buffer_create(NULL, 0, NULL, (void *)(uintptr_t)656, 0);
+    fail_if(!create_null_zero_ref_src,
+            "av_buffer_create null zero ref src failed");
+    AVBufferRef *create_null_zero_ref_dst =
+        av_buffer_ref(create_null_zero_ref_src);
+    fail_if(!create_null_zero_ref_dst, "av_buffer_ref null zero failed");
+    print_buffer_opaque_data_null("buffer:create-null-zero-ref-src",
+                                  create_null_zero_ref_src);
+    print_buffer_opaque_data_null("buffer:create-null-zero-ref-dst",
+                                  create_null_zero_ref_dst);
+    printf("buffer:create-null-zero-ref-shares|%d|%d\n",
+           create_null_zero_ref_src->data == create_null_zero_ref_dst->data,
+           av_buffer_get_ref_count(create_null_zero_ref_src));
+    av_buffer_unref(&create_null_zero_ref_dst);
+    av_buffer_unref(&create_null_zero_ref_src);
+
+    AVBufferRef *create_null_zero_unique =
+        av_buffer_create(NULL, 0, NULL, (void *)(uintptr_t)657, 0);
+    fail_if(!create_null_zero_unique,
+            "av_buffer_create null zero unique failed");
+    uint8_t *create_null_zero_unique_before =
+        create_null_zero_unique->data;
+    ret = av_buffer_make_writable(&create_null_zero_unique);
+    printf("buffer:create-null-zero-make-writable-ret|%d|%d\n",
+           ret, create_null_zero_unique_before == create_null_zero_unique->data);
+    print_buffer_opaque_data_null("buffer:create-null-zero-make-writable",
+                                  create_null_zero_unique);
+    av_buffer_unref(&create_null_zero_unique);
+
+    reset_create_release();
+    last_create_release_size = 0;
+    AVBufferRef *create_null_zero_shared_src =
+        av_buffer_create(NULL, 0, test_create_free,
+                         (void *)(uintptr_t)658, 0);
+    fail_if(!create_null_zero_shared_src,
+            "av_buffer_create null zero shared src failed");
+    AVBufferRef *create_null_zero_shared_dst =
+        av_buffer_ref(create_null_zero_shared_src);
+    fail_if(!create_null_zero_shared_dst,
+            "av_buffer_ref null zero shared failed");
+    ret = av_buffer_make_writable(&create_null_zero_shared_dst);
+    printf("buffer:create-null-zero-shared-make-writable-ret|%d\n", ret);
+    print_buffer_opaque_data_null("buffer:create-null-zero-shared-src",
+                                  create_null_zero_shared_src);
+    print_buffer_opaque_data_null("buffer:create-null-zero-shared-dst",
+                                  create_null_zero_shared_dst);
+    printf("buffer:create-null-zero-shared-shares|%d|%d|%d\n",
+           create_null_zero_shared_src->data == create_null_zero_shared_dst->data,
+           av_buffer_get_ref_count(create_null_zero_shared_src),
+           create_release_count);
+    av_buffer_unref(&create_null_zero_shared_dst);
+    av_buffer_unref(&create_null_zero_shared_src);
+    print_create_release("buffer:create-null-zero-shared-release");
+
+    reset_create_release();
+    last_create_release_size = 0;
+    AVBufferRef *create_null_zero_realloc_same =
+        av_buffer_create(NULL, 0, test_create_free,
+                         (void *)(uintptr_t)659, 0);
+    fail_if(!create_null_zero_realloc_same,
+            "av_buffer_create null zero realloc same failed");
+    uint8_t *create_null_zero_realloc_same_before =
+        create_null_zero_realloc_same->data;
+    ret = av_buffer_realloc(&create_null_zero_realloc_same, 0);
+    printf("buffer:create-null-zero-realloc-same-ret|%d|%d\n",
+           ret,
+           create_null_zero_realloc_same_before ==
+               create_null_zero_realloc_same->data);
+    print_buffer_opaque_data_null("buffer:create-null-zero-realloc-same",
+                                  create_null_zero_realloc_same);
+    av_buffer_unref(&create_null_zero_realloc_same);
+    print_create_release("buffer:create-null-zero-realloc-same-release");
+
+    reset_create_release();
+    last_create_release_size = 0;
+    AVBufferRef *create_null_zero_realloc_grow =
+        av_buffer_create(NULL, 0, test_create_free,
+                         (void *)(uintptr_t)660, 0);
+    fail_if(!create_null_zero_realloc_grow,
+            "av_buffer_create null zero realloc grow failed");
+    ret = av_buffer_realloc(&create_null_zero_realloc_grow, 2);
+    printf("buffer:create-null-zero-realloc-grow-ret|%d\n", ret);
+    print_buffer_opaque_shape_data_null(
+        "buffer:create-null-zero-realloc-grow",
+        create_null_zero_realloc_grow);
+    print_create_release(
+        "buffer:create-null-zero-realloc-grow-release-before-unref");
+    av_buffer_unref(&create_null_zero_realloc_grow);
+    print_create_release(
+        "buffer:create-null-zero-realloc-grow-release-after-unref");
 
     static const uint8_t create_default_opaque_bytes[] = { 34, 35, 36 };
     uint8_t *create_default_opaque_data =

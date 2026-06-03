@@ -3,6 +3,53 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The
+tree started clean at `master...origin/master [ahead 30]`; required startup
+checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
+-- status --next 15` reporting 11/96 strict-complete components (11.5%) and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validating the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
+confirmed `avutil-packet` remains blocked on shared-shrink alias-safe storage
+and advanced the next unblocked priority-1 component, `avutil-buffer`; no worker
+writes were delegated.
+
+Current main-thread slice: pinned libavutil rows now prove
+`av_buffer_create(NULL, 0, free, opaque, flags=0)` creates a valid zero-size
+`AVBufferRef` with `data == NULL`. Ref preserves the NULL data pointer, unique
+make-writable is a same-pointer no-op, shared make-writable detaches only the
+destination to an ordinary non-NULL empty buffer, same-size realloc preserves
+the NULL pointer and owner, and grow realloc releases the original owner while
+clearing destination opaque lookup. Rust mirrors this with a logical
+nullable-zero flag on `BufferRef`, focused unit coverage, the mapped buffer
+oracle, and deterministic `avutil_core_models` coverage. `avutil-buffer`
+remains `differential_pass`, not `complete`; strict completion remains 11/96
+because broader ABI/lifetime closure, hardware/device ownership integration,
+and standalone upstream FATE inapplicability remain open.
+
+Latest validation commands for this nullable-zero buffer create slice passed:
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil null_data_zero --
+--nocapture`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
+buffer_oracle libavutil_buffer_refs_match_current_model -- --ignored
+--nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run
+--mappings tests/differential/mappings.txt --component avutil-buffer --target
+oracle-libavutil-buffer --oracle-ffmpeg
+./third_party/ffmpeg-oracle/build/bin/ffmpeg`; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- run --component avutil-buffer --target
+local-avutil-unit`; `CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil
+--all-targets --all-features -- -D warnings`; `CARGO_TARGET_DIR=target-wsl-fuzz
+cargo check --manifest-path fuzz/Cargo.toml --bin avutil_core_models`;
+`CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy --manifest-path fuzz/Cargo.toml
+--bin avutil_core_models -- -D warnings`; `cargo fmt --all -- --check`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- guard-runtime`; and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`.
+
+Current focus component: `avutil-packet` remains the top priority incomplete
+component (`fate_pass`) because the shared `av_shrink_packet()` behavior needs a
+broader alias-safe shared-storage design. Next highest unblocked candidate is
+still `avutil-buffer` (`differential_pass`) unless the ledger shows a newly
+smaller buffer closure slice; after that, `avutil-frame` is the next priority-1
+candidate.
+
+Current authoritative turn status: orchestrator workflow is active on WSL. The
 tree started clean at `master...origin/master [ahead 29]`; required startup
 checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
 -- status --next 15` reporting 11/96 strict-complete components (11.5%) and
