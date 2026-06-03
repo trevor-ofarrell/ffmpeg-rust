@@ -2216,6 +2216,17 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_nullable_fields(&null_zero_refcounted),
     );
 
+    let mut null_zero_unique_writable = Packet::from_null_data_zero().unwrap();
+    null_zero_unique_writable.make_writable().unwrap();
+    rows.insert(
+        "packet:payload-from-data-null-zero-unique-make-writable-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-from-data-null-zero-unique-make-writable".to_string(),
+        payload_nullable_fields(&null_zero_unique_writable),
+    );
+
     let null_zero_writable_src = Packet::from_null_data_zero().unwrap();
     let mut null_zero_writable_dst = Packet::default();
     null_zero_writable_dst.ref_from(&null_zero_writable_src);
@@ -8350,6 +8361,16 @@ static void exercise_payload_api(void) {
     printf("packet:payload-from-data-null-zero-make-refcounted-ret|%d\n", ret);
     fail_if(ret < 0, "av_packet_make_refcounted NULL zero-size payload failed");
     print_payload_nullable("packet:payload-from-data-null-zero-make-refcounted", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    ret = av_packet_from_data(pkt, NULL, 0);
+    fail_if(ret < 0, "av_packet_from_data NULL zero-size unique writable failed");
+    ret = av_packet_make_writable(pkt);
+    printf("packet:payload-from-data-null-zero-unique-make-writable-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_make_writable unique NULL zero-size payload failed");
+    print_payload_nullable("packet:payload-from-data-null-zero-unique-make-writable",
+                           pkt);
     av_packet_free(&pkt);
 
     AVPacket *null_zero_writable_src = new_packet();

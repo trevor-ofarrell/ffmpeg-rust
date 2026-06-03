@@ -9888,6 +9888,26 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .iter()
         .all(|byte| *byte == 0));
     assert!(null_zero_packet.is_data_writable());
+
+    let mut null_zero_unique_writable = Packet::from_null_data_zero().unwrap();
+    let null_zero_unique_writable_ptr = null_zero_unique_writable
+        .data_buffer()
+        .as_padded_ptr();
+    null_zero_unique_writable.make_writable().unwrap();
+    assert!(null_zero_unique_writable.is_empty());
+    assert!(null_zero_unique_writable.is_data_ptr_null());
+    assert!(null_zero_unique_writable.is_data_buffer_ptr_null());
+    assert!(null_zero_unique_writable.has_refcounted_data_buffer());
+    assert_eq!(
+        null_zero_unique_writable.data_buffer().as_padded_ptr(),
+        null_zero_unique_writable_ptr
+    );
+    assert_eq!(
+        null_zero_unique_writable.data_buffer().allocated_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(null_zero_unique_writable.is_data_writable());
+
     let mut null_zero_ref = Packet::default();
     null_zero_ref.ref_from(&null_zero_packet);
     assert!(null_zero_packet.is_data_ptr_null());

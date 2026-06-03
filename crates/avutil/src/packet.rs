@@ -12890,6 +12890,34 @@ mod tests {
     }
 
     #[test]
+    fn packet_from_null_data_zero_unique_make_writable_preserves_nullable_shape() {
+        let mut packet = Packet::from_null_data_zero().unwrap();
+        let data_ptr = packet.data_buffer().as_padded_ptr();
+
+        packet.make_writable().unwrap();
+
+        assert!(packet.is_empty());
+        assert!(packet.is_data_ptr_null());
+        assert!(packet.is_data_buffer_ptr_null());
+        assert!(packet.has_refcounted_data_buffer());
+        assert_eq!(packet.data_buffer().as_padded_ptr(), data_ptr);
+        assert_eq!(
+            packet.data_buffer().allocated_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert_eq!(
+            packet.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(packet
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+        assert!(packet.is_data_writable());
+    }
+
+    #[test]
     fn packet_from_null_data_zero_moves_and_unrefs_to_default_payload_shape() {
         let mut move_src = Packet::from_null_data_zero().unwrap();
         let mut move_dst = Packet::default();
