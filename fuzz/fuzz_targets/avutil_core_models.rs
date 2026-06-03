@@ -9909,6 +9909,28 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .data_buffer()
         .shares_storage(null_zero_packet.data_buffer()));
 
+    let mut null_zero_move_src = Packet::from_null_data_zero().unwrap();
+    let mut null_zero_move_dst = Packet::default();
+    null_zero_move_dst.move_ref_from(&mut null_zero_move_src);
+    assert!(null_zero_move_dst.is_empty());
+    assert!(null_zero_move_dst.is_data_ptr_null());
+    assert!(null_zero_move_dst.has_refcounted_data_buffer());
+    assert!(null_zero_move_dst.is_data_buffer_ptr_null());
+    assert_eq!(
+        null_zero_move_dst.data_buffer().allocated_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(null_zero_move_dst.is_data_writable());
+    assert!(null_zero_move_src.is_empty());
+    assert!(!null_zero_move_src.is_data_ptr_null());
+    assert!(!null_zero_move_src.has_refcounted_data_buffer());
+
+    let mut null_zero_unref = Packet::from_null_data_zero().unwrap();
+    null_zero_unref.unref();
+    assert!(null_zero_unref.is_empty());
+    assert!(!null_zero_unref.is_data_ptr_null());
+    assert!(!null_zero_unref.has_refcounted_data_buffer());
+
     let grow_by = usize::from(cursor.next().unwrap_or_default() % 8);
     padded_packet.grow_data(grow_by).unwrap();
     assert_eq!(&padded_packet.data()[..payload.len()], payload.as_slice());

@@ -739,7 +739,9 @@ payload with `pkt->data == NULL`, `pkt->buf != NULL`, `pkt->buf->data == NULL`,
 an `AV_INPUT_BUFFER_PADDING_SIZE` backing size, and writable storage. Ref/clone
 and make-refcounted preserve that nullable pointer shape, while make-writable
 on a shared nullable ref detaches to ordinary writable padded zero-length
-storage. The Rust model exposes this bounded C shape through
+storage. Move-ref transfers the nullable refcounted storage to the destination
+and resets the source, while unref resets the packet to the default visible
+state. The Rust model exposes this bounded C shape through
 `Packet::from_null_data_zero`.
 
 The harness also includes already-refcounted payload no-op rows for `packet:payload-make-writable-unique*`, `packet:payload-make-refcounted-unique*`, and `packet:payload-make-refcounted-shared*`. These prove unique refcounted packets keep their visible data pointer and writable padded storage, while shared refcounted packets keep shared storage and remain non-writable after `av_packet_make_refcounted()`.

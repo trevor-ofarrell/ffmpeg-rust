@@ -3,6 +3,63 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The
+tree started clean at `master...origin/master [ahead 19]`; required startup
+checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
+-- status --next 15` reporting 11/96 strict-complete components (11.5%) and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validating the pinned FFmpeg 8.1.1 oracle and ABI versions. Two read-only
+explorers audited packet and frame candidates; no worker writes were delegated.
+
+Current main-thread slice: pinned libavcodec rows now prove nullable zero-size
+`av_packet_from_data(pkt, NULL, 0)` storage transfers through
+`av_packet_move_ref()` and resets through `av_packet_unref()`. The moved
+destination keeps `pkt->data == NULL` with refcounted zero-size storage, while
+the move source and unref rows return to default visible packet state. Rust
+mirrors this through
+`packet_from_null_data_zero_moves_and_unrefs_to_default_payload_shape`, the
+ignored `packet_oracle::libavcodec_packet_core_lifecycle_matches_packet_model`
+harness, and a deterministic `avutil_core_models` invariant. `avutil-packet`
+remains `fate_pass`, not `complete`; strict completion remains 11/96 because
+the shared-shrink alias-safe storage blocker and broader packet integration
+work remain pending.
+
+Latest validation commands for this nullable zero-size payload move/unref
+slice passed: `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil
+packet_from_null_data_zero_moves_and_unrefs_to_default_payload_shape --
+--nocapture`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo check --manifest-path
+fuzz/Cargo.toml --bin avutil_core_models`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test packet_oracle
+libavcodec_packet_core_lifecycle_matches_packet_model -- --ignored
+--nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run
+--mappings tests/differential/mappings.txt --component avutil-packet --target
+oracle-libavcodec-packet-core --oracle-ffmpeg
+./third_party/ffmpeg-oracle/build/bin/ffmpeg`; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- run --component avutil-packet --target
+local-avutil-unit`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
+-- run --mappings tests/fate/upstream-mappings.txt --component avutil-packet
+--target fate-avpacket` after escalation allowed the pinned FFmpeg build cache
+to write its expected FATE output; `CARGO_TARGET_DIR=target-orch-avutil cargo
+clippy -p avutil --all-targets --all-features -- -D warnings`;
+`CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy --manifest-path fuzz/Cargo.toml
+--bin avutil_core_models -- -D warnings`; `cargo fmt --all -- --check`;
+`CARGO_TARGET_DIR=target-orch-fate cargo test -p fate-runner current_ledger`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- guard-runtime`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15`; and `git diff --check` (CRLF conversion warnings only before this state
+entry). The ignored packet oracle created `target/oracle/avutil-packet`; the
+top-level `target` scratch directory was removed after the oracle runs. No
+fuzz target execution was rerun; the changed deterministic invariant has
+check/clippy coverage only.
+
+Current focus component: `avutil-packet` remains the top priority incomplete
+component (`fate_pass`) because the shared `av_shrink_packet()` behavior needs a
+broader alias-safe shared-storage design. The next packet explorer candidate is
+nullable zero-size `av_grow_packet()` behavior; the frame explorer identified
+raw `AVFrame.time_base` storage and signed `AVFrame.duration` as the next
+bounded fallback slices after the current dirty packet work is committed.
+
+Current authoritative turn status: orchestrator workflow is active on WSL. The
 tree started clean at `master...origin/master [ahead 18]`; required startup
 checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
 -- status --next 15` reporting 11/96 strict-complete components (11.5%) and

@@ -10,6 +10,15 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  nullable zero-size `av_packet_from_data(pkt, NULL, 0)` storage transfers
+  through `av_packet_move_ref()` and resets through `av_packet_unref()`. The
+  moved destination keeps `pkt->data == NULL` with refcounted zero-size
+  storage, while the move source and unref rows return to default visible
+  packet state. Rust mirrors this through `Packet::from_null_data_zero`,
+  focused unit coverage, the mapped packet oracle, and `avutil_core_models`.
+  This strengthens `avutil-packet`; strict completion remains 11/96 and the
+  row remains `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   replacement-style `av_packet_from_data()` installs refcounted payload
   ownership while preserving packet properties. Follow-on ref shares the
   adopted data pointer, make-refcounted is a same-pointer no-op, and

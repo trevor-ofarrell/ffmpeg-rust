@@ -12890,6 +12890,37 @@ mod tests {
     }
 
     #[test]
+    fn packet_from_null_data_zero_moves_and_unrefs_to_default_payload_shape() {
+        let mut move_src = Packet::from_null_data_zero().unwrap();
+        let mut move_dst = Packet::default();
+        move_dst.move_ref_from(&mut move_src);
+
+        assert!(move_dst.is_empty());
+        assert!(move_dst.is_data_ptr_null());
+        assert!(move_dst.has_refcounted_data_buffer());
+        assert!(move_dst.is_data_buffer_ptr_null());
+        assert_eq!(
+            move_dst.data_buffer().allocated_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(move_dst.is_data_writable());
+
+        assert!(move_src.is_empty());
+        assert!(!move_src.is_data_ptr_null());
+        assert!(!move_src.has_refcounted_data_buffer());
+        assert_eq!(move_src.stream_index_raw(), 0);
+        assert_eq!(move_src.flags(), PacketFlags::empty());
+
+        let mut unref = Packet::from_null_data_zero().unwrap();
+        unref.unref();
+        assert!(unref.is_empty());
+        assert!(!unref.is_data_ptr_null());
+        assert!(!unref.has_refcounted_data_buffer());
+        assert_eq!(unref.stream_index_raw(), 0);
+        assert_eq!(unref.flags(), PacketFlags::empty());
+    }
+
+    #[test]
     fn packet_make_refcounted_adds_padding_without_detaching_padded_refs() {
         let mut unpadded = Packet::new(vec![0xaa, 0xbb], 0);
         unpadded.make_refcounted().unwrap();

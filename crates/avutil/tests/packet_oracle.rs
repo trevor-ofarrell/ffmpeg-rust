@@ -2233,6 +2233,33 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_fields(&null_zero_writable_dst),
     );
 
+    let mut null_zero_move_src = Packet::from_null_data_zero().unwrap();
+    let mut null_zero_move_dst = Packet::default();
+    null_zero_move_dst.move_ref_from(&mut null_zero_move_src);
+    rows.insert(
+        "packet:payload-from-data-null-zero-move-dst".to_string(),
+        payload_nullable_fields(&null_zero_move_dst),
+    );
+    rows.insert(
+        "packet:payload-from-data-null-zero-move-src".to_string(),
+        packet_fields(&null_zero_move_src),
+    );
+    rows.insert(
+        "packet:payload-from-data-null-zero-move-src-payload".to_string(),
+        payload_visible_fields(&null_zero_move_src),
+    );
+
+    let mut null_zero_unref = Packet::from_null_data_zero().unwrap();
+    null_zero_unref.unref();
+    rows.insert(
+        "packet:payload-from-data-null-zero-unref".to_string(),
+        packet_fields(&null_zero_unref),
+    );
+    rows.insert(
+        "packet:payload-from-data-null-zero-unref-payload".to_string(),
+        payload_visible_fields(&null_zero_unref),
+    );
+
     let mut from_data_preserve = packet_with_common_props_no_payload();
     from_data_preserve
         .replace_data_from_vec(vec![0x10, 0x20, 0x30])
@@ -8340,6 +8367,29 @@ static void exercise_payload_api(void) {
                   null_zero_writable_dst);
     av_packet_free(&null_zero_writable_dst);
     av_packet_free(&null_zero_writable_src);
+
+    AVPacket *null_zero_move_src = new_packet();
+    ret = av_packet_from_data(null_zero_move_src, NULL, 0);
+    fail_if(ret < 0, "av_packet_from_data NULL zero-size move source failed");
+    AVPacket *null_zero_move_dst = new_packet();
+    av_packet_move_ref(null_zero_move_dst, null_zero_move_src);
+    print_payload_nullable("packet:payload-from-data-null-zero-move-dst",
+                           null_zero_move_dst);
+    print_packet("packet:payload-from-data-null-zero-move-src",
+                 null_zero_move_src);
+    print_payload_visible("packet:payload-from-data-null-zero-move-src-payload",
+                          null_zero_move_src);
+    av_packet_free(&null_zero_move_dst);
+    av_packet_free(&null_zero_move_src);
+
+    pkt = new_packet();
+    ret = av_packet_from_data(pkt, NULL, 0);
+    fail_if(ret < 0, "av_packet_from_data NULL zero-size unref failed");
+    av_packet_unref(pkt);
+    print_packet("packet:payload-from-data-null-zero-unref", pkt);
+    print_payload_visible("packet:payload-from-data-null-zero-unref-payload",
+                          pkt);
+    av_packet_free(&pkt);
 
     pkt = packet_with_common_props_no_payload();
     uint8_t *preserve_owned = av_mallocz(3 + AV_INPUT_BUFFER_PADDING_SIZE);
