@@ -2559,6 +2559,38 @@ mod tests {
 
     #[test]
     fn null_data_zero_refs_detach_to_ordinary_empty_buffers() {
+        let ref_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let ref_capture = std::sync::Arc::clone(&ref_released);
+        let ref_source = BufferRef::from_null_data_zero_with_opaque_release_callback(
+            670usize,
+            move |opaque, bytes| {
+                ref_capture.lock().unwrap().push((opaque, bytes));
+            },
+        );
+        let ref_destination = BufferRef::ref_from(&ref_source);
+        assert!(ref_source.is_data_ptr_null());
+        assert!(ref_destination.is_data_ptr_null());
+        assert!(ref_source.as_ptr().is_null());
+        assert!(ref_destination.as_ptr().is_null());
+        assert!(!ref_source.is_readonly());
+        assert!(!ref_destination.is_readonly());
+        assert!(!ref_source.is_writable());
+        assert!(!ref_destination.is_writable());
+        assert!(ref_source.shares_storage(&ref_destination));
+        assert_eq!(ref_source.strong_count(), 2);
+        assert_eq!(ref_destination.strong_count(), 2);
+        assert_eq!(ref_source.opaque_ref::<usize>(), Some(&670));
+        assert_eq!(ref_destination.opaque_ref::<usize>(), Some(&670));
+        assert!(ref_released.lock().unwrap().is_empty());
+        drop(ref_destination);
+        assert!(ref_released.lock().unwrap().is_empty());
+        assert_eq!(ref_source.strong_count(), 1);
+        assert!(!ref_source.is_readonly());
+        assert!(ref_source.is_writable());
+        drop(ref_source);
+        assert_eq!(*ref_released.lock().unwrap(), vec![(670, Vec::new())]);
+
         let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
         let capture = std::sync::Arc::clone(&released);
         let source = BufferRef::from_null_data_zero_with_opaque_release_callback(

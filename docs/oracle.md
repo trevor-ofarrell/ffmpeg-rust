@@ -1132,11 +1132,15 @@ cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --com
 
 The latest buffer oracle rows add nullable-zero create coverage:
 `av_buffer_create(NULL, 0, free, opaque, 0)` returns a valid zero-size ref with
-`ref->data == NULL`. `av_buffer_ref()` and same-size `av_buffer_realloc()`
-preserve the NULL data pointer; unique `av_buffer_make_writable()` is a
-same-pointer no-op; shared make-writable detaches only the destination to
-ordinary non-NULL empty storage; and grow realloc releases the original
-custom-owner buffer while clearing destination opaque lookup.
+`ref->data == NULL`. `av_buffer_ref()` preserves the NULL data pointer, opaque
+owner, shared storage, refcount 2, and shared non-writability while both refs
+are live; unreffing the destination restores source writability without release,
+and the custom release runs only after the final source unref. Same-size
+`av_buffer_realloc()` preserves the NULL data pointer; unique
+`av_buffer_make_writable()` is a same-pointer no-op; shared make-writable
+detaches only the destination to ordinary non-NULL empty storage; and grow
+realloc releases the original custom-owner buffer while clearing destination
+opaque lookup.
 
 The latest buffer oracle rows add nullable-zero readonly create coverage:
 `av_buffer_create(NULL, 0, free, opaque, AV_BUFFER_FLAG_READONLY)` returns a

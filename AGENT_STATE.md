@@ -3,7 +3,7 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The
-tree started clean at `master...origin/master [ahead 35]`; required startup
+tree started clean at `master...origin/master [ahead 36]`; required startup
 checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
 -- status --next 15` reporting 11/96 strict-complete components (11.5%) and
 `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
@@ -12,40 +12,42 @@ confirmed `avutil-packet` remains blocked on shared-shrink alias-safe storage
 and advanced the next unblocked priority-1 component, `avutil-buffer`; no worker
 writes were delegated.
 
-Current main-thread slice: pinned libavutil rows now prove READONLY
-nullable-zero `av_buffer_ref()` behavior for
-`av_buffer_create(NULL, 0, free, opaque, AV_BUFFER_FLAG_READONLY)`. Source and
-destination refs preserve NULL data pointers, size zero, opaque lookup, shared
-storage, refcount 2, and non-writable READONLY state. Unreffing the destination
-does not release the custom owner; release remains delayed until the final
-source unref. Rust mirrors this with focused unit coverage, the mapped buffer
-oracle, and deterministic `avutil_core_models` coverage. `avutil-buffer`
-remains `differential_pass`, not `complete`; strict completion remains 11/96
-because broader ABI/lifetime closure, hardware/device ownership integration,
-and standalone upstream FATE inapplicability remain open.
+Current main-thread slice: pinned libavutil rows now prove writable
+nullable-zero custom-owner `av_buffer_ref()` behavior for
+`av_buffer_create(NULL, 0, free, opaque, 0)`. Source and destination refs
+preserve NULL data pointers, size zero, opaque lookup, shared storage, refcount
+2, and shared non-writability while both refs are live. Unreffing the
+destination does not release the custom owner; the source becomes uniquely
+writable again and release remains delayed until the final source unref. Rust
+mirrors this with focused unit coverage, the mapped buffer oracle, and
+deterministic `avutil_core_models` coverage. `avutil-buffer` remains
+`differential_pass`, not `complete`; strict completion remains 11/96 because
+broader ABI/lifetime closure, hardware/device ownership integration, and
+standalone upstream FATE inapplicability remain open.
 
-Latest validation commands for this READONLY nullable-zero ref buffer slice
-passed: `cargo fmt --all`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p
-avutil null_data_zero_readonly_detaches_and_reallocates_like_ffmpeg --
---nocapture`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
-buffer_oracle libavutil_buffer_refs_match_current_model -- --ignored
---nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run
---mappings tests/differential/mappings.txt --component avutil-buffer --target
+Latest validation commands for this writable nullable-zero custom-owner ref
+buffer slice passed: `cargo fmt --all`; `CARGO_TARGET_DIR=target-orch-avutil
+cargo test -p avutil null_data_zero_refs_detach_to_ordinary_empty_buffers --
+--nocapture`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo check --manifest-path
+fuzz/Cargo.toml --bin avutil_core_models`; `CARGO_TARGET_DIR=target-orch-avutil
+cargo test -p avutil --test buffer_oracle
+libavutil_buffer_refs_match_current_model -- --ignored --nocapture`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run --mappings
+tests/differential/mappings.txt --component avutil-buffer --target
 oracle-libavutil-buffer --oracle-ffmpeg
 ./third_party/ffmpeg-oracle/build/bin/ffmpeg`; `CARGO_TARGET_DIR=target-orch-fate
 cargo run -p fate-runner -- run --component avutil-buffer --target
 local-avutil-unit`; `CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil
 --all-targets --all-features -- -D warnings`; `CARGO_TARGET_DIR=target-wsl-fuzz
-cargo check --manifest-path fuzz/Cargo.toml --bin avutil_core_models`;
-`CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy --manifest-path fuzz/Cargo.toml
---bin avutil_core_models -- -D warnings`; `cargo fmt --all -- --check`;
-`CARGO_TARGET_DIR=target-orch-fate cargo test -p fate-runner current_ledger`;
-`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- guard-runtime`;
-`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`;
-`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
-15`; and `git diff --check` with CRLF warnings only. Top-level oracle scratch
-`target/` directories created by the ignored oracle runs were removed; stable
-`target-orch-avutil`, `target-orch-fate`, and `target-wsl-fuzz` caches remain.
+cargo clippy --manifest-path fuzz/Cargo.toml --bin avutil_core_models -- -D
+warnings`; `cargo fmt --all -- --check`; `CARGO_TARGET_DIR=target-orch-fate
+cargo test -p fate-runner current_ledger`; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p xtask -- guard-runtime`; `CARGO_TARGET_DIR=target-orch-fate cargo
+run -p xtask -- oracle-doctor`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p
+fate-runner -- status --next 15`; and `git diff --check` with CRLF warnings
+only. Top-level oracle scratch `target/` directories created by the ignored
+oracle runs were removed; stable `target-orch-avutil`, `target-orch-fate`, and
+`target-wsl-fuzz` caches remain.
 
 Current focus component: `avutil-packet` remains the top priority incomplete
 component (`fate_pass`) because the shared `av_shrink_packet()` behavior needs a

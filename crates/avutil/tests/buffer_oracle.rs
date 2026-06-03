@@ -267,6 +267,56 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         ],
     );
 
+    let create_null_zero_ref_owner_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_null_zero_ref_owner_capture = Arc::clone(&create_null_zero_ref_owner_released);
+    let create_null_zero_ref_owner_src =
+        BufferRef::from_null_data_zero_with_opaque_release_callback(
+            670usize,
+            move |opaque, bytes| {
+                create_null_zero_ref_owner_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        );
+    let create_null_zero_ref_owner_dst = BufferRef::ref_from(&create_null_zero_ref_owner_src);
+    rows.insert(
+        "buffer:create-null-zero-ref-owner-src".to_string(),
+        buffer_fields_with_data_null_and_opaque(&create_null_zero_ref_owner_src),
+    );
+    rows.insert(
+        "buffer:create-null-zero-ref-owner-dst".to_string(),
+        buffer_fields_with_data_null_and_opaque(&create_null_zero_ref_owner_dst),
+    );
+    rows.insert(
+        "buffer:create-null-zero-ref-owner-shares".to_string(),
+        vec![
+            bool_field(
+                create_null_zero_ref_owner_src.shares_storage(&create_null_zero_ref_owner_dst),
+            ),
+            create_null_zero_ref_owner_src.strong_count().to_string(),
+            create_null_zero_ref_owner_released
+                .lock()
+                .unwrap()
+                .len()
+                .to_string(),
+        ],
+    );
+    drop(create_null_zero_ref_owner_dst);
+    rows.insert(
+        "buffer:create-null-zero-ref-owner-release-before-src-unref".to_string(),
+        vec![create_null_zero_ref_owner_released
+            .lock()
+            .unwrap()
+            .len()
+            .to_string()],
+    );
+    drop(create_null_zero_ref_owner_src);
+    rows.insert(
+        "buffer:create-null-zero-ref-owner-release".to_string(),
+        release_fields(&create_null_zero_ref_owner_released),
+    );
+
     let mut create_null_zero_unique = BufferRef::from_null_data_zero_with_opaque(657usize);
     let create_null_zero_unique_before = create_null_zero_unique.as_ptr();
     create_null_zero_unique.make_writable().unwrap();
@@ -4936,6 +4986,32 @@ int main(void) {
            av_buffer_get_ref_count(create_null_zero_ref_src));
     av_buffer_unref(&create_null_zero_ref_dst);
     av_buffer_unref(&create_null_zero_ref_src);
+
+    reset_create_release();
+    last_create_release_size = 0;
+    AVBufferRef *create_null_zero_ref_owner_src =
+        av_buffer_create(NULL, 0, test_create_free,
+                         (void *)(uintptr_t)670, 0);
+    fail_if(!create_null_zero_ref_owner_src,
+            "av_buffer_create null zero ref owner src failed");
+    AVBufferRef *create_null_zero_ref_owner_dst =
+        av_buffer_ref(create_null_zero_ref_owner_src);
+    fail_if(!create_null_zero_ref_owner_dst,
+            "av_buffer_ref null zero owner failed");
+    print_buffer_opaque_data_null("buffer:create-null-zero-ref-owner-src",
+                                  create_null_zero_ref_owner_src);
+    print_buffer_opaque_data_null("buffer:create-null-zero-ref-owner-dst",
+                                  create_null_zero_ref_owner_dst);
+    printf("buffer:create-null-zero-ref-owner-shares|%d|%d|%d\n",
+           create_null_zero_ref_owner_src->buffer ==
+               create_null_zero_ref_owner_dst->buffer,
+           av_buffer_get_ref_count(create_null_zero_ref_owner_src),
+           create_release_count);
+    av_buffer_unref(&create_null_zero_ref_owner_dst);
+    printf("buffer:create-null-zero-ref-owner-release-before-src-unref|%d\n",
+           create_release_count);
+    av_buffer_unref(&create_null_zero_ref_owner_src);
+    print_create_release("buffer:create-null-zero-ref-owner-release");
 
     AVBufferRef *create_null_zero_unique =
         av_buffer_create(NULL, 0, NULL, (void *)(uintptr_t)657, 0);
