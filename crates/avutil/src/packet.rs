@@ -5278,6 +5278,7 @@ impl Packet {
         let mut buffer = BufferRef::from_vec(data);
         buffer.resize_with_padding(buffer.len(), AV_INPUT_BUFFER_PADDING_SIZE)?;
         self.data = buffer;
+        self.data_ownership = PacketPayloadOwnership::RefCountedBuffer;
         self.data_ptr_null = false;
         Ok(())
     }
@@ -12762,6 +12763,47 @@ mod tests {
         assert!(referenced.is_data_writable());
         assert!(!src.is_data_writable());
         assert!(!cloned.is_data_writable());
+    }
+
+    #[test]
+    fn packet_replace_data_from_vec_installs_refcounted_storage() {
+        let mut src = Packet::new(vec![0x11], 3);
+        src.set_pts(Some(90_000));
+        src.set_duration(180_000).unwrap();
+        src.set_flag(PacketFlags::KEY, true);
+
+        src.replace_data_from_vec(vec![0xaa, 0xbb, 0xcc]).unwrap();
+        let src_ptr = src.data_buffer().as_padded_ptr();
+        assert!(src.has_refcounted_data_buffer());
+        assert_eq!(src.data(), &[0xaa, 0xbb, 0xcc]);
+        assert_eq!(src.stream_index(), 3);
+        assert_eq!(src.pts(), Some(90_000));
+        assert_eq!(src.duration(), 180_000);
+        assert!(src.flags().contains(PacketFlags::KEY));
+
+        src.make_refcounted().unwrap();
+        assert_eq!(src.data_buffer().as_padded_ptr(), src_ptr);
+        assert!(src.is_data_writable());
+
+        let mut referenced = Packet::default();
+        referenced.ref_from(&src);
+        assert_eq!(referenced.data_buffer().as_padded_ptr(), src_ptr);
+        assert!(referenced.data_buffer().shares_storage(src.data_buffer()));
+        assert!(!src.is_data_writable());
+        assert!(!referenced.is_data_writable());
+
+        referenced.make_writable().unwrap();
+        referenced.make_data_writable()[0] = 0xdd;
+
+        assert_eq!(src.data(), &[0xaa, 0xbb, 0xcc]);
+        assert_eq!(referenced.data(), &[0xdd, 0xbb, 0xcc]);
+        assert_ne!(referenced.data_buffer().as_padded_ptr(), src_ptr);
+        assert!(!referenced.data_buffer().shares_storage(src.data_buffer()));
+        assert!(referenced.is_data_writable());
+        assert_eq!(referenced.stream_index(), 3);
+        assert_eq!(referenced.pts(), Some(90_000));
+        assert_eq!(referenced.duration(), 180_000);
+        assert!(referenced.flags().contains(PacketFlags::KEY));
     }
 
     #[test]

@@ -2250,6 +2250,88 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_fields(&from_data_preserve),
     );
 
+    let mut from_data_replace_ref_src = packet_with_common_props_no_payload();
+    from_data_replace_ref_src
+        .replace_data_from_vec(vec![0x10, 0x20, 0x30])
+        .unwrap();
+    let mut from_data_replace_ref_dst = Packet::default();
+    from_data_replace_ref_dst.ref_from(&from_data_replace_ref_src);
+    rows.insert(
+        "packet:payload-from-data-replace-ref-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-from-data-replace-ref-same-ptr".to_string(),
+        vec![u8::from(
+            from_data_replace_ref_dst.data_buffer().as_padded_ptr()
+                == from_data_replace_ref_src.data_buffer().as_padded_ptr(),
+        )
+        .to_string()],
+    );
+    rows.insert(
+        "packet:payload-from-data-replace-ref-src".to_string(),
+        payload_fields(&from_data_replace_ref_src),
+    );
+    rows.insert(
+        "packet:payload-from-data-replace-ref-dst".to_string(),
+        payload_fields(&from_data_replace_ref_dst),
+    );
+
+    let mut from_data_replace_refcounted = packet_with_common_props_no_payload();
+    from_data_replace_refcounted
+        .replace_data_from_vec(vec![0x10, 0x20, 0x30])
+        .unwrap();
+    let from_data_replace_refcounted_ptr =
+        from_data_replace_refcounted.data_buffer().as_padded_ptr();
+    from_data_replace_refcounted.make_refcounted().unwrap();
+    rows.insert(
+        "packet:payload-from-data-replace-make-refcounted-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-from-data-replace-make-refcounted-same-ptr".to_string(),
+        vec![u8::from(
+            from_data_replace_refcounted.data_buffer().as_padded_ptr()
+                == from_data_replace_refcounted_ptr,
+        )
+        .to_string()],
+    );
+    rows.insert(
+        "packet:payload-from-data-replace-make-refcounted".to_string(),
+        payload_fields(&from_data_replace_refcounted),
+    );
+
+    let mut from_data_replace_writable_src = packet_with_common_props_no_payload();
+    from_data_replace_writable_src
+        .replace_data_from_vec(vec![0x10, 0x20, 0x30])
+        .unwrap();
+    let mut from_data_replace_writable_dst = Packet::default();
+    from_data_replace_writable_dst.ref_from(&from_data_replace_writable_src);
+    let from_data_replace_writable_dst_ptr =
+        from_data_replace_writable_dst.data_buffer().as_padded_ptr();
+    from_data_replace_writable_dst.make_writable().unwrap();
+    from_data_replace_writable_dst.make_data_writable()[0] = 0xdd;
+    rows.insert(
+        "packet:payload-from-data-replace-make-writable-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-from-data-replace-make-writable-same-ptr".to_string(),
+        vec![u8::from(
+            from_data_replace_writable_dst.data_buffer().as_padded_ptr()
+                == from_data_replace_writable_dst_ptr,
+        )
+        .to_string()],
+    );
+    rows.insert(
+        "packet:payload-from-data-replace-make-writable-src".to_string(),
+        payload_fields(&from_data_replace_writable_src),
+    );
+    rows.insert(
+        "packet:payload-from-data-replace-make-writable-dst".to_string(),
+        payload_fields(&from_data_replace_writable_dst),
+    );
+
     let from_data_invalid_ret =
         Packet::validate_payload_len(AV_PACKET_MAX_PAYLOAD_SIZE + 1).unwrap_err();
     let from_data_invalid = packet_with_common_props_no_payload();
@@ -8274,6 +8356,75 @@ static void exercise_payload_api(void) {
     print_packet("packet:payload-from-data-preserve", pkt);
     print_payload("packet:payload-from-data-preserve-payload", pkt);
     av_packet_free(&pkt);
+
+    AVPacket *from_data_replace_ref_src = packet_with_common_props_no_payload();
+    uint8_t *replace_ref_owned = av_mallocz(3 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!replace_ref_owned, "av_mallocz payload from-data replace ref failed");
+    replace_ref_owned[0] = 0x10;
+    replace_ref_owned[1] = 0x20;
+    replace_ref_owned[2] = 0x30;
+    ret = av_packet_from_data(from_data_replace_ref_src, replace_ref_owned, 3);
+    fail_if(ret < 0, "av_packet_from_data replace ref source failed");
+    AVPacket *from_data_replace_ref_dst = new_packet();
+    ret = av_packet_ref(from_data_replace_ref_dst, from_data_replace_ref_src);
+    printf("packet:payload-from-data-replace-ref-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_ref from-data replace payload failed");
+    printf("packet:payload-from-data-replace-ref-same-ptr|%d\n",
+           from_data_replace_ref_dst->data == from_data_replace_ref_src->data);
+    print_payload("packet:payload-from-data-replace-ref-src",
+                  from_data_replace_ref_src);
+    print_payload("packet:payload-from-data-replace-ref-dst",
+                  from_data_replace_ref_dst);
+    av_packet_free(&from_data_replace_ref_dst);
+    av_packet_free(&from_data_replace_ref_src);
+
+    pkt = packet_with_common_props_no_payload();
+    uint8_t *replace_refcounted_owned =
+        av_mallocz(3 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!replace_refcounted_owned,
+            "av_mallocz payload from-data replace make_refcounted failed");
+    replace_refcounted_owned[0] = 0x10;
+    replace_refcounted_owned[1] = 0x20;
+    replace_refcounted_owned[2] = 0x30;
+    ret = av_packet_from_data(pkt, replace_refcounted_owned, 3);
+    fail_if(ret < 0, "av_packet_from_data replace make_refcounted failed");
+    uint8_t *replace_refcounted_ptr = pkt->data;
+    ret = av_packet_make_refcounted(pkt);
+    printf("packet:payload-from-data-replace-make-refcounted-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_make_refcounted from-data replace failed");
+    printf("packet:payload-from-data-replace-make-refcounted-same-ptr|%d\n",
+           pkt->data == replace_refcounted_ptr);
+    print_payload("packet:payload-from-data-replace-make-refcounted", pkt);
+    av_packet_free(&pkt);
+
+    AVPacket *from_data_replace_writable_src =
+        packet_with_common_props_no_payload();
+    uint8_t *replace_writable_owned = av_mallocz(3 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!replace_writable_owned,
+            "av_mallocz payload from-data replace writable failed");
+    replace_writable_owned[0] = 0x10;
+    replace_writable_owned[1] = 0x20;
+    replace_writable_owned[2] = 0x30;
+    ret = av_packet_from_data(from_data_replace_writable_src,
+                              replace_writable_owned, 3);
+    fail_if(ret < 0, "av_packet_from_data replace writable source failed");
+    AVPacket *from_data_replace_writable_dst = new_packet();
+    ret = av_packet_ref(from_data_replace_writable_dst,
+                        from_data_replace_writable_src);
+    fail_if(ret < 0, "av_packet_ref from-data replace writable failed");
+    uint8_t *replace_writable_dst_ptr = from_data_replace_writable_dst->data;
+    ret = av_packet_make_writable(from_data_replace_writable_dst);
+    printf("packet:payload-from-data-replace-make-writable-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_make_writable from-data replace failed");
+    printf("packet:payload-from-data-replace-make-writable-same-ptr|%d\n",
+           from_data_replace_writable_dst->data == replace_writable_dst_ptr);
+    from_data_replace_writable_dst->data[0] = 0xdd;
+    print_payload("packet:payload-from-data-replace-make-writable-src",
+                  from_data_replace_writable_src);
+    print_payload("packet:payload-from-data-replace-make-writable-dst",
+                  from_data_replace_writable_dst);
+    av_packet_free(&from_data_replace_writable_dst);
+    av_packet_free(&from_data_replace_writable_src);
 
     pkt = packet_with_common_props_no_payload();
     ret = av_packet_from_data(pkt, NULL,

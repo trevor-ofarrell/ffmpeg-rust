@@ -720,6 +720,13 @@ The harness also includes `packet:side-new-zero`, `packet:array-new-zero`, `pack
 
 The harness also includes `packet:payload-new-zero*`, `packet:payload-from-data-zero*`, `packet:payload-make-refcounted-empty*`, and `packet:payload-make-writable-empty*` rows, proving zero-size packet payload helpers keep zero visible payload bytes while retaining zeroed FFmpeg input padding and writable refcounted storage.
 
+The harness also includes `packet:payload-from-data-replace-*` rows, proving
+replacement-style `av_packet_from_data()` on a populated/property-bearing
+packet installs refcounted payload ownership while preserving packet
+properties. Follow-on `av_packet_ref()` shares the adopted data pointer,
+`av_packet_make_refcounted()` keeps the same pointer, and
+`av_packet_make_writable()` on a shared ref detaches before mutation.
+
 The harness also includes `packet:payload-from-data-null-zero*` rows, proving
 `av_packet_from_data(pkt, NULL, 0)` creates a nullable zero-size refcounted
 payload with `pkt->data == NULL`, `pkt->buf != NULL`, `pkt->buf->data == NULL`,

@@ -9509,6 +9509,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     preserved_packet
         .replace_data_from_vec(replacement_payload.clone())
         .unwrap();
+    assert!(preserved_packet.has_refcounted_data_buffer());
     assert_eq!(preserved_packet.data(), replacement_payload.as_slice());
     assert_eq!(
         preserved_packet.data_buffer().padding_len(),
@@ -9543,6 +9544,19 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         preserved_packet.opaque_ref().unwrap().as_slice(),
         &[0xde, 0xad, 0xbe]
     );
+    let mut preserved_ref = Packet::default();
+    preserved_ref.ref_from(&preserved_packet);
+    assert!(preserved_ref
+        .data_buffer()
+        .shares_storage(preserved_packet.data_buffer()));
+    assert!(!preserved_packet.is_data_writable());
+    assert!(!preserved_ref.is_data_writable());
+    preserved_ref.make_writable().unwrap();
+    assert!(!preserved_ref
+        .data_buffer()
+        .shares_storage(preserved_packet.data_buffer()));
+    assert!(preserved_ref.is_data_writable());
+    assert_eq!(preserved_ref.data(), replacement_payload.as_slice());
 
     let mut writable_props_src = Packet::new(vec![0xaa, 0xbb, 0xcc], 7);
     writable_props_src.make_refcounted().unwrap();

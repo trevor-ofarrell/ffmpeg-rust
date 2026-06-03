@@ -3,7 +3,7 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The
-tree started clean at `master...origin/master [ahead 15]`; required startup
+tree started clean at `master...origin/master [ahead 16]`; required startup
 checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
 -- status --next 15` reporting 11/96 strict-complete components (11.5%) and
 `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
@@ -11,23 +11,22 @@ validating the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
 kept the top-priority `avutil-packet` evidence slice local; no worker writes
 were delegated.
 
-Current main-thread slice: pinned libavcodec rows now prove nullable zero-data
-payload behavior for `av_packet_from_data(pkt, NULL, 0)`.
-`packet:payload-from-data-null-zero*` verifies the adopted packet has
-`pkt->data == NULL`, `pkt->buf != NULL`, `pkt->buf->data == NULL`, a padded
-zero-size buffer, and writable storage. Ref/clone and make-refcounted preserve
-the nullable pointer shape, while make-writable on a shared nullable ref
-detaches to ordinary writable padded zero-length storage. Rust mirrors this
-through `Packet::from_null_data_zero`, a logical nullable data-pointer flag,
-focused unit coverage, the mapped packet oracle, and a deterministic
-`avutil_core_models` fixture.
+Current main-thread slice: pinned libavcodec rows now prove
+replacement-style `av_packet_from_data()` installs refcounted payload ownership
+while preserving packet properties. `packet:payload-from-data-replace-*`
+verifies follow-on `av_packet_ref()` shares the adopted data pointer,
+`av_packet_make_refcounted()` is a same-pointer no-op, and
+`av_packet_make_writable()` on a shared ref detaches before mutation. Rust
+mirrors this through `Packet::replace_data_from_vec` marking replacement
+payloads as refcounted, focused unit coverage, the mapped packet oracle, and a
+deterministic `avutil_core_models` fixture.
 `avutil-packet` remains `fate_pass`, not `complete`; strict completion remains
 11/96 because broader ABI/media integration vectors and longer sustained fuzz
 evidence remain pending.
 
-Latest validation commands for this nullable zero-data packet slice passed:
+Latest validation commands for this replacement from-data packet slice passed:
 `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil
-packet_from_null_data_zero_preserves_nullable_refcounted_shape --
+packet_replace_data_from_vec_installs_refcounted_storage --
 --nocapture`;
 `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
 packet_oracle libavcodec_packet_core_lifecycle_matches_packet_model -- --ignored

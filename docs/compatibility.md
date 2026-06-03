@@ -10,6 +10,14 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  replacement-style `av_packet_from_data()` installs refcounted payload
+  ownership while preserving packet properties. Follow-on ref shares the
+  adopted data pointer, make-refcounted is a same-pointer no-op, and
+  make-writable on a shared ref detaches before mutation. Rust mirrors this
+  through `Packet::replace_data_from_vec`, focused unit coverage, the mapped
+  packet oracle, and `avutil_core_models`. This strengthens `avutil-packet`;
+  strict completion remains 11/96 and the row remains `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   `av_packet_from_data(pkt, NULL, 0)` succeeds as a nullable zero-size
   refcounted payload with `pkt->data == NULL`, `pkt->buf != NULL`, nullable
   buffer data, padded buffer size, and writable storage. Ref/clone and
