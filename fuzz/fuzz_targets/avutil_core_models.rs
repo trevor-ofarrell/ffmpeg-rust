@@ -9767,6 +9767,57 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .unwrap()
         .shares_storage(&invalid_opaque));
 
+    let err = Packet::validate_payload_len_i32(-1).unwrap_err();
+    assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+    assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
+
+    let mut negative_new_packet = Packet::from_data(vec![0xaa, 0xbb, 0xcc]).unwrap();
+    negative_new_packet.set_pts(Some(90_000));
+    negative_new_packet.set_dts(Some(45_000));
+    negative_new_packet.set_duration(180_000).unwrap();
+    negative_new_packet.set_pos(Some(1_234)).unwrap();
+    negative_new_packet.set_stream_index_raw(7);
+    negative_new_packet.set_flag(PacketFlags::KEY, true);
+    negative_new_packet
+        .set_time_base(Rational::new(1, 90_000).unwrap())
+        .unwrap();
+    negative_new_packet.push_side_data(SideData::new_extradata(vec![0x11, 0x22]).unwrap());
+    negative_new_packet.set_opaque(Some(PacketOpaque::new(0x1234).unwrap()));
+    negative_new_packet.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad])));
+    let negative_new_payload = negative_new_packet.data_buffer().clone();
+    let negative_new_opaque = negative_new_packet.opaque_ref().unwrap().clone();
+    let err = negative_new_packet
+        .alloc_new_packet_payload_i32(-1)
+        .unwrap_err();
+    assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+    assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
+    assert_eq!(negative_new_packet.data(), &[0xaa, 0xbb, 0xcc]);
+    assert!(negative_new_packet
+        .data_buffer()
+        .shares_storage(&negative_new_payload));
+    assert_eq!(negative_new_packet.pts(), Some(90_000));
+    assert_eq!(negative_new_packet.dts(), Some(45_000));
+    assert_eq!(negative_new_packet.duration(), 180_000);
+    assert_eq!(negative_new_packet.pos(), Some(1_234));
+    assert_eq!(negative_new_packet.stream_index_raw(), 7);
+    assert!(negative_new_packet.flags().contains(PacketFlags::KEY));
+    assert_eq!(
+        negative_new_packet
+            .side_data_by_kind("new_extradata")
+            .unwrap()
+            .data(),
+        &[0x11, 0x22]
+    );
+    assert_eq!(negative_new_packet.opaque_address(), Some(0x1234));
+    assert!(negative_new_packet
+        .opaque_ref()
+        .unwrap()
+        .shares_storage(&negative_new_opaque));
+    assert_eq!(
+        negative_new_packet.time_base(),
+        Rational::new(1, 90_000).unwrap()
+    );
+
     let mut empty_refcounted_packet = Packet::default();
     empty_refcounted_packet.make_refcounted().unwrap();
     assert!(empty_refcounted_packet.is_empty());
@@ -9825,6 +9876,26 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .shares_storage(&invalid_grow_payload));
     assert_eq!(invalid_grow_packet.pts(), Some(99));
     assert!(invalid_grow_packet.flags().contains(PacketFlags::TRUSTED));
+
+    let mut negative_grow_packet = Packet::from_data(vec![0x44, 0x55]).unwrap();
+    negative_grow_packet.set_pts(Some(99));
+    negative_grow_packet.set_flag(PacketFlags::TRUSTED, true);
+    let negative_grow_payload = negative_grow_packet.data_buffer().clone();
+    let err = negative_grow_packet.grow_data_i32(-1).unwrap_err();
+    assert_eq!(err.kind(), AvErrorKind::External);
+    assert_eq!(err.code(), Some(AvErrorCode::ENOMEM));
+    assert_eq!(negative_grow_packet.data(), &[0x44, 0x55]);
+    assert!(negative_grow_packet
+        .data_buffer()
+        .shares_storage(&negative_grow_payload));
+    assert_eq!(negative_grow_packet.pts(), Some(99));
+    assert!(negative_grow_packet.flags().contains(PacketFlags::TRUSTED));
+
+    let mut negative_empty_grow = Packet::default();
+    let err = negative_empty_grow.grow_data_i32(-1).unwrap_err();
+    assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+    assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
+    assert!(negative_empty_grow.is_empty());
 
     let shrink_to = usize::from(cursor.next().unwrap_or_default()) % (padded_packet.len() + 1);
     padded_packet.shrink_data(shrink_to).unwrap();

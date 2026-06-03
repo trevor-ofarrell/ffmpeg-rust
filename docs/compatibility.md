@@ -9,6 +9,16 @@
 
 ## Compatible Today
 
+- Latest main-thread packet evidence: pinned libavcodec rows now prove signed
+  `int` payload-size boundaries for public packet helpers. `av_new_packet(pkt,
+  -1)` returns EINVAL without mutating a populated packet, while
+  `av_grow_packet(pkt, -1)` on a nonempty packet returns ENOMEM without
+  mutating packet fields, payload bytes, input padding, or writability. Rust
+  mirrors this through explicit `*_i32` helpers, focused unit coverage, the
+  mapped packet oracle, `avutil_core_models`, upstream `fate-avpacket`, and a
+  64-run WSL fuzz smoke with leak detection disabled. This strengthens
+  `avutil-packet`; strict completion remains 11/96 and the row remains
+  `fate_pass`.
 - Latest main-thread buffer evidence: pinned libavutil rows now prove
   same-size `av_buffer_realloc()` on an offset-visible custom-pool checkout
   preserves the data pointer, offset, size, writability, and pool opaque data.

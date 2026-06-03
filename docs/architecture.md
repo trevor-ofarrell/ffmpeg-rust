@@ -65,6 +65,8 @@ This repository is a Rust workspace for a compatibility-oriented FFmpeg 8.1.1 re
 
 `Packet` payload resizing deliberately separates stable FFmpeg parity from safe Rust determinism. The oracle compares `av_grow_packet()` by return code, final size, preserved prefix where one exists, zeroed input padding, and writability because FFmpeg's newly visible grown bytes are allocator-dependent; the Rust model zeroes those new bytes. `Packet::grow_data` also mirrors FFmpeg's pre-allocation ENOMEM guard when `grow_by` exceeds `INT_MAX - (pkt->size + AV_INPUT_BUFFER_PADDING_SIZE)`, preserving packet state instead of attempting a huge allocation. `av_shrink_packet()` rows compare oversize no-op behavior, shrink-to-zero state, and zeroed padding.
 
+`Packet::alloc_new_packet_payload_i32` and `Packet::grow_data_i32` expose the current FFmpeg-C-shaped signed `int` payload-size boundary. Negative `av_new_packet` sizes return EINVAL without mutation, while negative nonempty `av_grow_packet` requests hit FFmpeg's unsigned grow guard and return ENOMEM without mutating packet fields or payload.
+
 The custom-padding packet rows pin the zero-growth/no-op-shrink boundary:
 `av_grow_packet(pkt, 0)` on ordinary writable padded storage preserves the data
 pointer and visible bytes while zeroing dirty input padding, but exact-size and

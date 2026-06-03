@@ -5252,6 +5252,10 @@ impl Packet {
         validate_packet_payload_size(size)
     }
 
+    pub fn validate_payload_len_i32(size: i32) -> AvResult<usize> {
+        validate_packet_payload_size_i32(size)
+    }
+
     pub fn from_data(data: Vec<u8>) -> AvResult<Self> {
         validate_packet_payload_size(data.len())?;
         let mut buffer = BufferRef::from_vec(data);
@@ -5334,6 +5338,11 @@ impl Packet {
         Ok(())
     }
 
+    pub fn alloc_new_packet_payload_i32(&mut self, size: i32) -> AvResult<()> {
+        let size = validate_packet_payload_size_i32(size)?;
+        self.alloc_new_packet_payload(size)
+    }
+
     pub fn make_refcounted(&mut self) -> AvResult<()> {
         if self.data_ownership == PacketPayloadOwnership::RefCountedBuffer {
             return Ok(());
@@ -5354,6 +5363,14 @@ impl Packet {
 
     pub fn grow_data(&mut self, grow_by: usize) -> AvResult<()> {
         let len = validate_packet_grow_size(self.data.len(), grow_by)?;
+        self.data
+            .resize_with_padding(len, AV_INPUT_BUFFER_PADDING_SIZE)?;
+        self.data_ownership = PacketPayloadOwnership::RefCountedBuffer;
+        Ok(())
+    }
+
+    pub fn grow_data_i32(&mut self, grow_by: i32) -> AvResult<()> {
+        let len = validate_packet_grow_size_i32(self.data.len(), grow_by)?;
         self.data
             .resize_with_padding(len, AV_INPUT_BUFFER_PADDING_SIZE)?;
         self.data_ownership = PacketPayloadOwnership::RefCountedBuffer;
@@ -5975,6 +5992,18 @@ fn validate_packet_payload_size(size: usize) -> AvResult<()> {
     Ok(())
 }
 
+fn validate_packet_payload_size_i32(size: i32) -> AvResult<usize> {
+    let size = usize::try_from(size).map_err(|_| {
+        AvError::with_code(
+            AvErrorKind::InvalidArgument,
+            AvErrorCode::EINVAL,
+            "packet payload allocation size is negative",
+        )
+    })?;
+    validate_packet_payload_size(size)?;
+    Ok(size)
+}
+
 fn validate_packet_grow_size(current_size: usize, grow_by: usize) -> AvResult<usize> {
     let current_with_padding = current_size
         .checked_add(AV_INPUT_BUFFER_PADDING_SIZE)
@@ -5988,6 +6017,17 @@ fn validate_packet_grow_size(current_size: usize, grow_by: usize) -> AvResult<us
     current_size
         .checked_add(grow_by)
         .ok_or_else(packet_grow_size_error)
+}
+
+fn validate_packet_grow_size_i32(current_size: usize, grow_by: i32) -> AvResult<usize> {
+    if grow_by < 0 {
+        return if current_size == 0 {
+            validate_packet_payload_size_i32(grow_by)
+        } else {
+            Err(packet_grow_size_error())
+        };
+    }
+    validate_packet_grow_size(current_size, grow_by as usize)
 }
 
 fn packet_grow_size_error() -> AvError {
@@ -12509,6 +12549,81 @@ mod tests {
 
         let err = Packet::new_zeroed(AV_PACKET_MAX_PAYLOAD_SIZE + 1, 0).unwrap_err();
         assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
+    }
+
+    #[test]
+    fn packet_signed_payload_size_apis_preserve_on_negative_inputs() {
+        let mut new_packet_negative = Packet::from_data(vec![0xaa, 0xbb, 0xcc]).unwrap();
+        new_packet_negative.set_pts(Some(90_000));
+        new_packet_negative.set_dts(Some(45_000));
+        new_packet_negative.set_duration(180_000).unwrap();
+        new_packet_negative.set_pos(Some(1_234)).unwrap();
+        new_packet_negative.set_stream_index_raw(7);
+        new_packet_negative.set_flag(PacketFlags::KEY, true);
+        new_packet_negative.set_flag(PacketFlags::CORRUPT, true);
+        new_packet_negative
+            .set_time_base(Rational::new(1, 90_000).unwrap())
+            .unwrap();
+        new_packet_negative.push_side_data(SideData::new_extradata(vec![0x11, 0x22]).unwrap());
+        new_packet_negative.set_opaque_address(0x1234);
+        new_packet_negative.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad])));
+        let negative_payload = new_packet_negative.data_buffer().clone();
+        let negative_opaque = new_packet_negative.opaque_ref().unwrap().clone();
+
+        let err = Packet::validate_payload_len_i32(-1).unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
+
+        let err = new_packet_negative
+            .alloc_new_packet_payload_i32(-1)
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
+        assert_eq!(new_packet_negative.data(), &[0xaa, 0xbb, 0xcc]);
+        assert!(new_packet_negative
+            .data_buffer()
+            .shares_storage(&negative_payload));
+        assert_eq!(new_packet_negative.pts(), Some(90_000));
+        assert_eq!(new_packet_negative.dts(), Some(45_000));
+        assert_eq!(new_packet_negative.duration(), 180_000);
+        assert_eq!(new_packet_negative.pos(), Some(1_234));
+        assert_eq!(new_packet_negative.stream_index_raw(), 7);
+        assert!(new_packet_negative.flags().contains(PacketFlags::KEY));
+        assert!(new_packet_negative.flags().contains(PacketFlags::CORRUPT));
+        assert_eq!(
+            new_packet_negative
+                .side_data_by_kind("new_extradata")
+                .unwrap()
+                .data(),
+            &[0x11, 0x22]
+        );
+        assert_eq!(new_packet_negative.opaque_address(), Some(0x1234));
+        assert!(new_packet_negative
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(&negative_opaque));
+        assert_eq!(
+            new_packet_negative.time_base(),
+            Rational::new(1, 90_000).unwrap()
+        );
+
+        let mut grow_negative = Packet::from_data(vec![0x44, 0x55]).unwrap();
+        grow_negative.set_pts(Some(99));
+        grow_negative.set_flag(PacketFlags::TRUSTED, true);
+        let grow_payload = grow_negative.data_buffer().clone();
+        let err = grow_negative.grow_data_i32(-1).unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::External);
+        assert_eq!(err.code(), Some(AvErrorCode::ENOMEM));
+        assert_eq!(grow_negative.data(), &[0x44, 0x55]);
+        assert!(grow_negative.data_buffer().shares_storage(&grow_payload));
+        assert_eq!(grow_negative.pts(), Some(99));
+        assert!(grow_negative.flags().contains(PacketFlags::TRUSTED));
+
+        let mut empty_negative_grow = Packet::default();
+        let err = empty_negative_grow.grow_data_i32(-1).unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
+        assert!(empty_negative_grow.is_empty());
     }
 
     #[test]

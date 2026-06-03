@@ -157,6 +157,15 @@ the cargo-fuzz sandbox/tooling layer without usable completion output; unit,
 oracle, FATE-runner, and clippy gates cover the slice until a later warmed fuzz
 smoke can be recorded.
 
+The latest packet signed-size fixture extends `avutil_core_models` with
+negative FFmpeg `int` payload-size boundaries. The pinned libavcodec packet
+oracle emits matching `packet:payload-new-packet-negative-*` and
+`packet:payload-grow-negative-*` rows: `av_new_packet(pkt, -1)` returns EINVAL
+without mutating a populated packet, while `av_grow_packet(pkt, -1)` on a
+nonempty packet returns ENOMEM without mutating packet fields, payload bytes,
+input padding, or writability. A 64-run WSL `avutil_core_models` smoke passed
+with local leak detection disabled.
+
 The latest packet signed-stream-index fixture extends `avutil_core_models` with
 negative `AVPacket.stream_index` behavior. `Packet::stream_index_raw` preserves
 the signed field for oracle parity, while `Packet::stream_index()` remains a
@@ -649,6 +658,13 @@ without rational normalization, while move-ref resets the source packet to the
 default zero time base.
 
 The harness also includes pre-populated `av_new_packet()` rows. Successful positive-size and zero-size calls reset packet metadata, side data, opaque pointer metadata, `opaque_ref`, stream index, flags, and time base before installing writable padded payload storage; the positive-size row initializes bytes before comparison because fresh allocation contents are unspecified, and the zero-size row proves an empty visible payload with FFmpeg input padding. The `INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE` invalid-size boundary returns `EINVAL` without mutating the existing packet.
+
+The harness also includes negative signed packet payload-size rows:
+`packet:payload-new-packet-negative-*` proves `av_new_packet(pkt, -1)` returns
+EINVAL without mutating a populated packet, and
+`packet:payload-grow-negative-*` proves `av_grow_packet(pkt, -1)` on a nonempty
+packet returns ENOMEM without mutating packet fields, payload bytes, input
+padding, or writability.
 
 The harness also includes `packet:payload-from-data-invalid-*` rows. These prove `av_packet_from_data()` returns `AVERROR(EINVAL)` before mutation when `size >= INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE`; the Rust packet constructors and replacement helper use `Packet::validate_payload_len` to reject the same boundary before allocation.
 

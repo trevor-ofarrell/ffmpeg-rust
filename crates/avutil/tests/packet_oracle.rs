@@ -2066,6 +2066,19 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         packet_fields(&new_packet_invalid),
     );
 
+    let mut new_packet_negative = packet_with_common_props();
+    let negative_new_ret = new_packet_negative
+        .alloc_new_packet_payload_i32(-1)
+        .unwrap_err();
+    rows.insert(
+        "packet:payload-new-packet-negative-ret".to_string(),
+        vec![negative_new_ret.code().unwrap().raw().to_string()],
+    );
+    rows.insert(
+        "packet:payload-new-packet-negative-preserve".to_string(),
+        packet_fields(&new_packet_negative),
+    );
+
     let from_data = Packet::from_data(vec![0xaa, 0xbb, 0xcc]).unwrap();
     rows.insert(
         "packet:payload-from-data-ret".to_string(),
@@ -2260,6 +2273,24 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:payload-grow-invalid-payload".to_string(),
         payload_fields(&grow_invalid),
+    );
+
+    let mut grow_negative = packet_with_common_props_no_payload();
+    grow_negative
+        .replace_data_from_vec(vec![0x44, 0x55])
+        .unwrap();
+    let grow_negative_ret = grow_negative.grow_data_i32(-1).unwrap_err();
+    rows.insert(
+        "packet:payload-grow-negative-ret".to_string(),
+        vec![grow_negative_ret.code().unwrap().raw().to_string()],
+    );
+    rows.insert(
+        "packet:payload-grow-negative-preserve".to_string(),
+        packet_fields(&grow_negative),
+    );
+    rows.insert(
+        "packet:payload-grow-negative-payload".to_string(),
+        payload_fields(&grow_negative),
     );
 
     grow.shrink_data(2).unwrap();
@@ -7972,6 +8003,12 @@ static void exercise_payload_api(void) {
     print_packet("packet:payload-new-packet-invalid-preserve", pkt);
     av_packet_free(&pkt);
 
+    pkt = packet_with_common_props();
+    ret = av_new_packet(pkt, -1);
+    printf("packet:payload-new-packet-negative-ret|%d\n", ret);
+    print_packet("packet:payload-new-packet-negative-preserve", pkt);
+    av_packet_free(&pkt);
+
     pkt = new_packet();
     uint8_t *owned = av_mallocz(3 + AV_INPUT_BUFFER_PADDING_SIZE);
     fail_if(!owned, "av_mallocz payload from-data failed");
@@ -8153,6 +8190,22 @@ static void exercise_payload_api(void) {
     printf("packet:payload-grow-invalid-ret|%d\n", ret);
     print_packet("packet:payload-grow-invalid-preserve", pkt);
     print_payload("packet:payload-grow-invalid-payload", pkt);
+    av_packet_free(&pkt);
+
+    pkt = packet_with_common_props_no_payload();
+    uint8_t *grow_negative_owned = av_mallocz(2 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!grow_negative_owned, "av_mallocz grow negative payload failed");
+    grow_negative_owned[0] = 0x44;
+    grow_negative_owned[1] = 0x55;
+    ret = av_packet_from_data(pkt, grow_negative_owned, 2);
+    if (ret < 0) {
+        av_free(grow_negative_owned);
+        fail_if(1, "av_packet_from_data grow negative payload failed");
+    }
+    ret = av_grow_packet(pkt, -1);
+    printf("packet:payload-grow-negative-ret|%d\n", ret);
+    print_packet("packet:payload-grow-negative-preserve", pkt);
+    print_payload("packet:payload-grow-negative-payload", pkt);
     av_packet_free(&pkt);
 
     pkt = new_packet();
