@@ -3,7 +3,7 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The
-tree started clean at `master...origin/master [ahead 14]`; required startup
+tree started clean at `master...origin/master [ahead 15]`; required startup
 checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
 -- status --next 15` reporting 11/96 strict-complete components (11.5%) and
 `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
@@ -11,20 +11,24 @@ validating the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
 kept the top-priority `avutil-packet` evidence slice local; no worker writes
 were delegated.
 
-Current main-thread slice: pinned libavcodec rows now prove empty zero-growth
-payload behavior for `av_grow_packet()`. `packet:payload-grow-empty-zero-*`
-verifies `av_grow_packet(pkt, 0)` on a default empty packet with `buf == NULL`
-returns success, installs writable refcounted storage, keeps zero visible
-bytes, and exposes zeroed input padding. Rust mirrors this through
-`Packet::grow_data(0)` on `Packet::default()`, focused unit coverage, the
-mapped packet oracle, and a deterministic `avutil_core_models` fixture.
+Current main-thread slice: pinned libavcodec rows now prove nullable zero-data
+payload behavior for `av_packet_from_data(pkt, NULL, 0)`.
+`packet:payload-from-data-null-zero*` verifies the adopted packet has
+`pkt->data == NULL`, `pkt->buf != NULL`, `pkt->buf->data == NULL`, a padded
+zero-size buffer, and writable storage. Ref/clone and make-refcounted preserve
+the nullable pointer shape, while make-writable on a shared nullable ref
+detaches to ordinary writable padded zero-length storage. Rust mirrors this
+through `Packet::from_null_data_zero`, a logical nullable data-pointer flag,
+focused unit coverage, the mapped packet oracle, and a deterministic
+`avutil_core_models` fixture.
 `avutil-packet` remains `fate_pass`, not `complete`; strict completion remains
 11/96 because broader ABI/media integration vectors and longer sustained fuzz
 evidence remain pending.
 
-Latest validation commands for this packet empty zero-grow slice passed:
+Latest validation commands for this nullable zero-data packet slice passed:
 `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil
-packet_grow_and_shrink_data_preserve_payload_and_padding -- --nocapture`;
+packet_from_null_data_zero_preserves_nullable_refcounted_shape --
+--nocapture`;
 `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
 packet_oracle libavcodec_packet_core_lifecycle_matches_packet_model -- --ignored
 --nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run
@@ -48,9 +52,8 @@ Current focus component: `avutil-packet` remains the top priority incomplete
 component (`fate_pass`), followed by `avutil-buffer` (`differential_pass`),
 `avutil-frame` (`differential_pass`), `avutil-logging` (`fate_pass`), and
 `avutil-options` (`fate_pass`). Next concrete packet candidates include
-implementing a nullable packet-data representation before pinning
-`av_packet_from_data(NULL, 0)`, broader media-integration packet vectors, or a
-move to the next unblocked `avutil-buffer` slice if packet ABI edge work
+broader media-integration packet vectors, another AVPacket ABI/lifecycle edge,
+or a move to the next unblocked `avutil-buffer` slice if packet edge work
 stalls.
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The

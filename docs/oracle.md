@@ -720,6 +720,15 @@ The harness also includes `packet:side-new-zero`, `packet:array-new-zero`, `pack
 
 The harness also includes `packet:payload-new-zero*`, `packet:payload-from-data-zero*`, `packet:payload-make-refcounted-empty*`, and `packet:payload-make-writable-empty*` rows, proving zero-size packet payload helpers keep zero visible payload bytes while retaining zeroed FFmpeg input padding and writable refcounted storage.
 
+The harness also includes `packet:payload-from-data-null-zero*` rows, proving
+`av_packet_from_data(pkt, NULL, 0)` creates a nullable zero-size refcounted
+payload with `pkt->data == NULL`, `pkt->buf != NULL`, `pkt->buf->data == NULL`,
+an `AV_INPUT_BUFFER_PADDING_SIZE` backing size, and writable storage. Ref/clone
+and make-refcounted preserve that nullable pointer shape, while make-writable
+on a shared nullable ref detaches to ordinary writable padded zero-length
+storage. The Rust model exposes this bounded C shape through
+`Packet::from_null_data_zero`.
+
 The harness also includes already-refcounted payload no-op rows for `packet:payload-make-writable-unique*`, `packet:payload-make-refcounted-unique*`, and `packet:payload-make-refcounted-shared*`. These prove unique refcounted packets keep their visible data pointer and writable padded storage, while shared refcounted packets keep shared storage and remain non-writable after `av_packet_make_refcounted()`.
 
 The harness also includes `packet:payload-make-refcounted-readonly-*` and `packet:payload-make-writable-readonly-*` rows. These prove an existing read-only `AVBufferRef` is considered refcounted and left attached/non-writable by `av_packet_make_refcounted()`, then detached to writable padded storage by `av_packet_make_writable()`.

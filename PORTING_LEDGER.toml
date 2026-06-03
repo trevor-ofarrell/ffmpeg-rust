@@ -389,6 +389,14 @@ default_profile = "ffmpeg-8.1.1-default-native"
 # raw no-buffer payload semantics, while the safe explicit-owner offset
 # `BufferRef` fixture documents the corresponding padding path without raw
 # pointer ownership.
+# Latest avutil-packet evidence: `packet:payload-from-data-null-zero*` rows now
+# prove pinned FFmpeg 8.1.1 accepts `av_packet_from_data(pkt, NULL, 0)` as a
+# nullable zero-size refcounted payload: `pkt->data == NULL`, `pkt->buf != NULL`,
+# `pkt->buf->data == NULL`, buffer size equals `AV_INPUT_BUFFER_PADDING_SIZE`,
+# and the storage is writable. Ref/clone and make-refcounted preserve that
+# nullable pointer shape, while make-writable on a shared ref detaches to
+# ordinary writable padded zero-length storage. Rust mirrors this with
+# `Packet::from_null_data_zero` and a logical nullable data-pointer flag.
 # Latest avutil-packet evidence: `packet:payload-from-data-invalid-*` rows now
 # prove pinned FFmpeg 8.1.1 `av_packet_from_data()` returns EINVAL before
 # mutation when `size >= INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE`. Rust
@@ -745,6 +753,7 @@ unit_tests = [
   "frame::tests::frame_add_side_data_with_flags_matches_array_insert_semantics",
   "packet::tests::packet_from_data_and_zeroed_constructors_add_input_padding",
   "packet::tests::packet_from_data_ref_and_clone_share_until_writable",
+  "packet::tests::packet_from_null_data_zero_preserves_nullable_refcounted_shape",
   "packet::tests::packet_alloc_new_packet_payload_resets_metadata_and_checks_size",
   "packet::tests::packet_alloc_new_packet_payload_zero_resets_metadata",
   "packet::tests::packet_signed_payload_size_apis_preserve_on_negative_inputs",
@@ -918,6 +927,12 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: pinned libavcodec AVPacket payload oracle coverage now proves
+# `av_packet_from_data(pkt, NULL, 0)` installs a nullable refcounted zero-size
+# payload. Ref/clone and make-refcounted preserve the nullable data pointer,
+# while make-writable on a shared nullable ref detaches to ordinary writable
+# padded zero-length storage. Focused unit coverage and avutil_core_models
+# invariants mirror the bounded behavior through `Packet::from_null_data_zero`.
 # Latest update: pinned libavcodec AVPacket payload oracle coverage now proves
 # `av_grow_packet(pkt, 0)` on a default empty packet succeeds by allocating
 # writable refcounted padded storage with zero visible bytes and zeroed input

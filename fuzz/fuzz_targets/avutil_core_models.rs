@@ -9860,6 +9860,41 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .all(|byte| *byte == 0));
     assert!(empty_zero_grow_packet.is_data_writable());
 
+    let null_zero_packet = Packet::from_null_data_zero().unwrap();
+    assert!(null_zero_packet.is_empty());
+    assert!(null_zero_packet.is_data_ptr_null());
+    assert!(null_zero_packet.has_refcounted_data_buffer());
+    assert_eq!(
+        null_zero_packet.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(null_zero_packet
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    assert!(null_zero_packet.is_data_writable());
+    let mut null_zero_ref = Packet::default();
+    null_zero_ref.ref_from(&null_zero_packet);
+    assert!(null_zero_packet.is_data_ptr_null());
+    assert!(null_zero_ref.is_data_ptr_null());
+    assert!(null_zero_ref
+        .data_buffer()
+        .shares_storage(null_zero_packet.data_buffer()));
+    null_zero_ref.make_refcounted().unwrap();
+    assert!(null_zero_ref.is_data_ptr_null());
+    null_zero_ref.make_writable().unwrap();
+    assert!(!null_zero_ref.is_data_ptr_null());
+    assert!(null_zero_ref.is_empty());
+    assert_eq!(
+        null_zero_ref.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(null_zero_ref.is_data_writable());
+    assert!(!null_zero_ref
+        .data_buffer()
+        .shares_storage(null_zero_packet.data_buffer()));
+
     let grow_by = usize::from(cursor.next().unwrap_or_default() % 8);
     padded_packet.grow_data(grow_by).unwrap();
     assert_eq!(&padded_packet.data()[..payload.len()], payload.as_slice());

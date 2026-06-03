@@ -10,6 +10,16 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  `av_packet_from_data(pkt, NULL, 0)` succeeds as a nullable zero-size
+  refcounted payload with `pkt->data == NULL`, `pkt->buf != NULL`, nullable
+  buffer data, padded buffer size, and writable storage. Ref/clone and
+  make-refcounted preserve the nullable pointer, while make-writable on a
+  shared nullable ref detaches to ordinary writable padded storage. Rust
+  mirrors this through `Packet::from_null_data_zero`, focused unit coverage,
+  the mapped packet oracle, and `avutil_core_models`. This strengthens
+  `avutil-packet`; strict completion remains 11/96 and the row remains
+  `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   `av_grow_packet(pkt, 0)` on a default empty packet with `buf == NULL`
   succeeds by installing writable refcounted storage with zero visible bytes
   and zeroed input padding. Rust mirrors this through `Packet::grow_data(0)`

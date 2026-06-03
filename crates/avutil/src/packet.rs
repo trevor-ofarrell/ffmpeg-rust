@@ -5227,6 +5227,7 @@ enum PacketPayloadOwnership {
 pub struct Packet {
     data: BufferRef,
     data_ownership: PacketPayloadOwnership,
+    data_ptr_null: bool,
     pts: i64,
     dts: i64,
     duration: i64,
@@ -5263,11 +5264,21 @@ impl Packet {
         Ok(Self::with_buffer(buffer, 0))
     }
 
+    pub fn from_null_data_zero() -> AvResult<Self> {
+        let mut packet = Self::with_buffer(
+            BufferRef::zeroed_with_padding(0, AV_INPUT_BUFFER_PADDING_SIZE)?,
+            0,
+        );
+        packet.data_ptr_null = true;
+        Ok(packet)
+    }
+
     pub fn replace_data_from_vec(&mut self, data: Vec<u8>) -> AvResult<()> {
         validate_packet_payload_size(data.len())?;
         let mut buffer = BufferRef::from_vec(data);
         buffer.resize_with_padding(buffer.len(), AV_INPUT_BUFFER_PADDING_SIZE)?;
         self.data = buffer;
+        self.data_ptr_null = false;
         Ok(())
     }
 
@@ -5291,6 +5302,7 @@ impl Packet {
         Self {
             data,
             data_ownership,
+            data_ptr_null: false,
             pts: AV_NOPTS_VALUE,
             dts: AV_NOPTS_VALUE,
             duration: 0,
@@ -5310,6 +5322,18 @@ impl Packet {
 
     pub fn data_buffer(&self) -> &BufferRef {
         &self.data
+    }
+
+    pub fn is_data_ptr_null(&self) -> bool {
+        self.data_ptr_null
+    }
+
+    pub fn has_refcounted_data_buffer(&self) -> bool {
+        self.data_ownership == PacketPayloadOwnership::RefCountedBuffer
+    }
+
+    pub fn is_data_buffer_ptr_null(&self) -> bool {
+        self.data_ptr_null && self.has_refcounted_data_buffer()
     }
 
     pub fn len(&self) -> usize {
@@ -5366,6 +5390,7 @@ impl Packet {
         self.data
             .resize_with_padding(len, AV_INPUT_BUFFER_PADDING_SIZE)?;
         self.data_ownership = PacketPayloadOwnership::RefCountedBuffer;
+        self.data_ptr_null = false;
         Ok(())
     }
 
@@ -5374,6 +5399,7 @@ impl Packet {
         self.data
             .resize_with_padding(len, AV_INPUT_BUFFER_PADDING_SIZE)?;
         self.data_ownership = PacketPayloadOwnership::RefCountedBuffer;
+        self.data_ptr_null = false;
         Ok(())
     }
 
@@ -5689,6 +5715,8 @@ impl Packet {
         *self = Self {
             data,
             data_ownership: PacketPayloadOwnership::RefCountedBuffer,
+            data_ptr_null: src.data_ownership == PacketPayloadOwnership::RefCountedBuffer
+                && src.data_ptr_null,
             pts: src.pts,
             dts: src.dts,
             duration: src.duration,
@@ -5768,6 +5796,7 @@ impl Packet {
             BufferRef::copy_from_slice_with_padding(self.data(), AV_INPUT_BUFFER_PADDING_SIZE)?;
         self.data = data;
         self.data_ownership = PacketPayloadOwnership::RefCountedBuffer;
+        self.data_ptr_null = false;
         Ok(())
     }
 }
@@ -12733,6 +12762,63 @@ mod tests {
         assert!(referenced.is_data_writable());
         assert!(!src.is_data_writable());
         assert!(!cloned.is_data_writable());
+    }
+
+    #[test]
+    fn packet_from_null_data_zero_preserves_nullable_refcounted_shape() {
+        let mut src = Packet::from_null_data_zero().unwrap();
+        assert!(src.is_empty());
+        assert!(src.is_data_ptr_null());
+        assert!(src.is_data_buffer_ptr_null());
+        assert!(src.has_refcounted_data_buffer());
+        assert_eq!(
+            src.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(src
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+        assert!(src.is_data_writable());
+
+        src.make_refcounted().unwrap();
+        assert!(src.is_data_ptr_null());
+        assert!(src.is_data_writable());
+
+        let mut referenced = Packet::default();
+        referenced.ref_from(&src);
+        assert!(src.is_data_ptr_null());
+        assert!(referenced.is_data_ptr_null());
+        assert!(referenced.data_buffer().shares_storage(src.data_buffer()));
+        assert!(!src.is_data_writable());
+        assert!(!referenced.is_data_writable());
+
+        let cloned = src.clone();
+        assert!(cloned.is_data_ptr_null());
+        assert!(cloned.data_buffer().shares_storage(src.data_buffer()));
+        assert!(!cloned.is_data_writable());
+
+        referenced.make_refcounted().unwrap();
+        assert!(referenced.is_data_ptr_null());
+        assert!(referenced.data_buffer().shares_storage(src.data_buffer()));
+
+        referenced.make_writable().unwrap();
+        assert!(!referenced.is_data_ptr_null());
+        assert!(referenced.has_refcounted_data_buffer());
+        assert!(referenced.is_empty());
+        assert_eq!(
+            referenced.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(referenced
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+        assert!(referenced.is_data_writable());
+        assert!(!referenced.data_buffer().shares_storage(src.data_buffer()));
+        assert!(src.is_data_ptr_null());
     }
 
     #[test]
