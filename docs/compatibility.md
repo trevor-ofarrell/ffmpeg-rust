@@ -77,6 +77,14 @@
   `avutil_core_models`, upstream `fate-avpacket`, and a 64-run WSL fuzz smoke
   with leak detection disabled. This strengthens `avutil-packet`; strict
   completion remains 11/96 and the row remains `fate_pass`.
+- Latest main-thread buffer evidence: Rust now exposes fallible
+  `BufferRef::try_make_mut` / `BufferRef::make_writable` helpers for the
+  C-shaped `av_buffer_make_writable()` return surface. The pinned libavutil
+  make-writable rows still pass while Rust expected rows use the fallible
+  helper for unique, shared, zero-length shared, and readonly-owner detach
+  paths; focused unit coverage and `avutil_core_models` cover the new API.
+  This strengthens `avutil-buffer`; strict completion remains 11/96 and the
+  row remains `differential_pass`.
 - Latest main-thread buffer evidence: pinned libavutil rows now prove
   same-size `av_buffer_realloc()` on an offset-visible custom-pool checkout
   preserves the data pointer, offset, size, writability, and pool opaque data.

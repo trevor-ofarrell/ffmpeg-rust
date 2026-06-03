@@ -1004,6 +1004,24 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     }
     assert!(buffer.is_writable());
 
+    let mut c_api_unique = BufferRef::copy_from_slice(&payload);
+    let c_api_unique_before = c_api_unique.as_ptr();
+    c_api_unique.make_writable().unwrap();
+    assert!(std::ptr::eq(c_api_unique_before, c_api_unique.as_ptr()));
+    assert!(c_api_unique.is_writable());
+
+    let c_api_shared_source = BufferRef::copy_from_slice(&payload);
+    let mut c_api_shared_destination = BufferRef::ref_from(&c_api_shared_source);
+    c_api_shared_destination.make_writable().unwrap();
+    assert_eq!(
+        c_api_shared_destination.as_slice(),
+        c_api_shared_source.as_slice()
+    );
+    assert!(!c_api_shared_source.shares_storage(&c_api_shared_destination));
+    assert_eq!(c_api_shared_source.strong_count(), 1);
+    assert!(c_api_shared_source.is_writable());
+    assert!(c_api_shared_destination.is_writable());
+
     let zeroed_len = usize::from(cursor.next().unwrap_or_default()) % (MAX_PAYLOAD + 1);
     let zeroed = BufferRef::zeroed(zeroed_len).unwrap();
     assert_eq!(zeroed.len(), zeroed_len);

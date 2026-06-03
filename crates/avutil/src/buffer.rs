@@ -725,9 +725,20 @@ impl BufferRef {
             .map(|bytes| &mut bytes[offset..end])
     }
 
-    pub fn make_mut(&mut self) -> &mut [u8] {
+    pub fn try_make_mut(&mut self) -> AvResult<&mut [u8]> {
         if self.strong_count() != 1 || self.is_readonly() {
-            let bytes = self.as_padded_slice().to_vec();
+            let bytes = {
+                let source = self.as_padded_slice();
+                let mut bytes = Vec::new();
+                bytes.try_reserve_exact(source.len()).map_err(|_| {
+                    allocation_error(format!(
+                        "failed to allocate {} writable buffer bytes",
+                        source.len()
+                    ))
+                })?;
+                bytes.extend_from_slice(source);
+                bytes
+            };
             self.data = Arc::new(BufferStorage::new(bytes));
             self.offset = 0;
         }
@@ -736,7 +747,17 @@ impl BufferRef {
             .bytes
             .as_mut_vec()
             .expect("copy-on-write storage is owned");
-        &mut bytes[self.offset..self.offset + self.len]
+        Ok(&mut bytes[self.offset..self.offset + self.len])
+    }
+
+    pub fn make_writable(&mut self) -> AvResult<()> {
+        let _ = self.try_make_mut()?;
+        Ok(())
+    }
+
+    pub fn make_mut(&mut self) -> &mut [u8] {
+        self.try_make_mut()
+            .expect("buffer copy-on-write allocation failed")
     }
 
     pub fn resize(&mut self, len: usize) -> AvResult<()> {
@@ -2590,6 +2611,52 @@ mod tests {
         assert!(empty_dst.is_none());
         BufferRef::unref(&mut empty_dst);
         assert!(empty_dst.is_none());
+    }
+
+    #[test]
+    fn buffer_ref_make_writable_exposes_fallible_c_api_shape() {
+        let mut unique = BufferRef::from_vec(vec![4, 5, 6]);
+        let unique_before = unique.as_ptr();
+        unique.make_writable().unwrap();
+        assert!(std::ptr::eq(unique_before, unique.as_ptr()));
+        assert!(unique.is_writable());
+        unique.try_make_mut().unwrap()[1] = 9;
+        assert_eq!(unique.as_slice(), &[4, 9, 6]);
+
+        let shared_source = BufferRef::from_vec(vec![9, 8, 7]);
+        let mut shared_destination = BufferRef::ref_from(&shared_source);
+        assert!(shared_source.shares_storage(&shared_destination));
+        shared_destination.make_writable().unwrap();
+        assert!(!shared_source.shares_storage(&shared_destination));
+        assert_eq!(shared_source.as_slice(), &[9, 8, 7]);
+        assert_eq!(shared_destination.as_slice(), &[9, 8, 7]);
+        assert_eq!(shared_source.strong_count(), 1);
+        assert!(shared_source.is_writable());
+        assert!(shared_destination.is_writable());
+
+        let zero_source = BufferRef::zeroed(0).unwrap();
+        let mut zero_destination = BufferRef::ref_from(&zero_source);
+        zero_destination.make_writable().unwrap();
+        assert!(!zero_source.shares_storage(&zero_destination));
+        assert_eq!(zero_source.as_slice(), &[]);
+        assert_eq!(zero_destination.as_slice(), &[]);
+        assert!(zero_source.is_writable());
+        assert!(zero_destination.is_writable());
+
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<usize>::new()));
+        let capture = std::sync::Arc::clone(&released);
+        let mut readonly = BufferRef::from_external_slice_with_opaque_readonly(
+            vec![5, 6, 7].into(),
+            77usize,
+            move |opaque| {
+                capture.lock().unwrap().push(opaque);
+            },
+        );
+        readonly.make_writable().unwrap();
+        assert_eq!(*released.lock().unwrap(), vec![77]);
+        assert_eq!(readonly.as_slice(), &[5, 6, 7]);
+        assert!(readonly.opaque_ref::<usize>().is_none());
+        assert!(readonly.is_writable());
     }
 
     #[test]

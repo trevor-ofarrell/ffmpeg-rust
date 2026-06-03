@@ -148,6 +148,13 @@ writability, and pool opaque lookup, then returns the original backing
 allocation for normalized spare reuse after ordinary unref. A 64-run WSL
 `avutil_core_models` smoke passed with local leak detection disabled.
 
+The latest buffer make-writable API slice keeps the existing pinned
+`buffer:make-writable-*` rows but generates the Rust expected values through
+`BufferRef::make_writable`, the fallible helper that mirrors
+`av_buffer_make_writable()` success and allocation-error return shape. The
+deterministic `avutil_core_models` fixture now covers unique no-op and shared
+copy-on-write behavior through that helper.
+
 The latest packet raw-flag fixture extends `avutil_core_models` with the
 deterministic `PacketFlags::from_bits_retain` lifecycle: copy-props, ref, clone,
 and move preserve unknown raw `AVPacket.flags` bits, while move resets the

@@ -105,7 +105,7 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
 
     let mut unique = BufferRef::from_vec(vec![4, 5, 6]);
     let unique_before = unique.as_ptr();
-    unique.make_mut();
+    unique.make_writable().unwrap();
     rows.insert(
         "buffer:make-writable-unique-ret".to_string(),
         vec![
@@ -120,7 +120,7 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
 
     let shared_src = BufferRef::from_vec(vec![9, 8, 7]);
     let mut shared_dst = shared_src.clone();
-    shared_dst.make_mut();
+    shared_dst.make_writable().unwrap();
     rows.insert(
         "buffer:make-writable-shared-ret".to_string(),
         vec!["0".to_string()],
@@ -140,7 +140,7 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
 
     let zero_shared_src = BufferRef::zeroed(0).unwrap();
     let mut zero_shared_dst = BufferRef::ref_from(&zero_shared_src);
-    zero_shared_dst.make_mut();
+    zero_shared_dst.make_writable().unwrap();
     rows.insert(
         "buffer:make-writable-zero-shared-ret".to_string(),
         vec!["0".to_string()],
@@ -174,7 +174,7 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         "buffer:readonly".to_string(),
         buffer_fields_with_opaque(&readonly),
     );
-    readonly.make_mut();
+    readonly.make_writable().unwrap();
     let released_values = released.lock().unwrap();
     rows.insert(
         "buffer:readonly-make-writable-ret".to_string(),
