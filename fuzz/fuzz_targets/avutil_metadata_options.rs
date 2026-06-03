@@ -441,6 +441,24 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                     escaped_quote_options.get("metadata"),
                     Some(&OptionValue::String("\\x".to_owned()))
                 );
+                let mut protected_whitespace_options = sample_options();
+                assert_eq!(
+                    protected_whitespace_options.set_avoptions_from_string(
+                        "metadata=title\\ :threads=16",
+                        &[],
+                        "=",
+                        ":",
+                    ),
+                    Ok(2)
+                );
+                assert_eq!(
+                    protected_whitespace_options.get("metadata"),
+                    Some(&OptionValue::String("title ".to_owned()))
+                );
+                assert_eq!(
+                    protected_whitespace_options.get("threads"),
+                    Some(&OptionValue::Int(16))
+                );
                 let mut empty_value_options = sample_options();
                 let mut expected = sample_options();
                 expected
@@ -2202,6 +2220,18 @@ fn exercise_fixtures() {
     assert_eq!(
         quoted_options.get("metadata"),
         Some(&OptionValue::String(" title : clip = one ".to_owned()))
+    );
+    let mut protected_whitespace_options = sample_options();
+    protected_whitespace_options
+        .set_avoptions_from_string("metadata=title\\ :threads=16", &[], "=", ":")
+        .unwrap();
+    assert_eq!(
+        protected_whitespace_options.get("metadata"),
+        Some(&OptionValue::String("title ".to_owned()))
+    );
+    assert_eq!(
+        protected_whitespace_options.get("threads"),
+        Some(&OptionValue::Int(16))
     );
     let serialized = options
         .serialize_avoptions(

@@ -852,6 +852,23 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         "state:set-from-string-quote-escape".to_string(),
         state_fields(&string_quoted_escape),
     );
+    let mut string_protected_whitespace = sample_options();
+    insert_row(
+        &mut rows,
+        "ret:set-from-string-protected-whitespace",
+        [ret_count(
+            string_protected_whitespace.set_avoptions_from_string(
+                "metadata=title\\ :threads=16",
+                &[],
+                "=",
+                ":",
+            ),
+        )],
+    );
+    rows.insert(
+        "state:set-from-string-protected-whitespace".to_string(),
+        state_fields(&string_protected_whitespace),
+    );
 
     let serialize_defaults = sample_options();
     insert_row(
@@ -6023,6 +6040,15 @@ static void print_set_from_string_rows(void) {
     print_state("state:set-from-string-quote-escape", &ctx);
     ret_empty_key = av_opt_set_from_string(&ctx, "=7", NULL, "=", ":");
     printf("ret:set-from-string-empty-key|%d\n", ret_empty_key);
+    av_opt_free(&ctx);
+    av_opt_free(&ctx.child);
+
+    init_context(&ctx);
+    ret = av_opt_set_from_string(&ctx,
+                                 "metadata=title\\ :threads=16",
+                                 NULL, "=", ":");
+    printf("ret:set-from-string-protected-whitespace|%d\n", ret);
+    print_state("state:set-from-string-protected-whitespace", &ctx);
 
     av_opt_free(&ctx);
     av_opt_free(&ctx.child);

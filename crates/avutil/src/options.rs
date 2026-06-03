@@ -9287,6 +9287,22 @@ mod tests {
             Some(&OptionValue::String(" title : clip = one ".to_owned()))
         );
 
+        let mut protected_whitespace = sample_options();
+        assert_eq!(
+            protected_whitespace
+                .set_avoptions_from_string("metadata=title\\ :threads=16", &[], "=", ":")
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            protected_whitespace.get("metadata"),
+            Some(&OptionValue::String("title ".to_owned()))
+        );
+        assert_eq!(
+            protected_whitespace.get("threads"),
+            Some(&OptionValue::Int(16))
+        );
+
         let mut empty_key = sample_options();
         let err = empty_key
             .set_avoptions_from_string("=7", &[], "=", ":")
