@@ -1754,6 +1754,13 @@ fate_tests = [
   "not_applicable: upstream FFmpeg FATE has no standalone AVBufferRef/AVBufferPool API target; covered by unit tests plus pinned libavutil differential oracle",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest WSL fuzz evidence: a warmed `target-wsl-fuzz` run of
+# `cargo fuzz run avutil_core_models -- -runs=64` with leak detection disabled
+# completed after the sanitizer rebuild, loaded the four tracked seed inputs,
+# expanded transient in-memory coverage/corpus, and finished with `DONE` and no
+# crash. Generated random corpus files were discarded rather than committed.
+# This strengthens avutil-buffer's existing deterministic BufferRef/BufferPool
+# invariants only; no status was promoted.
 # Latest legacy zero-size custom-pool slice: pinned libavutil rows now prove
 # `av_buffer_pool_init(0, alloc)` calls the legacy allocator once with size
 # zero, returns writable empty refs with NULL pool opaque data, reuses the empty

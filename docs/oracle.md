@@ -129,9 +129,12 @@ allocation. The pinned libavutil buffer oracle emits matching
 `pool-zero-custom:*` rows, proving first checkout and spare reuse preserve
 per-buffer pool opaque data, only one custom allocation is made, ordinary unref
 runs no callbacks, and final pool uninit releases the zero-size allocation
-before pool_free. A bounded one-input WSL cargo-fuzz smoke for this slice timed
-out before libFuzzer completion output, so the deterministic fixture is recorded
-with build/clippy coverage until a later warmed smoke can pass.
+before pool_free. A follow-up warmed WSL `avutil_core_models -- -runs=64`
+smoke with `CARGO_TARGET_DIR=target-wsl-fuzz` and
+`ASAN_OPTIONS=detect_leaks=0` completed after the sanitizer rebuild. It loaded
+the four tracked `avutil_core_models` seeds, reached `DONE` after 64 runs
+without a crash, and any generated transient corpus files were discarded. This
+is bounded smoke evidence, not a sustained fuzz campaign.
 
 The latest buffer zero-size default `init2` fixture adds
 `pool-init2-zero-default:*` rows. The pinned libavutil oracle proves

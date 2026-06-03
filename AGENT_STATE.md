@@ -2,6 +2,39 @@
 
 ## Current Status
 
+Current authoritative turn status: main-thread WSL evidence slice added actual
+`avutil_core_models` fuzz smoke coverage for `avutil-buffer`. Required startup
+checks passed from a clean tree at `master...origin/master [ahead 51]`:
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15` reported 11/96 strict-complete components (11.5%), and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validated the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
+audited the top-priority `avutil-packet` shared refcounted shrink blocker and
+left it unchanged because current `BufferRef` storage is immutable across
+shared refs and closing that gap needs a broader shared-storage design. A
+read-only explorer was attempted for priority-1 candidate auditing, but the
+subagent run failed due usage limits, so the bounded evidence slice stayed on
+the orchestrator thread.
+
+Current main-thread slice: a warmed WSL fuzz smoke for
+`avutil_core_models` ran with `CARGO_TARGET_DIR=target-wsl-fuzz` and
+`ASAN_OPTIONS=detect_leaks=0` after the sanitizer rebuild. The run loaded the
+four tracked seed files, expanded transient coverage/corpus during execution,
+reached `#64 DONE`, and exited without a crash; generated random corpus files
+were discarded rather than committed. This strengthens the deterministic
+BufferRef/BufferPool invariants behind `avutil-buffer`, especially the recent
+zero-size pool fixtures. `avutil-buffer` remains `fate_pass`, not complete;
+strict completion remains 11/96 because broader ABI/lifetime parity,
+hardware/device ownership integration, zero-known-limitation review, and
+longer sustained fuzz evidence remain pending.
+
+Latest validation command for this buffer fuzz evidence passed:
+`CARGO_TARGET_DIR=target-wsl-fuzz ASAN_OPTIONS=detect_leaks=0 cargo fuzz run
+avutil_core_models -- -runs=64`. The run rebuilt the fuzz target in release
+mode, completed the 64-run libFuzzer smoke, and produced no crash. Generated
+random corpus files from the smoke were removed before documentation/ledger
+updates.
+
 Current authoritative turn status: main-thread WSL slice added
 `avutil-packet` nullable dictionary unpack evidence. Required startup checks
 passed from a clean tree at `master...origin/master [ahead 50]`:
