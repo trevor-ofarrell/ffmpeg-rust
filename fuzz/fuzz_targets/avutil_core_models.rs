@@ -2760,6 +2760,75 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     drop(zero_reuse);
     assert_eq!(zero_pool.available_count().unwrap(), 1);
 
+    let zero_custom_allocations = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let zero_custom_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let zero_custom_frees = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let zero_custom_allocation_capture = Arc::clone(&zero_custom_allocations);
+    let zero_custom_release_capture = Arc::clone(&zero_custom_releases);
+    let zero_custom_free_capture = Arc::clone(&zero_custom_frees);
+    let zero_custom_pool = BufferPool::with_callbacks(
+        0,
+        0,
+        BufferPoolCallbacks::with_allocation_callbacks(
+            move |allocated_len| {
+                zero_custom_allocation_capture
+                    .lock()
+                    .unwrap()
+                    .push(allocated_len);
+                Ok(BufferPoolAllocation::with_opaque(
+                    Vec::new(),
+                    PoolToken {
+                        id: 68,
+                        size: allocated_len,
+                    },
+                ))
+            },
+            move |allocation| {
+                let token = allocation
+                    .opaque_ref::<PoolToken>()
+                    .expect("zero custom pool token should be preserved");
+                zero_custom_release_capture
+                    .lock()
+                    .unwrap()
+                    .push((token.id, allocation.into_vec()));
+            },
+        )
+        .with_pool_free(move || {
+            zero_custom_free_capture.lock().unwrap().push(68);
+        }),
+    )
+    .unwrap();
+    let zero_custom_first = zero_custom_pool.get().unwrap();
+    assert_eq!(zero_custom_first.len(), 0);
+    assert_eq!(zero_custom_first.allocated_len(), 0);
+    assert!(zero_custom_first.is_writable());
+    assert_eq!(
+        zero_custom_first
+            .pool_opaque_ref::<PoolToken>()
+            .map(|token| (token.id, token.size)),
+        Some((68, 0))
+    );
+    assert_eq!(*zero_custom_allocations.lock().unwrap(), vec![0]);
+    drop(zero_custom_first);
+    assert!(zero_custom_releases.lock().unwrap().is_empty());
+    assert!(zero_custom_frees.lock().unwrap().is_empty());
+    assert_eq!(zero_custom_pool.available_count().unwrap(), 1);
+    let zero_custom_reuse = zero_custom_pool.get().unwrap();
+    assert_eq!(
+        zero_custom_reuse
+            .pool_opaque_ref::<PoolToken>()
+            .map(|token| (token.id, token.size)),
+        Some((68, 0))
+    );
+    assert_eq!(*zero_custom_allocations.lock().unwrap(), vec![0]);
+    drop(zero_custom_reuse);
+    drop(zero_custom_pool);
+    assert_eq!(
+        *zero_custom_releases.lock().unwrap(),
+        vec![(68, Vec::new())]
+    );
+    assert_eq!(*zero_custom_frees.lock().unwrap(), vec![68]);
+
     let mut null_pool = None;
     BufferPool::uninit(&mut null_pool);
     assert!(null_pool.is_none());

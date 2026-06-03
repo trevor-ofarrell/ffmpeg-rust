@@ -3,6 +3,53 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The
+tree started clean at `master...origin/master [ahead 2]`; required startup
+checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
+-- status --next 15` reporting 11/96 strict-complete components (11.5%) and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validating the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
+kept the evidence slice local; no worker writes were delegated.
+
+Current main-thread slice: pinned libavutil rows now prove zero-size custom
+`AVBufferPool` behavior for `av_buffer_pool_init2(0, opaque, custom_alloc,
+pool_free)`. The custom allocator is called once with size zero, first checkout
+and spare reuse expose the per-buffer pool opaque id/size, ordinary unref runs
+no release/free callbacks, and final pool uninit releases the zero-size
+allocation before pool_free. Rust mirrors this through exact-shape
+`BufferPool::with_callbacks(0, 0, ...)` unit coverage and a deterministic
+`avutil_core_models` fixture. `avutil-buffer` remains `differential_pass`, not
+`complete`; strict completion remains 11/96.
+
+Latest validation commands for this buffer zero-size custom-pool slice passed:
+`cargo fmt --all`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil
+custom_buffer_pool_zero_size_preserves_opaque_and_reuses_storage --
+--nocapture`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo check --manifest-path
+fuzz/Cargo.toml --bin avutil_core_models`; `CARGO_TARGET_DIR=target-orch-avutil
+cargo test -p avutil --test buffer_oracle
+libavutil_buffer_refs_match_current_model -- --ignored --nocapture`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run --mappings
+tests/differential/mappings.txt --component avutil-buffer --target
+oracle-libavutil-buffer --oracle-ffmpeg
+./third_party/ffmpeg-oracle/build/bin/ffmpeg`; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- run --component avutil-buffer`; `cargo fmt --all
+-- --check`; `CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil
+--all-targets --all-features -- -D warnings`; `CARGO_TARGET_DIR=target-wsl-fuzz
+cargo clippy --manifest-path fuzz/Cargo.toml --bin avutil_core_models --
+-D warnings`; `CARGO_TARGET_DIR=target-orch-fate cargo test -p fate-runner
+current_ledger`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask --
+guard-runtime`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask --
+oracle-doctor`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner --
+status --next 15`; and `git diff --check` with CRLF conversion warnings only.
+A bounded `timeout 240s env CARGO_TARGET_DIR=target-wsl-fuzz
+RUST_MIN_STACK=33554432 LSAN_OPTIONS=detect_leaks=0
+ASAN_OPTIONS=detect_leaks=0 cargo fuzz run avutil_core_models -- -runs=1`
+attempt timed out before libFuzzer completion output, so the deterministic
+fixture is recorded with build/clippy coverage until a warmed smoke can pass.
+The top-level oracle scratch `target/` directory was removed after oracle/FATE
+runs; stable caches `target-orch-avutil`, `target-orch-fate`, and
+`target-wsl-fuzz` remain.
+
+Current authoritative turn status: orchestrator workflow is active on WSL. The
 tree started clean at `master...origin/master [ahead 1]`; required startup
 checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
 -- status --next 15` reporting 11/96 strict-complete components (11.5%) and

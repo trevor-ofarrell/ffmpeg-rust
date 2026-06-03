@@ -126,6 +126,12 @@ default_profile = "ffmpeg-8.1.1-default-native"
 # delays both buffer release and pool_free until the final shared reference drops,
 # then runs the buffer release before pool_free. This is evidence-strengthening
 # only; no status was promoted.
+# Latest main-thread buffer evidence: pinned libavutil rows now prove
+# `av_buffer_pool_init2(0, opaque, custom_alloc, pool_free)` calls the custom
+# allocator once with size zero, preserves per-buffer pool opaque data on first
+# checkout and spare reuse, runs no callbacks on ordinary unref, and releases
+# the zero-size allocation before pool_free at pool uninit. This is
+# evidence-strengthening only; no status was promoted.
 # Latest orchestrated evidence: main-thread packet rows now pin
 # `av_packet_free_side_data()` as clearing side data while preserving payload,
 # timestamps, stream index, flags, opaque pointer metadata, opaque_ref, and
@@ -1485,6 +1491,7 @@ unit_tests = [
   "buffer::tests::legacy_custom_buffer_pool_has_no_pool_opaque_or_owner_free",
   "buffer::tests::custom_buffer_pool_reuses_and_releases_multiple_spares_lifo",
   "buffer::tests::custom_buffer_pool_preserves_buffer_opaque_and_runs_pool_free_last",
+  "buffer::tests::custom_buffer_pool_zero_size_preserves_opaque_and_reuses_storage",
   "buffer::tests::custom_buffer_pool_unique_make_mut_preserves_pool_ownership",
   "buffer::tests::custom_buffer_pool_readonly_allocation_reuses_as_writable_storage",
   "buffer::tests::custom_buffer_pool_offset_allocation_reuses_original_base_storage",
@@ -1516,6 +1523,11 @@ fuzz_targets = ["avutil_core_models"]
 # final survivor drops and then return to the pool before final pool release.
 # There is no direct public libavutil `av_buffer_pool_recycle()` API; the pinned
 # buffer oracle and mapped differential row were rerun as broader regressions.
+# Latest zero-size custom-pool slice: pinned libavutil oracle coverage now
+# validates `av_buffer_pool_init2(0, opaque, custom_alloc, pool_free)`. The
+# custom allocator receives size zero once, first checkout and spare reuse expose
+# the per-buffer pool opaque id/size, ordinary unref runs no callbacks, and final
+# pool uninit releases the zero-size allocation before pool_free.
 # Latest outstanding two-ref pool-uninit slice: pinned libavutil oracle rows now
 # validate `av_buffer_pool_uninit()` while two AVBufferRef handles still share one
 # custom-pool allocation. Uninit itself and the first unref run no callbacks; the

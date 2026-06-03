@@ -1461,6 +1461,112 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     drop(zero_reuse);
     drop(zero_pool);
 
+    struct ZeroPoolToken {
+        id: usize,
+        size: usize,
+    }
+
+    let zero_custom_allocations = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let zero_custom_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let zero_custom_frees = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let zero_custom_allocation_capture = Arc::clone(&zero_custom_allocations);
+    let zero_custom_release_capture = Arc::clone(&zero_custom_releases);
+    let zero_custom_free_capture = Arc::clone(&zero_custom_frees);
+    let zero_custom_pool = BufferPool::with_callbacks(
+        0,
+        0,
+        BufferPoolCallbacks::with_allocation_callbacks(
+            move |allocated_len| {
+                zero_custom_allocation_capture
+                    .lock()
+                    .unwrap()
+                    .push(allocated_len);
+                Ok(BufferPoolAllocation::with_opaque(
+                    Vec::new(),
+                    ZeroPoolToken {
+                        id: 68,
+                        size: allocated_len,
+                    },
+                ))
+            },
+            move |allocation| {
+                let token = allocation
+                    .opaque_ref::<ZeroPoolToken>()
+                    .expect("zero custom pool token should be preserved");
+                zero_custom_release_capture
+                    .lock()
+                    .unwrap()
+                    .push((token.id, allocation.as_slice().to_vec()));
+            },
+        )
+        .with_pool_free(move || {
+            zero_custom_free_capture.lock().unwrap().push(68);
+        }),
+    )
+    .unwrap();
+    let zero_custom_first = zero_custom_pool.get().unwrap();
+    rows.insert(
+        "pool-zero-custom:first".to_string(),
+        buffer_fields(&zero_custom_first),
+    );
+    let zero_custom_first_token = zero_custom_first
+        .pool_opaque_ref::<ZeroPoolToken>()
+        .expect("zero custom first token");
+    rows.insert(
+        "pool-zero-custom:first-opaque".to_string(),
+        vec![
+            zero_custom_first_token.id.to_string(),
+            zero_custom_first_token.size.to_string(),
+        ],
+    );
+    rows.insert(
+        "pool-zero-custom:first-allocs".to_string(),
+        vec![zero_custom_allocations.lock().unwrap().len().to_string()],
+    );
+    drop(zero_custom_first);
+    rows.insert(
+        "pool-zero-custom:after-first-unref".to_string(),
+        vec![
+            zero_custom_releases.lock().unwrap().len().to_string(),
+            zero_custom_frees.lock().unwrap().len().to_string(),
+        ],
+    );
+    let zero_custom_reuse = zero_custom_pool.get().unwrap();
+    rows.insert(
+        "pool-zero-custom:reuse".to_string(),
+        buffer_fields(&zero_custom_reuse),
+    );
+    let zero_custom_reuse_token = zero_custom_reuse
+        .pool_opaque_ref::<ZeroPoolToken>()
+        .expect("zero custom reuse token");
+    rows.insert(
+        "pool-zero-custom:reuse-opaque".to_string(),
+        vec![
+            zero_custom_reuse_token.id.to_string(),
+            zero_custom_reuse_token.size.to_string(),
+        ],
+    );
+    rows.insert(
+        "pool-zero-custom:reuse-allocs".to_string(),
+        vec![zero_custom_allocations.lock().unwrap().len().to_string()],
+    );
+    drop(zero_custom_reuse);
+    drop(zero_custom_pool);
+    let zero_custom_release_values = zero_custom_releases.lock().unwrap();
+    let zero_custom_free_values = zero_custom_frees.lock().unwrap();
+    rows.insert(
+        "pool-zero-custom:uninit-release".to_string(),
+        vec![
+            zero_custom_release_values.len().to_string(),
+            zero_custom_release_values[0].0.to_string(),
+            hex(&zero_custom_release_values[0].1),
+            zero_custom_free_values.len().to_string(),
+            zero_custom_free_values[0].to_string(),
+        ],
+    );
+    drop(zero_custom_free_values);
+    drop(zero_custom_release_values);
+
     let default_pool = BufferPool::new(3, 0).unwrap();
     let mut default_first = default_pool.get().unwrap();
     rows.insert(
@@ -3577,6 +3683,16 @@ static AVBufferRef *test_pool_alloc(void *opaque, size_t size) {
     return av_buffer_create(data, size, test_pool_free, opaque, 0);
 }
 
+static AVBufferRef *test_pool_alloc_zero(void *opaque, size_t size) {
+    uint8_t *data;
+    fail_if(size != 0, "zero pool allocator received nonzero size");
+    data = av_malloc(1);
+    fail_if(!data, "av_malloc zero pool data failed");
+    data[0] = 0;
+    pool_alloc_count++;
+    return av_buffer_create(data, size, test_pool_free, opaque, 0);
+}
+
 static AVBufferRef *test_pool_alloc_for_two_ref(void *opaque, size_t size) {
     uint8_t *data = av_malloc(size);
     fail_if(!data, "av_malloc two-ref pool data failed");
@@ -4784,6 +4900,40 @@ int main(void) {
            av_buffer_pool_buffer_get_opaque(zero_reuse) == NULL);
     av_buffer_unref(&zero_reuse);
     av_buffer_pool_uninit(&zero_pool);
+
+    reset_pool_counters();
+    PoolOpaque zero_custom_opaque = { 68, 0 };
+    AVBufferPool *zero_custom_pool =
+        av_buffer_pool_init2(0, &zero_custom_opaque, test_pool_alloc_zero,
+                             test_pool_owner_free);
+    fail_if(!zero_custom_pool, "av_buffer_pool_init2 zero custom failed");
+    AVBufferRef *zero_custom_first = av_buffer_pool_get(zero_custom_pool);
+    fail_if(!zero_custom_first, "av_buffer_pool_get zero custom first failed");
+    print_buffer("pool-zero-custom:first", zero_custom_first);
+    PoolOpaque *zero_custom_first_opaque =
+        av_buffer_pool_buffer_get_opaque(zero_custom_first);
+    fail_if(!zero_custom_first_opaque, "zero custom first opaque missing");
+    printf("pool-zero-custom:first-opaque|%" PRIuPTR "|%zu\n",
+           zero_custom_first_opaque->id, zero_custom_first_opaque->size);
+    printf("pool-zero-custom:first-allocs|%d\n", pool_alloc_count);
+    av_buffer_unref(&zero_custom_first);
+    printf("pool-zero-custom:after-first-unref|%d|%d\n",
+           pool_release_count, pool_free_count);
+    AVBufferRef *zero_custom_reuse = av_buffer_pool_get(zero_custom_pool);
+    fail_if(!zero_custom_reuse, "av_buffer_pool_get zero custom reuse failed");
+    print_buffer("pool-zero-custom:reuse", zero_custom_reuse);
+    PoolOpaque *zero_custom_reuse_opaque =
+        av_buffer_pool_buffer_get_opaque(zero_custom_reuse);
+    fail_if(!zero_custom_reuse_opaque, "zero custom reuse opaque missing");
+    printf("pool-zero-custom:reuse-opaque|%" PRIuPTR "|%zu\n",
+           zero_custom_reuse_opaque->id, zero_custom_reuse_opaque->size);
+    printf("pool-zero-custom:reuse-allocs|%d\n", pool_alloc_count);
+    av_buffer_unref(&zero_custom_reuse);
+    av_buffer_pool_uninit(&zero_custom_pool);
+    printf("pool-zero-custom:uninit-release|%d|%" PRIuPTR "|",
+           pool_release_count, last_pool_release_id);
+    print_hex(last_pool_release, last_pool_release_size);
+    printf("|%d|%" PRIuPTR "\n", pool_free_count, last_pool_free_id);
 
     AVBufferPool *default_pool = av_buffer_pool_init(3, NULL);
     fail_if(!default_pool, "av_buffer_pool_init default failed");

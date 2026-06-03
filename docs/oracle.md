@@ -107,6 +107,16 @@ emits matching `packet:payload-unref-unrefcounted-offset*` and
 `packet:payload-free-unrefcounted-offset` rows, proving FFmpeg resets/nulls the
 packet while leaving caller storage unchanged when `pkt->buf == NULL`.
 
+The latest buffer zero-size custom-pool fixture extends `avutil_core_models`
+with `BufferPool::with_callbacks(0, 0, ...)` over an exact-shape custom
+allocation. The pinned libavutil buffer oracle emits matching
+`pool-zero-custom:*` rows, proving first checkout and spare reuse preserve
+per-buffer pool opaque data, only one custom allocation is made, ordinary unref
+runs no callbacks, and final pool uninit releases the zero-size allocation
+before pool_free. A bounded one-input WSL cargo-fuzz smoke for this slice timed
+out before libFuzzer completion output, so the deterministic fixture is recorded
+with build/clippy coverage until a later warmed smoke can pass.
+
 The latest packet raw-flag fixture extends `avutil_core_models` with the
 deterministic `PacketFlags::from_bits_retain` lifecycle: copy-props, ref, clone,
 and move preserve unknown raw `AVPacket.flags` bits, while move resets the

@@ -9,6 +9,15 @@
 
 ## Compatible Today
 
+- Latest main-thread buffer evidence: pinned libavutil rows now prove
+  `av_buffer_pool_init2(0, opaque, custom_alloc, pool_free)` invokes the custom
+  allocator once with size zero, preserves per-buffer pool opaque data on first
+  checkout and spare reuse, runs no callbacks on ordinary unref, and releases
+  the zero-size allocation before pool_free during pool uninit. Rust mirrors
+  this with exact-shape zero-length custom pool allocation, focused unit
+  coverage, and a deterministic `avutil_core_models` fixture. This strengthens
+  `avutil-buffer`; strict completion remains 11/96 and the row remains
+  `differential_pass`.
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
   `av_packet_unref()` and `av_packet_free(&pkt)` on raw no-buffer packets whose
   `data` pointer starts at a nonzero offset inside caller storage reset/null
