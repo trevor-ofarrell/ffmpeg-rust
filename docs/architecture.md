@@ -261,6 +261,10 @@ and keep lookup present with size zero. Rust models that with ordinary empty
 pinned through `av_packet_copy_props()`, `av_packet_ref()`,
 `av_packet_clone()`, and `av_packet_move_ref()`: copy/ref/clone/move preserve
 the present zero-size lookup, and move-ref resets the source side-data list.
+Nullable NULL/0 packet-owned side data follows a different lookup lifecycle:
+copy-props, ref, and clone allocate a new zero-size padded side-data entry, so
+packet-owned lookup becomes present, while move-ref transfers the original NULL
+data pointer and lookup remains NULL.
 Payload helper rows also pin zero-size packet-owned side data through
 `av_packet_make_refcounted()` on raw-data packets and
 `av_packet_make_writable()` on shared refcounted packets.

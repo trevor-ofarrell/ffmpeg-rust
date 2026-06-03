@@ -761,6 +761,75 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         side_data_summary_fields(&zero_move_src),
     );
 
+    let mut null_zero_side_src = Packet::default();
+    null_zero_side_src
+        .try_add_null_side_data(PacketSideDataKind::NewExtradata)
+        .expect("nullable zero-size source side data should be retained");
+    rows.insert(
+        "packet:null-zero-lifecycle-src-add-ret".to_string(),
+        vec!["0".to_string()],
+    );
+
+    let mut null_zero_copy_dst = Packet::new(vec![0x7a], 12);
+    null_zero_copy_dst
+        .push_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xee]).unwrap());
+    null_zero_copy_dst.copy_props_from(&null_zero_side_src);
+    rows.insert(
+        "packet:copy-props-null-zero-side".to_string(),
+        side_data_summary_fields(&null_zero_copy_dst),
+    );
+    rows.insert(
+        "packet:copy-props-null-zero-side-lookup".to_string(),
+        packet_side_data_get_fields(
+            null_zero_copy_dst.side_data_by_kind_id(&PacketSideDataKind::NewExtradata),
+        ),
+    );
+
+    let mut null_zero_ref_dst = Packet::default();
+    null_zero_ref_dst.ref_from(&null_zero_side_src);
+    rows.insert(
+        "packet:ref-null-zero-side".to_string(),
+        side_data_summary_fields(&null_zero_ref_dst),
+    );
+    rows.insert(
+        "packet:ref-null-zero-side-lookup".to_string(),
+        packet_side_data_get_fields(
+            null_zero_ref_dst.side_data_by_kind_id(&PacketSideDataKind::NewExtradata),
+        ),
+    );
+
+    let null_zero_cloned = null_zero_side_src.clone();
+    rows.insert(
+        "packet:clone-null-zero-side".to_string(),
+        side_data_summary_fields(&null_zero_cloned),
+    );
+    rows.insert(
+        "packet:clone-null-zero-side-lookup".to_string(),
+        packet_side_data_get_fields(
+            null_zero_cloned.side_data_by_kind_id(&PacketSideDataKind::NewExtradata),
+        ),
+    );
+
+    let mut null_zero_move_src = null_zero_side_src;
+    let mut null_zero_move_dst = Packet::default();
+    null_zero_move_dst
+        .push_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xee]).unwrap());
+    null_zero_move_dst.move_ref_from(&mut null_zero_move_src);
+    rows.insert(
+        "packet:move-null-zero-dst-side".to_string(),
+        side_data_summary_fields(&null_zero_move_dst),
+    );
+    rows.insert(
+        "packet:move-null-zero-dst-side-lookup".to_string(),
+        packet_side_data_get_fields(
+            null_zero_move_dst.side_data_by_kind_id(&PacketSideDataKind::NewExtradata),
+        ),
+    );
+    rows.insert(
+        "packet:move-null-zero-src-side".to_string(),
+        side_data_summary_fields(&null_zero_move_src),
+    );
+
     let zero_opaque_copy_src = packet_with_zero_opaque_ref();
     let mut zero_opaque_copy_dst = Packet::from_data(vec![0xaa]).unwrap();
     zero_opaque_copy_dst.copy_props_from(&zero_opaque_copy_src);
@@ -10639,6 +10708,64 @@ int main(void) {
     av_packet_free(&zero_cloned);
     av_packet_free(&zero_ref_dst);
     av_packet_free(&zero_copy_dst);
+
+    AVPacket *null_zero_side_src = new_packet();
+    int null_zero_add_ret = av_packet_add_side_data(
+        null_zero_side_src, AV_PKT_DATA_NEW_EXTRADATA, NULL, 0);
+    printf("packet:null-zero-lifecycle-src-add-ret|%d\n", null_zero_add_ret);
+    fail_if(null_zero_add_ret < 0,
+            "nullable zero-size lifecycle source side data failed");
+
+    AVPacket *null_zero_copy_dst = new_packet();
+    fail_if(av_new_packet(null_zero_copy_dst, 1) < 0,
+            "av_new_packet nullable zero side copy dst failed");
+    null_zero_copy_dst->data[0] = 0x7a;
+    uint8_t *null_zero_copy_old_side = av_packet_new_side_data(
+        null_zero_copy_dst, AV_PKT_DATA_PALETTE, 1);
+    fail_if(!null_zero_copy_old_side,
+            "nullable zero side copy old side data failed");
+    null_zero_copy_old_side[0] = 0xee;
+    fail_if(av_packet_copy_props(null_zero_copy_dst,
+                                 null_zero_side_src) < 0,
+            "av_packet_copy_props nullable zero side failed");
+    print_side_data_summary("packet:copy-props-null-zero-side",
+                            null_zero_copy_dst);
+    print_side_data_lookup("packet:copy-props-null-zero-side-lookup",
+                           null_zero_copy_dst, AV_PKT_DATA_NEW_EXTRADATA);
+
+    AVPacket *null_zero_ref_dst = new_packet();
+    fail_if(av_packet_ref(null_zero_ref_dst, null_zero_side_src) < 0,
+            "av_packet_ref nullable zero side failed");
+    print_side_data_summary("packet:ref-null-zero-side", null_zero_ref_dst);
+    print_side_data_lookup("packet:ref-null-zero-side-lookup",
+                           null_zero_ref_dst, AV_PKT_DATA_NEW_EXTRADATA);
+
+    AVPacket *null_zero_cloned = av_packet_clone(null_zero_side_src);
+    fail_if(!null_zero_cloned, "av_packet_clone nullable zero side failed");
+    print_side_data_summary("packet:clone-null-zero-side", null_zero_cloned);
+    print_side_data_lookup("packet:clone-null-zero-side-lookup",
+                           null_zero_cloned, AV_PKT_DATA_NEW_EXTRADATA);
+
+    AVPacket *null_zero_move_src = null_zero_side_src;
+    AVPacket *null_zero_move_dst = new_packet();
+    uint8_t *null_zero_move_old_side = av_packet_new_side_data(
+        null_zero_move_dst, AV_PKT_DATA_PALETTE, 1);
+    fail_if(!null_zero_move_old_side,
+            "nullable zero side move old side data failed");
+    null_zero_move_old_side[0] = 0xee;
+    av_packet_move_ref(null_zero_move_dst, null_zero_move_src);
+    print_side_data_summary("packet:move-null-zero-dst-side",
+                            null_zero_move_dst);
+    print_side_data_lookup("packet:move-null-zero-dst-side-lookup",
+                           null_zero_move_dst, AV_PKT_DATA_NEW_EXTRADATA);
+    print_side_data_summary("packet:move-null-zero-src-side",
+                            null_zero_move_src);
+
+    av_packet_free(&null_zero_move_dst);
+    av_packet_free(&null_zero_move_src);
+    av_packet_free(&null_zero_cloned);
+    av_packet_free(&null_zero_ref_dst);
+    av_packet_free(&null_zero_copy_dst);
 
     AVPacket *zero_opaque_copy_src = packet_with_zero_opaque_ref();
     AVPacket *zero_opaque_copy_dst = new_packet();

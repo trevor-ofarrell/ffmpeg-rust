@@ -12318,6 +12318,47 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .get(&PacketSideDataKind::NewExtradata)
         .unwrap()
         .is_data_ptr_null());
+    let mut null_zero_lifecycle_src = Packet::default();
+    null_zero_lifecycle_src
+        .try_add_null_side_data(PacketSideDataKind::NewExtradata)
+        .unwrap();
+    let mut null_zero_lifecycle_copy = Packet::from_data(vec![0x7a]).unwrap();
+    null_zero_lifecycle_copy.copy_props_from(&null_zero_lifecycle_src);
+    let null_zero_lifecycle_copy_side = null_zero_lifecycle_copy
+        .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+        .unwrap();
+    assert!(!null_zero_lifecycle_copy_side.is_data_ptr_null());
+    assert_eq!(
+        null_zero_lifecycle_copy_side.padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    let mut null_zero_lifecycle_ref = Packet::default();
+    null_zero_lifecycle_ref.ref_from(&null_zero_lifecycle_src);
+    let null_zero_lifecycle_ref_side = null_zero_lifecycle_ref
+        .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+        .unwrap();
+    assert!(!null_zero_lifecycle_ref_side.is_data_ptr_null());
+    assert_eq!(
+        null_zero_lifecycle_ref_side.padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    let null_zero_lifecycle_cloned = null_zero_lifecycle_src.clone();
+    let null_zero_lifecycle_clone_side = null_zero_lifecycle_cloned
+        .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+        .unwrap();
+    assert!(!null_zero_lifecycle_clone_side.is_data_ptr_null());
+    assert_eq!(
+        null_zero_lifecycle_clone_side.padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    let mut null_zero_lifecycle_move_src = null_zero_lifecycle_src;
+    let mut null_zero_lifecycle_move_dst = Packet::default();
+    null_zero_lifecycle_move_dst.move_ref_from(&mut null_zero_lifecycle_move_src);
+    assert!(null_zero_lifecycle_move_dst
+        .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+        .unwrap()
+        .is_data_ptr_null());
+    assert!(null_zero_lifecycle_move_src.side_data().is_empty());
     let list_entry = side_data_list
         .new_side_data(typed_side_data_kind.clone(), typed_side_data_payload.len())
         .unwrap();

@@ -6064,9 +6064,20 @@ fn packet_side_data_capacity_error() -> AvError {
     )
 }
 
+fn clone_side_data_entry_for_ref(side_data: &SideData) -> SideData {
+    let mut data = side_data.data().to_vec();
+    data.resize(side_data.len() + AV_INPUT_BUFFER_PADDING_SIZE, 0);
+    SideData {
+        kind: side_data.kind_id().clone(),
+        data,
+        visible_len: side_data.len(),
+        data_ptr_null: false,
+    }
+}
+
 fn clone_packet_side_data_for_ref(side_data: &[SideData]) -> Vec<SideData> {
     let mut copied = Vec::new();
-    for side_data in side_data.iter().cloned() {
+    for side_data in side_data.iter().map(clone_side_data_entry_for_ref) {
         if let Some(index) = copied
             .iter()
             .position(|existing: &SideData| existing.kind_id() == side_data.kind_id())
@@ -11851,6 +11862,52 @@ mod tests {
             .get(&PacketSideDataKind::NewExtradata)
             .unwrap()
             .is_data_ptr_null());
+    }
+
+    #[test]
+    fn packet_null_zero_side_data_lifecycle_reallocates_for_copy_ref_and_clone() {
+        fn copied_entry(packet: &Packet) -> &SideData {
+            let side_data = packet
+                .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+                .expect("copied nullable zero side data should remain present");
+            assert_eq!(side_data.len(), 0);
+            assert!(side_data.data().is_empty());
+            assert!(!side_data.is_data_ptr_null());
+            assert_eq!(side_data.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+            assert!(side_data.padding_slice().iter().all(|byte| *byte == 0));
+            side_data
+        }
+
+        let mut src = Packet::default();
+        src.try_add_null_side_data(PacketSideDataKind::NewExtradata)
+            .unwrap();
+        assert!(src
+            .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+            .unwrap()
+            .is_data_ptr_null());
+
+        let mut copied = Packet::new(vec![0x7a], 12);
+        copied.copy_props_from(&src);
+        copied_entry(&copied);
+        assert_eq!(copied.data(), &[0x7a]);
+
+        let mut referenced = Packet::default();
+        referenced.ref_from(&src);
+        copied_entry(&referenced);
+
+        let cloned = src.clone();
+        copied_entry(&cloned);
+
+        let mut move_src = src;
+        let mut move_dst = Packet::default();
+        move_dst.move_ref_from(&mut move_src);
+        let moved = move_dst
+            .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+            .expect("move_ref should transfer nullable zero side data");
+        assert!(moved.is_data_ptr_null());
+        assert_eq!(moved.len(), 0);
+        assert_eq!(moved.padding_len(), 0);
+        assert!(move_src.side_data().is_empty());
     }
 
     #[test]
