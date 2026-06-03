@@ -3315,10 +3315,26 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         ),
     )
     .unwrap();
-    let offset_first = offset_pool.get().unwrap();
+    let mut offset_first = Some(offset_pool.get().unwrap());
+    let offset_first_ref = offset_first.as_ref().expect("offset pool first checkout");
+    assert_eq!(offset_first_ref.offset(), 1);
+    assert_eq!(offset_first_ref.len(), payload_len);
+    assert_eq!(
+        offset_first_ref.as_slice(),
+        vec![0x31; payload_len].as_slice()
+    );
+    assert_eq!(
+        offset_first_ref.pool_opaque_ref::<usize>().copied(),
+        Some(payload_len + padding_len + 1)
+    );
+    let offset_first_ptr = offset_first_ref.as_ptr();
+    let offset_first_padded = offset_first_ref.as_padded_slice().to_vec();
+    BufferRef::realloc(&mut offset_first, payload_len).unwrap();
+    let offset_first = offset_first.expect("same-size offset pool realloc keeps ref");
+    assert_eq!(offset_first.as_ptr(), offset_first_ptr);
     assert_eq!(offset_first.offset(), 1);
     assert_eq!(offset_first.len(), payload_len);
-    assert_eq!(offset_first.as_slice(), vec![0x31; payload_len].as_slice());
+    assert_eq!(offset_first.as_padded_slice(), offset_first_padded.as_slice());
     assert_eq!(
         offset_first.pool_opaque_ref::<usize>().copied(),
         Some(payload_len + padding_len + 1)

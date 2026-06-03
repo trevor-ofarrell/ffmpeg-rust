@@ -127,6 +127,15 @@ before pool_free. A bounded one-input WSL cargo-fuzz smoke for this slice timed
 out before libFuzzer completion output, so the deterministic fixture is recorded
 with build/clippy coverage until a later warmed smoke can pass.
 
+The latest buffer offset-pool same-size realloc fixture extends
+`avutil_core_models` with a first checkout whose visible range starts inside a
+custom-pool backing allocation. The pinned libavutil buffer oracle emits
+matching `pool-offset:realloc-same*` rows, proving same-size
+`av_buffer_realloc()` returns 0, preserves the visible data pointer, size,
+writability, and pool opaque lookup, then returns the original backing
+allocation for normalized spare reuse after ordinary unref. A 64-run WSL
+`avutil_core_models` smoke passed with local leak detection disabled.
+
 The latest packet raw-flag fixture extends `avutil_core_models` with the
 deterministic `PacketFlags::from_bits_retain` lifecycle: copy-props, ref, clone,
 and move preserve unknown raw `AVPacket.flags` bits, while move resets the
@@ -1012,6 +1021,13 @@ cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --com
 The latest buffer oracle rows add outstanding two-reference pool-uninit coverage: `av_buffer_pool_uninit()` with two refs sharing one custom-pool allocation does not run release or pool-free callbacks at uninit time or after the first unref, then the final unref releases the buffer bytes exactly once before running the pool-free callback.
 
 The latest Rust-only `BufferPool::recycle` rejection lifecycle rows have no direct public FFmpeg C API equivalent; they are therefore covered by unit and deterministic fuzz invariants, while the pinned buffer oracle and mapped `avutil-buffer|oracle-libavutil-buffer` row are rerun as broader regressions.
+
+The latest buffer oracle rows add offset-pool same-size realloc coverage:
+`av_buffer_realloc(&ref, ref->size)` on the first offset-visible custom-pool
+checkout returns 0 without moving the visible data pointer, changing size or
+writability, or dropping pool opaque lookup. Ordinary unref returns the original
+backing allocation to the pool, spare reuse rebuilds a normalized zero-offset
+view, and final pool uninit releases the original backing bytes.
 
 The latest buffer oracle rows add unique pool make-writable coverage: `av_buffer_make_writable()` on a unique custom-pool ref preserves the same visible data pointer and bytes, keeps pool opaque lookup available, does not run pool release/free callbacks during make-writable or ordinary unref, returns the mutated allocation for spare reuse, and releases the original allocation plus pool owner on final pool uninit. The newest offset-pool row covers the same unique writable make-writable shape when the allocator's visible `data` pointer starts inside the backing allocation: FFmpeg preserves the visible offset for mutation, later returns the full backing allocation to the pool, reuses it as a normalized zero-offset spare, and releases the full mutated backing bytes at pool uninit.
 

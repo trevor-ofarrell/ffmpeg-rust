@@ -2860,12 +2860,14 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         ),
     )
     .unwrap();
-    let offset_first = offset_pool.get().unwrap();
+    let mut offset_first = Some(offset_pool.get().unwrap());
     rows.insert(
         "pool-offset:first".to_string(),
-        buffer_fields(&offset_first),
+        buffer_fields(offset_first.as_ref().expect("offset first")),
     );
     let offset_first_token = offset_first
+        .as_ref()
+        .expect("offset first")
         .pool_opaque_ref::<PoolToken>()
         .expect("offset first pool token");
     rows.insert(
@@ -2873,6 +2875,30 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         vec![
             offset_first_token.id.to_string(),
             offset_first_token.size.to_string(),
+        ],
+    );
+    let offset_first_ptr = offset_first.as_ref().expect("offset first").as_ptr();
+    BufferRef::realloc(&mut offset_first, 3).unwrap();
+    let offset_first = offset_first.expect("same-size offset realloc keeps ref");
+    rows.insert(
+        "pool-offset:realloc-same-ret".to_string(),
+        vec![
+            "0".to_string(),
+            bool_field(offset_first.as_ptr() == offset_first_ptr),
+        ],
+    );
+    rows.insert(
+        "pool-offset:realloc-same".to_string(),
+        buffer_fields(&offset_first),
+    );
+    let offset_realloc_token = offset_first
+        .pool_opaque_ref::<PoolToken>()
+        .expect("same-size offset realloc pool token");
+    rows.insert(
+        "pool-offset:realloc-same-opaque".to_string(),
+        vec![
+            offset_realloc_token.id.to_string(),
+            offset_realloc_token.size.to_string(),
         ],
     );
     drop(offset_first);
@@ -5539,6 +5565,18 @@ int main(void) {
     fail_if(!offset_first_opaque, "pool offset first opaque missing");
     printf("pool-offset:opaque-first|%" PRIuPTR "|%zu\n",
            offset_first_opaque->id, offset_first_opaque->size);
+    uint8_t *offset_first_ptr = offset_first->data;
+    ret = av_buffer_realloc(&offset_first, offset_first->size);
+    printf("pool-offset:realloc-same-ret|%d|%d\n",
+           ret, offset_first->data == offset_first_ptr);
+    fail_if(ret < 0, "av_buffer_realloc same-size offset pool failed");
+    print_buffer("pool-offset:realloc-same", offset_first);
+    PoolOpaque *offset_realloc_opaque =
+        av_buffer_pool_buffer_get_opaque(offset_first);
+    fail_if(!offset_realloc_opaque,
+            "pool offset same-size realloc opaque missing");
+    printf("pool-offset:realloc-same-opaque|%" PRIuPTR "|%zu\n",
+           offset_realloc_opaque->id, offset_realloc_opaque->size);
     av_buffer_unref(&offset_first);
     printf("pool-offset:after-first-unref|%d\n", pool_release_count);
     AVBufferRef *offset_reuse = av_buffer_pool_get(offset_pool);

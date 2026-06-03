@@ -3,6 +3,53 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The
+tree started clean at `master...origin/master [ahead 11]`; required startup
+checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
+-- status --next 15` reporting 11/96 strict-complete components (11.5%) and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validating the pinned FFmpeg 8.1.1 oracle and ABI versions. Read-only packet
+and buffer explorer reports were reviewed; no worker writes were delegated.
+
+Current main-thread slice: pinned libavutil rows now prove
+`av_buffer_realloc(&ref, ref->size)` is a no-op for the first offset-visible
+custom-pool checkout from `av_buffer_pool_init2()`. The row verifies return 0,
+stable visible data pointer, size, writability, pool opaque lookup, ordinary
+unref return to the pool, normalized zero-offset spare reuse, and final release
+of the original backing allocation. Rust mirrors this through
+`custom_buffer_pool_offset_same_size_realloc_preserves_pool_ownership`, the
+mapped buffer oracle, and a deterministic `avutil_core_models` fixture.
+`avutil-buffer` remains `differential_pass`, not `complete`; strict completion
+remains 11/96 because deeper ABI/lifetime and hardware/device integration work
+remain pending.
+
+Latest validation commands for this buffer offset-pool same-size realloc slice
+passed: `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil
+custom_buffer_pool_offset_same_size_realloc_preserves_pool_ownership --
+--nocapture`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
+buffer_oracle libavutil_buffer_refs_match_current_model -- --ignored
+--nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run
+--mappings tests/differential/mappings.txt --component avutil-buffer --target
+oracle-libavutil-buffer --oracle-ffmpeg
+./third_party/ffmpeg-oracle/build/bin/ffmpeg`; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- run --component avutil-buffer --target
+local-avutil-unit`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo check
+--manifest-path fuzz/Cargo.toml --bin avutil_core_models`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil --all-targets
+--all-features -- -D warnings`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy
+--manifest-path fuzz/Cargo.toml --bin avutil_core_models -- -D warnings`; and
+`LSAN_OPTIONS=detect_leaks=0 CARGO_TARGET_DIR=target-wsl-fuzz cargo fuzz run
+avutil_core_models -- -runs=64 /tmp/ffmpegrust-avutil-core-models-corpus.BKilGO`.
+
+Current focus component: `avutil-packet` remains the top priority incomplete
+component (`fate_pass`), followed by `avutil-buffer` (`differential_pass`),
+`avutil-frame` (`differential_pass`), `avutil-logging` (`fate_pass`), and
+`avutil-options` (`fate_pass`). Packet explorer output identified a bounded
+negative signed payload-size candidate for `av_new_packet()` / `av_grow_packet()`;
+the main thread chose this `avutil-buffer` slice because it was immediately
+bounded and oracle-ready. Next concrete work should return to `avutil-packet`
+negative-size API behavior unless a higher-priority ledger blocker appears.
+
+Current authoritative turn status: orchestrator workflow is active on WSL. The
 tree started clean at `master...origin/master [ahead 10]`; required startup
 checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
 -- status --next 15` reporting 11/96 strict-complete components (11.5%) and

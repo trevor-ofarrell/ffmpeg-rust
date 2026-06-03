@@ -3975,6 +3975,91 @@ mod tests {
     }
 
     #[test]
+    fn custom_buffer_pool_offset_same_size_realloc_preserves_pool_ownership() {
+        #[derive(Debug)]
+        struct PoolToken {
+            id: usize,
+        }
+
+        let releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let release_capture = std::sync::Arc::clone(&releases);
+        let pool = BufferPool::with_callbacks(
+            3,
+            0,
+            BufferPoolCallbacks::with_allocation_callbacks(
+                |allocated_len| {
+                    assert_eq!(allocated_len, 3);
+                    BufferPoolAllocation::with_opaque_visible_range(
+                        vec![0xee, 0x31, 0x32, 0x33],
+                        1,
+                        3,
+                        PoolToken { id: 91 },
+                    )
+                },
+                move |allocation| {
+                    let id = allocation
+                        .opaque_ref::<PoolToken>()
+                        .map(|token| token.id)
+                        .unwrap_or_default();
+                    release_capture
+                        .lock()
+                        .unwrap()
+                        .push((id, allocation.into_vec()));
+                },
+            ),
+        )
+        .unwrap();
+
+        let mut first = Some(pool.get().unwrap());
+        let first_ref = first.as_ref().expect("offset pool first checkout");
+        assert_eq!(first_ref.offset(), 1);
+        assert_eq!(first_ref.len(), 3);
+        assert_eq!(first_ref.as_slice(), &[0x31, 0x32, 0x33]);
+        assert!(first_ref.is_writable());
+        assert_eq!(
+            first_ref
+                .pool_opaque_ref::<PoolToken>()
+                .map(|token| token.id),
+            Some(91)
+        );
+        let first_ptr = first_ref.as_ptr();
+
+        BufferRef::realloc(&mut first, 3).unwrap();
+        let first = first.expect("same-size realloc keeps offset pool ref");
+        assert_eq!(first.as_ptr(), first_ptr);
+        assert_eq!(first.offset(), 1);
+        assert_eq!(first.len(), 3);
+        assert_eq!(first.as_slice(), &[0x31, 0x32, 0x33]);
+        assert!(first.is_writable());
+        assert_eq!(
+            first.pool_opaque_ref::<PoolToken>().map(|token| token.id),
+            Some(91)
+        );
+        assert!(releases.lock().unwrap().is_empty());
+        assert_eq!(pool.available_count().unwrap(), 0);
+
+        drop(first);
+        assert!(releases.lock().unwrap().is_empty());
+        assert_eq!(pool.available_count().unwrap(), 1);
+
+        let reuse = pool.get().unwrap();
+        assert_eq!(reuse.offset(), 0);
+        assert_eq!(reuse.len(), 3);
+        assert_eq!(reuse.as_slice(), &[0xee, 0x31, 0x32]);
+        assert_eq!(
+            reuse.pool_opaque_ref::<PoolToken>().map(|token| token.id),
+            Some(91)
+        );
+        drop(reuse);
+        drop(pool);
+
+        assert_eq!(
+            *releases.lock().unwrap(),
+            vec![(91, vec![0xee, 0x31, 0x32, 0x33])]
+        );
+    }
+
+    #[test]
     fn custom_buffer_pool_offset_allocation_mutable_make_mut_preserves_visible_offset_shape() {
         #[derive(Debug)]
         struct PoolToken {

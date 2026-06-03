@@ -9,6 +9,15 @@
 
 ## Compatible Today
 
+- Latest main-thread buffer evidence: pinned libavutil rows now prove
+  same-size `av_buffer_realloc()` on an offset-visible custom-pool checkout
+  preserves the data pointer, offset, size, writability, and pool opaque data.
+  Ordinary unref returns the original backing allocation to the pool, and spare
+  reuse normalizes the visible offset back to zero. Rust mirrors this through
+  focused unit coverage, the mapped buffer oracle, `avutil_core_models`, and a
+  64-run WSL fuzz smoke with leak detection disabled. This strengthens
+  `avutil-buffer`; strict completion remains 11/96 and the row remains
+  `differential_pass`.
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
   `av_packet_rescale_ts()` rescales a positive `AVPacket.duration` even when
   both PTS and DTS are `AV_NOPTS_VALUE`, while preserving payload, position,

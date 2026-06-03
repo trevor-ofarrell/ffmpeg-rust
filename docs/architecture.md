@@ -117,6 +117,8 @@ though the backing allocation address may move when padding has to be added.
 
 The latest zero-size custom-pool rows prove `av_buffer_pool_init2(0, opaque, custom_alloc, pool_free)` still calls the custom allocator once with size zero, preserves per-buffer pool opaque data on first checkout and spare reuse, runs no callbacks on ordinary unref, and releases the zero-size allocation before pool_free during pool uninit. The Rust `BufferPool` model mirrors this through exact-shape zero-length custom allocations rather than treating zero-size pools as a special default-only case.
 
+The latest offset custom-pool same-size realloc rows prove `av_buffer_realloc(&ref, ref->size)` is a no-op for the first offset-visible custom-pool checkout: pointer, offset, size, writability, and pool opaque lookup are preserved, then unref returns the original backing allocation for normalized zero-offset spare reuse.
+
 The latest outstanding shared-pool rows prove `av_buffer_pool_uninit()` does not release a custom-pool allocation while two `AVBufferRef` handles still share it. Callback release and pool-free are both delayed until the final shared reference drops, and the release callback runs before pool-free.
 
 The latest Rust `BufferPool::recycle` invariants pin rejection side effects for the safe helper surface: caller-owned wrong-shape and readonly refs are consumed and released once on rejection, while a shared pool-owned rejected ref remains live through its survivor and only returns to the pool when the final reference drops.

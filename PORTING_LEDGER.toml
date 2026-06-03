@@ -1571,6 +1571,7 @@ unit_tests = [
   "buffer::tests::custom_buffer_pool_unique_make_mut_preserves_pool_ownership",
   "buffer::tests::custom_buffer_pool_readonly_allocation_reuses_as_writable_storage",
   "buffer::tests::custom_buffer_pool_offset_allocation_reuses_original_base_storage",
+  "buffer::tests::custom_buffer_pool_offset_same_size_realloc_preserves_pool_ownership",
   "buffer::tests::custom_buffer_pool_offset_allocation_mutable_make_mut_preserves_visible_offset_shape",
   "buffer::tests::custom_buffer_pool_readonly_offset_allocation_reuses_base_storage_as_writable",
   "buffer::tests::custom_buffer_pool_releases_outstanding_storage_after_pool_drop",
@@ -1592,6 +1593,12 @@ fate_tests = [
   "not_applicable: upstream FFmpeg FATE has no standalone AVBufferRef/AVBufferPool API target; covered by unit tests plus pinned libavutil differential oracle",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest offset-pool same-size realloc slice: pinned libavutil rows now prove
+# `av_buffer_realloc(&ref, ref->size)` on the first offset-visible custom-pool
+# checkout returns 0 without moving the visible data pointer, changing
+# size/writability, or dropping per-buffer pool opaque data. Ordinary unref
+# still returns the original backing allocation to the pool, and spare reuse
+# normalizes the visible offset back to zero.
 # Latest recycle-rejection lifecycle slice: Rust unit and deterministic fuzz
 # coverage now validate explicit `BufferPool::recycle` rejection side effects.
 # Caller-owned wrong-shape and readonly rejected refs are consumed and released
