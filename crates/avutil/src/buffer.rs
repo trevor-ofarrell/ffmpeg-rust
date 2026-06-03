@@ -2613,6 +2613,37 @@ mod tests {
         drop(same);
         assert_eq!(*same_released.lock().unwrap(), vec![(659, Vec::new())]);
 
+        let shared_same_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let shared_same_capture = std::sync::Arc::clone(&shared_same_released);
+        let shared_same_source = BufferRef::from_null_data_zero_with_opaque_release_callback(
+            666usize,
+            move |opaque, bytes| {
+                shared_same_capture.lock().unwrap().push((opaque, bytes));
+            },
+        );
+        let mut shared_same = Some(BufferRef::ref_from(&shared_same_source));
+        let shared_same_ptr = shared_same.as_ref().unwrap().as_ptr();
+
+        BufferRef::realloc(&mut shared_same, 0).unwrap();
+        let shared_same = shared_same.expect("shared same-size realloc keeps destination");
+        assert!(shared_same.is_data_ptr_null());
+        assert_eq!(shared_same.as_ptr(), shared_same_ptr);
+        assert!(shared_same.shares_storage(&shared_same_source));
+        assert_eq!(shared_same_source.strong_count(), 2);
+        assert!(!shared_same_source.is_writable());
+        assert_eq!(shared_same.opaque_ref::<usize>(), Some(&666));
+        assert!(shared_same_released.lock().unwrap().is_empty());
+        drop(shared_same);
+        assert!(shared_same_released.lock().unwrap().is_empty());
+        assert_eq!(shared_same_source.strong_count(), 1);
+        assert!(shared_same_source.is_writable());
+        drop(shared_same_source);
+        assert_eq!(
+            *shared_same_released.lock().unwrap(),
+            vec![(666, Vec::new())]
+        );
+
         let grow_released =
             std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
         let grow_capture = std::sync::Arc::clone(&grow_released);
@@ -2740,6 +2771,76 @@ mod tests {
         assert!(grow.is_writable());
         assert!(grow.opaque_ref::<usize>().is_none());
         assert_eq!(*grow_released.lock().unwrap(), vec![(663, Vec::new())]);
+
+        let shared_make_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let shared_make_capture = std::sync::Arc::clone(&shared_make_released);
+        let shared_make_source =
+            BufferRef::from_null_data_zero_with_opaque_release_callback_readonly(
+                667usize,
+                move |opaque, bytes| {
+                    shared_make_capture.lock().unwrap().push((opaque, bytes));
+                },
+            );
+        let mut shared_make_destination = BufferRef::ref_from(&shared_make_source);
+
+        shared_make_destination.make_writable().unwrap();
+        assert!(shared_make_source.is_data_ptr_null());
+        assert!(shared_make_source.as_ptr().is_null());
+        assert!(shared_make_source.is_readonly());
+        assert!(!shared_make_source.is_writable());
+        assert_eq!(shared_make_source.opaque_ref::<usize>(), Some(&667));
+        assert_eq!(shared_make_source.strong_count(), 1);
+        assert!(shared_make_destination.as_slice().is_empty());
+        assert!(!shared_make_destination.is_data_ptr_null());
+        assert!(!shared_make_destination.as_ptr().is_null());
+        assert!(!shared_make_destination.is_readonly());
+        assert!(shared_make_destination.is_writable());
+        assert!(shared_make_destination.opaque_ref::<usize>().is_none());
+        assert!(!shared_make_source.shares_storage(&shared_make_destination));
+        assert!(shared_make_released.lock().unwrap().is_empty());
+        drop(shared_make_destination);
+        assert!(shared_make_released.lock().unwrap().is_empty());
+        drop(shared_make_source);
+        assert_eq!(
+            *shared_make_released.lock().unwrap(),
+            vec![(667, Vec::new())]
+        );
+
+        let shared_same_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let shared_same_capture = std::sync::Arc::clone(&shared_same_released);
+        let shared_same_source =
+            BufferRef::from_null_data_zero_with_opaque_release_callback_readonly(
+                668usize,
+                move |opaque, bytes| {
+                    shared_same_capture.lock().unwrap().push((opaque, bytes));
+                },
+            );
+        let mut shared_same = Some(BufferRef::ref_from(&shared_same_source));
+        let shared_same_ptr = shared_same.as_ref().unwrap().as_ptr();
+
+        BufferRef::realloc(&mut shared_same, 0).unwrap();
+        let shared_same = shared_same.expect("shared readonly same-size realloc keeps destination");
+        assert!(shared_same.is_data_ptr_null());
+        assert_eq!(shared_same.as_ptr(), shared_same_ptr);
+        assert!(shared_same.is_readonly());
+        assert!(!shared_same.is_writable());
+        assert!(shared_same_source.is_readonly());
+        assert!(!shared_same_source.is_writable());
+        assert!(shared_same.shares_storage(&shared_same_source));
+        assert_eq!(shared_same_source.strong_count(), 2);
+        assert_eq!(shared_same.opaque_ref::<usize>(), Some(&668));
+        assert!(shared_same_released.lock().unwrap().is_empty());
+        drop(shared_same);
+        assert!(shared_same_released.lock().unwrap().is_empty());
+        assert_eq!(shared_same_source.strong_count(), 1);
+        assert!(!shared_same_source.is_writable());
+        drop(shared_same_source);
+        assert_eq!(
+            *shared_same_released.lock().unwrap(),
+            vec![(668, Vec::new())]
+        );
 
         let shared_grow_released =
             std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));

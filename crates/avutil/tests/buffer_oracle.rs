@@ -363,6 +363,80 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         release_fields(&create_null_zero_realloc_same_released),
     );
 
+    let create_null_zero_shared_realloc_same_released =
+        Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_null_zero_shared_realloc_same_capture =
+        Arc::clone(&create_null_zero_shared_realloc_same_released);
+    let create_null_zero_shared_realloc_same_src =
+        BufferRef::from_null_data_zero_with_opaque_release_callback(
+            666usize,
+            move |opaque, bytes| {
+                create_null_zero_shared_realloc_same_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        );
+    let mut create_null_zero_shared_realloc_same_dst = Some(BufferRef::ref_from(
+        &create_null_zero_shared_realloc_same_src,
+    ));
+    let create_null_zero_shared_realloc_same_before = create_null_zero_shared_realloc_same_dst
+        .as_ref()
+        .unwrap()
+        .as_ptr();
+    BufferRef::realloc(&mut create_null_zero_shared_realloc_same_dst, 0).unwrap();
+    let create_null_zero_shared_realloc_same_dst = create_null_zero_shared_realloc_same_dst
+        .expect("shared same-size realloc keeps destination");
+    rows.insert(
+        "buffer:create-null-zero-shared-realloc-same-ret".to_string(),
+        vec![
+            "0".to_string(),
+            bool_field(
+                create_null_zero_shared_realloc_same_before
+                    == create_null_zero_shared_realloc_same_dst.as_ptr(),
+            ),
+        ],
+    );
+    rows.insert(
+        "buffer:create-null-zero-shared-realloc-same-src".to_string(),
+        buffer_fields_with_data_null_and_opaque(&create_null_zero_shared_realloc_same_src),
+    );
+    rows.insert(
+        "buffer:create-null-zero-shared-realloc-same-dst".to_string(),
+        buffer_fields_with_data_null_and_opaque(&create_null_zero_shared_realloc_same_dst),
+    );
+    rows.insert(
+        "buffer:create-null-zero-shared-realloc-same-shares".to_string(),
+        vec![
+            bool_field(
+                create_null_zero_shared_realloc_same_src
+                    .shares_storage(&create_null_zero_shared_realloc_same_dst),
+            ),
+            create_null_zero_shared_realloc_same_src
+                .strong_count()
+                .to_string(),
+            create_null_zero_shared_realloc_same_released
+                .lock()
+                .unwrap()
+                .len()
+                .to_string(),
+        ],
+    );
+    drop(create_null_zero_shared_realloc_same_dst);
+    rows.insert(
+        "buffer:create-null-zero-shared-realloc-same-release-before-src-unref".to_string(),
+        vec![create_null_zero_shared_realloc_same_released
+            .lock()
+            .unwrap()
+            .len()
+            .to_string()],
+    );
+    drop(create_null_zero_shared_realloc_same_src);
+    rows.insert(
+        "buffer:create-null-zero-shared-realloc-same-release".to_string(),
+        release_fields(&create_null_zero_shared_realloc_same_released),
+    );
+
     let create_null_zero_realloc_grow_released =
         Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let create_null_zero_realloc_grow_capture = Arc::clone(&create_null_zero_realloc_grow_released);
@@ -574,6 +648,150 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     rows.insert(
         "buffer:create-null-zero-readonly-realloc-grow-release-after-unref".to_string(),
         release_fields(&create_null_zero_readonly_realloc_grow_released),
+    );
+
+    let create_null_zero_readonly_shared_make_writable_released =
+        Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_null_zero_readonly_shared_make_writable_capture =
+        Arc::clone(&create_null_zero_readonly_shared_make_writable_released);
+    let create_null_zero_readonly_shared_make_writable_src =
+        BufferRef::from_null_data_zero_with_opaque_release_callback_readonly(
+            667usize,
+            move |opaque, bytes| {
+                create_null_zero_readonly_shared_make_writable_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        );
+    let mut create_null_zero_readonly_shared_make_writable_dst =
+        BufferRef::ref_from(&create_null_zero_readonly_shared_make_writable_src);
+    create_null_zero_readonly_shared_make_writable_dst
+        .make_writable()
+        .unwrap();
+    rows.insert(
+        "buffer:create-null-zero-readonly-shared-make-writable-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:create-null-zero-readonly-shared-make-writable-src".to_string(),
+        buffer_fields_with_data_null_and_opaque(
+            &create_null_zero_readonly_shared_make_writable_src,
+        ),
+    );
+    rows.insert(
+        "buffer:create-null-zero-readonly-shared-make-writable-dst".to_string(),
+        buffer_fields_with_data_null_and_opaque(
+            &create_null_zero_readonly_shared_make_writable_dst,
+        ),
+    );
+    rows.insert(
+        "buffer:create-null-zero-readonly-shared-make-writable-shares".to_string(),
+        vec![
+            bool_field(
+                create_null_zero_readonly_shared_make_writable_src
+                    .shares_storage(&create_null_zero_readonly_shared_make_writable_dst),
+            ),
+            create_null_zero_readonly_shared_make_writable_src
+                .strong_count()
+                .to_string(),
+            create_null_zero_readonly_shared_make_writable_released
+                .lock()
+                .unwrap()
+                .len()
+                .to_string(),
+        ],
+    );
+    drop(create_null_zero_readonly_shared_make_writable_dst);
+    rows.insert(
+        "buffer:create-null-zero-readonly-shared-make-writable-release-before-src-unref"
+            .to_string(),
+        vec![create_null_zero_readonly_shared_make_writable_released
+            .lock()
+            .unwrap()
+            .len()
+            .to_string()],
+    );
+    drop(create_null_zero_readonly_shared_make_writable_src);
+    rows.insert(
+        "buffer:create-null-zero-readonly-shared-make-writable-release".to_string(),
+        release_fields(&create_null_zero_readonly_shared_make_writable_released),
+    );
+
+    let create_null_zero_readonly_shared_realloc_same_released =
+        Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_null_zero_readonly_shared_realloc_same_capture =
+        Arc::clone(&create_null_zero_readonly_shared_realloc_same_released);
+    let create_null_zero_readonly_shared_realloc_same_src =
+        BufferRef::from_null_data_zero_with_opaque_release_callback_readonly(
+            668usize,
+            move |opaque, bytes| {
+                create_null_zero_readonly_shared_realloc_same_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        );
+    let mut create_null_zero_readonly_shared_realloc_same_dst = Some(BufferRef::ref_from(
+        &create_null_zero_readonly_shared_realloc_same_src,
+    ));
+    let create_null_zero_readonly_shared_realloc_same_before =
+        create_null_zero_readonly_shared_realloc_same_dst
+            .as_ref()
+            .unwrap()
+            .as_ptr();
+    BufferRef::realloc(&mut create_null_zero_readonly_shared_realloc_same_dst, 0).unwrap();
+    let create_null_zero_readonly_shared_realloc_same_dst =
+        create_null_zero_readonly_shared_realloc_same_dst
+            .expect("shared readonly same-size realloc keeps destination");
+    rows.insert(
+        "buffer:create-null-zero-readonly-shared-realloc-same-ret".to_string(),
+        vec![
+            "0".to_string(),
+            bool_field(
+                create_null_zero_readonly_shared_realloc_same_before
+                    == create_null_zero_readonly_shared_realloc_same_dst.as_ptr(),
+            ),
+        ],
+    );
+    rows.insert(
+        "buffer:create-null-zero-readonly-shared-realloc-same-src".to_string(),
+        buffer_fields_with_data_null_and_opaque(&create_null_zero_readonly_shared_realloc_same_src),
+    );
+    rows.insert(
+        "buffer:create-null-zero-readonly-shared-realloc-same-dst".to_string(),
+        buffer_fields_with_data_null_and_opaque(&create_null_zero_readonly_shared_realloc_same_dst),
+    );
+    rows.insert(
+        "buffer:create-null-zero-readonly-shared-realloc-same-shares".to_string(),
+        vec![
+            bool_field(
+                create_null_zero_readonly_shared_realloc_same_src
+                    .shares_storage(&create_null_zero_readonly_shared_realloc_same_dst),
+            ),
+            create_null_zero_readonly_shared_realloc_same_src
+                .strong_count()
+                .to_string(),
+            create_null_zero_readonly_shared_realloc_same_released
+                .lock()
+                .unwrap()
+                .len()
+                .to_string(),
+        ],
+    );
+    drop(create_null_zero_readonly_shared_realloc_same_dst);
+    rows.insert(
+        "buffer:create-null-zero-readonly-shared-realloc-same-release-before-src-unref".to_string(),
+        vec![create_null_zero_readonly_shared_realloc_same_released
+            .lock()
+            .unwrap()
+            .len()
+            .to_string()],
+    );
+    drop(create_null_zero_readonly_shared_realloc_same_src);
+    rows.insert(
+        "buffer:create-null-zero-readonly-shared-realloc-same-release".to_string(),
+        release_fields(&create_null_zero_readonly_shared_realloc_same_released),
     );
 
     let create_null_zero_readonly_shared_realloc_grow_released =
@@ -4726,6 +4944,42 @@ int main(void) {
 
     reset_create_release();
     last_create_release_size = 0;
+    AVBufferRef *create_null_zero_shared_realloc_same_src =
+        av_buffer_create(NULL, 0, test_create_free,
+                         (void *)(uintptr_t)666, 0);
+    fail_if(!create_null_zero_shared_realloc_same_src,
+            "av_buffer_create null zero shared realloc same src failed");
+    AVBufferRef *create_null_zero_shared_realloc_same_dst =
+        av_buffer_ref(create_null_zero_shared_realloc_same_src);
+    fail_if(!create_null_zero_shared_realloc_same_dst,
+            "av_buffer_ref null zero shared realloc same failed");
+    uint8_t *create_null_zero_shared_realloc_same_before =
+        create_null_zero_shared_realloc_same_dst->data;
+    ret = av_buffer_realloc(&create_null_zero_shared_realloc_same_dst, 0);
+    printf("buffer:create-null-zero-shared-realloc-same-ret|%d|%d\n",
+           ret,
+           create_null_zero_shared_realloc_same_before ==
+               create_null_zero_shared_realloc_same_dst->data);
+    print_buffer_opaque_data_null(
+        "buffer:create-null-zero-shared-realloc-same-src",
+        create_null_zero_shared_realloc_same_src);
+    print_buffer_opaque_data_null(
+        "buffer:create-null-zero-shared-realloc-same-dst",
+        create_null_zero_shared_realloc_same_dst);
+    printf("buffer:create-null-zero-shared-realloc-same-shares|%d|%d|%d\n",
+           create_null_zero_shared_realloc_same_src->buffer ==
+               create_null_zero_shared_realloc_same_dst->buffer,
+           av_buffer_get_ref_count(create_null_zero_shared_realloc_same_src),
+           create_release_count);
+    av_buffer_unref(&create_null_zero_shared_realloc_same_dst);
+    printf("buffer:create-null-zero-shared-realloc-same-release-before-src-unref|%d\n",
+           create_release_count);
+    av_buffer_unref(&create_null_zero_shared_realloc_same_src);
+    print_create_release(
+        "buffer:create-null-zero-shared-realloc-same-release");
+
+    reset_create_release();
+    last_create_release_size = 0;
     AVBufferRef *create_null_zero_realloc_grow =
         av_buffer_create(NULL, 0, test_create_free,
                          (void *)(uintptr_t)660, 0);
@@ -4831,6 +5085,86 @@ int main(void) {
     av_buffer_unref(&create_null_zero_readonly_realloc_grow);
     print_create_release(
         "buffer:create-null-zero-readonly-realloc-grow-release-after-unref");
+
+    reset_create_release();
+    last_create_release_size = 0;
+    AVBufferRef *create_null_zero_readonly_shared_make_writable_src =
+        av_buffer_create(NULL, 0, test_create_free,
+                         (void *)(uintptr_t)667,
+                         AV_BUFFER_FLAG_READONLY);
+    fail_if(!create_null_zero_readonly_shared_make_writable_src,
+            "av_buffer_create null zero readonly shared make writable src failed");
+    AVBufferRef *create_null_zero_readonly_shared_make_writable_dst =
+        av_buffer_ref(create_null_zero_readonly_shared_make_writable_src);
+    fail_if(!create_null_zero_readonly_shared_make_writable_dst,
+            "av_buffer_ref null zero readonly shared make writable failed");
+    ret = av_buffer_make_writable(
+        &create_null_zero_readonly_shared_make_writable_dst);
+    printf(
+        "buffer:create-null-zero-readonly-shared-make-writable-ret|%d\n",
+        ret);
+    print_buffer_opaque_data_null(
+        "buffer:create-null-zero-readonly-shared-make-writable-src",
+        create_null_zero_readonly_shared_make_writable_src);
+    print_buffer_opaque_data_null(
+        "buffer:create-null-zero-readonly-shared-make-writable-dst",
+        create_null_zero_readonly_shared_make_writable_dst);
+    printf(
+        "buffer:create-null-zero-readonly-shared-make-writable-shares|%d|%d|%d\n",
+        create_null_zero_readonly_shared_make_writable_src->buffer ==
+            create_null_zero_readonly_shared_make_writable_dst->buffer,
+        av_buffer_get_ref_count(
+            create_null_zero_readonly_shared_make_writable_src),
+        create_release_count);
+    av_buffer_unref(&create_null_zero_readonly_shared_make_writable_dst);
+    printf(
+        "buffer:create-null-zero-readonly-shared-make-writable-release-before-src-unref|%d\n",
+        create_release_count);
+    av_buffer_unref(&create_null_zero_readonly_shared_make_writable_src);
+    print_create_release(
+        "buffer:create-null-zero-readonly-shared-make-writable-release");
+
+    reset_create_release();
+    last_create_release_size = 0;
+    AVBufferRef *create_null_zero_readonly_shared_realloc_same_src =
+        av_buffer_create(NULL, 0, test_create_free,
+                         (void *)(uintptr_t)668,
+                         AV_BUFFER_FLAG_READONLY);
+    fail_if(!create_null_zero_readonly_shared_realloc_same_src,
+            "av_buffer_create null zero readonly shared realloc same src failed");
+    AVBufferRef *create_null_zero_readonly_shared_realloc_same_dst =
+        av_buffer_ref(create_null_zero_readonly_shared_realloc_same_src);
+    fail_if(!create_null_zero_readonly_shared_realloc_same_dst,
+            "av_buffer_ref null zero readonly shared realloc same failed");
+    uint8_t *create_null_zero_readonly_shared_realloc_same_before =
+        create_null_zero_readonly_shared_realloc_same_dst->data;
+    ret = av_buffer_realloc(
+        &create_null_zero_readonly_shared_realloc_same_dst, 0);
+    printf(
+        "buffer:create-null-zero-readonly-shared-realloc-same-ret|%d|%d\n",
+        ret,
+        create_null_zero_readonly_shared_realloc_same_before ==
+            create_null_zero_readonly_shared_realloc_same_dst->data);
+    print_buffer_opaque_data_null(
+        "buffer:create-null-zero-readonly-shared-realloc-same-src",
+        create_null_zero_readonly_shared_realloc_same_src);
+    print_buffer_opaque_data_null(
+        "buffer:create-null-zero-readonly-shared-realloc-same-dst",
+        create_null_zero_readonly_shared_realloc_same_dst);
+    printf(
+        "buffer:create-null-zero-readonly-shared-realloc-same-shares|%d|%d|%d\n",
+        create_null_zero_readonly_shared_realloc_same_src->buffer ==
+            create_null_zero_readonly_shared_realloc_same_dst->buffer,
+        av_buffer_get_ref_count(
+            create_null_zero_readonly_shared_realloc_same_src),
+        create_release_count);
+    av_buffer_unref(&create_null_zero_readonly_shared_realloc_same_dst);
+    printf(
+        "buffer:create-null-zero-readonly-shared-realloc-same-release-before-src-unref|%d\n",
+        create_release_count);
+    av_buffer_unref(&create_null_zero_readonly_shared_realloc_same_src);
+    print_create_release(
+        "buffer:create-null-zero-readonly-shared-realloc-same-release");
 
     reset_create_release();
     last_create_release_size = 0;

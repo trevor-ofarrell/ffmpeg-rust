@@ -1154,6 +1154,14 @@ destination to ordinary writable non-NULL storage. The source remains live with
 according to the READONLY flag; the custom release callback runs only after the
 final source unref.
 
+The latest buffer oracle rows add shared nullable-zero no-growth coverage:
+same-size `av_buffer_realloc()` on writable and READONLY shared nullable-zero
+refs returns success without detaching either reference, preserving shared
+storage, refcount 2, NULL data pointers, opaque lookup, and no release until the
+final source unref. A companion READONLY shared `av_buffer_make_writable()` row
+proves destination-only detach to ordinary writable non-NULL empty storage while
+the source owner remains live until final unref.
+
 The latest buffer oracle rows add outstanding two-reference pool-uninit coverage: `av_buffer_pool_uninit()` with two refs sharing one custom-pool allocation does not run release or pool-free callbacks at uninit time or after the first unref, then the final unref releases the buffer bytes exactly once before running the pool-free callback.
 
 The latest Rust-only `BufferPool::recycle` rejection lifecycle rows have no direct public FFmpeg C API equivalent; they are therefore covered by unit and deterministic fuzz invariants, while the pinned buffer oracle and mapped `avutil-buffer|oracle-libavutil-buffer` row are rerun as broader regressions.

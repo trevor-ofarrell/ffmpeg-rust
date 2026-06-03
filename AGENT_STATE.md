@@ -12,20 +12,21 @@ confirmed `avutil-packet` remains blocked on shared-shrink alias-safe storage
 and advanced the next unblocked priority-1 component, `avutil-buffer`; no worker
 writes were delegated.
 
-Current main-thread slice: pinned libavutil rows now prove
-`av_buffer_realloc()` on one reference of shared
-`av_buffer_create(NULL, 0, free, opaque, flags)` storage detaches only the
-destination to ordinary writable non-NULL storage. The source keeps its NULL
-data pointer, opaque owner, refcount 1, and writable/readonly state according
-to the READONLY flag; the custom release callback is delayed until the final
-source unref. Rust mirrors both writable and readonly shared nullable-zero grow
-paths with focused unit coverage, the mapped buffer oracle, and deterministic
+Current main-thread slice: pinned libavutil rows now prove shared nullable-zero
+no-growth behavior for `av_buffer_create(NULL, 0, free, opaque, flags)`.
+Same-size `av_buffer_realloc()` on shared writable and READONLY refs returns
+success without detaching either reference, preserving shared storage, refcount
+2, NULL data pointers, opaque lookup, and no release until the final source
+unref. A matching READONLY shared `av_buffer_make_writable()` row proves only
+the destination detaches to ordinary writable non-NULL empty storage while the
+source owner stays live until final unref. Rust mirrors these edges with
+focused unit coverage, the mapped buffer oracle, and deterministic
 `avutil_core_models` coverage. `avutil-buffer` remains `differential_pass`, not
 `complete`; strict completion remains 11/96 because broader ABI/lifetime
 closure, hardware/device ownership integration, and standalone upstream FATE
 inapplicability remain open.
 
-Latest validation commands for this shared nullable-zero buffer realloc slice
+Latest validation commands for this shared nullable-zero no-growth buffer slice
 passed: `cargo fmt --all`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p
 avutil null_data_zero_realloc -- --nocapture`; `CARGO_TARGET_DIR=target-orch-avutil
 cargo test -p avutil null_data_zero_readonly_detaches_and_reallocates_like_ffmpeg

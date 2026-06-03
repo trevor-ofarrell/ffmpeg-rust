@@ -1113,6 +1113,47 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         *null_zero_shared_realloc_released.lock().unwrap(),
         vec![(payload_len.wrapping_add(4), Vec::new())]
     );
+    let null_zero_shared_same_released =
+        Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let null_zero_shared_same_capture = Arc::clone(&null_zero_shared_same_released);
+    let null_zero_shared_same_source =
+        BufferRef::from_null_data_zero_with_opaque_release_callback(
+            payload_len.wrapping_add(6),
+            move |opaque, bytes| {
+                null_zero_shared_same_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        );
+    let mut null_zero_shared_same_destination =
+        Some(BufferRef::ref_from(&null_zero_shared_same_source));
+    let null_zero_shared_same_ptr = null_zero_shared_same_destination.as_ref().unwrap().as_ptr();
+    BufferRef::realloc(&mut null_zero_shared_same_destination, 0).unwrap();
+    let null_zero_shared_same_destination = null_zero_shared_same_destination
+        .expect("shared nullable-zero same-size realloc keeps dst");
+    assert!(null_zero_shared_same_destination.is_data_ptr_null());
+    assert_eq!(
+        null_zero_shared_same_destination.as_ptr(),
+        null_zero_shared_same_ptr
+    );
+    assert!(null_zero_shared_same_destination.shares_storage(&null_zero_shared_same_source));
+    assert_eq!(null_zero_shared_same_source.strong_count(), 2);
+    assert!(!null_zero_shared_same_source.is_writable());
+    assert_eq!(
+        null_zero_shared_same_destination.opaque_ref::<usize>(),
+        Some(&payload_len.wrapping_add(6))
+    );
+    assert!(null_zero_shared_same_released.lock().unwrap().is_empty());
+    drop(null_zero_shared_same_destination);
+    assert!(null_zero_shared_same_released.lock().unwrap().is_empty());
+    assert_eq!(null_zero_shared_same_source.strong_count(), 1);
+    assert!(null_zero_shared_same_source.is_writable());
+    drop(null_zero_shared_same_source);
+    assert_eq!(
+        *null_zero_shared_same_released.lock().unwrap(),
+        vec![(payload_len.wrapping_add(6), Vec::new())]
+    );
     let null_zero_readonly_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let null_zero_readonly_capture = Arc::clone(&null_zero_readonly_released);
     let mut null_zero_readonly =
@@ -1206,6 +1247,115 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     assert_eq!(
         *null_zero_readonly_grow_released.lock().unwrap(),
         vec![(payload_len.wrapping_add(3), Vec::new())]
+    );
+    let null_zero_readonly_shared_make_released =
+        Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let null_zero_readonly_shared_make_capture =
+        Arc::clone(&null_zero_readonly_shared_make_released);
+    let null_zero_readonly_shared_make_source =
+        BufferRef::from_null_data_zero_with_opaque_release_callback_readonly(
+            payload_len.wrapping_add(7),
+            move |opaque, bytes| {
+                null_zero_readonly_shared_make_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        );
+    let mut null_zero_readonly_shared_make_destination =
+        BufferRef::ref_from(&null_zero_readonly_shared_make_source);
+    null_zero_readonly_shared_make_destination
+        .make_writable()
+        .unwrap();
+    assert!(null_zero_readonly_shared_make_source.is_data_ptr_null());
+    assert!(null_zero_readonly_shared_make_source.as_ptr().is_null());
+    assert!(null_zero_readonly_shared_make_source.is_readonly());
+    assert!(!null_zero_readonly_shared_make_source.is_writable());
+    assert_eq!(null_zero_readonly_shared_make_source.strong_count(), 1);
+    assert_eq!(
+        null_zero_readonly_shared_make_source.opaque_ref::<usize>(),
+        Some(&payload_len.wrapping_add(7))
+    );
+    assert!(null_zero_readonly_shared_make_destination
+        .as_slice()
+        .is_empty());
+    assert!(!null_zero_readonly_shared_make_destination.is_data_ptr_null());
+    assert!(!null_zero_readonly_shared_make_destination.as_ptr().is_null());
+    assert!(!null_zero_readonly_shared_make_destination.is_readonly());
+    assert!(null_zero_readonly_shared_make_destination.is_writable());
+    assert!(null_zero_readonly_shared_make_destination
+        .opaque_ref::<usize>()
+        .is_none());
+    assert!(!null_zero_readonly_shared_make_source
+        .shares_storage(&null_zero_readonly_shared_make_destination));
+    assert!(null_zero_readonly_shared_make_released
+        .lock()
+        .unwrap()
+        .is_empty());
+    drop(null_zero_readonly_shared_make_destination);
+    assert!(null_zero_readonly_shared_make_released
+        .lock()
+        .unwrap()
+        .is_empty());
+    drop(null_zero_readonly_shared_make_source);
+    assert_eq!(
+        *null_zero_readonly_shared_make_released.lock().unwrap(),
+        vec![(payload_len.wrapping_add(7), Vec::new())]
+    );
+    let null_zero_readonly_shared_same_released =
+        Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let null_zero_readonly_shared_same_capture =
+        Arc::clone(&null_zero_readonly_shared_same_released);
+    let null_zero_readonly_shared_same_source =
+        BufferRef::from_null_data_zero_with_opaque_release_callback_readonly(
+            payload_len.wrapping_add(8),
+            move |opaque, bytes| {
+                null_zero_readonly_shared_same_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        );
+    let mut null_zero_readonly_shared_same_destination =
+        Some(BufferRef::ref_from(&null_zero_readonly_shared_same_source));
+    let null_zero_readonly_shared_same_ptr = null_zero_readonly_shared_same_destination
+        .as_ref()
+        .unwrap()
+        .as_ptr();
+    BufferRef::realloc(&mut null_zero_readonly_shared_same_destination, 0).unwrap();
+    let null_zero_readonly_shared_same_destination = null_zero_readonly_shared_same_destination
+        .expect("shared readonly nullable-zero same-size realloc keeps dst");
+    assert!(null_zero_readonly_shared_same_destination.is_data_ptr_null());
+    assert_eq!(
+        null_zero_readonly_shared_same_destination.as_ptr(),
+        null_zero_readonly_shared_same_ptr
+    );
+    assert!(null_zero_readonly_shared_same_destination.is_readonly());
+    assert!(!null_zero_readonly_shared_same_destination.is_writable());
+    assert!(null_zero_readonly_shared_same_source.is_readonly());
+    assert!(!null_zero_readonly_shared_same_source.is_writable());
+    assert!(null_zero_readonly_shared_same_destination
+        .shares_storage(&null_zero_readonly_shared_same_source));
+    assert_eq!(null_zero_readonly_shared_same_source.strong_count(), 2);
+    assert_eq!(
+        null_zero_readonly_shared_same_destination.opaque_ref::<usize>(),
+        Some(&payload_len.wrapping_add(8))
+    );
+    assert!(null_zero_readonly_shared_same_released
+        .lock()
+        .unwrap()
+        .is_empty());
+    drop(null_zero_readonly_shared_same_destination);
+    assert!(null_zero_readonly_shared_same_released
+        .lock()
+        .unwrap()
+        .is_empty());
+    assert_eq!(null_zero_readonly_shared_same_source.strong_count(), 1);
+    assert!(!null_zero_readonly_shared_same_source.is_writable());
+    drop(null_zero_readonly_shared_same_source);
+    assert_eq!(
+        *null_zero_readonly_shared_same_released.lock().unwrap(),
+        vec![(payload_len.wrapping_add(8), Vec::new())]
     );
     let null_zero_readonly_shared_realloc_released =
         Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
