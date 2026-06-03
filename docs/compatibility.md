@@ -10,6 +10,13 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  `av_packet_new_side_data()` and standalone `av_packet_side_data_new()`
+  return NULL for `SIZE_MAX` visible sizes without mutating existing
+  packet-owned side data or standalone side-data arrays. Rust mirrors this as
+  typed ENOMEM from `Packet::new_side_data` and `PacketSideDataList::new_side_data`
+  while preserving existing entries. This strengthens `avutil-packet`; strict
+  completion remains 11/96 and the row remains `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   `av_init_packet()` preserves visible payload bytes and size while clearing
   `AVPacket.buf`; a follow-on `av_packet_make_refcounted()` allocates fresh
   padded storage, copies those bytes, and keeps the reset packet fields.

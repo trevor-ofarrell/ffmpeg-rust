@@ -11114,6 +11114,46 @@ mod tests {
     }
 
     #[test]
+    fn packet_new_side_data_oversize_rejects_without_mutation() {
+        let mut packet = Packet::new(Vec::new(), 0);
+        packet.push_side_data(SideData::new_extradata(vec![0x11, 0x22]).unwrap());
+
+        let err = packet
+            .new_side_data(PacketSideDataKind::Palette, usize::MAX)
+            .unwrap_err();
+
+        assert_eq!(err.kind(), crate::AvErrorKind::External);
+        assert_eq!(err.code(), Some(crate::AvErrorCode::ENOMEM));
+        assert_eq!(packet.side_data().len(), 1);
+        assert_eq!(
+            packet
+                .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+                .unwrap()
+                .data(),
+            &[0x11, 0x22]
+        );
+        assert!(packet
+            .side_data_by_kind_id(&PacketSideDataKind::Palette)
+            .is_none());
+
+        let mut list = PacketSideDataList::new();
+        list.add_side_data(SideData::new_extradata(vec![0x33]).unwrap());
+
+        let err = list
+            .new_side_data(PacketSideDataKind::Palette, usize::MAX)
+            .unwrap_err();
+
+        assert_eq!(err.kind(), crate::AvErrorKind::External);
+        assert_eq!(err.code(), Some(crate::AvErrorCode::ENOMEM));
+        assert_eq!(list.entries().len(), 1);
+        assert_eq!(
+            list.get(&PacketSideDataKind::NewExtradata).unwrap().data(),
+            &[0x33]
+        );
+        assert!(list.get(&PacketSideDataKind::Palette).is_none());
+    }
+
+    #[test]
     fn packet_new_side_data_allocations_track_zero_padding() {
         let caller_owned = SideData::new_extradata(vec![0x11, 0x22, 0x33]).unwrap();
         assert_eq!(caller_owned.data(), &[0x11, 0x22, 0x33]);

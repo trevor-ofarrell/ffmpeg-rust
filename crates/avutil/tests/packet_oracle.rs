@@ -4295,6 +4295,18 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:side-shrink-oversize".to_string(),
         side_data_summary_fields(&packet),
     );
+    let oversize_new = packet
+        .new_side_data(PacketSideDataKind::Palette, usize::MAX)
+        .unwrap_err();
+    assert_eq!(oversize_new.code(), Some(AvErrorCode::ENOMEM));
+    rows.insert(
+        "packet:side-new-oversize-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:side-new-oversize".to_string(),
+        side_data_summary_fields(&packet),
+    );
 
     packet.clear_side_data();
     rows.insert(
@@ -4802,6 +4814,18 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:array-add-flags-nonzero-owned".to_string(),
         side_data_lookup_fields(caller_owned.as_ref()),
+    );
+    let array_oversize = list
+        .new_side_data(PacketSideDataKind::Palette, usize::MAX)
+        .unwrap_err();
+    assert_eq!(array_oversize.code(), Some(AvErrorCode::ENOMEM));
+    rows.insert(
+        "packet:array-new-oversize-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:array-new-oversize".to_string(),
+        side_data_list_summary_fields(&list),
     );
 
     let mut duplicate_list = PacketSideDataList::from_entries(vec![
@@ -7426,6 +7450,9 @@ static void exercise_side_data_api(void) {
     ret = av_packet_shrink_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, 3);
     printf("packet:side-shrink-oversize-ret|%d\n", ret);
     print_side_data_summary("packet:side-shrink-oversize", pkt);
+    sd = av_packet_new_side_data(pkt, AV_PKT_DATA_PALETTE, SIZE_MAX);
+    printf("packet:side-new-oversize-ret|%d\n", sd != NULL);
+    print_side_data_summary("packet:side-new-oversize", pkt);
 
     av_packet_free_side_data(pkt);
     print_side_data_summary("packet:side-free", pkt);
@@ -7740,6 +7767,10 @@ static void exercise_side_data_array_api(void) {
                                entry ? NULL : flags_owned);
     if (!entry)
         av_free(flags_owned);
+    entry = av_packet_side_data_new(&sd, &nb_sd, AV_PKT_DATA_PALETTE,
+                                    SIZE_MAX, 0);
+    printf("packet:array-new-oversize-ret|%d\n", entry != NULL);
+    print_side_data_array_summary("packet:array-new-oversize", sd, nb_sd);
 
     AVPacketSideData duplicate_sd[4] = {
         make_stack_side_data(AV_PKT_DATA_PALETTE, 0x11),

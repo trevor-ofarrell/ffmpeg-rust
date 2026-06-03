@@ -1341,3 +1341,7 @@ the visible `AV_PKT_DATA_NEW_EXTRADATA` payload allocated by
 `av_packet_new_side_data()` and standalone `av_packet_side_data_new()`. The
 pinned FFmpeg 8.1.1 oracle reports those trailing bytes as zero, while ordinary
 summary and lookup rows still compare only the public visible side-data size.
+The companion `packet:side-new-oversize-*` and
+`packet:array-new-oversize-*` rows pass `SIZE_MAX` as the requested visible
+size and prove both APIs return NULL without mutating the existing side-data
+collection.

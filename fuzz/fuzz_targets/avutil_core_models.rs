@@ -14631,6 +14631,48 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         packet.side_data_by_kind("fuzz_side_data").unwrap().data(),
         shrunk_payload.as_slice()
     );
+    let mut oversize_side_packet = Packet::default();
+    oversize_side_packet
+        .new_side_data(PacketSideDataKind::NewExtradata, 2)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0x11, 0x22]);
+    let oversize_new = oversize_side_packet
+        .new_side_data(PacketSideDataKind::Palette, usize::MAX)
+        .unwrap_err();
+    assert_eq!(oversize_new.kind(), AvErrorKind::External);
+    assert_eq!(oversize_new.code(), Some(AvErrorCode::ENOMEM));
+    assert_eq!(oversize_side_packet.side_data().len(), 1);
+    assert_eq!(
+        oversize_side_packet
+            .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+            .unwrap()
+            .data(),
+        &[0x11, 0x22]
+    );
+    assert!(oversize_side_packet
+        .side_data_by_kind_id(&PacketSideDataKind::Palette)
+        .is_none());
+    let mut oversize_side_list = PacketSideDataList::new();
+    oversize_side_list
+        .new_side_data(PacketSideDataKind::NewExtradata, 1)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0x33]);
+    let oversize_list_new = oversize_side_list
+        .new_side_data(PacketSideDataKind::Palette, usize::MAX)
+        .unwrap_err();
+    assert_eq!(oversize_list_new.kind(), AvErrorKind::External);
+    assert_eq!(oversize_list_new.code(), Some(AvErrorCode::ENOMEM));
+    assert_eq!(oversize_side_list.len(), 1);
+    assert_eq!(
+        oversize_side_list
+            .get(&PacketSideDataKind::NewExtradata)
+            .unwrap()
+            .data(),
+        &[0x33]
+    );
+    assert!(oversize_side_list.get(&PacketSideDataKind::Palette).is_none());
     let mut zero_side_packet = Packet::default();
     zero_side_packet
         .new_side_data(PacketSideDataKind::NewExtradata, 0)

@@ -203,7 +203,9 @@ input padding. Caller-owned `SideData::new_with_kind` entries expose only the
 provided storage, while packet-owned and standalone `new_side_data` helpers add
 `AV_INPUT_BUFFER_PADDING_SIZE` zero bytes after the visible payload, matching the
 bounded `av_packet_new_side_data()` and `av_packet_side_data_new()` allocation
-evidence.
+evidence. Those helpers reject visible sizes that would overflow the padded
+allocation before mutating packet-owned side data or standalone side-data lists,
+matching the pinned `SIZE_MAX` oracle rows with typed ENOMEM errors.
 
 `PacketFlags` stores raw `AVPacket.flags` bits instead of truncating to the
 known public mask. Known-bit helpers still drive ergonomic checks for

@@ -3,6 +3,12 @@ target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
 # Latest main-thread packet evidence: pinned libavcodec rows now prove
+# `av_packet_new_side_data()` and standalone `av_packet_side_data_new()`
+# reject `SIZE_MAX` visible sizes before mutating packet-owned side data or
+# standalone arrays. Rust returns typed ENOMEM without appending or replacing
+# existing entries. This is evidence-strengthening only; no status was
+# promoted.
+# Latest main-thread packet evidence: pinned libavcodec rows now prove
 # `av_init_packet()` preserves visible payload data/size but clears
 # `AVPacket.buf`, converting the payload to raw no-buffer ownership. A
 # follow-on `av_packet_make_refcounted()` then allocates fresh padded storage,
@@ -753,6 +759,7 @@ unit_tests = [
   "packet::tests::packet_shrink_side_data_by_kind_id_reports_ffmpeg_errors",
   "packet::tests::packet_side_data_take_remove_and_clear_are_scoped",
   "packet::tests::packet_new_side_data_zeroes_and_replaces_first_matching_kind",
+  "packet::tests::packet_new_side_data_oversize_rejects_without_mutation",
   "packet::tests::packet_new_side_data_allocations_track_zero_padding",
   "packet::tests::packet_new_side_data_accepts_zero_size",
   "packet::tests::packet_zero_size_side_data_rejects_oversize_shrink",
@@ -1421,6 +1428,7 @@ fuzz_targets = ["avutil_core_models"]
 # `PacketSideDataList::add_from_frame_side_data_with_flags` now exposes that
 # bounded flag-aware surface, and unit plus `avutil_core_models` fuzz-smoke
 # fixtures cover the same non-deduplicating UNIQUE behavior.
+# Latest update: pinned libavcodec AVPacket side-data oracle coverage validates allocation-overflow rejection for packet-owned `av_packet_new_side_data()` and standalone `av_packet_side_data_new()`. Both return NULL for `SIZE_MAX` visible sizes without mutating existing side-data entries; Rust records this as typed ENOMEM with focused unit and avutil_core_models coverage.
 # Latest update: pinned libavcodec AVPacket side-data oracle coverage validates duplicate-type `av_packet_new_side_data()` and standalone `av_packet_side_data_new()` replacement semantics. Both APIs replace the first matching duplicate entry and leave later duplicates in place; the oracle rows write deterministic bytes before comparison because positive-size newly allocated side-data contents are allocator-dependent in FFmpeg. Rust unit tests and avutil_core_models fuzz-smoke fixtures cover the same first-match replacement shape.
 # Latest update: pinned libavcodec AVPacket side-data oracle coverage validates standalone nonzero flag behavior for `av_packet_side_data_new()` and `av_packet_side_data_add()`. FFmpeg 8.1.1 accepts both calls despite the documented currently-unused flags parameter, `new` exposes caller-initialized allocation bytes for comparison, and `add` replaces the first matching type while taking ownership of the caller buffer. Rust unit tests and avutil_core_models fuzz-smoke fixtures cover the same ignored-flag replacement shape.
 # Latest update: pinned libavcodec AVPacket side-data oracle coverage validates packet-owned `av_packet_add_side_data()` ownership on capacity failure through `packet:side-add-capacity-overflow-owned`. FFmpeg returns ERANGE for a new type at `AV_PKT_DATA_NB` capacity while leaving the caller-owned buffer valid; Rust `Packet::try_add_side_data_owned` now consumes caller ownership only after the capacity check succeeds, with unit and avutil_core_models fuzz-smoke fixtures covering success consumption and failure preservation.
