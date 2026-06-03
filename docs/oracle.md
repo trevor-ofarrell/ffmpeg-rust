@@ -1136,9 +1136,10 @@ The latest buffer oracle rows add nullable-zero create coverage:
 or already-populated destination preserve the NULL data pointer, opaque owner,
 shared storage, refcount 2, and shared non-writability while both refs are live;
 replacing an existing destination first releases that destination's prior owner.
-Unreffing the destination restores source writability without release, and the
-custom release runs only after the final source unref. Same-size
-`av_buffer_realloc()` preserves the NULL data pointer; unique
+Self-replace succeeds with refcount 1 and no early release. Unreffing the
+destination restores source writability without release, and the custom release
+runs only after the final source unref. Same-size `av_buffer_realloc()`
+preserves the NULL data pointer; unique
 `av_buffer_make_writable()` is a same-pointer no-op; shared make-writable
 detaches only the destination to ordinary non-NULL empty storage; and grow
 realloc releases the original custom-owner buffer while clearing destination
@@ -1152,7 +1153,8 @@ preserve the NULL data pointer, opaque lookup, shared storage, refcount 2, and
 READONLY non-writability for both refs, and the custom release callback remains
 delayed until the final source unref. Replacing an already-populated destination
 first releases that destination's prior owner while preserving the same nullable
-readonly source-sharing shape.
+readonly source-sharing shape. Self-replace succeeds with refcount 1 and no
+early release.
 `av_buffer_make_writable()` detaches it to ordinary non-NULL writable empty
 storage while releasing the original owner. Same-size realloc preserves the NULL
 data pointer and readonly owner until unref, while grow realloc releases the

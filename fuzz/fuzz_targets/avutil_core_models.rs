@@ -1367,6 +1367,93 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
             .unwrap(),
         vec![(payload_len.wrapping_add(14), Vec::new())]
     );
+    let self_null_zero_replace_released =
+        Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let self_null_zero_replace_capture = Arc::clone(&self_null_zero_replace_released);
+    let mut self_null_zero_replace = Some(
+        BufferRef::from_null_data_zero_with_opaque_release_callback(
+            payload_len.wrapping_add(15),
+            move |opaque, bytes| {
+                self_null_zero_replace_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        ),
+    );
+    let self_null_zero_replace_source =
+        BufferRef::ref_from(self_null_zero_replace.as_ref().expect("nullable self source"));
+    BufferRef::replace(
+        &mut self_null_zero_replace,
+        Some(&self_null_zero_replace_source),
+    );
+    drop(self_null_zero_replace_source);
+    let self_null_zero_replace =
+        self_null_zero_replace.expect("nullable self replace keeps destination");
+    assert!(self_null_zero_replace.is_data_ptr_null());
+    assert!(self_null_zero_replace.as_ptr().is_null());
+    assert_eq!(self_null_zero_replace.strong_count(), 1);
+    assert_eq!(
+        self_null_zero_replace.opaque_ref::<usize>(),
+        Some(&payload_len.wrapping_add(15))
+    );
+    assert!(self_null_zero_replace.is_writable());
+    assert!(self_null_zero_replace_released
+        .lock()
+        .unwrap()
+        .is_empty());
+    drop(self_null_zero_replace);
+    assert_eq!(
+        *self_null_zero_replace_released.lock().unwrap(),
+        vec![(payload_len.wrapping_add(15), Vec::new())]
+    );
+    let self_readonly_null_zero_replace_released =
+        Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let self_readonly_null_zero_replace_capture =
+        Arc::clone(&self_readonly_null_zero_replace_released);
+    let mut self_readonly_null_zero_replace = Some(
+        BufferRef::from_null_data_zero_with_opaque_release_callback_readonly(
+            payload_len.wrapping_add(16),
+            move |opaque, bytes| {
+                self_readonly_null_zero_replace_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        ),
+    );
+    let self_readonly_null_zero_replace_source = BufferRef::ref_from(
+        self_readonly_null_zero_replace
+            .as_ref()
+            .expect("readonly nullable self source"),
+    );
+    BufferRef::replace(
+        &mut self_readonly_null_zero_replace,
+        Some(&self_readonly_null_zero_replace_source),
+    );
+    drop(self_readonly_null_zero_replace_source);
+    let self_readonly_null_zero_replace = self_readonly_null_zero_replace
+        .expect("readonly nullable self replace keeps destination");
+    assert!(self_readonly_null_zero_replace.is_data_ptr_null());
+    assert!(self_readonly_null_zero_replace.as_ptr().is_null());
+    assert_eq!(self_readonly_null_zero_replace.strong_count(), 1);
+    assert_eq!(
+        self_readonly_null_zero_replace.opaque_ref::<usize>(),
+        Some(&payload_len.wrapping_add(16))
+    );
+    assert!(self_readonly_null_zero_replace.is_readonly());
+    assert!(!self_readonly_null_zero_replace.is_writable());
+    assert!(self_readonly_null_zero_replace_released
+        .lock()
+        .unwrap()
+        .is_empty());
+    drop(self_readonly_null_zero_replace);
+    assert_eq!(
+        *self_readonly_null_zero_replace_released
+            .lock()
+            .unwrap(),
+        vec![(payload_len.wrapping_add(16), Vec::new())]
+    );
     let null_zero_shared_realloc_released =
         Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let null_zero_shared_realloc_capture = Arc::clone(&null_zero_shared_realloc_released);

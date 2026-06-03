@@ -3,7 +3,7 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The
-tree started clean at `master...origin/master [ahead 39]`; required startup
+tree started clean at `master...origin/master [ahead 40]`; required startup
 checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
 -- status --next 15` reporting 11/96 strict-complete components (11.5%) and
 `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
@@ -13,21 +13,19 @@ and advanced the next unblocked priority-1 component, `avutil-buffer`; no worker
 writes were delegated.
 
 Current main-thread slice: pinned libavutil rows now prove nullable-zero
-custom-owner `av_buffer_replace()` behavior when replacing an already-populated
-destination from writable and READONLY
-`av_buffer_create(NULL, 0, free, opaque, flags)` sources. FFmpeg first releases
-the old destination owner, then shares the nullable-zero source into the
-destination with NULL data pointers, size zero, opaque lookup, shared storage,
-refcount 2, and writable/readonly state according to flags. Unreffing the
-destination does not release the source owner; source release remains delayed
-until final source unref. Rust mirrors this with focused unit coverage, the
-mapped buffer oracle, and deterministic `avutil_core_models` coverage.
-`avutil-buffer` remains `differential_pass`, not `complete`; strict completion
-remains 11/96 because broader ABI/lifetime closure, hardware/device ownership
-integration, and standalone upstream FATE inapplicability remain open.
+custom-owner self-replace behavior for writable and READONLY
+`av_buffer_create(NULL, 0, free, opaque, flags)` refs. `av_buffer_replace(&buf,
+buf)` succeeds without early custom-owner release, preserves NULL data-pointer
+shape, opaque lookup, refcount 1, and writable/readonly state according to the
+READONLY flag, then releases only when the final self-replaced ref is unreffed.
+Rust mirrors this with focused unit coverage, the mapped buffer oracle, and
+deterministic `avutil_core_models` coverage. `avutil-buffer` remains
+`differential_pass`, not `complete`; strict completion remains 11/96 because
+broader ABI/lifetime closure, hardware/device ownership integration, and
+standalone upstream FATE inapplicability remain open.
 
-Latest validation commands for this nullable-zero existing-destination replace
-buffer slice passed: `cargo fmt --all`; `CARGO_TARGET_DIR=target-orch-avutil
+Latest validation commands for this nullable-zero self-replace buffer slice
+passed: `cargo fmt --all`; `CARGO_TARGET_DIR=target-orch-avutil
 cargo test -p avutil buffer_ref_replace_and_unref_handle_nullable_c_api_shape --
 --nocapture`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo check --manifest-path
 fuzz/Cargo.toml --bin avutil_core_models`; `CARGO_TARGET_DIR=target-orch-avutil

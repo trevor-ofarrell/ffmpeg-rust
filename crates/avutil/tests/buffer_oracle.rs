@@ -2243,6 +2243,99 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         release_fields(&replace_null_zero_readonly_existing_dst_source_released),
     );
 
+    let replace_null_zero_self_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let replace_null_zero_self_capture = Arc::clone(&replace_null_zero_self_released);
+    let mut replace_null_zero_self =
+        Some(BufferRef::from_null_data_zero_with_opaque_release_callback(
+            675usize,
+            move |opaque, bytes| {
+                replace_null_zero_self_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        ));
+    let replace_null_zero_self_source = BufferRef::ref_from(
+        replace_null_zero_self
+            .as_ref()
+            .expect("nullable self source"),
+    );
+    BufferRef::replace(
+        &mut replace_null_zero_self,
+        Some(&replace_null_zero_self_source),
+    );
+    drop(replace_null_zero_self_source);
+    let replace_null_zero_self =
+        replace_null_zero_self.expect("nullable self replace keeps destination");
+    rows.insert(
+        "buffer:replace-null-zero-self-ret".to_string(),
+        vec![
+            "0".to_string(),
+            replace_null_zero_self_released
+                .lock()
+                .unwrap()
+                .len()
+                .to_string(),
+        ],
+    );
+    rows.insert(
+        "buffer:replace-null-zero-self".to_string(),
+        buffer_fields_with_data_null_and_opaque(&replace_null_zero_self),
+    );
+    drop(replace_null_zero_self);
+    rows.insert(
+        "buffer:replace-null-zero-self-release".to_string(),
+        release_fields(&replace_null_zero_self_released),
+    );
+
+    let replace_null_zero_readonly_self_released =
+        Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let replace_null_zero_readonly_self_capture =
+        Arc::clone(&replace_null_zero_readonly_self_released);
+    let mut replace_null_zero_readonly_self = Some(
+        BufferRef::from_null_data_zero_with_opaque_release_callback_readonly(
+            676usize,
+            move |opaque, bytes| {
+                replace_null_zero_readonly_self_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        ),
+    );
+    let replace_null_zero_readonly_self_source = BufferRef::ref_from(
+        replace_null_zero_readonly_self
+            .as_ref()
+            .expect("readonly nullable self source"),
+    );
+    BufferRef::replace(
+        &mut replace_null_zero_readonly_self,
+        Some(&replace_null_zero_readonly_self_source),
+    );
+    drop(replace_null_zero_readonly_self_source);
+    let replace_null_zero_readonly_self =
+        replace_null_zero_readonly_self.expect("readonly nullable self replace keeps destination");
+    rows.insert(
+        "buffer:replace-null-zero-readonly-self-ret".to_string(),
+        vec![
+            "0".to_string(),
+            replace_null_zero_readonly_self_released
+                .lock()
+                .unwrap()
+                .len()
+                .to_string(),
+        ],
+    );
+    rows.insert(
+        "buffer:replace-null-zero-readonly-self".to_string(),
+        buffer_fields_with_data_null_and_opaque(&replace_null_zero_readonly_self),
+    );
+    drop(replace_null_zero_readonly_self);
+    rows.insert(
+        "buffer:replace-null-zero-readonly-self-release".to_string(),
+        release_fields(&replace_null_zero_readonly_self_released),
+    );
+
     let replace_equiv_src = BufferRef::from_vec(vec![1, 4, 9]);
     let mut replace_equiv_dst = Some(BufferRef::ref_from(&replace_equiv_src));
     BufferRef::replace(&mut replace_equiv_dst, Some(&replace_equiv_src));
@@ -6472,6 +6565,41 @@ int main(void) {
     av_buffer_unref(&replace_null_zero_readonly_existing_dst_source);
     print_create_release(
         "buffer:replace-null-zero-readonly-existing-dst-release");
+
+    reset_create_release();
+    last_create_release_size = 0;
+    AVBufferRef *replace_null_zero_self =
+        av_buffer_create(NULL, 0, test_create_free,
+                         (void *)(uintptr_t)675, 0);
+    fail_if(!replace_null_zero_self,
+            "av_buffer_create replace nullable-zero self failed");
+    ret = av_buffer_replace(&replace_null_zero_self, replace_null_zero_self);
+    fail_if(ret < 0 || !replace_null_zero_self,
+            "av_buffer_replace nullable-zero self failed");
+    printf("buffer:replace-null-zero-self-ret|%d|%d\n",
+           ret, create_release_count);
+    print_buffer_opaque_data_null("buffer:replace-null-zero-self",
+                                  replace_null_zero_self);
+    av_buffer_unref(&replace_null_zero_self);
+    print_create_release("buffer:replace-null-zero-self-release");
+
+    reset_create_release();
+    last_create_release_size = 0;
+    AVBufferRef *replace_null_zero_readonly_self =
+        av_buffer_create(NULL, 0, test_create_free,
+                         (void *)(uintptr_t)676, AV_BUFFER_FLAG_READONLY);
+    fail_if(!replace_null_zero_readonly_self,
+            "av_buffer_create replace readonly nullable-zero self failed");
+    ret = av_buffer_replace(&replace_null_zero_readonly_self,
+                            replace_null_zero_readonly_self);
+    fail_if(ret < 0 || !replace_null_zero_readonly_self,
+            "av_buffer_replace readonly nullable-zero self failed");
+    printf("buffer:replace-null-zero-readonly-self-ret|%d|%d\n",
+           ret, create_release_count);
+    print_buffer_opaque_data_null("buffer:replace-null-zero-readonly-self",
+                                  replace_null_zero_readonly_self);
+    av_buffer_unref(&replace_null_zero_readonly_self);
+    print_create_release("buffer:replace-null-zero-readonly-self-release");
 
     static const uint8_t replace_equiv_bytes[] = { 1, 4, 9 };
     AVBufferRef *replace_equiv_src = av_buffer_allocz(3);
