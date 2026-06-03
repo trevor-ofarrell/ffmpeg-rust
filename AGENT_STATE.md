@@ -3,6 +3,59 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The
+tree started clean at `master...origin/master`; required startup checks passed
+with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status
+--next 15` reporting 11/96 strict-complete components (11.5%) and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validating the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
+kept the follow-up state/docs slice on top-priority `avutil-packet`; no worker
+writes were delegated.
+
+Current main-thread slice: the prior packet unknown-flag evidence commit
+`6671bd0f` is now reflected in the persistent state and docs, with rustfmt also
+applied to the focused packet assertion. Existing pinned libavcodec
+`packet:flags-unknown-*` rows prove unknown raw `AVPacket.flags` bits survive
+`av_packet_copy_props()`, `av_packet_ref()`, `av_packet_clone()`, and
+`av_packet_move_ref()`, while move-ref resets the source. Rust mirrors this
+through `PacketFlags::from_bits_retain`, focused packet unit coverage, and a
+deterministic `avutil_core_models` fixture. `avutil-packet` remains
+`fate_pass`, not `complete`; strict completion remains 11/96.
+
+Latest validation commands for this packet unknown-flag lifecycle follow-up
+passed: `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil
+packet_unknown_flags_survive_lifecycle_helpers -- --nocapture`;
+`CARGO_TARGET_DIR=target-wsl-fuzz cargo check --manifest-path fuzz/Cargo.toml
+--bin avutil_core_models`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p
+avutil --test packet_oracle
+libavcodec_packet_core_lifecycle_matches_packet_model -- --ignored
+--nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner --
+run --mappings tests/differential/mappings.txt --component avutil-packet
+--target oracle-libavcodec-packet-core --oracle-ffmpeg
+./third_party/ffmpeg-oracle/build/bin/ffmpeg`; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- run --component avutil-packet`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil --all-targets
+--all-features -- -D warnings`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy
+--manifest-path fuzz/Cargo.toml --bin avutil_core_models -- -D warnings`; and
+`cargo fmt --all -- --check`; `CARGO_TARGET_DIR=target-orch-fate cargo test -p
+fate-runner current_ledger`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p
+xtask -- guard-runtime`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask
+-- oracle-doctor`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
+-- status --next 15`; and `git diff --check` with CRLF conversion warnings
+only. A bounded `timeout 180s env CARGO_TARGET_DIR=target-wsl-fuzz
+LSAN_OPTIONS=detect_leaks=0 ASAN_OPTIONS=detect_leaks=0 cargo fuzz run
+avutil_core_models -- -runs=1` attempt timed out during cargo-fuzz build/link
+before target execution, so it is recorded as a tooling limitation rather than
+fuzz evidence.
+
+Current focus component: `avutil-packet` remains the top priority incomplete
+component (`fate_pass`), followed by `avutil-buffer` (`differential_pass`),
+`avutil-frame` (`differential_pass`), `avutil-logging` (`fate_pass`), and
+`avutil-options` (`fate_pass`). Next concrete action after this follow-up:
+continue strict `avutil-packet` evidence, with raw no-buffer caller-storage
+free/unref parity or the next small FIFO lifecycle edge as likely bounded
+slices.
+
+Current authoritative turn status: orchestrator workflow is active on WSL. The
 tree started clean at `master...origin/master [ahead 10]`; required startup
 checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
 -- status --next 15` reporting 11/96 strict-complete components (11.5%) and

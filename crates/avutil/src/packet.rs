@@ -6603,7 +6603,9 @@ mod tests {
         let mut referenced = Packet::default();
         referenced.ref_from(&source);
         assert_raw_flags(&referenced);
-        assert!(referenced.data_buffer().shares_storage(source.data_buffer()));
+        assert!(referenced
+            .data_buffer()
+            .shares_storage(source.data_buffer()));
 
         let cloned = source.clone();
         assert_raw_flags(&cloned);

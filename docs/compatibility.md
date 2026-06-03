@@ -9,6 +9,14 @@
 
 ## Compatible Today
 
+- Latest main-thread packet evidence: existing pinned libavcodec
+  `packet:flags-unknown-*` rows now have focused Rust lifecycle coverage.
+  Unknown raw `AVPacket.flags` bits survive `av_packet_copy_props()`,
+  `av_packet_ref()`, `av_packet_clone()`, and `av_packet_move_ref()`, while
+  move-ref resets the source flags. Rust mirrors this through
+  `PacketFlags::from_bits_retain`, focused unit coverage, and a deterministic
+  `avutil_core_models` fixture. This strengthens `avutil-packet`; strict
+  completion remains 11/96 and the row remains `fate_pass`.
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
   `AVPacket.duration` is signed packet state. `av_packet_rescale_ts()` rescales
   valid PTS/DTS while preserving negative duration unchanged, and
