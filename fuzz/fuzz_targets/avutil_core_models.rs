@@ -9417,6 +9417,33 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .iter()
         .all(|byte| *byte == 0));
 
+    {
+        let from_data_lifecycle = Packet::from_data(payload.clone()).unwrap();
+        let lifecycle_ptr = from_data_lifecycle.data_buffer().as_padded_ptr();
+        let mut lifecycle_ref = Packet::default();
+        lifecycle_ref.ref_from(&from_data_lifecycle);
+        let lifecycle_clone = from_data_lifecycle.clone();
+
+        assert_eq!(lifecycle_ref.data(), payload.as_slice());
+        assert_eq!(lifecycle_clone.data(), payload.as_slice());
+        assert_eq!(lifecycle_ref.data_buffer().as_padded_ptr(), lifecycle_ptr);
+        assert_eq!(lifecycle_clone.data_buffer().as_padded_ptr(), lifecycle_ptr);
+        assert!(lifecycle_ref
+            .data_buffer()
+            .shares_storage(from_data_lifecycle.data_buffer()));
+        assert!(lifecycle_clone
+            .data_buffer()
+            .shares_storage(from_data_lifecycle.data_buffer()));
+
+        lifecycle_ref.make_writable().unwrap();
+        assert_eq!(lifecycle_ref.data(), payload.as_slice());
+        assert!(!lifecycle_ref
+            .data_buffer()
+            .shares_storage(from_data_lifecycle.data_buffer()));
+        assert_eq!(from_data_lifecycle.data(), payload.as_slice());
+        assert_eq!(lifecycle_clone.data(), payload.as_slice());
+    }
+
     let zero_new_packet = Packet::new_zeroed(0, 0).unwrap();
     assert!(zero_new_packet.is_empty());
     assert_eq!(

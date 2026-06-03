@@ -2030,6 +2030,75 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_fields(&from_data),
     );
 
+    let from_data_ref_src = Packet::from_data(vec![0xaa, 0xbb, 0xcc]).unwrap();
+    let mut from_data_ref_dst = Packet::default();
+    from_data_ref_dst.ref_from(&from_data_ref_src);
+    rows.insert(
+        "packet:payload-from-data-ref-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-from-data-ref-same-ptr".to_string(),
+        vec![u8::from(
+            from_data_ref_dst.data_buffer().as_padded_ptr()
+                == from_data_ref_src.data_buffer().as_padded_ptr(),
+        )
+        .to_string()],
+    );
+    rows.insert(
+        "packet:payload-from-data-ref-src".to_string(),
+        payload_fields(&from_data_ref_src),
+    );
+    rows.insert(
+        "packet:payload-from-data-ref-dst".to_string(),
+        payload_fields(&from_data_ref_dst),
+    );
+
+    let from_data_clone_src = Packet::from_data(vec![0xaa, 0xbb, 0xcc]).unwrap();
+    let from_data_cloned = from_data_clone_src.clone();
+    rows.insert(
+        "packet:payload-from-data-clone-same-ptr".to_string(),
+        vec![u8::from(
+            from_data_cloned.data_buffer().as_padded_ptr()
+                == from_data_clone_src.data_buffer().as_padded_ptr(),
+        )
+        .to_string()],
+    );
+    rows.insert(
+        "packet:payload-from-data-clone-src".to_string(),
+        payload_fields(&from_data_clone_src),
+    );
+    rows.insert(
+        "packet:payload-from-data-clone".to_string(),
+        payload_fields(&from_data_cloned),
+    );
+
+    let from_data_writable_src = Packet::from_data(vec![0xaa, 0xbb, 0xcc]).unwrap();
+    let mut from_data_writable_dst = Packet::default();
+    from_data_writable_dst.ref_from(&from_data_writable_src);
+    let from_data_writable_dst_ptr = from_data_writable_dst.data_buffer().as_padded_ptr();
+    from_data_writable_dst.make_writable().unwrap();
+    from_data_writable_dst.make_data_writable()[0] = 0xdd;
+    rows.insert(
+        "packet:payload-from-data-make-writable-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-from-data-make-writable-same-ptr".to_string(),
+        vec![u8::from(
+            from_data_writable_dst.data_buffer().as_padded_ptr() == from_data_writable_dst_ptr,
+        )
+        .to_string()],
+    );
+    rows.insert(
+        "packet:payload-from-data-make-writable-src".to_string(),
+        payload_fields(&from_data_writable_src),
+    );
+    rows.insert(
+        "packet:payload-from-data-make-writable-dst".to_string(),
+        payload_fields(&from_data_writable_dst),
+    );
+
     let from_zero_data = Packet::from_data(Vec::new()).unwrap();
     rows.insert(
         "packet:payload-from-data-zero-ret".to_string(),
@@ -7867,6 +7936,67 @@ static void exercise_payload_api(void) {
     printf("packet:payload-from-data-ret|%d\n", ret);
     print_payload("packet:payload-from-data", pkt);
     av_packet_free(&pkt);
+
+    AVPacket *from_data_ref_src = new_packet();
+    uint8_t *from_data_ref_owned = av_mallocz(3 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!from_data_ref_owned, "av_mallocz payload from-data ref failed");
+    from_data_ref_owned[0] = 0xaa;
+    from_data_ref_owned[1] = 0xbb;
+    from_data_ref_owned[2] = 0xcc;
+    ret = av_packet_from_data(from_data_ref_src, from_data_ref_owned, 3);
+    fail_if(ret < 0, "av_packet_from_data ref source failed");
+    AVPacket *from_data_ref_dst = new_packet();
+    ret = av_packet_ref(from_data_ref_dst, from_data_ref_src);
+    printf("packet:payload-from-data-ref-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_ref from-data payload failed");
+    printf("packet:payload-from-data-ref-same-ptr|%d\n",
+           from_data_ref_dst->data == from_data_ref_src->data);
+    print_payload("packet:payload-from-data-ref-src", from_data_ref_src);
+    print_payload("packet:payload-from-data-ref-dst", from_data_ref_dst);
+    av_packet_free(&from_data_ref_dst);
+    av_packet_free(&from_data_ref_src);
+
+    AVPacket *from_data_clone_src = new_packet();
+    uint8_t *from_data_clone_owned = av_mallocz(3 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!from_data_clone_owned, "av_mallocz payload from-data clone failed");
+    from_data_clone_owned[0] = 0xaa;
+    from_data_clone_owned[1] = 0xbb;
+    from_data_clone_owned[2] = 0xcc;
+    ret = av_packet_from_data(from_data_clone_src, from_data_clone_owned, 3);
+    fail_if(ret < 0, "av_packet_from_data clone source failed");
+    AVPacket *from_data_cloned = av_packet_clone(from_data_clone_src);
+    fail_if(!from_data_cloned, "av_packet_clone from-data payload failed");
+    printf("packet:payload-from-data-clone-same-ptr|%d\n",
+           from_data_cloned->data == from_data_clone_src->data);
+    print_payload("packet:payload-from-data-clone-src", from_data_clone_src);
+    print_payload("packet:payload-from-data-clone", from_data_cloned);
+    av_packet_free(&from_data_cloned);
+    av_packet_free(&from_data_clone_src);
+
+    AVPacket *from_data_writable_src = new_packet();
+    uint8_t *from_data_writable_owned = av_mallocz(3 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!from_data_writable_owned, "av_mallocz payload from-data writable failed");
+    from_data_writable_owned[0] = 0xaa;
+    from_data_writable_owned[1] = 0xbb;
+    from_data_writable_owned[2] = 0xcc;
+    ret = av_packet_from_data(from_data_writable_src, from_data_writable_owned, 3);
+    fail_if(ret < 0, "av_packet_from_data writable source failed");
+    AVPacket *from_data_writable_dst = new_packet();
+    ret = av_packet_ref(from_data_writable_dst, from_data_writable_src);
+    fail_if(ret < 0, "av_packet_ref from-data writable payload failed");
+    uint8_t *from_data_writable_dst_ptr = from_data_writable_dst->data;
+    ret = av_packet_make_writable(from_data_writable_dst);
+    printf("packet:payload-from-data-make-writable-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_make_writable from-data payload failed");
+    printf("packet:payload-from-data-make-writable-same-ptr|%d\n",
+           from_data_writable_dst->data == from_data_writable_dst_ptr);
+    from_data_writable_dst->data[0] = 0xdd;
+    print_payload("packet:payload-from-data-make-writable-src",
+                  from_data_writable_src);
+    print_payload("packet:payload-from-data-make-writable-dst",
+                  from_data_writable_dst);
+    av_packet_free(&from_data_writable_dst);
+    av_packet_free(&from_data_writable_src);
 
     pkt = new_packet();
     uint8_t *zero_owned = av_mallocz(AV_INPUT_BUFFER_PADDING_SIZE);

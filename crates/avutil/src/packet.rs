@@ -12559,6 +12559,41 @@ mod tests {
     }
 
     #[test]
+    fn packet_from_data_ref_and_clone_share_until_writable() {
+        let src = Packet::from_data(vec![0xaa, 0xbb, 0xcc]).unwrap();
+        let src_ptr = src.data_buffer().as_padded_ptr();
+
+        let mut referenced = Packet::default();
+        referenced.ref_from(&src);
+
+        assert_eq!(referenced.data(), src.data());
+        assert_eq!(referenced.data_buffer().as_padded_ptr(), src_ptr);
+        assert!(referenced.data_buffer().shares_storage(src.data_buffer()));
+        assert!(!src.is_data_writable());
+        assert!(!referenced.is_data_writable());
+
+        let cloned = src.clone();
+
+        assert_eq!(cloned.data(), src.data());
+        assert_eq!(cloned.data_buffer().as_padded_ptr(), src_ptr);
+        assert!(cloned.data_buffer().shares_storage(src.data_buffer()));
+        assert!(!src.is_data_writable());
+        assert!(!cloned.is_data_writable());
+
+        referenced.make_writable().unwrap();
+        referenced.make_data_writable()[0] = 0xdd;
+
+        assert_eq!(src.data(), &[0xaa, 0xbb, 0xcc]);
+        assert_eq!(cloned.data(), &[0xaa, 0xbb, 0xcc]);
+        assert_eq!(referenced.data(), &[0xdd, 0xbb, 0xcc]);
+        assert_ne!(referenced.data_buffer().as_padded_ptr(), src_ptr);
+        assert!(!referenced.data_buffer().shares_storage(src.data_buffer()));
+        assert!(referenced.is_data_writable());
+        assert!(!src.is_data_writable());
+        assert!(!cloned.is_data_writable());
+    }
+
+    #[test]
     fn packet_make_refcounted_adds_padding_without_detaching_padded_refs() {
         let mut unpadded = Packet::new(vec![0xaa, 0xbb], 0);
         unpadded.make_refcounted().unwrap();

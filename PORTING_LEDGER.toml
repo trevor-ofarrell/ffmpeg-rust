@@ -724,6 +724,7 @@ unit_tests = [
   "packet::tests::packet_side_data_adds_to_frame_with_flags",
   "frame::tests::frame_add_side_data_with_flags_matches_array_insert_semantics",
   "packet::tests::packet_from_data_and_zeroed_constructors_add_input_padding",
+  "packet::tests::packet_from_data_ref_and_clone_share_until_writable",
   "packet::tests::packet_alloc_new_packet_payload_resets_metadata_and_checks_size",
   "packet::tests::packet_alloc_new_packet_payload_zero_resets_metadata",
   "packet::tests::packet_grow_and_shrink_data_preserve_payload_and_padding",
@@ -896,6 +897,13 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: pinned libavcodec AVPacket payload oracle coverage now
+# validates `av_packet_from_data()` follow-on refcounted lifecycle. The
+# `packet:payload-from-data-ref-*`, `packet:payload-from-data-clone*`, and
+# `packet:payload-from-data-make-writable-*` rows prove ref/clone share the
+# adopted data pointer and become non-writable while make-writable detaches the
+# destination before mutation. Focused unit coverage and avutil_core_models
+# invariants mirror the bounded behavior.
 # Latest update: existing generated-media oracle rows are now wired or recorded
 # as `avutil-packet` evidence: generated MOV ffprobe packet fields, YUV4MPEG2
 # sample-aspect and color-range remux transfer, flexible YUV4MPEG2 frame

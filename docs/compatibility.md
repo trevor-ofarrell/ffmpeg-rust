@@ -10,6 +10,14 @@
 ## Compatible Today
 
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  `av_packet_from_data()` creates refcounted packet payload ownership that
+  `av_packet_ref()` and `av_packet_clone()` share at the same data pointer,
+  leaving shared references non-writable until `av_packet_make_writable()`
+  detaches the destination before mutation. Rust mirrors this through
+  focused unit coverage, the mapped packet oracle, and a deterministic
+  `avutil_core_models` invariant. This strengthens `avutil-packet`; strict
+  completion remains 11/96 and the row remains `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   `AVPacket.time_base` is raw `AVRational` packet field storage. Rust
   `Packet::set_time_base` preserves noncanonical and invalid-for-math shapes
   such as `2/4`, `-2/4`, `0/0`, and `2/-4` through copy-props, ref, clone,
