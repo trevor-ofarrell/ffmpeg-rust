@@ -9,8 +9,10 @@ use avutil::{
     frame_side_data_descriptor_for_value, frame_side_data_name_for_value, AudioFrame, AvErrorCode,
     BufferRef, ChannelLayout, ChannelLayoutSpec, Frame, FrameAlphaMode, FrameBufferTopology,
     FrameChromaLocation, FrameColorPrimaries, FrameColorRange, FrameColorSpace,
-    FrameColorTransferCharacteristic, FrameCropFlags, FrameData, FrameDecodeErrorFlags, FrameFifo,
-    FrameFlags, FramePictureType, FrameSideData, FrameSideDataFlags, FrameSideDataKind,
+    FrameColorTransferCharacteristic, FrameCropFlags, FrameData, FrameDecodeErrorFlags,
+    FrameDolbyVisionColorMetadata, FrameDolbyVisionDataMapping, FrameDolbyVisionDmData,
+    FrameDolbyVisionMetadata, FrameDolbyVisionRpuDataHeader, FrameFifo, FrameFlags,
+    FramePictureType, FrameSideData, FrameSideDataFlags, FrameSideDataKind,
     FrameSideDataProperties, PixelFormat, Rational, SampleFormat, VideoFrame, AVPALETTE_SIZE,
     AV_NOPTS_VALUE, AV_NUM_DATA_POINTERS,
 };
@@ -199,6 +201,48 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
             bool_field(frame_side_data_descriptor_for_value(sentinel_value).is_none()),
             bool_field(frame_side_data_descriptor_for_value(sentinel_value + 1).is_none()),
             bool_field(frame_side_data_descriptor_for_value(i32::MAX).is_none()),
+        ],
+    );
+    let dovi_size_t_len = core::mem::size_of::<usize>();
+    let dovi_metadata_header_len = align_up(
+        5 * dovi_size_t_len + core::mem::size_of::<i32>(),
+        dovi_size_t_len,
+    );
+    rows.insert(
+        "frame:dovi-metadata-layout".to_string(),
+        vec![
+            dovi_metadata_header_len.to_string(),
+            core::mem::align_of::<usize>().to_string(),
+            "0".to_string(),
+            dovi_size_t_len.to_string(),
+            (2 * dovi_size_t_len).to_string(),
+            (3 * dovi_size_t_len).to_string(),
+            (4 * dovi_size_t_len).to_string(),
+            (5 * dovi_size_t_len).to_string(),
+            FrameDolbyVisionRpuDataHeader::DATA_LEN.to_string(),
+            FrameDolbyVisionDataMapping::DATA_LEN.to_string(),
+            FrameDolbyVisionColorMetadata::DATA_LEN.to_string(),
+            FrameDolbyVisionDmData::DATA_LEN.to_string(),
+            "0".to_string(),
+            FrameDolbyVisionMetadata::MAX_EXT_BLOCKS.to_string(),
+        ],
+    );
+    rows.insert(
+        "frame:dovi-metadata-alloc-default".to_string(),
+        vec![
+            FrameDolbyVisionMetadata::DATA_LEN.to_string(),
+            FrameDolbyVisionMetadata::HEADER_OFFSET.to_string(),
+            FrameDolbyVisionMetadata::MAPPING_OFFSET.to_string(),
+            FrameDolbyVisionMetadata::COLOR_OFFSET.to_string(),
+            FrameDolbyVisionMetadata::EXT_BLOCK_OFFSET.to_string(),
+            FrameDolbyVisionMetadata::EXT_BLOCK_SIZE.to_string(),
+            "0".to_string(),
+            FrameDolbyVisionMetadata::HEADER_OFFSET.to_string(),
+            FrameDolbyVisionMetadata::MAPPING_OFFSET.to_string(),
+            FrameDolbyVisionMetadata::COLOR_OFFSET.to_string(),
+            FrameDolbyVisionMetadata::EXT_BLOCK_OFFSET.to_string(),
+            "0".to_string(),
+            "0".to_string(),
         ],
     );
 
@@ -3741,6 +3785,15 @@ fn bool_field(value: bool) -> String {
     if value { "1" } else { "0" }.to_string()
 }
 
+fn align_up(value: usize, align: usize) -> usize {
+    let remainder = value % align;
+    if remainder == 0 {
+        value
+    } else {
+        value + align - remainder
+    }
+}
+
 fn parse_oracle_output(stdout: &str) -> BTreeMap<String, Vec<String>> {
     let mut rows = BTreeMap::new();
     for line in stdout.lines() {
@@ -3819,8 +3872,10 @@ fn oracle_c_source() -> &'static str {
 #include <libavutil/channel_layout.h>
 #include <libavutil/container_fifo.h>
 #include <libavutil/dict.h>
+#include <libavutil/dovi_meta.h>
 #include <libavutil/frame.h>
 #include <libavutil/imgutils.h>
+#include <libavutil/mem.h>
 #include <libavutil/pixdesc.h>
 #include <libavutil/pixfmt.h>
 #include <libavutil/samplefmt.h>
@@ -5215,6 +5270,51 @@ static void print_side_kind_inventory(void)
     printf("\n");
 }
 
+static void print_dovi_metadata_layout(void)
+{
+    printf("frame:dovi-metadata-layout|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%d\n",
+           sizeof(AVDOVIMetadata),
+           _Alignof(AVDOVIMetadata),
+           offsetof(AVDOVIMetadata, header_offset),
+           offsetof(AVDOVIMetadata, mapping_offset),
+           offsetof(AVDOVIMetadata, color_offset),
+           offsetof(AVDOVIMetadata, ext_block_offset),
+           offsetof(AVDOVIMetadata, ext_block_size),
+           offsetof(AVDOVIMetadata, num_ext_blocks),
+           sizeof(AVDOVIRpuDataHeader),
+           sizeof(AVDOVIDataMapping),
+           sizeof(AVDOVIColorMetadata),
+           sizeof(AVDOVIDmData),
+           offsetof(AVDOVIDmData, level),
+           AV_DOVI_MAX_EXT_BLOCKS);
+
+    size_t allocated_size = 0;
+    AVDOVIMetadata *dovi = av_dovi_metadata_alloc(&allocated_size);
+    fail_if(!dovi, "av_dovi_metadata_alloc failed");
+
+    AVDOVIRpuDataHeader *header = av_dovi_get_header(dovi);
+    AVDOVIDataMapping *mapping = av_dovi_get_mapping(dovi);
+    AVDOVIColorMetadata *color = av_dovi_get_color(dovi);
+    AVDOVIDmData *first_ext = av_dovi_get_ext(dovi, 0);
+
+    printf("frame:dovi-metadata-alloc-default|%zu|%zu|%zu|%zu|%zu|%zu|%d|%td|%td|%td|%td|%u|%u\n",
+           allocated_size,
+           dovi->header_offset,
+           dovi->mapping_offset,
+           dovi->color_offset,
+           dovi->ext_block_offset,
+           dovi->ext_block_size,
+           dovi->num_ext_blocks,
+           (ptrdiff_t)((uint8_t *) header - (uint8_t *) dovi),
+           (ptrdiff_t)((uint8_t *) mapping - (uint8_t *) dovi),
+           (ptrdiff_t)((uint8_t *) color - (uint8_t *) dovi),
+           (ptrdiff_t)((uint8_t *) first_ext - (uint8_t *) dovi),
+           header->rpu_type,
+           first_ext->level);
+
+    av_free(dovi);
+}
+
 static void fill_video_gray(AVFrame *frame, const uint8_t *data)
 {
     for (int row = 0; row < frame->height; row++)
@@ -5482,6 +5582,7 @@ int main(void)
     av_frame_free(&empty);
 
     print_side_kind_inventory();
+    print_dovi_metadata_layout();
     printf("frame:side-flags|%u|%u|%u\n",
            AV_FRAME_SIDE_DATA_FLAG_UNIQUE,
            AV_FRAME_SIDE_DATA_FLAG_REPLACE,

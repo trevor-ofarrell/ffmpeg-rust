@@ -2303,6 +2303,13 @@ fate_tests = [
   "tests/fate/upstream-mappings.txt:avutil-frame|fate-side_data_array",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest Dolby Vision native-layout slice: pinned libavutil rows now validate
+# the public AVDOVIMetadata header layout, av_dovi_metadata_alloc() allocation
+# size/default offsets, DOVI substructure sizes, and zeroed default header/first
+# extension fields for AV_FRAME_DATA_DOVI_METADATA. Rust expected rows mirror
+# the FrameDolbyVision* constants, while existing valid/malformed unit and fuzz
+# fixtures cover the current parser shape. This is evidence-strengthening only;
+# avutil-frame remains fate_pass, not complete.
 # Latest upstream FATE slice: upstream FFmpeg's fate-side_data_array target
 # passes from the pinned WSL build cache and is wired through
 # tests/fate/upstream-mappings.txt as avutil-frame|fate-side_data_array,

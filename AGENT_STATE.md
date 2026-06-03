@@ -3,6 +3,57 @@
 ## Current Status
 
 Current authoritative turn status: main-thread WSL slice added
+`avutil-frame` Dolby Vision native-layout evidence. Required startup checks
+passed from a clean tree at `master...origin/master [ahead 48]`:
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15` reported 11/96 strict-complete components (11.5%), and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validated the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
+kept the top-priority `avutil-packet` shared-shrink blocker unchanged, audited
+`avutil-buffer` for no safe quick closure, and advanced the next unblocked
+priority-1 `avutil-frame` evidence slice; no worker writes were delegated.
+
+Current main-thread slice: pinned libavutil rows now prove the
+`AVDOVIMetadata` public header layout, `av_dovi_metadata_alloc()` allocation
+size/default offsets, DOVI substructure sizes, and zeroed default header/first
+extension fields for `AV_FRAME_DATA_DOVI_METADATA`. Rust expected rows mirror
+the current `FrameDolbyVision*` constants, and the existing valid/malformed
+unit plus deterministic `avutil_core_models` fixtures cover the parser shape.
+`avutil-frame` remains `fate_pass`, not complete; strict completion remains
+11/96 because broader AVFrame fields, hardware/context behavior, media
+integration, Dolby Vision color-transform semantics, sustained fuzz execution,
+and zero-known-limitation review remain pending.
+
+Latest validation commands for this frame Dolby Vision native-layout slice
+passed: `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
+frame_oracle libavutil_frame_core_lifecycle_matches_current_model -- --ignored
+--nocapture`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil
+frame_side_data_parses_dolby_vision_payloads -- --nocapture`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil
+frame_side_data_rejects_malformed_dolby_vision_metadata_payload --
+--nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner --
+run --mappings tests/differential/mappings.txt --component avutil-frame
+--target oracle-libavutil-frame-core --oracle-ffmpeg
+./third_party/ffmpeg-oracle/build/bin/ffmpeg`; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- run --component avutil-frame`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run --mappings
+tests/fate/upstream-mappings.txt --component avutil-frame --target
+fate-side_data_array` after escalation allowed the pinned FFmpeg FATE cache
+result write; `CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil
+--all-targets --all-features -- -D warnings`;
+`CARGO_TARGET_DIR=target-wsl-fuzz cargo check --manifest-path fuzz/Cargo.toml
+--bin avutil_core_models`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy
+--manifest-path fuzz/Cargo.toml --bin avutil_core_models -- -D warnings`;
+`cargo fmt --all -- --check`; `git diff --check` with CRLF conversion warnings
+only; `CARGO_TARGET_DIR=target-orch-fate cargo test -p fate-runner
+current_ledger`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask --
+guard-runtime`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner --
+status --next 15`; and `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask
+-- oracle-doctor`. The first sandboxed upstream FATE attempt failed only
+because the pinned build cache could not create
+`tests/data/fate/side_data_array`; the approved rerun passed.
+
+Current authoritative turn status: main-thread WSL slice added
 `avutil-options` repeated-pair-separator evidence. Required startup checks passed
 from a clean tree at `master...origin/master [ahead 47]`:
 `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next

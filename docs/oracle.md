@@ -1097,6 +1097,13 @@ the 32-byte data-pointer alignment rule, and `AV_FRAME_CROP_UNALIGNED` applies
 the exact one-byte left offset. The pinned `calc_cropping_offsets()` path keeps
 the palette plane offset at zero, so this row proves crop pointer math without
 claiming full `AVFrame.data[1]` palette side-plane/context propagation.
+The Dolby Vision rows in `crates/avutil/tests/frame_oracle.rs` compile against
+the pinned `libavutil/dovi_meta.h` header and validate the default-native
+`AVDOVIMetadata` public header layout, `av_dovi_metadata_alloc()` reported
+allocation size, populated header/mapping/color/extension offsets, DOVI
+substructure sizes, and zeroed default header/first extension fields. These
+rows are layout/allocation evidence for `AV_FRAME_DATA_DOVI_METADATA`; they do
+not claim Dolby Vision reshaping or color-transform semantics.
 The same Rust test file includes an ignored `upstream_fate_side_data_array_passes`
 wrapper for upstream FFmpeg's `fate-side_data_array` target from
 `tests/fate/libavutil.mak`, backed by `libavutil/tests/side_data_array.c`. It is
