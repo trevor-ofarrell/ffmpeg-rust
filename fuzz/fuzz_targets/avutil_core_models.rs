@@ -11086,17 +11086,18 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     packet.set_duration(duration).unwrap();
     assert_eq!(packet.duration(), duration);
 
-    let pos = if cursor.next().unwrap_or_default().is_multiple_of(3) {
-        None
-    } else {
-        Some(i64::from(cursor.next().unwrap_or_default()))
+    let pos = match cursor.next().unwrap_or_default() % 4 {
+        0 => None,
+        1 => Some(-2),
+        _ => Some(i64::from(cursor.next().unwrap_or_default())),
     };
     packet.set_pos(pos).unwrap();
     assert_eq!(packet.pos(), pos);
-    assert_eq!(
-        packet.set_pos(Some(-1)).unwrap_err().kind(),
-        AvErrorKind::InvalidArgument
-    );
+    packet.set_pos(Some(-1)).unwrap();
+    assert_eq!(packet.pos(), None);
+    packet.set_pos(Some(-2)).unwrap();
+    assert_eq!(packet.pos(), Some(-2));
+    packet.set_pos(pos).unwrap();
     assert_eq!(packet.pos(), pos);
 
     let rescale_src = Rational::new(1, 90_000).unwrap();
@@ -11112,6 +11113,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     );
     assert_eq!(packet.time_base(), rescale_src);
     let original_timing = (packet.pts(), packet.dts(), packet.duration());
+    let original_pos = packet.pos();
     packet.rescale_ts(rescale_src, rescale_dst).unwrap();
     assert_eq!(
         packet.pts(),
@@ -11133,6 +11135,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             original_timing.2
         }
     );
+    assert_eq!(packet.pos(), original_pos);
     assert_eq!(packet.time_base(), rescale_src);
     let rescaled_timing = (packet.pts(), packet.dts(), packet.duration());
     assert_eq!(
@@ -11249,6 +11252,47 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .flags()
         .contains(PacketFlags::DISPOSABLE));
     assert_eq!(negative_duration_rescale_packet.data(), &[0x71, 0x72]);
+
+    let mut negative_pos_lifecycle_source = Packet::from_data(vec![0x81, 0x82]).unwrap();
+    negative_pos_lifecycle_source.set_pts(Some(90_000));
+    negative_pos_lifecycle_source.set_dts(Some(45_000));
+    negative_pos_lifecycle_source
+        .set_duration(45_000)
+        .unwrap();
+    negative_pos_lifecycle_source.set_pos(Some(-2)).unwrap();
+    negative_pos_lifecycle_source
+        .set_time_base(rescale_src)
+        .unwrap();
+    negative_pos_lifecycle_source.set_flag(PacketFlags::TRUSTED, true);
+
+    let mut negative_pos_rescale_packet = negative_pos_lifecycle_source.clone();
+    negative_pos_rescale_packet
+        .rescale_ts(rescale_src, rescale_dst)
+        .unwrap();
+    assert_eq!(negative_pos_rescale_packet.pts(), Some(1_000));
+    assert_eq!(negative_pos_rescale_packet.dts(), Some(500));
+    assert_eq!(negative_pos_rescale_packet.duration(), 500);
+    assert_eq!(negative_pos_rescale_packet.pos(), Some(-2));
+    assert_eq!(negative_pos_rescale_packet.time_base(), rescale_src);
+    assert!(negative_pos_rescale_packet
+        .flags()
+        .contains(PacketFlags::TRUSTED));
+
+    let mut negative_pos_copy = Packet::from_data(vec![0x78]).unwrap();
+    negative_pos_copy.copy_props_from(&negative_pos_lifecycle_source);
+    assert_eq!(negative_pos_copy.data(), &[0x78]);
+    assert_eq!(negative_pos_copy.pos(), Some(-2));
+    let mut negative_pos_ref = Packet::default();
+    negative_pos_ref.ref_from(&negative_pos_lifecycle_source);
+    assert_eq!(negative_pos_ref.pos(), Some(-2));
+    let negative_pos_clone = negative_pos_lifecycle_source.clone();
+    assert_eq!(negative_pos_clone.pos(), Some(-2));
+    let mut negative_pos_move_src = negative_pos_lifecycle_source;
+    negative_pos_move_src.set_pos(Some(-3)).unwrap();
+    let mut negative_pos_move_dst = Packet::default();
+    negative_pos_move_dst.move_ref_from(&mut negative_pos_move_src);
+    assert_eq!(negative_pos_move_dst.pos(), Some(-3));
+    assert_eq!(negative_pos_move_src.pos(), None);
 
     let mut near_inf_rescale_packet = Packet::from_data(vec![0x51, 0x52, 0x53]).unwrap();
     let near_inf_src = Rational::new(1, 48_000).unwrap();

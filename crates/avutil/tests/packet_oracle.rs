@@ -325,6 +325,26 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         packet_fields(&rescaled_negative_duration),
     );
 
+    let mut rescaled_negative_pos = Packet::new(vec![0x81, 0x82], 10);
+    rescaled_negative_pos.set_pts(Some(90_000));
+    rescaled_negative_pos.set_dts(Some(45_000));
+    rescaled_negative_pos.set_duration(45_000).unwrap();
+    rescaled_negative_pos.set_pos(Some(-2)).unwrap();
+    rescaled_negative_pos.set_flag(PacketFlags::TRUSTED, true);
+    rescaled_negative_pos
+        .set_time_base(Rational::new(1, 90_000).unwrap())
+        .unwrap();
+    rescaled_negative_pos
+        .rescale_ts(
+            Rational::new(1, 90_000).unwrap(),
+            Rational::new(1, 1_000).unwrap(),
+        )
+        .unwrap();
+    rows.insert(
+        "packet:rescale-negative-pos".to_string(),
+        packet_fields(&rescaled_negative_pos),
+    );
+
     let src = packet_with_common_props();
     let mut copied = Packet::new(vec![0x99, 0x88], 1);
     copied.copy_props_from(&src);
@@ -360,6 +380,38 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     rows.insert(
         "packet:move-negative-duration-src".to_string(),
         packet_fields(&negative_duration_move_src),
+    );
+
+    let mut negative_pos_src = packet_with_common_props();
+    negative_pos_src.set_pos(Some(-2)).unwrap();
+    let mut negative_pos_copy = Packet::from_data(vec![0x78]).unwrap();
+    negative_pos_copy.copy_props_from(&negative_pos_src);
+    rows.insert(
+        "packet:copy-props-negative-pos".to_string(),
+        packet_fields(&negative_pos_copy),
+    );
+    let mut negative_pos_ref = Packet::default();
+    negative_pos_ref.ref_from(&negative_pos_src);
+    rows.insert(
+        "packet:ref-negative-pos".to_string(),
+        packet_fields(&negative_pos_ref),
+    );
+    let negative_pos_clone = negative_pos_src.clone();
+    rows.insert(
+        "packet:clone-negative-pos".to_string(),
+        packet_fields(&negative_pos_clone),
+    );
+    let mut negative_pos_move_src = packet_with_common_props();
+    negative_pos_move_src.set_pos(Some(-3)).unwrap();
+    let mut negative_pos_move_dst = Packet::default();
+    negative_pos_move_dst.move_ref_from(&mut negative_pos_move_src);
+    rows.insert(
+        "packet:move-negative-pos-dst".to_string(),
+        packet_fields(&negative_pos_move_dst),
+    );
+    rows.insert(
+        "packet:move-negative-pos-src".to_string(),
+        packet_fields(&negative_pos_move_src),
     );
 
     let empty_src = Packet::default();
@@ -8959,6 +9011,21 @@ int main(void) {
     print_packet("packet:rescale-negative-duration", pkt);
     av_packet_free(&pkt);
 
+    pkt = new_packet();
+    fail_if(av_new_packet(pkt, 2) < 0, "av_new_packet negative pos rescale failed");
+    pkt->data[0] = 0x81;
+    pkt->data[1] = 0x82;
+    pkt->pts = 90000;
+    pkt->dts = 45000;
+    pkt->duration = 45000;
+    pkt->pos = -2;
+    pkt->stream_index = 10;
+    pkt->flags = AV_PKT_FLAG_TRUSTED;
+    pkt->time_base = (AVRational){ 1, 90000 };
+    av_packet_rescale_ts(pkt, (AVRational){ 1, 90000 }, (AVRational){ 1, 1000 });
+    print_packet("packet:rescale-negative-pos", pkt);
+    av_packet_free(&pkt);
+
     AVPacket *src = packet_with_common_props();
     AVPacket *dst = new_packet();
     fail_if(av_new_packet(dst, 2) < 0, "av_new_packet copy dst failed");
@@ -9007,6 +9074,39 @@ int main(void) {
     av_packet_free(&negative_duration_ref);
     av_packet_free(&negative_duration_copy);
     av_packet_free(&negative_duration_src);
+
+    AVPacket *negative_pos_src = packet_with_common_props();
+    negative_pos_src->pos = -2;
+    AVPacket *negative_pos_copy = new_packet();
+    fail_if(av_new_packet(negative_pos_copy, 1) < 0,
+            "av_new_packet negative pos copy dst failed");
+    negative_pos_copy->data[0] = 0x78;
+    fail_if(av_packet_copy_props(negative_pos_copy, negative_pos_src) < 0,
+            "av_packet_copy_props negative pos failed");
+    print_packet("packet:copy-props-negative-pos", negative_pos_copy);
+
+    AVPacket *negative_pos_ref = new_packet();
+    fail_if(av_packet_ref(negative_pos_ref, negative_pos_src) < 0,
+            "av_packet_ref negative pos failed");
+    print_packet("packet:ref-negative-pos", negative_pos_ref);
+
+    AVPacket *negative_pos_clone = av_packet_clone(negative_pos_src);
+    fail_if(!negative_pos_clone, "av_packet_clone negative pos failed");
+    print_packet("packet:clone-negative-pos", negative_pos_clone);
+
+    AVPacket *negative_pos_move_src = packet_with_common_props();
+    negative_pos_move_src->pos = -3;
+    AVPacket *negative_pos_move_dst = new_packet();
+    av_packet_move_ref(negative_pos_move_dst, negative_pos_move_src);
+    print_packet("packet:move-negative-pos-dst", negative_pos_move_dst);
+    print_packet("packet:move-negative-pos-src", negative_pos_move_src);
+
+    av_packet_free(&negative_pos_move_dst);
+    av_packet_free(&negative_pos_move_src);
+    av_packet_free(&negative_pos_clone);
+    av_packet_free(&negative_pos_ref);
+    av_packet_free(&negative_pos_copy);
+    av_packet_free(&negative_pos_src);
 
     AVPacket *empty_src = new_packet();
     AVPacket *copy_empty_dst = new_packet();

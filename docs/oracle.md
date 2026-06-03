@@ -138,6 +138,18 @@ the cargo-fuzz sandbox/tooling layer without usable completion output; unit,
 oracle, FATE-runner, and clippy gates cover the slice until a later warmed fuzz
 smoke can be recorded.
 
+The latest packet signed-position fixture extends `avutil_core_models` with
+negative `AVPacket.pos` behavior. `Packet::set_pos` accepts signed values such
+as `-2` while preserving `-1` as the public unknown-position sentinel,
+`Packet::rescale_ts` leaves `pos` untouched, and copy/ref/clone/move lifecycles
+carry the signed position field. The pinned libavcodec oracle emits matching
+`packet:rescale-negative-pos`, `packet:copy-props-negative-pos`,
+`packet:ref-negative-pos`, `packet:clone-negative-pos`, and
+`packet:move-negative-pos-*` rows. A WSL one-input cargo-fuzz smoke executed
+the corpus but failed after completion in LeakSanitizer under ptrace, so
+clippy/build coverage is recorded for the deterministic fixture until a later
+LSAN-compatible smoke can run.
+
 The latest packet signed-duration fixture extends `avutil_core_models` with
 negative `AVPacket.duration` behavior. `Packet::set_duration` accepts signed
 values, `Packet::rescale_ts` preserves nonpositive duration while rescaling

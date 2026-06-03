@@ -19,6 +19,16 @@
   `avutil-buffer`; strict completion remains 11/96 and the row remains
   `differential_pass`.
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  `AVPacket.pos` is signed packet state distinct from the `-1`
+  unknown-position sentinel. `av_packet_rescale_ts()` preserves negative
+  positions unchanged, and `av_packet_copy_props()`, `av_packet_ref()`,
+  `av_packet_clone()`, and `av_packet_move_ref()` carry signed positions
+  through the normal lifecycle while move-ref resets the source. Rust mirrors
+  this through focused unit coverage, the mapped packet oracle, and a
+  deterministic `avutil_core_models` fixture. This strengthens
+  `avutil-packet`; strict completion remains 11/96 and the row remains
+  `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   `av_packet_unref()` and `av_packet_free(&pkt)` on raw no-buffer packets whose
   `data` pointer starts at a nonzero offset inside caller storage reset/null
   packet ownership without freeing or mutating the caller storage. Rust mirrors

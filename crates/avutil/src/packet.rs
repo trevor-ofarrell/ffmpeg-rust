@@ -5453,14 +5453,6 @@ impl Packet {
     }
 
     pub fn set_pos(&mut self, pos: Option<i64>) -> AvResult<()> {
-        if let Some(pos) = pos {
-            if pos < 0 {
-                return Err(AvError::invalid_argument(
-                    "packet byte position must not be negative",
-                ));
-            }
-        }
-
         self.pos = pos.unwrap_or(AV_PACKET_POS_UNKNOWN);
         Ok(())
     }
@@ -6622,7 +6614,7 @@ mod tests {
     }
 
     #[test]
-    fn packet_accepts_signed_duration_rejects_negative_position_and_invalid_side_data_kind() {
+    fn packet_accepts_signed_duration_and_position_lifecycle() {
         let mut packet = Packet::new(Vec::new(), 0);
         packet.set_duration(5).unwrap();
         packet.set_pos(Some(9)).unwrap();
@@ -6632,8 +6624,8 @@ mod tests {
 
         packet.set_duration(-1).unwrap();
         assert_eq!(packet.duration(), -1);
-        assert!(packet.set_pos(Some(-1)).is_err());
-        assert_eq!(packet.pos(), Some(9));
+        packet.set_pos(Some(-2)).unwrap();
+        assert_eq!(packet.pos(), Some(-2));
         assert_eq!(
             packet
                 .set_time_base(Rational::from_raw(1, 0))
@@ -6644,6 +6636,44 @@ mod tests {
         assert_eq!(packet.time_base(), Rational::new(1, 1_000).unwrap());
         packet.set_pos(None).unwrap();
         assert_eq!(packet.pos(), None);
+
+        let mut source = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
+        source.set_pts(Some(90_000));
+        source.set_dts(Some(45_000));
+        source.set_duration(1_000).unwrap();
+        source.set_pos(Some(-2)).unwrap();
+        source
+            .set_time_base(Rational::new(1, 90_000).unwrap())
+            .unwrap();
+
+        let mut rescaled = source.clone();
+        rescaled
+            .rescale_ts(
+                Rational::new(1, 90_000).unwrap(),
+                Rational::new(1, 1_000).unwrap(),
+            )
+            .unwrap();
+        assert_eq!(rescaled.pos(), Some(-2));
+
+        let mut copied = Packet::from_data(vec![0xee]).unwrap();
+        copied.copy_props_from(&source);
+        assert_eq!(copied.data(), &[0xee]);
+        assert_eq!(copied.pos(), Some(-2));
+
+        let mut referenced = Packet::default();
+        referenced.ref_from(&source);
+        assert_eq!(referenced.pos(), Some(-2));
+
+        let cloned = source.clone();
+        assert_eq!(cloned.pos(), Some(-2));
+
+        let mut moved_src = source;
+        moved_src.set_pos(Some(-3)).unwrap();
+        let mut moved_dst = Packet::default();
+        moved_dst.move_ref_from(&mut moved_src);
+        assert_eq!(moved_dst.pos(), Some(-3));
+        assert_eq!(moved_src.pos(), None);
+
         assert!(SideData::new(" ", Vec::new()).is_err());
         assert!(SideData::new("bad\0kind", Vec::new()).is_err());
         assert!(SideData::new_with_kind(
