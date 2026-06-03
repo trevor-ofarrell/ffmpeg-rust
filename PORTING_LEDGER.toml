@@ -3,6 +3,14 @@ target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
 # Latest main-thread packet evidence: pinned libavcodec rows now prove
+# packet-owned `av_packet_add_side_data(pkt, type, NULL, 0)` stores a zero-size
+# entry but makes `av_packet_get_side_data()` return NULL, while standalone
+# `av_packet_side_data_add(&sd, &nb_sd, type, NULL, 0, flags)` stores a
+# zero-size entry that `av_packet_side_data_get()` still returns. Rust models
+# this with explicit nullable-zero side-data helpers while keeping ordinary
+# empty allocated side data distinct. This is evidence-strengthening only; no
+# status was promoted.
+# Latest main-thread packet evidence: pinned libavcodec rows now prove
 # `av_packet_new_side_data()` and standalone `av_packet_side_data_new()`
 # reject `SIZE_MAX` visible sizes before mutating packet-owned side data or
 # standalone arrays. Rust returns typed ENOMEM without appending or replacing
@@ -683,6 +691,7 @@ unit_tests = [
   "packet::tests::packet_negative_duration_copies_refs_clones_and_moves",
   "packet::tests::packet_side_data_kind_inventory_matches_ffmpeg_8_1_1_header",
   "packet::tests::packet_side_data_kind_maps_aliases_and_preserves_unknown_names",
+  "packet::tests::packet_null_zero_side_data_add_preserves_entry_and_null_lookup_shape",
   "packet::tests::packet_side_data_parses_palette_payload",
   "packet::tests::packet_side_data_rejects_malformed_palette_payload",
   "packet::tests::packet_side_data_preserves_new_extradata_payload",
@@ -1562,7 +1571,7 @@ fuzz_targets = ["avutil_core_models"]
 # safe `BufferRef::resize_with_padding` path copy-on-write detaches instead;
 # `packet_shrink_shared_refcounted_matches_ffmpeg_tail_zeroing` is ignored until
 # a broader alias-safe shared-storage mutation design exists.
-notes = "FATE pass for the current bounded AVPacket helper surface under the selected ffmpeg-8.1.1-default-native profile. The Rust Packet model covers timestamps, FFmpeg-shaped invalid/overflow rescale writes through Packet::rescale_ts_ffmpeg, duration-only rescale with missing PTS/DTS, signed duration, signed raw stream_index storage with a nonnegative Rust indexing helper, signed optional byte position with `-1` as the unknown sentinel, raw AVPacket.time_base storage with FFmpeg-style reset defaults, packet flags, BufferRef-backed payload and opaque_ref ownership, padded payload allocation/grow/shrink/refcounted/writable helpers, packet-owned and standalone side-data lifecycle helpers, packet/frame side-data bridge helpers, dictionary pack/unpack helpers including destination-mutating unpack swap-removal replacement order and partial-error mutation, property copy/ref/clone/move/unref lifecycles, packet FIFO lifecycles, and the typed packet side-data payload parsers listed in the unit-test inventory. The ignored packet_oracle harness validates this bounded surface against pinned FFmpeg 8.1.1 libavcodec/libavutil rows, including public packet side-data/flag/picture-type inventories, ABI layout metadata, payload helper boundaries, duplicate side-data behavior, opaque/opaque_ref behavior, FIFO rows, display-matrix helper rows, malformed dictionary return rows, destination-mutating dictionary rows `packet:dict-unpack-into-*`, `packet:rescale-duration-only`, signed duration/position/stream_index rows, `packet:rescale-overflow`, `packet:rescale-invalid-time-base`, `packet:rescale-invalid-dst-time-base`, and raw time_base rows `packet:copy-props-raw-time-base`, `packet:ref-raw-time-base`, `packet:clone-raw-time-base`, and `packet:move-raw-time-base-*`. The mapped differential row `avutil-packet|oracle-libavcodec-packet-core`, local packet FATE-runner unit row, and upstream FFmpeg `fate-avpacket` wrapper pass locally through the pinned oracle/source cache. The `avutil_core_models` cargo-fuzz target covers packet timestamp, duration-only rescale with missing PTS/DTS, FFmpeg-shaped invalid/overflow rescale writes, signed stream-index/position/duration, raw time_base, payload, side-data, dictionary, displaymatrix, FIFO, and lifecycle invariants for the safe Rust model; its corpus now includes `packet_rescale_sentinel`, and a bounded WSL 64-run sanitizer smoke passed with local leak detection disabled against a temporary corpus copy. Known blocked edge: pinned FFmpeg `av_shrink_packet()` on one reference of a shared refcounted packet preserves shared storage, keeps both refs non-writable, and zeroes the truncated tail through source-visible bytes; the current safe Rust `BufferRef` resize path detaches instead, so the ignored `packet_shrink_shared_refcounted_matches_ffmpeg_tail_zeroing` regression remains pending a broader alias-safe storage design. Not complete: remaining ABI/media-integration vectors, broader packet integration, and longer sustained fuzz evidence remain pending."
+notes = "FATE pass for the current bounded AVPacket helper surface under the selected ffmpeg-8.1.1-default-native profile. The Rust Packet model covers timestamps, FFmpeg-shaped invalid/overflow rescale writes through Packet::rescale_ts_ffmpeg, duration-only rescale with missing PTS/DTS, signed duration, signed raw stream_index storage with a nonnegative Rust indexing helper, signed optional byte position with `-1` as the unknown sentinel, raw AVPacket.time_base storage with FFmpeg-style reset defaults, packet flags, BufferRef-backed payload and opaque_ref ownership, padded payload allocation/grow/shrink/refcounted/writable helpers, packet-owned and standalone side-data lifecycle helpers including nullable-zero NULL/0 add/get rows, packet/frame side-data bridge helpers, dictionary pack/unpack helpers including destination-mutating unpack swap-removal replacement order and partial-error mutation, property copy/ref/clone/move/unref lifecycles, packet FIFO lifecycles, and the typed packet side-data payload parsers listed in the unit-test inventory. The ignored packet_oracle harness validates this bounded surface against pinned FFmpeg 8.1.1 libavcodec/libavutil rows, including public packet side-data/flag/picture-type inventories, ABI layout metadata, payload helper boundaries, duplicate side-data behavior, nullable-zero side-data add rows `packet:side-add-null-zero*` and `packet:array-add-null-zero*`, opaque/opaque_ref behavior, FIFO rows, display-matrix helper rows, malformed dictionary return rows, destination-mutating dictionary rows `packet:dict-unpack-into-*`, `packet:rescale-duration-only`, signed duration/position/stream_index rows, `packet:rescale-overflow`, `packet:rescale-invalid-time-base`, `packet:rescale-invalid-dst-time-base`, and raw time_base rows `packet:copy-props-raw-time-base`, `packet:ref-raw-time-base`, `packet:clone-raw-time-base`, and `packet:move-raw-time-base-*`. The mapped differential row `avutil-packet|oracle-libavcodec-packet-core`, local packet FATE-runner unit row, and upstream FFmpeg `fate-avpacket` wrapper pass locally through the pinned oracle/source cache. The `avutil_core_models` cargo-fuzz target covers packet timestamp, duration-only rescale with missing PTS/DTS, FFmpeg-shaped invalid/overflow rescale writes, signed stream-index/position/duration, raw time_base, payload, side-data including nullable-zero add/get invariants, dictionary, displaymatrix, FIFO, and lifecycle invariants for the safe Rust model; its corpus now includes `packet_rescale_sentinel`, and a bounded WSL 64-run sanitizer smoke passed with local leak detection disabled against a temporary corpus copy. Known blocked edge: pinned FFmpeg `av_shrink_packet()` on one reference of a shared refcounted packet preserves shared storage, keeps both refs non-writable, and zeroes the truncated tail through source-visible bytes; the current safe Rust `BufferRef` resize path detaches instead, so the ignored `packet_shrink_shared_refcounted_matches_ffmpeg_tail_zeroing` regression remains pending a broader alias-safe storage design. Not complete: remaining ABI/media-integration vectors, broader packet integration, and longer sustained fuzz evidence remain pending."
 # Latest empty-array slice: pinned libavcodec rows now validate standalone
 # `av_packet_side_data_get(NULL, 0, type)`, `av_packet_side_data_remove(NULL,
 # &count, type)`, and `av_packet_side_data_free(&ptr, &count)` as empty
@@ -1601,6 +1610,12 @@ notes = "FATE pass for the current bounded AVPacket helper surface under the sel
 # clone, and move-ref preserve a zero-size `AV_PKT_DATA_NEW_EXTRADATA` record
 # with lookup present and size zero, while move-ref resets the source side-data
 # list.
+# Latest nullable-zero side-data slice: pinned libavcodec rows validate
+# packet-owned `packet:side-add-null-zero*` behavior, where a NULL/0
+# `av_packet_add_side_data()` call stores a zero-size entry but
+# `av_packet_get_side_data()` returns NULL, and standalone
+# `packet:array-add-null-zero*` behavior, where `av_packet_side_data_get()`
+# returns the zero-size entry even though `entry->data == NULL`.
 blocked_reason = ""
 
 [[component]]

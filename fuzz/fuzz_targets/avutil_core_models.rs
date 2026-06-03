@@ -12269,6 +12269,55 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .unwrap()
         .data()
         .is_empty());
+    let mut null_zero_packet = Packet::default();
+    assert!(null_zero_packet
+        .try_add_null_side_data(PacketSideDataKind::NewExtradata)
+        .unwrap()
+        .is_none());
+    let null_zero_side_data = null_zero_packet
+        .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+        .unwrap();
+    assert!(null_zero_side_data.is_data_ptr_null());
+    assert_eq!(null_zero_side_data.len(), 0);
+    assert!(null_zero_side_data.data().is_empty());
+    let mut null_zero_replace_packet = Packet::default();
+    null_zero_replace_packet
+        .new_side_data(PacketSideDataKind::NewExtradata, 2)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0x31, 0x32]);
+    let replaced_null_zero = null_zero_replace_packet
+        .try_add_null_side_data(PacketSideDataKind::NewExtradata)
+        .unwrap()
+        .unwrap();
+    assert_eq!(replaced_null_zero.data(), &[0x31, 0x32]);
+    assert!(null_zero_replace_packet
+        .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+        .unwrap()
+        .is_data_ptr_null());
+    let mut null_zero_side_data_list = PacketSideDataList::new();
+    assert!(null_zero_side_data_list
+        .try_add_null_side_data_with_flags(PacketSideDataKind::NewExtradata, 1)
+        .unwrap()
+        .is_none());
+    assert!(null_zero_side_data_list
+        .get(&PacketSideDataKind::NewExtradata)
+        .unwrap()
+        .is_data_ptr_null());
+    null_zero_side_data_list
+        .new_side_data(PacketSideDataKind::NewExtradata, 2)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0x41, 0x42]);
+    let replaced_null_zero_list = null_zero_side_data_list
+        .try_add_null_side_data_with_flags(PacketSideDataKind::NewExtradata, 0)
+        .unwrap()
+        .unwrap();
+    assert_eq!(replaced_null_zero_list.data(), &[0x41, 0x42]);
+    assert!(null_zero_side_data_list
+        .get(&PacketSideDataKind::NewExtradata)
+        .unwrap()
+        .is_data_ptr_null());
     let list_entry = side_data_list
         .new_side_data(typed_side_data_kind.clone(), typed_side_data_payload.len())
         .unwrap();
