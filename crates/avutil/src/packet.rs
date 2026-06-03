@@ -7,8 +7,8 @@ use crate::frame::{
 };
 use crate::pixel::{AVPALETTE_COUNT, AVPALETTE_SIZE};
 use crate::{
-    rescale_q, AvError, AvErrorCode, AvErrorKind, AvResult, BufferRef, Dictionary, MatchMode,
-    Rational, SetMode,
+    rescale, rescale_q, AvError, AvErrorCode, AvErrorKind, AvResult, BufferRef, Dictionary,
+    MatchMode, Rational, SetMode,
 };
 use std::collections::VecDeque;
 use std::num::NonZeroUsize;
@@ -6078,7 +6078,14 @@ fn packet_stream_index_from_usize(stream_index: usize) -> i32 {
 }
 
 fn ffmpeg_rescale_q_or_nopts(value: i64, src: Rational, dst: Rational) -> i64 {
-    rescale_q(value, src, dst).unwrap_or(AV_NOPTS_VALUE)
+    let multiplier = i64::from(src.num()).checked_mul(i64::from(dst.den()));
+    let divisor = i64::from(src.den()).checked_mul(i64::from(dst.num()));
+    match (multiplier, divisor) {
+        (Some(multiplier), Some(divisor)) => {
+            rescale(value, multiplier, divisor).unwrap_or(AV_NOPTS_VALUE)
+        }
+        _ => AV_NOPTS_VALUE,
+    }
 }
 
 fn packet_alloc_buffer(size: usize) -> AvResult<BufferRef> {
@@ -15880,6 +15887,15 @@ mod tests {
         assert_eq!(packet.dts(), Some(9));
         assert_eq!(packet.duration(), 8);
 
+        let invalid_dst_err = packet
+            .rescale_ts(Rational::ONE, Rational::from_raw(1, 0))
+            .unwrap_err();
+
+        assert_eq!(invalid_dst_err.kind(), crate::AvErrorKind::InvalidArgument);
+        assert_eq!(packet.pts(), Some(10));
+        assert_eq!(packet.dts(), Some(9));
+        assert_eq!(packet.duration(), 8);
+
         packet.set_pts(Some(i64::MAX));
         packet.set_dts(Some(9));
         packet.set_duration(8).unwrap();
@@ -15911,6 +15927,30 @@ mod tests {
         assert_eq!(invalid_tb.time_base(), Rational::from_raw(1, 0));
         assert!(invalid_tb.flags().contains(PacketFlags::CORRUPT));
         assert_eq!(invalid_tb.data(), &[0x93]);
+
+        let mut invalid_dst_tb = Packet::from_data(vec![0x94]).unwrap();
+        invalid_dst_tb.set_pts(Some(90_000));
+        invalid_dst_tb.set_dts(Some(45_000));
+        invalid_dst_tb.set_duration(22_500).unwrap();
+        invalid_dst_tb.set_pos(Some(913)).unwrap();
+        invalid_dst_tb.set_flag(PacketFlags::TRUSTED, true);
+        invalid_dst_tb
+            .set_time_base(Rational::new(1, 90_000).unwrap())
+            .unwrap();
+
+        invalid_dst_tb
+            .rescale_ts_ffmpeg(Rational::new(1, 90_000).unwrap(), Rational::from_raw(1, 0));
+
+        assert_eq!(invalid_dst_tb.pts(), Some(0));
+        assert_eq!(invalid_dst_tb.dts(), Some(0));
+        assert_eq!(invalid_dst_tb.duration(), 0);
+        assert_eq!(invalid_dst_tb.pos(), Some(913));
+        assert_eq!(
+            invalid_dst_tb.time_base(),
+            Rational::new(1, 90_000).unwrap()
+        );
+        assert!(invalid_dst_tb.flags().contains(PacketFlags::TRUSTED));
+        assert_eq!(invalid_dst_tb.data(), &[0x94]);
 
         let mut overflow = Packet::from_data(vec![0x91, 0x92]).unwrap();
         overflow.set_pts(Some(i64::MAX));

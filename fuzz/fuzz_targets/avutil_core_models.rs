@@ -11489,6 +11489,17 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         (packet.pts(), packet.dts(), packet.duration()),
         rescaled_timing
     );
+    assert_eq!(
+        packet
+            .rescale_ts(rescale_src, Rational::from_raw(1, 0))
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        (packet.pts(), packet.dts(), packet.duration()),
+        rescaled_timing
+    );
 
     let mut ffmpeg_invalid_rescale_packet = Packet::from_data(vec![0x93]).unwrap();
     ffmpeg_invalid_rescale_packet.set_dts(Some(90_000));
@@ -11509,6 +11520,27 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         Rational::from_raw(1, 0)
     );
     assert_eq!(ffmpeg_invalid_rescale_packet.data(), &[0x93]);
+
+    let mut ffmpeg_invalid_dst_rescale_packet = Packet::from_data(vec![0x94]).unwrap();
+    ffmpeg_invalid_dst_rescale_packet.set_pts(Some(90_000));
+    ffmpeg_invalid_dst_rescale_packet.set_dts(Some(45_000));
+    ffmpeg_invalid_dst_rescale_packet
+        .set_duration(22_500)
+        .unwrap();
+    ffmpeg_invalid_dst_rescale_packet
+        .set_pos(Some(913))
+        .unwrap();
+    ffmpeg_invalid_dst_rescale_packet
+        .set_time_base(rescale_src)
+        .unwrap();
+    ffmpeg_invalid_dst_rescale_packet
+        .rescale_ts_ffmpeg(rescale_src, Rational::from_raw(1, 0));
+    assert_eq!(ffmpeg_invalid_dst_rescale_packet.pts(), Some(0));
+    assert_eq!(ffmpeg_invalid_dst_rescale_packet.dts(), Some(0));
+    assert_eq!(ffmpeg_invalid_dst_rescale_packet.duration(), 0);
+    assert_eq!(ffmpeg_invalid_dst_rescale_packet.pos(), Some(913));
+    assert_eq!(ffmpeg_invalid_dst_rescale_packet.time_base(), rescale_src);
+    assert_eq!(ffmpeg_invalid_dst_rescale_packet.data(), &[0x94]);
 
     let mut ffmpeg_overflow_rescale_packet = Packet::from_data(vec![0x91, 0x92]).unwrap();
     ffmpeg_overflow_rescale_packet.set_pts(Some(i64::MAX));

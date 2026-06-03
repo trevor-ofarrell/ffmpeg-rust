@@ -438,6 +438,22 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         packet_fields(&rescaled_invalid_time_base),
     );
 
+    let mut rescaled_invalid_dst_time_base = Packet::new(vec![0x94], 13);
+    rescaled_invalid_dst_time_base.set_pts(Some(90_000));
+    rescaled_invalid_dst_time_base.set_dts(Some(45_000));
+    rescaled_invalid_dst_time_base.set_duration(22_500).unwrap();
+    rescaled_invalid_dst_time_base.set_pos(Some(913)).unwrap();
+    rescaled_invalid_dst_time_base.set_flag(PacketFlags::TRUSTED, true);
+    rescaled_invalid_dst_time_base
+        .set_time_base(Rational::new(1, 90_000).unwrap())
+        .unwrap();
+    rescaled_invalid_dst_time_base
+        .rescale_ts_ffmpeg(Rational::new(1, 90_000).unwrap(), Rational::from_raw(1, 0));
+    rows.insert(
+        "packet:rescale-invalid-dst-time-base".to_string(),
+        packet_fields(&rescaled_invalid_dst_time_base),
+    );
+
     let src = packet_with_common_props();
     let mut copied = Packet::new(vec![0x99, 0x88], 1);
     copied.copy_props_from(&src);
@@ -10143,6 +10159,21 @@ int main(void) {
     pkt->time_base = (AVRational){ 1, 0 };
     av_packet_rescale_ts(pkt, (AVRational){ 1, 0 }, (AVRational){ 1, 1000 });
     print_packet("packet:rescale-invalid-time-base", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    fail_if(av_new_packet(pkt, 1) < 0,
+            "av_new_packet invalid dst time base rescale failed");
+    pkt->data[0] = 0x94;
+    pkt->pts = 90000;
+    pkt->dts = 45000;
+    pkt->duration = 22500;
+    pkt->pos = 913;
+    pkt->stream_index = 13;
+    pkt->flags = AV_PKT_FLAG_TRUSTED;
+    pkt->time_base = (AVRational){ 1, 90000 };
+    av_packet_rescale_ts(pkt, (AVRational){ 1, 90000 }, (AVRational){ 1, 0 });
+    print_packet("packet:rescale-invalid-dst-time-base", pkt);
     av_packet_free(&pkt);
 
     AVPacket *src = packet_with_common_props();
