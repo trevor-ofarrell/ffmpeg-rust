@@ -1189,6 +1189,59 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         vec![(payload_len.wrapping_add(1), Vec::new())]
     );
 
+    let null_zero_readonly_ref_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let null_zero_readonly_ref_capture = Arc::clone(&null_zero_readonly_ref_released);
+    let null_zero_readonly_ref_source =
+        BufferRef::from_null_data_zero_with_opaque_release_callback_readonly(
+            payload_len.wrapping_add(9),
+            move |opaque, bytes| {
+                null_zero_readonly_ref_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        );
+    let null_zero_readonly_ref_destination = BufferRef::ref_from(&null_zero_readonly_ref_source);
+    assert!(null_zero_readonly_ref_source.is_data_ptr_null());
+    assert!(null_zero_readonly_ref_destination.is_data_ptr_null());
+    assert!(null_zero_readonly_ref_source.as_ptr().is_null());
+    assert!(null_zero_readonly_ref_destination.as_ptr().is_null());
+    assert!(null_zero_readonly_ref_source.is_readonly());
+    assert!(null_zero_readonly_ref_destination.is_readonly());
+    assert!(!null_zero_readonly_ref_source.is_writable());
+    assert!(!null_zero_readonly_ref_destination.is_writable());
+    assert!(null_zero_readonly_ref_source.shares_storage(&null_zero_readonly_ref_destination));
+    assert_eq!(null_zero_readonly_ref_source.strong_count(), 2);
+    assert_eq!(
+        null_zero_readonly_ref_destination.strong_count(),
+        2
+    );
+    assert_eq!(
+        null_zero_readonly_ref_source.opaque_ref::<usize>(),
+        Some(&payload_len.wrapping_add(9))
+    );
+    assert_eq!(
+        null_zero_readonly_ref_destination.opaque_ref::<usize>(),
+        Some(&payload_len.wrapping_add(9))
+    );
+    assert!(null_zero_readonly_ref_released
+        .lock()
+        .unwrap()
+        .is_empty());
+    drop(null_zero_readonly_ref_destination);
+    assert!(null_zero_readonly_ref_released
+        .lock()
+        .unwrap()
+        .is_empty());
+    assert_eq!(null_zero_readonly_ref_source.strong_count(), 1);
+    assert!(null_zero_readonly_ref_source.is_readonly());
+    assert!(!null_zero_readonly_ref_source.is_writable());
+    drop(null_zero_readonly_ref_source);
+    assert_eq!(
+        *null_zero_readonly_ref_released.lock().unwrap(),
+        vec![(payload_len.wrapping_add(9), Vec::new())]
+    );
+
     let null_zero_readonly_same_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let null_zero_readonly_same_capture = Arc::clone(&null_zero_readonly_same_released);
     let mut null_zero_readonly_same = Some(

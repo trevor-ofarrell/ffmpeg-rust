@@ -572,6 +572,58 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         release_fields(&create_null_zero_readonly_released),
     );
 
+    let create_null_zero_readonly_ref_released =
+        Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_null_zero_readonly_ref_capture = Arc::clone(&create_null_zero_readonly_ref_released);
+    let create_null_zero_readonly_ref_src =
+        BufferRef::from_null_data_zero_with_opaque_release_callback_readonly(
+            669usize,
+            move |opaque, bytes| {
+                create_null_zero_readonly_ref_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        );
+    let create_null_zero_readonly_ref_dst = BufferRef::ref_from(&create_null_zero_readonly_ref_src);
+    rows.insert(
+        "buffer:create-null-zero-readonly-ref-src".to_string(),
+        buffer_fields_with_data_null_and_opaque(&create_null_zero_readonly_ref_src),
+    );
+    rows.insert(
+        "buffer:create-null-zero-readonly-ref-dst".to_string(),
+        buffer_fields_with_data_null_and_opaque(&create_null_zero_readonly_ref_dst),
+    );
+    rows.insert(
+        "buffer:create-null-zero-readonly-ref-shares".to_string(),
+        vec![
+            bool_field(
+                create_null_zero_readonly_ref_src
+                    .shares_storage(&create_null_zero_readonly_ref_dst),
+            ),
+            create_null_zero_readonly_ref_src.strong_count().to_string(),
+            create_null_zero_readonly_ref_released
+                .lock()
+                .unwrap()
+                .len()
+                .to_string(),
+        ],
+    );
+    drop(create_null_zero_readonly_ref_dst);
+    rows.insert(
+        "buffer:create-null-zero-readonly-ref-release-before-src-unref".to_string(),
+        vec![create_null_zero_readonly_ref_released
+            .lock()
+            .unwrap()
+            .len()
+            .to_string()],
+    );
+    drop(create_null_zero_readonly_ref_src);
+    rows.insert(
+        "buffer:create-null-zero-readonly-ref-release".to_string(),
+        release_fields(&create_null_zero_readonly_ref_released),
+    );
+
     let create_null_zero_readonly_realloc_same_released =
         Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let create_null_zero_readonly_realloc_same_capture =
@@ -5044,6 +5096,33 @@ int main(void) {
                                   create_null_zero_readonly);
     print_create_release("buffer:create-null-zero-readonly-release");
     av_buffer_unref(&create_null_zero_readonly);
+
+    reset_create_release();
+    last_create_release_size = 0;
+    AVBufferRef *create_null_zero_readonly_ref_src =
+        av_buffer_create(NULL, 0, test_create_free,
+                         (void *)(uintptr_t)669,
+                         AV_BUFFER_FLAG_READONLY);
+    fail_if(!create_null_zero_readonly_ref_src,
+            "av_buffer_create null zero readonly ref src failed");
+    AVBufferRef *create_null_zero_readonly_ref_dst =
+        av_buffer_ref(create_null_zero_readonly_ref_src);
+    fail_if(!create_null_zero_readonly_ref_dst,
+            "av_buffer_ref null zero readonly failed");
+    print_buffer_opaque_data_null("buffer:create-null-zero-readonly-ref-src",
+                                  create_null_zero_readonly_ref_src);
+    print_buffer_opaque_data_null("buffer:create-null-zero-readonly-ref-dst",
+                                  create_null_zero_readonly_ref_dst);
+    printf("buffer:create-null-zero-readonly-ref-shares|%d|%d|%d\n",
+           create_null_zero_readonly_ref_src->buffer ==
+               create_null_zero_readonly_ref_dst->buffer,
+           av_buffer_get_ref_count(create_null_zero_readonly_ref_src),
+           create_release_count);
+    av_buffer_unref(&create_null_zero_readonly_ref_dst);
+    printf("buffer:create-null-zero-readonly-ref-release-before-src-unref|%d\n",
+           create_release_count);
+    av_buffer_unref(&create_null_zero_readonly_ref_src);
+    print_create_release("buffer:create-null-zero-readonly-ref-release");
 
     reset_create_release();
     last_create_release_size = 0;

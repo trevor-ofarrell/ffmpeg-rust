@@ -1746,6 +1746,13 @@ fate_tests = [
   "not_applicable: upstream FFmpeg FATE has no standalone AVBufferRef/AVBufferPool API target; covered by unit tests plus pinned libavutil differential oracle",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest nullable-zero READONLY ref slice: pinned libavutil rows now prove
+# `av_buffer_ref()` on
+# `av_buffer_create(NULL, 0, free, opaque, AV_BUFFER_FLAG_READONLY)` preserves
+# NULL data pointers, size zero, opaque lookup, shared storage, refcount 2, and
+# non-writable READONLY state for both refs. Unreffing the destination does not
+# release the custom owner; the release callback runs only after the final
+# source unref. This is evidence-strengthening only; no status was promoted.
 # Latest shared nullable-zero no-growth slice: pinned libavutil rows now prove
 # same-size `av_buffer_realloc()` on shared
 # `av_buffer_create(NULL, 0, free, opaque, flags)` storage is a true no-op for
@@ -1767,12 +1774,14 @@ fuzz_targets = ["avutil_core_models"]
 # Latest nullable-zero readonly create slice: pinned libavutil rows now prove
 # `av_buffer_create(NULL, 0, free, opaque, AV_BUFFER_FLAG_READONLY)` succeeds
 # with `AVBufferRef.data == NULL`, size zero, non-writable state, and opaque
-# lookup. `av_buffer_make_writable()` detaches it to an ordinary non-NULL
-# writable empty buffer while releasing the original owner, same-size realloc
-# preserves the NULL pointer and readonly owner until unref, and grow realloc
-# releases the owner immediately while clearing opaque lookup. Rust models this
-# through the nullable-zero readonly constructor, focused unit coverage, mapped
-# oracle rows, and deterministic `avutil_core_models` coverage.
+# lookup. `av_buffer_ref()` preserves the NULL pointer, opaque owner, shared
+# refcount, and READONLY non-writability until the final unref.
+# `av_buffer_make_writable()` detaches it to an ordinary non-NULL writable empty
+# buffer while releasing the original owner, same-size realloc preserves the
+# NULL pointer and readonly owner until unref, and grow realloc releases the
+# owner immediately while clearing opaque lookup. Rust models this through the
+# nullable-zero readonly constructor, focused unit coverage, mapped oracle rows,
+# and deterministic `avutil_core_models` coverage.
 # Latest nullable-zero create slice: pinned libavutil rows now prove
 # `av_buffer_create(NULL, 0, free, opaque, flags=0)` succeeds with
 # `AVBufferRef.data == NULL` and size zero. `av_buffer_ref()` preserves the

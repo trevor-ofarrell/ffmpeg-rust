@@ -3,7 +3,7 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The
-tree started clean at `master...origin/master [ahead 33]`; required startup
+tree started clean at `master...origin/master [ahead 35]`; required startup
 checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
 -- status --next 15` reporting 11/96 strict-complete components (11.5%) and
 `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
@@ -12,28 +12,25 @@ confirmed `avutil-packet` remains blocked on shared-shrink alias-safe storage
 and advanced the next unblocked priority-1 component, `avutil-buffer`; no worker
 writes were delegated.
 
-Current main-thread slice: pinned libavutil rows now prove shared nullable-zero
-no-growth behavior for `av_buffer_create(NULL, 0, free, opaque, flags)`.
-Same-size `av_buffer_realloc()` on shared writable and READONLY refs returns
-success without detaching either reference, preserving shared storage, refcount
-2, NULL data pointers, opaque lookup, and no release until the final source
-unref. A matching READONLY shared `av_buffer_make_writable()` row proves only
-the destination detaches to ordinary writable non-NULL empty storage while the
-source owner stays live until final unref. Rust mirrors these edges with
-focused unit coverage, the mapped buffer oracle, and deterministic
-`avutil_core_models` coverage. `avutil-buffer` remains `differential_pass`, not
-`complete`; strict completion remains 11/96 because broader ABI/lifetime
-closure, hardware/device ownership integration, and standalone upstream FATE
-inapplicability remain open.
+Current main-thread slice: pinned libavutil rows now prove READONLY
+nullable-zero `av_buffer_ref()` behavior for
+`av_buffer_create(NULL, 0, free, opaque, AV_BUFFER_FLAG_READONLY)`. Source and
+destination refs preserve NULL data pointers, size zero, opaque lookup, shared
+storage, refcount 2, and non-writable READONLY state. Unreffing the destination
+does not release the custom owner; release remains delayed until the final
+source unref. Rust mirrors this with focused unit coverage, the mapped buffer
+oracle, and deterministic `avutil_core_models` coverage. `avutil-buffer`
+remains `differential_pass`, not `complete`; strict completion remains 11/96
+because broader ABI/lifetime closure, hardware/device ownership integration,
+and standalone upstream FATE inapplicability remain open.
 
-Latest validation commands for this shared nullable-zero no-growth buffer slice
+Latest validation commands for this READONLY nullable-zero ref buffer slice
 passed: `cargo fmt --all`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p
-avutil null_data_zero_realloc -- --nocapture`; `CARGO_TARGET_DIR=target-orch-avutil
-cargo test -p avutil null_data_zero_readonly_detaches_and_reallocates_like_ffmpeg
--- --nocapture`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
-buffer_oracle libavutil_buffer_refs_match_current_model -- --ignored --nocapture`;
-`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run --mappings
-tests/differential/mappings.txt --component avutil-buffer --target
+avutil null_data_zero_readonly_detaches_and_reallocates_like_ffmpeg --
+--nocapture`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
+buffer_oracle libavutil_buffer_refs_match_current_model -- --ignored
+--nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run
+--mappings tests/differential/mappings.txt --component avutil-buffer --target
 oracle-libavutil-buffer --oracle-ffmpeg
 ./third_party/ffmpeg-oracle/build/bin/ffmpeg`; `CARGO_TARGET_DIR=target-orch-fate
 cargo run -p fate-runner -- run --component avutil-buffer --target
