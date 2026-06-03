@@ -3,7 +3,7 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The
-tree started clean at `master...origin/master [ahead 38]`; required startup
+tree started clean at `master...origin/master [ahead 39]`; required startup
 checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
 -- status --next 15` reporting 11/96 strict-complete components (11.5%) and
 `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
@@ -12,23 +12,23 @@ confirmed `avutil-packet` remains blocked on shared-shrink alias-safe storage
 and advanced the next unblocked priority-1 component, `avutil-buffer`; no worker
 writes were delegated.
 
-Current main-thread slice: pinned libavutil rows now prove READONLY
-nullable-zero custom-owner `av_buffer_replace()` behavior when replacing a NULL
-destination from
-`av_buffer_create(NULL, 0, free, opaque, AV_BUFFER_FLAG_READONLY)`. Source and
-destination refs preserve NULL data pointers, size zero, opaque lookup, shared
-storage, refcount 2, and non-writable READONLY state while both refs are live.
-Unreffing the destination does not release the custom owner; the source remains
-readonly and non-writable with refcount 1, and release remains delayed until the
-final source unref. Rust mirrors this with focused unit coverage, the mapped
-buffer oracle, and deterministic `avutil_core_models` coverage. `avutil-buffer`
-remains `differential_pass`, not `complete`; strict completion remains 11/96
-because broader ABI/lifetime closure, hardware/device ownership integration,
-and standalone upstream FATE inapplicability remain open.
+Current main-thread slice: pinned libavutil rows now prove nullable-zero
+custom-owner `av_buffer_replace()` behavior when replacing an already-populated
+destination from writable and READONLY
+`av_buffer_create(NULL, 0, free, opaque, flags)` sources. FFmpeg first releases
+the old destination owner, then shares the nullable-zero source into the
+destination with NULL data pointers, size zero, opaque lookup, shared storage,
+refcount 2, and writable/readonly state according to flags. Unreffing the
+destination does not release the source owner; source release remains delayed
+until final source unref. Rust mirrors this with focused unit coverage, the
+mapped buffer oracle, and deterministic `avutil_core_models` coverage.
+`avutil-buffer` remains `differential_pass`, not `complete`; strict completion
+remains 11/96 because broader ABI/lifetime closure, hardware/device ownership
+integration, and standalone upstream FATE inapplicability remain open.
 
-Latest validation commands for this READONLY nullable-zero replace buffer slice
-passed: `cargo fmt --all`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p
-avutil buffer_ref_replace_and_unref_handle_nullable_c_api_shape --
+Latest validation commands for this nullable-zero existing-destination replace
+buffer slice passed: `cargo fmt --all`; `CARGO_TARGET_DIR=target-orch-avutil
+cargo test -p avutil buffer_ref_replace_and_unref_handle_nullable_c_api_shape --
 --nocapture`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo check --manifest-path
 fuzz/Cargo.toml --bin avutil_core_models`; `CARGO_TARGET_DIR=target-orch-avutil
 cargo test -p avutil --test buffer_oracle
