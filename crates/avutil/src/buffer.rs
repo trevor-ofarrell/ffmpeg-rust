@@ -42,6 +42,10 @@ pub const AV_BUFFER_REF_ABI_LAYOUT: BufferAbiLayout = BufferAbiLayout {
 
 pub const AV_BUFFER_FLAG_READONLY: i32 = 1 << 0;
 
+fn buffer_create_flags_readonly(flags: i32) -> bool {
+    flags & AV_BUFFER_FLAG_READONLY != 0
+}
+
 #[derive(Clone)]
 pub struct BufferPoolCallbacks {
     allocate: PoolAllocateCallback,
@@ -460,9 +464,20 @@ impl BufferRef {
     where
         T: Any + Send + Sync + 'static,
     {
+        Self::from_vec_with_opaque_flags(data, opaque, 0)
+    }
+
+    pub fn from_vec_with_opaque_flags<T>(data: Vec<u8>, opaque: T, flags: i32) -> Self
+    where
+        T: Any + Send + Sync + 'static,
+    {
         let len = data.len();
         Self {
-            data: Arc::new(BufferStorage::with_opaque(data, opaque, false)),
+            data: Arc::new(BufferStorage::with_opaque(
+                data,
+                opaque,
+                buffer_create_flags_readonly(flags),
+            )),
             offset: 0,
             len,
         }
@@ -472,12 +487,7 @@ impl BufferRef {
     where
         T: Any + Send + Sync + 'static,
     {
-        let len = data.len();
-        Self {
-            data: Arc::new(BufferStorage::with_opaque(data, opaque, true)),
-            offset: 0,
-            len,
-        }
+        Self::from_vec_with_opaque_flags(data, opaque, AV_BUFFER_FLAG_READONLY)
     }
 
     pub fn from_vec_with_opaque_release_callback<T, F>(
@@ -489,10 +499,26 @@ impl BufferRef {
         T: Any + Send + Sync + 'static,
         F: FnOnce(T, Vec<u8>) + Send + Sync + 'static,
     {
+        Self::from_vec_with_opaque_release_callback_flags(data, opaque, 0, on_release)
+    }
+
+    pub fn from_vec_with_opaque_release_callback_flags<T, F>(
+        data: Vec<u8>,
+        opaque: T,
+        flags: i32,
+        on_release: F,
+    ) -> Self
+    where
+        T: Any + Send + Sync + 'static,
+        F: FnOnce(T, Vec<u8>) + Send + Sync + 'static,
+    {
         let len = data.len();
         Self {
             data: Arc::new(BufferStorage::with_opaque_data_release(
-                data, opaque, on_release, false,
+                data,
+                opaque,
+                on_release,
+                buffer_create_flags_readonly(flags),
             )),
             offset: 0,
             len,
@@ -508,14 +534,12 @@ impl BufferRef {
         T: Any + Send + Sync + 'static,
         F: FnOnce(T, Vec<u8>) + Send + Sync + 'static,
     {
-        let len = data.len();
-        Self {
-            data: Arc::new(BufferStorage::with_opaque_data_release(
-                data, opaque, on_release, true,
-            )),
-            offset: 0,
-            len,
-        }
+        Self::from_vec_with_opaque_release_callback_flags(
+            data,
+            opaque,
+            AV_BUFFER_FLAG_READONLY,
+            on_release,
+        )
     }
 
     pub fn from_vec_with_len_and_opaque_release_callback<T, F>(
@@ -2243,6 +2267,67 @@ mod tests {
         assert!(shared_released.lock().unwrap().is_empty());
         drop(source);
         assert_eq!(*shared_released.lock().unwrap(), vec![(23, vec![4, 5, 6])]);
+    }
+
+    #[test]
+    fn buffer_create_unknown_flags_only_respect_readonly_bit() {
+        let mut default_free_unknown =
+            BufferRef::from_vec_with_opaque_flags(vec![1, 2, 3], 901usize, 0x4000);
+        assert!(default_free_unknown.is_writable());
+        assert!(!default_free_unknown.is_readonly());
+        assert_eq!(default_free_unknown.opaque_ref::<usize>(), Some(&901));
+        let default_free_ptr = default_free_unknown.as_ptr();
+        default_free_unknown.make_writable().unwrap();
+        assert!(std::ptr::eq(
+            default_free_ptr,
+            default_free_unknown.as_ptr()
+        ));
+        assert_eq!(default_free_unknown.opaque_ref::<usize>(), Some(&901));
+
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let capture = std::sync::Arc::clone(&released);
+        let callback_unknown = BufferRef::from_vec_with_opaque_release_callback_flags(
+            vec![4, 5, 6],
+            902usize,
+            0x4000,
+            move |opaque, bytes| {
+                capture.lock().unwrap().push((opaque, bytes));
+            },
+        );
+        assert!(callback_unknown.is_writable());
+        assert!(!callback_unknown.is_readonly());
+        assert_eq!(callback_unknown.opaque_ref::<usize>(), Some(&902));
+        drop(callback_unknown);
+        assert_eq!(*released.lock().unwrap(), vec![(902, vec![4, 5, 6])]);
+
+        let readonly_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let readonly_capture = std::sync::Arc::clone(&readonly_released);
+        let mut readonly_unknown = BufferRef::from_vec_with_opaque_release_callback_flags(
+            vec![7, 8, 9],
+            903usize,
+            AV_BUFFER_FLAG_READONLY | 0x4000,
+            move |opaque, bytes| {
+                readonly_capture.lock().unwrap().push((opaque, bytes));
+            },
+        );
+        assert!(!readonly_unknown.is_writable());
+        assert!(readonly_unknown.is_readonly());
+        assert_eq!(readonly_unknown.opaque_ref::<usize>(), Some(&903));
+        readonly_unknown.make_writable().unwrap();
+        assert!(readonly_unknown.is_writable());
+        assert!(!readonly_unknown.is_readonly());
+        assert_eq!(readonly_unknown.as_slice(), &[7, 8, 9]);
+        assert!(readonly_unknown.opaque_ref::<usize>().is_none());
+        assert_eq!(
+            *readonly_released.lock().unwrap(),
+            vec![(903, vec![7, 8, 9])]
+        );
+
+        let all_bits_readonly = BufferRef::from_vec_with_opaque_flags(vec![0xaa], 904usize, -1);
+        assert!(!all_bits_readonly.is_writable());
+        assert!(all_bits_readonly.is_readonly());
+        assert_eq!(all_bits_readonly.opaque_ref::<usize>(), Some(&904));
     }
 
     #[test]

@@ -1633,6 +1633,7 @@ unit_tests = [
   "buffer::tests::external_readonly_buffer_resize_waits_for_shared_original",
   "buffer::tests::external_readonly_buffer_rejects_invalid_visible_len_without_release",
   "buffer::tests::opaque_data_buffers_preserve_owner_until_original_release",
+  "buffer::tests::buffer_create_unknown_flags_only_respect_readonly_bit",
   "buffer::tests::default_free_opaque_data_buffers_preserve_opaque_until_detach",
   "buffer::tests::zero_length_opaque_data_buffer_preserves_owner_until_release",
   "buffer::tests::zero_length_readonly_opaque_data_buffer_detaches_and_releases_owner",
@@ -1707,6 +1708,12 @@ fate_tests = [
   "not_applicable: upstream FFmpeg FATE has no standalone AVBufferRef/AVBufferPool API target; covered by unit tests plus pinned libavutil differential oracle",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest create-flags slice: pinned libavutil rows now prove
+# `av_buffer_create(..., flags=0x4000)` ignores unknown flag bits and creates a
+# writable owner, while `AV_BUFFER_FLAG_READONLY | 0x4000` keeps the same
+# readonly detach/release behavior as the plain readonly flag. Rust exposes
+# flags-taking opaque-owner constructors that mask only the READONLY bit; unit
+# and deterministic fuzz coverage also check negative/all-bits flags.
 # Latest make-writable API slice: `BufferRef::try_make_mut` /
 # `BufferRef::make_writable` now expose the fallible C-shaped
 # `av_buffer_make_writable()` copy-on-write path, preserving the existing

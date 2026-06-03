@@ -1521,6 +1521,73 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     assert!(default_readonly.is_writable());
     assert!(default_readonly.opaque_ref::<usize>().is_none());
 
+    let mut unknown_flags =
+        BufferRef::from_vec_with_opaque_flags(payload.clone(), payload_len, 0x4000);
+    assert!(!unknown_flags.is_readonly());
+    assert!(unknown_flags.is_writable());
+    assert_eq!(unknown_flags.opaque_ref::<usize>(), Some(&payload_len));
+    let unknown_flags_ptr = unknown_flags.as_ptr();
+    unknown_flags.make_writable().unwrap();
+    assert!(std::ptr::eq(unknown_flags_ptr, unknown_flags.as_ptr()));
+    assert_eq!(unknown_flags.as_slice(), payload.as_slice());
+    assert_eq!(unknown_flags.opaque_ref::<usize>(), Some(&payload_len));
+
+    let unknown_callback_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let unknown_callback_capture = Arc::clone(&unknown_callback_released);
+    let unknown_callback = BufferRef::from_vec_with_opaque_release_callback_flags(
+        payload.clone(),
+        payload_len,
+        0x4000,
+        move |opaque, bytes| {
+            unknown_callback_capture
+                .lock()
+                .unwrap()
+                .push((opaque, bytes));
+        },
+    );
+    assert!(!unknown_callback.is_readonly());
+    assert!(unknown_callback.is_writable());
+    assert_eq!(
+        unknown_callback.opaque_ref::<usize>(),
+        Some(&payload_len)
+    );
+    drop(unknown_callback);
+    assert_eq!(
+        *unknown_callback_released.lock().unwrap(),
+        vec![(payload_len, payload.clone())]
+    );
+
+    let readonly_unknown_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let readonly_unknown_capture = Arc::clone(&readonly_unknown_released);
+    let mut readonly_unknown = BufferRef::from_vec_with_opaque_release_callback_flags(
+        payload.clone(),
+        payload_len,
+        AV_BUFFER_FLAG_READONLY | 0x4000,
+        move |opaque, bytes| {
+            readonly_unknown_capture
+                .lock()
+                .unwrap()
+                .push((opaque, bytes));
+        },
+    );
+    assert!(readonly_unknown.is_readonly());
+    assert!(!readonly_unknown.is_writable());
+    assert_eq!(readonly_unknown.opaque_ref::<usize>(), Some(&payload_len));
+    readonly_unknown.make_writable().unwrap();
+    assert!(!readonly_unknown.is_readonly());
+    assert!(readonly_unknown.is_writable());
+    assert_eq!(readonly_unknown.as_slice(), payload.as_slice());
+    assert!(readonly_unknown.opaque_ref::<usize>().is_none());
+    assert_eq!(
+        *readonly_unknown_released.lock().unwrap(),
+        vec![(payload_len, payload.clone())]
+    );
+
+    let all_bits = BufferRef::from_vec_with_opaque_flags(payload.clone(), payload_len, -1);
+    assert!(all_bits.is_readonly());
+    assert!(!all_bits.is_writable());
+    assert_eq!(all_bits.opaque_ref::<usize>(), Some(&payload_len));
+
     let default_realloc_len = payload_len.saturating_add(1);
     let mut default_realloc = Some(BufferRef::from_vec_with_opaque(
         payload.clone(),

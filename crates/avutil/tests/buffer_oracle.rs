@@ -306,6 +306,68 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         ))],
     );
 
+    let create_unknown_flags_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_unknown_flags_capture = Arc::clone(&create_unknown_flags_released);
+    let create_unknown_flags = BufferRef::from_vec_with_opaque_release_callback_flags(
+        vec![50, 51, 52],
+        326usize,
+        0x4000,
+        move |opaque, bytes| {
+            create_unknown_flags_capture
+                .lock()
+                .unwrap()
+                .push((opaque, bytes));
+        },
+    );
+    rows.insert(
+        "buffer:create-unknown-flags".to_string(),
+        buffer_fields_with_opaque(&create_unknown_flags),
+    );
+    drop(create_unknown_flags);
+    rows.insert(
+        "buffer:create-unknown-flags-release".to_string(),
+        release_fields(&create_unknown_flags_released),
+    );
+
+    let create_readonly_unknown_flags_released =
+        Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_readonly_unknown_flags_capture = Arc::clone(&create_readonly_unknown_flags_released);
+    let mut create_readonly_unknown_flags = BufferRef::from_vec_with_opaque_release_callback_flags(
+        vec![53, 54, 55],
+        327usize,
+        AV_BUFFER_FLAG_READONLY | 0x4000,
+        move |opaque, bytes| {
+            create_readonly_unknown_flags_capture
+                .lock()
+                .unwrap()
+                .push((opaque, bytes));
+        },
+    );
+    rows.insert(
+        "buffer:create-readonly-unknown-flags".to_string(),
+        buffer_fields_with_opaque(&create_readonly_unknown_flags),
+    );
+    create_readonly_unknown_flags.make_mut();
+    rows.insert(
+        "buffer:create-readonly-unknown-flags-make-writable-ret".to_string(),
+        vec![
+            "0".to_string(),
+            create_readonly_unknown_flags_released
+                .lock()
+                .unwrap()
+                .len()
+                .to_string(),
+        ],
+    );
+    rows.insert(
+        "buffer:create-readonly-unknown-flags-after".to_string(),
+        buffer_fields_with_opaque(&create_readonly_unknown_flags),
+    );
+    rows.insert(
+        "buffer:create-readonly-unknown-flags-release".to_string(),
+        release_fields(&create_readonly_unknown_flags_released),
+    );
+
     let create_zero_readonly_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let create_zero_readonly_capture = Arc::clone(&create_zero_readonly_released);
     let mut create_zero_readonly = BufferRef::from_vec_with_opaque_release_callback_readonly(
@@ -4204,6 +4266,54 @@ int main(void) {
     printf("buffer:create-default-opaque-realloc-replaced|%d\n",
            create_default_realloc_before != create_default_realloc->data);
     av_buffer_unref(&create_default_realloc);
+
+    reset_create_release();
+    static const uint8_t create_unknown_flags_bytes[] = { 50, 51, 52 };
+    uint8_t *create_unknown_flags_data =
+        av_malloc(sizeof(create_unknown_flags_bytes));
+    fail_if(!create_unknown_flags_data,
+            "av_malloc create_unknown_flags_data failed");
+    for (size_t i = 0; i < sizeof(create_unknown_flags_bytes); i++)
+        create_unknown_flags_data[i] = create_unknown_flags_bytes[i];
+    last_create_release_size = sizeof(create_unknown_flags_bytes);
+    AVBufferRef *create_unknown_flags =
+        av_buffer_create(create_unknown_flags_data,
+                         sizeof(create_unknown_flags_bytes),
+                         test_create_free, (void *)(uintptr_t)326,
+                         0x4000);
+    fail_if(!create_unknown_flags,
+            "av_buffer_create unknown flags failed");
+    print_buffer_opaque("buffer:create-unknown-flags",
+                        create_unknown_flags);
+    av_buffer_unref(&create_unknown_flags);
+    print_create_release("buffer:create-unknown-flags-release");
+
+    reset_create_release();
+    static const uint8_t create_readonly_unknown_flags_bytes[] = { 53, 54, 55 };
+    uint8_t *create_readonly_unknown_flags_data =
+        av_malloc(sizeof(create_readonly_unknown_flags_bytes));
+    fail_if(!create_readonly_unknown_flags_data,
+            "av_malloc create_readonly_unknown_flags_data failed");
+    for (size_t i = 0; i < sizeof(create_readonly_unknown_flags_bytes); i++)
+        create_readonly_unknown_flags_data[i] =
+            create_readonly_unknown_flags_bytes[i];
+    last_create_release_size = sizeof(create_readonly_unknown_flags_bytes);
+    AVBufferRef *create_readonly_unknown_flags =
+        av_buffer_create(create_readonly_unknown_flags_data,
+                         sizeof(create_readonly_unknown_flags_bytes),
+                         test_create_free, (void *)(uintptr_t)327,
+                         AV_BUFFER_FLAG_READONLY | 0x4000);
+    fail_if(!create_readonly_unknown_flags,
+            "av_buffer_create readonly unknown flags failed");
+    print_buffer_opaque("buffer:create-readonly-unknown-flags",
+                        create_readonly_unknown_flags);
+    ret = av_buffer_make_writable(&create_readonly_unknown_flags);
+    printf("buffer:create-readonly-unknown-flags-make-writable-ret|%d|%d\n",
+           ret, create_release_count);
+    print_buffer_opaque("buffer:create-readonly-unknown-flags-after",
+                        create_readonly_unknown_flags);
+    print_create_release("buffer:create-readonly-unknown-flags-release");
+    av_buffer_unref(&create_readonly_unknown_flags);
 
     reset_create_release();
     uint8_t *create_zero_readonly_data = av_malloc(1);

@@ -134,6 +134,8 @@ though the backing allocation address may move when padding has to be added.
 
 The latest make-writable API slice adds `BufferRef::try_make_mut` and `BufferRef::make_writable` as the fallible Rust surface for FFmpeg's `av_buffer_make_writable()` return shape. The old `make_mut()` remains a convenience wrapper, while oracle expected rows now use the fallible helper for unique, shared, zero-length shared, and readonly-owner make-writable paths.
 
+The latest create-flags rows prove `av_buffer_create()` currently ignores unknown flag bits and only treats `AV_BUFFER_FLAG_READONLY` as meaningful. Rust flags-taking opaque-owner constructors therefore mask only the READONLY bit: `0x4000` still creates writable storage with opaque lookup preserved, while `AV_BUFFER_FLAG_READONLY | 0x4000` detaches and releases like the plain readonly owner.
+
 The latest zero-size custom-pool rows prove `av_buffer_pool_init2(0, opaque, custom_alloc, pool_free)` still calls the custom allocator once with size zero, preserves per-buffer pool opaque data on first checkout and spare reuse, runs no callbacks on ordinary unref, and releases the zero-size allocation before pool_free during pool uninit. The Rust `BufferPool` model mirrors this through exact-shape zero-length custom allocations rather than treating zero-size pools as a special default-only case.
 
 The latest offset custom-pool same-size realloc rows prove `av_buffer_realloc(&ref, ref->size)` is a no-op for the first offset-visible custom-pool checkout: pointer, offset, size, writability, and pool opaque lookup are preserved, then unref returns the original backing allocation for normalized zero-offset spare reuse.
