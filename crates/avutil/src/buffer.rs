@@ -3223,6 +3223,51 @@ mod tests {
         drop(null_zero_source);
         assert_eq!(*null_zero_released.lock().unwrap(), vec![(671, Vec::new())]);
 
+        let readonly_null_zero_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let readonly_null_zero_capture = std::sync::Arc::clone(&readonly_null_zero_released);
+        let readonly_null_zero_source =
+            BufferRef::from_null_data_zero_with_opaque_release_callback_readonly(
+                672usize,
+                move |opaque, bytes| {
+                    readonly_null_zero_capture
+                        .lock()
+                        .unwrap()
+                        .push((opaque, bytes));
+                },
+            );
+        let mut readonly_null_zero_dst = None;
+        BufferRef::replace(
+            &mut readonly_null_zero_dst,
+            Some(&readonly_null_zero_source),
+        );
+        let readonly_null_zero_dst =
+            readonly_null_zero_dst.expect("replace readonly nullable-zero into null dst");
+        assert!(readonly_null_zero_source.is_data_ptr_null());
+        assert!(readonly_null_zero_dst.is_data_ptr_null());
+        assert!(readonly_null_zero_source.as_ptr().is_null());
+        assert!(readonly_null_zero_dst.as_ptr().is_null());
+        assert!(readonly_null_zero_source.shares_storage(&readonly_null_zero_dst));
+        assert_eq!(readonly_null_zero_source.strong_count(), 2);
+        assert_eq!(readonly_null_zero_dst.strong_count(), 2);
+        assert_eq!(readonly_null_zero_source.opaque_ref::<usize>(), Some(&672));
+        assert_eq!(readonly_null_zero_dst.opaque_ref::<usize>(), Some(&672));
+        assert!(readonly_null_zero_source.is_readonly());
+        assert!(readonly_null_zero_dst.is_readonly());
+        assert!(!readonly_null_zero_source.is_writable());
+        assert!(!readonly_null_zero_dst.is_writable());
+        assert!(readonly_null_zero_released.lock().unwrap().is_empty());
+        drop(readonly_null_zero_dst);
+        assert!(readonly_null_zero_released.lock().unwrap().is_empty());
+        assert_eq!(readonly_null_zero_source.strong_count(), 1);
+        assert!(readonly_null_zero_source.is_readonly());
+        assert!(!readonly_null_zero_source.is_writable());
+        drop(readonly_null_zero_source);
+        assert_eq!(
+            *readonly_null_zero_released.lock().unwrap(),
+            vec![(672, Vec::new())]
+        );
+
         let replacement = BufferRef::from_vec(vec![4, 5]);
         let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
         let release_capture = std::sync::Arc::clone(&released);
