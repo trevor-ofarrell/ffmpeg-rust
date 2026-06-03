@@ -3,6 +3,48 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The
+tree started clean at `master...origin/master [ahead 9]`; required startup
+checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
+-- status --next 15` reporting 11/96 strict-complete components (11.5%) and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validating the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
+kept the top-priority `avutil-packet` evidence slice local; no worker writes
+were delegated.
+
+Current main-thread slice: `fuzz/corpus/avutil_core_models` now includes the
+packet-focused `packet_rescale_sentinel` seed for the FFmpeg-shaped
+invalid/overflow rescale sentinel path. A first 64-run WSL `cargo fuzz run
+avutil_core_models` completed all executions but exited nonzero when
+LeakSanitizer reported the local ptrace incompatibility after completion. A
+rerun against a temporary corpus copy passed with
+`LSAN_OPTIONS=detect_leaks=0 CARGO_TARGET_DIR=target-wsl-fuzz cargo fuzz run
+avutil_core_models -- -runs=64 /tmp/ffmpegrust-avutil-core-models-corpus.Df2W6Y`.
+Generated hash-named corpus discoveries from the first run were removed; only
+the intentional seed is kept in the repository. `avutil-packet` remains
+`fate_pass`, not `complete`; strict completion remains 11/96 because broader
+ABI/media-integration vectors and longer sustained fuzz evidence remain
+pending.
+
+Latest validation commands for this packet fuzz-evidence slice passed:
+`LSAN_OPTIONS=detect_leaks=0 CARGO_TARGET_DIR=target-wsl-fuzz cargo fuzz run
+avutil_core_models -- -runs=64 /tmp/ffmpegrust-avutil-core-models-corpus.Df2W6Y`;
+`cargo fmt --all -- --check`; `CARGO_TARGET_DIR=target-orch-fate cargo test -p
+fate-runner current_ledger`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo check
+--manifest-path fuzz/Cargo.toml --bin avutil_core_models`;
+`CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy --manifest-path fuzz/Cargo.toml
+--bin avutil_core_models -- -D warnings`; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p xtask -- guard-runtime`; `CARGO_TARGET_DIR=target-orch-fate cargo
+run -p xtask -- oracle-doctor`; and `CARGO_TARGET_DIR=target-orch-fate cargo
+run -p fate-runner -- status --next 15`.
+
+Current focus component: `avutil-packet` remains the top priority incomplete
+component (`fate_pass`), followed by `avutil-buffer` (`differential_pass`),
+`avutil-frame` (`differential_pass`), `avutil-logging` (`fate_pass`), and
+`avutil-options` (`fate_pass`). Next concrete work should keep closing packet
+completion gaps through broader media/ABI vectors or move to the next
+highest-priority unblocked `avutil-buffer` evidence slice if packet work stalls.
+
+Current authoritative turn status: orchestrator workflow is active on WSL. The
 tree started clean at `master...origin/master [ahead 6]`; required startup
 checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
 -- status --next 15` reporting 11/96 strict-complete components (11.5%) and

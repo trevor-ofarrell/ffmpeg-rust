@@ -169,6 +169,10 @@ The latest packet rescale-boundary fixture extends `avutil_core_models` with
 present PTS/DTS and positive duration fields become `AV_NOPTS_VALUE` when
 `av_rescale_q()` overflows or receives an invalid source time base. The
 fallible `Packet::rescale_ts` API remains a typed no-mutation error surface.
+The corpus now includes `packet_rescale_sentinel`, and a bounded WSL 64-run
+`avutil_core_models` smoke passed with local leak detection disabled against a
+temporary corpus copy after the default LeakSanitizer pass reported the local
+ptrace incompatibility.
 
 The latest packet signed-position fixture extends `avutil_core_models` with
 negative `AVPacket.pos` behavior. `Packet::set_pos` accepts signed values such
