@@ -3418,6 +3418,44 @@ mod tests {
     }
 
     #[test]
+    fn buffer_pool_init2_zero_default_allocator_runs_pool_free_without_opaque() {
+        let pool_frees = std::sync::Arc::new(std::sync::Mutex::new(Vec::<usize>::new()));
+        let pool_free_capture = std::sync::Arc::clone(&pool_frees);
+        let pool = BufferPool::with_callbacks(
+            0,
+            0,
+            BufferPoolCallbacks::default().with_pool_free(move || {
+                pool_free_capture.lock().unwrap().push(89);
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(pool.len(), 0);
+        assert_eq!(pool.allocated_len(), 0);
+        assert_eq!(pool.padding_len(), 0);
+
+        let first = pool.get().unwrap();
+        assert_eq!(first.len(), 0);
+        assert_eq!(first.as_slice(), &[]);
+        assert_eq!(first.strong_count(), 1);
+        assert!(first.is_writable());
+        assert!(first.pool_opaque_ref::<usize>().is_none());
+        drop(first);
+        assert_eq!(pool.available_count().unwrap(), 1);
+
+        let reused = pool.get().unwrap();
+        assert_eq!(reused.len(), 0);
+        assert_eq!(reused.as_slice(), &[]);
+        assert!(reused.is_writable());
+        assert!(reused.pool_opaque_ref::<usize>().is_none());
+        drop(reused);
+        assert!(pool_frees.lock().unwrap().is_empty());
+        drop(pool);
+
+        assert_eq!(*pool_frees.lock().unwrap(), vec![89]);
+    }
+
+    #[test]
     fn buffer_pool_uninit_handles_nullable_c_api_shape() {
         let mut empty_pool = None;
         BufferPool::uninit(&mut empty_pool);

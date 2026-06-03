@@ -1616,6 +1616,7 @@ unit_tests = [
   "buffer::tests::buffer_pool_allocates_recycles_and_reuses_storage_without_clearing",
   "buffer::tests::buffer_pool_default_allocator_reuses_storage_without_opaque",
   "buffer::tests::buffer_pool_init2_default_allocator_runs_pool_free_without_opaque",
+  "buffer::tests::buffer_pool_init2_zero_default_allocator_runs_pool_free_without_opaque",
   "buffer::tests::buffer_pool_uninit_handles_nullable_c_api_shape",
   "buffer::tests::buffer_pool_zero_size_default_allocator_reuses_empty_buffers",
   "buffer::tests::buffer_pool_recovers_unique_buffers_when_last_reference_drops",
@@ -1659,6 +1660,10 @@ fate_tests = [
   "not_applicable: upstream FFmpeg FATE has no standalone AVBufferRef/AVBufferPool API target; covered by unit tests plus pinned libavutil differential oracle",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest zero-size init2 default-pool slice: pinned libavutil rows now prove
+# `av_buffer_pool_init2(0, opaque, NULL, pool_free)` uses the default allocator
+# for zero-size buffers, exposes NULL per-buffer pool opaque data, reuses the
+# returned empty spare, and runs the owner pool_free callback once at uninit.
 # Latest offset-pool same-size realloc slice: pinned libavutil rows now prove
 # `av_buffer_realloc(&ref, ref->size)` on the first offset-visible custom-pool
 # checkout returns 0 without moving the visible data pointer, changing

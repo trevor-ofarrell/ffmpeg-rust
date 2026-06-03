@@ -3,6 +3,54 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The
+tree started clean at `master...origin/master [ahead 18]`; required startup
+checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
+-- status --next 15` reporting 11/96 strict-complete components (11.5%) and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validating the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
+kept the top-priority `avutil-packet` shared-shrink blocker local and advanced
+the next unblocked `avutil-buffer` evidence slice; no worker writes were
+delegated.
+
+Current main-thread slice: pinned libavutil rows now prove
+`av_buffer_pool_init2(0, opaque, NULL, pool_free)` uses the default allocator
+for zero-size buffers, returns writable empty refs with NULL per-buffer pool
+opaque lookup, reuses the empty spare, and invokes the owner pool_free callback
+once at pool uninit. Rust mirrors this through
+`buffer_pool_init2_zero_default_allocator_runs_pool_free_without_opaque`, the
+ignored `buffer_oracle::libavutil_buffer_refs_match_current_model` harness, and
+the mapped `avutil-buffer|oracle-libavutil-buffer` differential row.
+`avutil-buffer` remains `differential_pass`, not `complete`; strict completion
+remains 11/96 because broader ABI/lifetime parity and hardware/device
+integration work remain pending.
+
+Latest validation commands for this zero-size default-init2 pool slice passed:
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil
+buffer_pool_init2_zero_default_allocator_runs_pool_free_without_opaque --
+--nocapture`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
+buffer_oracle libavutil_buffer_refs_match_current_model -- --ignored
+--nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run
+--mappings tests/differential/mappings.txt --component avutil-buffer --target
+oracle-libavutil-buffer --oracle-ffmpeg
+./third_party/ffmpeg-oracle/build/bin/ffmpeg`; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- run --component avutil-buffer --target
+local-avutil-unit`; `CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil
+--all-targets --all-features -- -D warnings`; `cargo fmt --all -- --check`;
+`CARGO_TARGET_DIR=target-orch-fate cargo test -p fate-runner current_ledger`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- guard-runtime`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15`; and `git diff --check` (CRLF conversion warnings only). The ignored oracle
+created `target/oracle/avutil-buffer`; the top-level `target` scratch directory
+was removed after the oracle runs. No fuzz target changed in this slice, so fuzz
+execution was not rerun.
+
+Current focus component: `avutil-packet` remains the top priority incomplete
+component (`fate_pass`) because the shared-shrink behavior needs a broader
+alias-safe shared-storage design. Next highest unblocked candidates are
+`avutil-buffer` (`differential_pass`) and `avutil-frame` (`differential_pass`).
+
+Current authoritative turn status: orchestrator workflow is active on WSL. The
 tree started clean at `master...origin/master [ahead 17]`; required startup
 checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
 -- status --next 15` reporting 11/96 strict-complete components (11.5%) and

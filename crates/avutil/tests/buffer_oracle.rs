@@ -1645,6 +1645,58 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     );
     drop(init2_default_pool_free_values);
 
+    let init2_zero_default_pool_frees = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let init2_zero_default_pool_free_capture = Arc::clone(&init2_zero_default_pool_frees);
+    let init2_zero_default_pool = BufferPool::with_callbacks(
+        0,
+        0,
+        BufferPoolCallbacks::default().with_pool_free(move || {
+            init2_zero_default_pool_free_capture
+                .lock()
+                .unwrap()
+                .push(89);
+        }),
+    )
+    .unwrap();
+    let init2_zero_default_first = init2_zero_default_pool.get().unwrap();
+    rows.insert(
+        "pool-init2-zero-default:first-status".to_string(),
+        buffer_status_fields(&init2_zero_default_first),
+    );
+    rows.insert(
+        "pool-init2-zero-default:first-opaque".to_string(),
+        vec![bool_field(
+            init2_zero_default_first
+                .pool_opaque_ref::<usize>()
+                .is_none(),
+        )],
+    );
+    drop(init2_zero_default_first);
+    let init2_zero_default_reuse = init2_zero_default_pool.get().unwrap();
+    rows.insert(
+        "pool-init2-zero-default:reuse".to_string(),
+        buffer_fields(&init2_zero_default_reuse),
+    );
+    rows.insert(
+        "pool-init2-zero-default:reuse-opaque".to_string(),
+        vec![bool_field(
+            init2_zero_default_reuse
+                .pool_opaque_ref::<usize>()
+                .is_none(),
+        )],
+    );
+    drop(init2_zero_default_reuse);
+    drop(init2_zero_default_pool);
+    let init2_zero_default_pool_free_values = init2_zero_default_pool_frees.lock().unwrap();
+    rows.insert(
+        "pool-init2-zero-default:pool-free".to_string(),
+        vec![
+            init2_zero_default_pool_free_values.len().to_string(),
+            init2_zero_default_pool_free_values[0].to_string(),
+        ],
+    );
+    drop(init2_zero_default_pool_free_values);
+
     let legacy_allocations = Arc::new(Mutex::new(Vec::<usize>::new()));
     let legacy_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
     let legacy_allocate_capture = Arc::clone(&legacy_allocations);
@@ -5005,6 +5057,35 @@ int main(void) {
     av_buffer_unref(&init2_default_reuse);
     av_buffer_pool_uninit(&init2_default_pool);
     printf("pool-init2-default:pool-free|%d|%" PRIuPTR "\n",
+           pool_free_count, last_pool_free_id);
+
+    reset_pool_counters();
+    PoolOpaque init2_zero_default_opaque = { 89, 0 };
+    AVBufferPool *init2_zero_default_pool =
+        av_buffer_pool_init2(0, &init2_zero_default_opaque, NULL,
+                             test_pool_owner_free);
+    fail_if(!init2_zero_default_pool,
+            "av_buffer_pool_init2 zero default failed");
+    AVBufferRef *init2_zero_default_first =
+        av_buffer_pool_get(init2_zero_default_pool);
+    fail_if(!init2_zero_default_first,
+            "av_buffer_pool_get init2 zero default first failed");
+    print_status("pool-init2-zero-default:first-status",
+                 init2_zero_default_first);
+    printf("pool-init2-zero-default:first-opaque|%d\n",
+           av_buffer_pool_buffer_get_opaque(init2_zero_default_first) == NULL);
+    av_buffer_unref(&init2_zero_default_first);
+    AVBufferRef *init2_zero_default_reuse =
+        av_buffer_pool_get(init2_zero_default_pool);
+    fail_if(!init2_zero_default_reuse,
+            "av_buffer_pool_get init2 zero default reuse failed");
+    print_buffer("pool-init2-zero-default:reuse",
+                 init2_zero_default_reuse);
+    printf("pool-init2-zero-default:reuse-opaque|%d\n",
+           av_buffer_pool_buffer_get_opaque(init2_zero_default_reuse) == NULL);
+    av_buffer_unref(&init2_zero_default_reuse);
+    av_buffer_pool_uninit(&init2_zero_default_pool);
+    printf("pool-init2-zero-default:pool-free|%d|%" PRIuPTR "\n",
            pool_free_count, last_pool_free_id);
 
     reset_pool_counters();
