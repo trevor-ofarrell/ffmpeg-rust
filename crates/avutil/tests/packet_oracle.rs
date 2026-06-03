@@ -371,6 +371,53 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     copied.copy_props_from(&src);
     rows.insert("packet:copy-props".to_string(), packet_fields(&copied));
 
+    let mut raw_time_base_copy_src = packet_with_common_props();
+    raw_time_base_copy_src
+        .set_time_base(Rational::from_raw(2, 4))
+        .unwrap();
+    let mut raw_time_base_copy = Packet::from_data(vec![0x71]).unwrap();
+    raw_time_base_copy.copy_props_from(&raw_time_base_copy_src);
+    rows.insert(
+        "packet:copy-props-raw-time-base".to_string(),
+        packet_fields(&raw_time_base_copy),
+    );
+
+    let mut raw_time_base_ref_src = packet_with_common_props();
+    raw_time_base_ref_src
+        .set_time_base(Rational::from_raw(-2, 4))
+        .unwrap();
+    let mut raw_time_base_ref = Packet::default();
+    raw_time_base_ref.ref_from(&raw_time_base_ref_src);
+    rows.insert(
+        "packet:ref-raw-time-base".to_string(),
+        packet_fields(&raw_time_base_ref),
+    );
+
+    let mut raw_time_base_clone_src = packet_with_common_props();
+    raw_time_base_clone_src
+        .set_time_base(Rational::from_raw(0, 0))
+        .unwrap();
+    let raw_time_base_clone = raw_time_base_clone_src.clone();
+    rows.insert(
+        "packet:clone-raw-time-base".to_string(),
+        packet_fields(&raw_time_base_clone),
+    );
+
+    let mut raw_time_base_move_src = packet_with_common_props();
+    raw_time_base_move_src
+        .set_time_base(Rational::from_raw(2, -4))
+        .unwrap();
+    let mut raw_time_base_move_dst = Packet::default();
+    raw_time_base_move_dst.move_ref_from(&mut raw_time_base_move_src);
+    rows.insert(
+        "packet:move-raw-time-base-dst".to_string(),
+        packet_fields(&raw_time_base_move_dst),
+    );
+    rows.insert(
+        "packet:move-raw-time-base-src".to_string(),
+        packet_fields(&raw_time_base_move_src),
+    );
+
     let mut negative_duration_src = packet_with_common_props();
     negative_duration_src.set_duration(-17).unwrap();
     let mut negative_duration_copy = Packet::from_data(vec![0x77]).unwrap();
@@ -9144,6 +9191,46 @@ int main(void) {
     fail_if(av_packet_copy_props(dst, src) < 0, "av_packet_copy_props failed");
     print_packet("packet:copy-props", dst);
     av_packet_free(&dst);
+
+    AVPacket *raw_time_base_copy_src = packet_with_common_props();
+    raw_time_base_copy_src->time_base = (AVRational){ 2, 4 };
+    AVPacket *raw_time_base_copy = new_packet();
+    fail_if(av_new_packet(raw_time_base_copy, 1) < 0,
+            "av_new_packet raw time_base copy dst failed");
+    raw_time_base_copy->data[0] = 0x71;
+    fail_if(av_packet_copy_props(raw_time_base_copy,
+                                 raw_time_base_copy_src) < 0,
+            "av_packet_copy_props raw time_base failed");
+    print_packet("packet:copy-props-raw-time-base", raw_time_base_copy);
+
+    AVPacket *raw_time_base_ref_src = packet_with_common_props();
+    raw_time_base_ref_src->time_base = (AVRational){ -2, 4 };
+    AVPacket *raw_time_base_ref = new_packet();
+    fail_if(av_packet_ref(raw_time_base_ref, raw_time_base_ref_src) < 0,
+            "av_packet_ref raw time_base failed");
+    print_packet("packet:ref-raw-time-base", raw_time_base_ref);
+
+    AVPacket *raw_time_base_clone_src = packet_with_common_props();
+    raw_time_base_clone_src->time_base = (AVRational){ 0, 0 };
+    AVPacket *raw_time_base_clone = av_packet_clone(raw_time_base_clone_src);
+    fail_if(!raw_time_base_clone, "av_packet_clone raw time_base failed");
+    print_packet("packet:clone-raw-time-base", raw_time_base_clone);
+
+    AVPacket *raw_time_base_move_src = packet_with_common_props();
+    raw_time_base_move_src->time_base = (AVRational){ 2, -4 };
+    AVPacket *raw_time_base_move_dst = new_packet();
+    av_packet_move_ref(raw_time_base_move_dst, raw_time_base_move_src);
+    print_packet("packet:move-raw-time-base-dst", raw_time_base_move_dst);
+    print_packet("packet:move-raw-time-base-src", raw_time_base_move_src);
+
+    av_packet_free(&raw_time_base_move_dst);
+    av_packet_free(&raw_time_base_move_src);
+    av_packet_free(&raw_time_base_clone);
+    av_packet_free(&raw_time_base_clone_src);
+    av_packet_free(&raw_time_base_ref);
+    av_packet_free(&raw_time_base_ref_src);
+    av_packet_free(&raw_time_base_copy);
+    av_packet_free(&raw_time_base_copy_src);
 
     AVPacket *negative_duration_src = packet_with_common_props();
     negative_duration_src->duration = -17;

@@ -14439,6 +14439,38 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(packet.pos(), clear_pos);
     assert_eq!(packet.flags(), clear_flags);
     assert_eq!(packet.time_base(), clear_time_base);
+
+    let mut raw_time_base_packet = Packet::from_data(vec![0x71]).unwrap();
+    raw_time_base_packet
+        .set_time_base(Rational::from_raw(2, 4))
+        .unwrap();
+    assert_eq!(raw_time_base_packet.time_base(), Rational::from_raw(2, 4));
+    raw_time_base_packet
+        .set_time_base(Rational::from_raw(0, 0))
+        .unwrap();
+    assert_eq!(raw_time_base_packet.time_base(), Rational::from_raw(0, 0));
+
+    let mut raw_time_base_ref_src = Packet::from_data(vec![0x72]).unwrap();
+    raw_time_base_ref_src
+        .set_time_base(Rational::from_raw(-2, 4))
+        .unwrap();
+    let mut raw_time_base_ref = Packet::default();
+    raw_time_base_ref.ref_from(&raw_time_base_ref_src);
+    assert_eq!(raw_time_base_ref.time_base(), Rational::from_raw(-2, 4));
+
+    let mut raw_time_base_move_src = Packet::from_data(vec![0x73]).unwrap();
+    raw_time_base_move_src
+        .set_time_base(Rational::from_raw(2, -4))
+        .unwrap();
+    let raw_time_base_clone = raw_time_base_move_src.clone();
+    assert_eq!(raw_time_base_clone.time_base(), Rational::from_raw(2, -4));
+    let mut raw_time_base_move_dst = Packet::default();
+    raw_time_base_move_dst.move_ref_from(&mut raw_time_base_move_src);
+    assert_eq!(
+        raw_time_base_move_dst.time_base(),
+        Rational::from_raw(2, -4)
+    );
+    assert_eq!(raw_time_base_move_src.time_base(), Rational::ZERO);
     assert_eq!(
         SideData::new(" \t", Vec::new()).unwrap_err().kind(),
         AvErrorKind::InvalidArgument

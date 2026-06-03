@@ -5482,7 +5482,7 @@ impl Packet {
     }
 
     pub fn set_time_base(&mut self, time_base: Rational) -> AvResult<()> {
-        self.time_base = Rational::new(time_base.num(), time_base.den())?;
+        self.time_base = time_base;
         Ok(())
     }
 
@@ -6642,14 +6642,8 @@ mod tests {
         assert_eq!(packet.duration(), -1);
         packet.set_pos(Some(-2)).unwrap();
         assert_eq!(packet.pos(), Some(-2));
-        assert_eq!(
-            packet
-                .set_time_base(Rational::from_raw(1, 0))
-                .unwrap_err()
-                .kind(),
-            crate::AvErrorKind::InvalidArgument
-        );
-        assert_eq!(packet.time_base(), Rational::new(1, 1_000).unwrap());
+        packet.set_time_base(Rational::from_raw(1, 0)).unwrap();
+        assert_eq!(packet.time_base(), Rational::from_raw(1, 0));
         packet.set_pos(None).unwrap();
         assert_eq!(packet.pos(), None);
 
@@ -14968,20 +14962,16 @@ mod tests {
         assert_eq!(src.time_base(), Rational::ZERO);
 
         src.set_time_base(Rational::from_raw(2, 4)).unwrap();
-        assert_eq!(src.time_base(), Rational::new(1, 2).unwrap());
-        assert_eq!(
-            src.set_time_base(Rational::from_raw(1, 0))
-                .unwrap_err()
-                .kind(),
-            crate::AvErrorKind::InvalidArgument
-        );
-        assert_eq!(src.time_base(), Rational::new(1, 2).unwrap());
+        assert_eq!(src.time_base(), Rational::from_raw(2, 4));
+        src.set_time_base(Rational::from_raw(1, 0)).unwrap();
+        assert_eq!(src.time_base(), Rational::from_raw(1, 0));
+        src.set_time_base(Rational::from_raw(2, 4)).unwrap();
 
         src.set_pts(Some(2));
         src.set_duration(2).unwrap();
         src.rescale_ts(Rational::new(1, 2).unwrap(), Rational::new(1, 4).unwrap())
             .unwrap();
-        assert_eq!(src.time_base(), Rational::new(1, 2).unwrap());
+        assert_eq!(src.time_base(), Rational::from_raw(2, 4));
 
         let mut props = Packet::new(vec![9], 1);
         props.copy_props_from(&src);
@@ -14999,6 +14989,30 @@ mod tests {
 
         moved.unref();
         assert_eq!(moved.time_base(), Rational::ZERO);
+
+        let mut raw_ref_src = Packet::from_data(vec![0xaa]).unwrap();
+        raw_ref_src
+            .set_time_base(Rational::from_raw(-2, 4))
+            .unwrap();
+        let mut raw_ref = Packet::default();
+        raw_ref.ref_from(&raw_ref_src);
+        assert_eq!(raw_ref.time_base(), Rational::from_raw(-2, 4));
+
+        let mut raw_clone_src = Packet::from_data(vec![0xbb]).unwrap();
+        raw_clone_src
+            .set_time_base(Rational::from_raw(0, 0))
+            .unwrap();
+        let raw_clone = raw_clone_src.clone();
+        assert_eq!(raw_clone.time_base(), Rational::from_raw(0, 0));
+
+        let mut raw_move_src = Packet::from_data(vec![0xcc]).unwrap();
+        raw_move_src
+            .set_time_base(Rational::from_raw(2, -4))
+            .unwrap();
+        let mut raw_move_dst = Packet::default();
+        raw_move_dst.move_ref_from(&mut raw_move_src);
+        assert_eq!(raw_move_dst.time_base(), Rational::from_raw(2, -4));
+        assert_eq!(raw_move_src.time_base(), Rational::ZERO);
     }
 
     #[test]

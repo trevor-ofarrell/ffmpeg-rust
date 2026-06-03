@@ -3,6 +3,53 @@
 ## Current Status
 
 Current authoritative turn status: orchestrator workflow is active on WSL. The
+tree started clean at `master...origin/master [ahead 6]`; required startup
+checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
+-- status --next 15` reporting 11/96 strict-complete components (11.5%) and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validating the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
+kept the top-priority `avutil-packet` evidence slice local; no worker writes
+were delegated.
+
+Current main-thread slice: pinned libavcodec rows now prove raw
+`AVPacket.time_base` storage is copied by value through
+`av_packet_copy_props()`, `av_packet_ref()`, `av_packet_clone()`, and
+`av_packet_move_ref()` without rational normalization. Rust
+`Packet::set_time_base` now preserves raw `Rational::from_raw` values such as
+`2/4`, `-2/4`, `0/0`, and `2/-4`; rescale helpers still validate the explicit
+source and destination time bases they operate on. `avutil-packet` remains
+`fate_pass`, not `complete`; strict completion remains 11/96.
+
+Latest validation commands for this raw time-base slice passed: `cargo fmt
+--all`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil
+packet_accepts_signed_duration_and_position_lifecycle -- --nocapture`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil
+packet_time_base_defaults_copies_resets_and_rescale_preserves -- --nocapture`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
+packet_oracle libavcodec_packet_core_lifecycle_matches_packet_model --
+--ignored --nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p
+fate-runner -- run --mappings tests/differential/mappings.txt --component
+avutil-packet --target oracle-libavcodec-packet-core --oracle-ffmpeg
+./third_party/ffmpeg-oracle/build/bin/ffmpeg`; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- run --component avutil-packet --target
+local-avutil-unit`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p
+fate-runner -- run --mappings tests/fate/upstream-mappings.txt --component
+avutil-packet --target fate-avpacket`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo
+check --manifest-path fuzz/Cargo.toml --bin avutil_core_models`; and
+`CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil --all-targets
+--all-features -- -D warnings`. The first local packet FATE run exposed one
+stale unit assertion expecting `1/0` rejection; the assertion was corrected to
+the pinned raw-storage behavior and the mapping passed on rerun.
+
+Current focus component: `avutil-packet` remains the top priority incomplete
+component (`fate_pass`), followed by `avutil-buffer` (`differential_pass`),
+`avutil-frame` (`differential_pass`), `avutil-logging` (`fate_pass`), and
+`avutil-options` (`fate_pass`). Next concrete packet candidates include
+follow-up `av_packet_from_data()` ref-sharing behavior, zero-size side-data
+visible emptiness, malformed no-buffer pointer/size states, and extreme
+timestamp rescale overflow rows.
+
+Current authoritative turn status: orchestrator workflow is active on WSL. The
 tree started clean at `master...origin/master [ahead 5]`; required startup
 checks passed with `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
 -- status --next 15` reporting 11/96 strict-complete components (11.5%) and
