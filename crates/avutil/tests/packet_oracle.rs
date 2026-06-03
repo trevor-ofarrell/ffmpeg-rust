@@ -345,6 +345,27 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         packet_fields(&rescaled_negative_pos),
     );
 
+    let mut rescaled_negative_stream_index = Packet::new(vec![0x83, 0x84], 0);
+    rescaled_negative_stream_index.set_stream_index_raw(-2);
+    rescaled_negative_stream_index.set_pts(Some(90_000));
+    rescaled_negative_stream_index.set_dts(Some(45_000));
+    rescaled_negative_stream_index.set_duration(45_000).unwrap();
+    rescaled_negative_stream_index.set_pos(Some(802)).unwrap();
+    rescaled_negative_stream_index.set_flag(PacketFlags::TRUSTED, true);
+    rescaled_negative_stream_index
+        .set_time_base(Rational::new(1, 90_000).unwrap())
+        .unwrap();
+    rescaled_negative_stream_index
+        .rescale_ts(
+            Rational::new(1, 90_000).unwrap(),
+            Rational::new(1, 1_000).unwrap(),
+        )
+        .unwrap();
+    rows.insert(
+        "packet:rescale-negative-stream-index".to_string(),
+        packet_fields(&rescaled_negative_stream_index),
+    );
+
     let src = packet_with_common_props();
     let mut copied = Packet::new(vec![0x99, 0x88], 1);
     copied.copy_props_from(&src);
@@ -412,6 +433,38 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     rows.insert(
         "packet:move-negative-pos-src".to_string(),
         packet_fields(&negative_pos_move_src),
+    );
+
+    let mut negative_stream_index_src = packet_with_common_props();
+    negative_stream_index_src.set_stream_index_raw(-2);
+    let mut negative_stream_index_copy = Packet::from_data(vec![0x79]).unwrap();
+    negative_stream_index_copy.copy_props_from(&negative_stream_index_src);
+    rows.insert(
+        "packet:copy-props-negative-stream-index".to_string(),
+        packet_fields(&negative_stream_index_copy),
+    );
+    let mut negative_stream_index_ref = Packet::default();
+    negative_stream_index_ref.ref_from(&negative_stream_index_src);
+    rows.insert(
+        "packet:ref-negative-stream-index".to_string(),
+        packet_fields(&negative_stream_index_ref),
+    );
+    let negative_stream_index_clone = negative_stream_index_src.clone();
+    rows.insert(
+        "packet:clone-negative-stream-index".to_string(),
+        packet_fields(&negative_stream_index_clone),
+    );
+    let mut negative_stream_index_move_src = packet_with_common_props();
+    negative_stream_index_move_src.set_stream_index_raw(-3);
+    let mut negative_stream_index_move_dst = Packet::default();
+    negative_stream_index_move_dst.move_ref_from(&mut negative_stream_index_move_src);
+    rows.insert(
+        "packet:move-negative-stream-index-dst".to_string(),
+        packet_fields(&negative_stream_index_move_dst),
+    );
+    rows.insert(
+        "packet:move-negative-stream-index-src".to_string(),
+        packet_fields(&negative_stream_index_move_src),
     );
 
     let empty_src = Packet::default();
@@ -4927,7 +4980,7 @@ fn packet_fields(packet: &Packet) -> Vec<String> {
         raw_ts(packet.dts()).to_string(),
         packet.duration().to_string(),
         raw_pos(packet.pos()).to_string(),
-        packet.stream_index().to_string(),
+        packet.stream_index_raw().to_string(),
         packet.flags().bits().to_string(),
         packet.len().to_string(),
         hex_or_dash(packet.data()),
@@ -9026,6 +9079,21 @@ int main(void) {
     print_packet("packet:rescale-negative-pos", pkt);
     av_packet_free(&pkt);
 
+    pkt = new_packet();
+    fail_if(av_new_packet(pkt, 2) < 0, "av_new_packet negative stream index rescale failed");
+    pkt->data[0] = 0x83;
+    pkt->data[1] = 0x84;
+    pkt->pts = 90000;
+    pkt->dts = 45000;
+    pkt->duration = 45000;
+    pkt->pos = 802;
+    pkt->stream_index = -2;
+    pkt->flags = AV_PKT_FLAG_TRUSTED;
+    pkt->time_base = (AVRational){ 1, 90000 };
+    av_packet_rescale_ts(pkt, (AVRational){ 1, 90000 }, (AVRational){ 1, 1000 });
+    print_packet("packet:rescale-negative-stream-index", pkt);
+    av_packet_free(&pkt);
+
     AVPacket *src = packet_with_common_props();
     AVPacket *dst = new_packet();
     fail_if(av_new_packet(dst, 2) < 0, "av_new_packet copy dst failed");
@@ -9107,6 +9175,49 @@ int main(void) {
     av_packet_free(&negative_pos_ref);
     av_packet_free(&negative_pos_copy);
     av_packet_free(&negative_pos_src);
+
+    AVPacket *negative_stream_index_src = packet_with_common_props();
+    negative_stream_index_src->stream_index = -2;
+    AVPacket *negative_stream_index_copy = new_packet();
+    fail_if(av_new_packet(negative_stream_index_copy, 1) < 0,
+            "av_new_packet negative stream index copy dst failed");
+    negative_stream_index_copy->data[0] = 0x79;
+    fail_if(av_packet_copy_props(negative_stream_index_copy,
+                                 negative_stream_index_src) < 0,
+            "av_packet_copy_props negative stream index failed");
+    print_packet("packet:copy-props-negative-stream-index",
+                 negative_stream_index_copy);
+
+    AVPacket *negative_stream_index_ref = new_packet();
+    fail_if(av_packet_ref(negative_stream_index_ref,
+                          negative_stream_index_src) < 0,
+            "av_packet_ref negative stream index failed");
+    print_packet("packet:ref-negative-stream-index",
+                 negative_stream_index_ref);
+
+    AVPacket *negative_stream_index_clone =
+        av_packet_clone(negative_stream_index_src);
+    fail_if(!negative_stream_index_clone,
+            "av_packet_clone negative stream index failed");
+    print_packet("packet:clone-negative-stream-index",
+                 negative_stream_index_clone);
+
+    AVPacket *negative_stream_index_move_src = packet_with_common_props();
+    negative_stream_index_move_src->stream_index = -3;
+    AVPacket *negative_stream_index_move_dst = new_packet();
+    av_packet_move_ref(negative_stream_index_move_dst,
+                       negative_stream_index_move_src);
+    print_packet("packet:move-negative-stream-index-dst",
+                 negative_stream_index_move_dst);
+    print_packet("packet:move-negative-stream-index-src",
+                 negative_stream_index_move_src);
+
+    av_packet_free(&negative_stream_index_move_dst);
+    av_packet_free(&negative_stream_index_move_src);
+    av_packet_free(&negative_stream_index_clone);
+    av_packet_free(&negative_stream_index_ref);
+    av_packet_free(&negative_stream_index_copy);
+    av_packet_free(&negative_stream_index_src);
 
     AVPacket *empty_src = new_packet();
     AVPacket *copy_empty_dst = new_packet();

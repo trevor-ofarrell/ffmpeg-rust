@@ -138,6 +138,20 @@ the cargo-fuzz sandbox/tooling layer without usable completion output; unit,
 oracle, FATE-runner, and clippy gates cover the slice until a later warmed fuzz
 smoke can be recorded.
 
+The latest packet signed-stream-index fixture extends `avutil_core_models` with
+negative `AVPacket.stream_index` behavior. `Packet::stream_index_raw` preserves
+the signed field for oracle parity, while `Packet::stream_index()` remains a
+nonnegative helper for safe stream-array indexing. `Packet::rescale_ts` leaves
+the raw stream index untouched, and copy/ref/clone/move lifecycles carry the
+signed field. The pinned libavcodec oracle emits matching
+`packet:rescale-negative-stream-index`,
+`packet:copy-props-negative-stream-index`,
+`packet:ref-negative-stream-index`, `packet:clone-negative-stream-index`, and
+`packet:move-negative-stream-index-*` rows. A WSL one-input cargo-fuzz smoke
+compiled the fuzz package and then left the tool session stuck without a
+reported target result, so check/clippy coverage is recorded for the
+deterministic fixture until a later clean smoke can run.
+
 The latest packet signed-position fixture extends `avutil_core_models` with
 negative `AVPacket.pos` behavior. `Packet::set_pos` accepts signed values such
 as `-2` while preserving `-1` as the public unknown-position sentinel,

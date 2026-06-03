@@ -9389,6 +9389,13 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(packet.len(), payload.len());
     assert_eq!(packet.is_empty(), payload.is_empty());
     assert_eq!(packet.stream_index(), stream_index);
+    assert_eq!(packet.stream_index_raw(), i32::try_from(stream_index).unwrap());
+    packet.set_stream_index_raw(-2);
+    assert_eq!(packet.stream_index_raw(), -2);
+    assert_eq!(packet.stream_index(), 0);
+    packet.set_stream_index(stream_index);
+    assert_eq!(packet.stream_index(), stream_index);
+    assert_eq!(packet.stream_index_raw(), i32::try_from(stream_index).unwrap());
     assert_eq!(packet.pts(), None);
     assert_eq!(packet.dts(), None);
     assert_eq!(packet.duration(), 0);
@@ -11293,6 +11300,50 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     negative_pos_move_dst.move_ref_from(&mut negative_pos_move_src);
     assert_eq!(negative_pos_move_dst.pos(), Some(-3));
     assert_eq!(negative_pos_move_src.pos(), None);
+
+    let mut negative_stream_index_lifecycle_source = Packet::from_data(vec![0x83, 0x84]).unwrap();
+    negative_stream_index_lifecycle_source.set_stream_index_raw(-2);
+    negative_stream_index_lifecycle_source.set_pts(Some(90_000));
+    negative_stream_index_lifecycle_source.set_dts(Some(45_000));
+    negative_stream_index_lifecycle_source
+        .set_duration(45_000)
+        .unwrap();
+    negative_stream_index_lifecycle_source.set_pos(Some(802)).unwrap();
+    negative_stream_index_lifecycle_source
+        .set_time_base(rescale_src)
+        .unwrap();
+    negative_stream_index_lifecycle_source.set_flag(PacketFlags::TRUSTED, true);
+
+    let mut negative_stream_index_rescale_packet = negative_stream_index_lifecycle_source.clone();
+    negative_stream_index_rescale_packet
+        .rescale_ts(rescale_src, rescale_dst)
+        .unwrap();
+    assert_eq!(negative_stream_index_rescale_packet.pts(), Some(1_000));
+    assert_eq!(negative_stream_index_rescale_packet.dts(), Some(500));
+    assert_eq!(negative_stream_index_rescale_packet.duration(), 500);
+    assert_eq!(negative_stream_index_rescale_packet.pos(), Some(802));
+    assert_eq!(negative_stream_index_rescale_packet.stream_index_raw(), -2);
+    assert_eq!(negative_stream_index_rescale_packet.stream_index(), 0);
+    assert_eq!(negative_stream_index_rescale_packet.time_base(), rescale_src);
+    assert!(negative_stream_index_rescale_packet
+        .flags()
+        .contains(PacketFlags::TRUSTED));
+
+    let mut negative_stream_index_copy = Packet::from_data(vec![0x79]).unwrap();
+    negative_stream_index_copy.copy_props_from(&negative_stream_index_lifecycle_source);
+    assert_eq!(negative_stream_index_copy.data(), &[0x79]);
+    assert_eq!(negative_stream_index_copy.stream_index_raw(), -2);
+    let mut negative_stream_index_ref = Packet::default();
+    negative_stream_index_ref.ref_from(&negative_stream_index_lifecycle_source);
+    assert_eq!(negative_stream_index_ref.stream_index_raw(), -2);
+    let negative_stream_index_clone = negative_stream_index_lifecycle_source.clone();
+    assert_eq!(negative_stream_index_clone.stream_index_raw(), -2);
+    let mut negative_stream_index_move_src = negative_stream_index_lifecycle_source;
+    negative_stream_index_move_src.set_stream_index_raw(-3);
+    let mut negative_stream_index_move_dst = Packet::default();
+    negative_stream_index_move_dst.move_ref_from(&mut negative_stream_index_move_src);
+    assert_eq!(negative_stream_index_move_dst.stream_index_raw(), -3);
+    assert_eq!(negative_stream_index_move_src.stream_index_raw(), 0);
 
     let mut near_inf_rescale_packet = Packet::from_data(vec![0x51, 0x52, 0x53]).unwrap();
     let near_inf_src = Rational::new(1, 48_000).unwrap();

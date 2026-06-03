@@ -19,6 +19,14 @@
   `avutil-buffer`; strict completion remains 11/96 and the row remains
   `differential_pass`.
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
+  `AVPacket.stream_index` is signed `int` packet state. Rust stores the raw
+  signed value for oracle parity through `stream_index_raw()` and keeps
+  `stream_index()` as a nonnegative helper for stream-array indexing. Negative
+  stream indices now survive rescale, copy-props, ref, clone, and move
+  lifecycles while move-ref resets the source to zero. This strengthens
+  `avutil-packet`; strict completion remains 11/96 and the row remains
+  `fate_pass`.
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
   `AVPacket.pos` is signed packet state distinct from the `-1`
   unknown-position sentinel. `av_packet_rescale_ts()` preserves negative
   positions unchanged, and `av_packet_copy_props()`, `av_packet_ref()`,

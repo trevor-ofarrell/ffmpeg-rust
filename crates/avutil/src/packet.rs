@@ -5231,7 +5231,7 @@ pub struct Packet {
     dts: i64,
     duration: i64,
     pos: i64,
-    stream_index: usize,
+    stream_index: i32,
     flags: PacketFlags,
     side_data: Vec<SideData>,
     opaque: Option<PacketOpaque>,
@@ -5291,7 +5291,7 @@ impl Packet {
             dts: AV_NOPTS_VALUE,
             duration: 0,
             pos: AV_PACKET_POS_UNKNOWN,
-            stream_index,
+            stream_index: packet_stream_index_from_usize(stream_index),
             flags: PacketFlags::empty(),
             side_data: Vec::new(),
             opaque: None,
@@ -5386,6 +5386,10 @@ impl Packet {
     }
 
     pub fn stream_index(&self) -> usize {
+        usize::try_from(self.stream_index).unwrap_or_default()
+    }
+
+    pub fn stream_index_raw(&self) -> i32 {
         self.stream_index
     }
 
@@ -5455,6 +5459,14 @@ impl Packet {
     pub fn set_pos(&mut self, pos: Option<i64>) -> AvResult<()> {
         self.pos = pos.unwrap_or(AV_PACKET_POS_UNKNOWN);
         Ok(())
+    }
+
+    pub fn set_stream_index(&mut self, stream_index: usize) {
+        self.stream_index = packet_stream_index_from_usize(stream_index);
+    }
+
+    pub fn set_stream_index_raw(&mut self, stream_index: i32) {
+        self.stream_index = stream_index;
     }
 
     pub fn set_flag(&mut self, flag: PacketFlags, enabled: bool) {
@@ -5924,6 +5936,10 @@ fn pos_option(value: i64) -> Option<i64> {
     } else {
         Some(value)
     }
+}
+
+fn packet_stream_index_from_usize(stream_index: usize) -> i32 {
+    i32::try_from(stream_index).unwrap_or(i32::MAX)
 }
 
 fn packet_alloc_buffer(size: usize) -> AvResult<BufferRef> {
@@ -6692,6 +6708,58 @@ mod tests {
             Vec::new(),
         )
         .is_err());
+    }
+
+    #[test]
+    fn packet_accepts_signed_stream_index_lifecycle() {
+        let mut packet = Packet::new(Vec::new(), 2);
+        assert_eq!(packet.stream_index(), 2);
+        assert_eq!(packet.stream_index_raw(), 2);
+        packet.set_stream_index_raw(-1);
+        assert_eq!(packet.stream_index_raw(), -1);
+        assert_eq!(packet.stream_index(), 0);
+        packet.set_stream_index(3);
+        assert_eq!(packet.stream_index(), 3);
+        assert_eq!(packet.stream_index_raw(), 3);
+        packet.set_stream_index(usize::MAX);
+        assert_eq!(packet.stream_index_raw(), i32::MAX);
+
+        let mut source = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
+        source.set_stream_index_raw(-2);
+        source.set_pts(Some(90_000));
+        source.set_dts(Some(45_000));
+        source.set_duration(1_000).unwrap();
+        source
+            .set_time_base(Rational::new(1, 90_000).unwrap())
+            .unwrap();
+
+        let mut rescaled = source.clone();
+        rescaled
+            .rescale_ts(
+                Rational::new(1, 90_000).unwrap(),
+                Rational::new(1, 1_000).unwrap(),
+            )
+            .unwrap();
+        assert_eq!(rescaled.stream_index_raw(), -2);
+
+        let mut copied = Packet::from_data(vec![0xee]).unwrap();
+        copied.copy_props_from(&source);
+        assert_eq!(copied.data(), &[0xee]);
+        assert_eq!(copied.stream_index_raw(), -2);
+
+        let mut referenced = Packet::default();
+        referenced.ref_from(&source);
+        assert_eq!(referenced.stream_index_raw(), -2);
+
+        let cloned = source.clone();
+        assert_eq!(cloned.stream_index_raw(), -2);
+
+        let mut moved_src = source;
+        moved_src.set_stream_index_raw(-3);
+        let mut moved_dst = Packet::default();
+        moved_dst.move_ref_from(&mut moved_src);
+        assert_eq!(moved_dst.stream_index_raw(), -3);
+        assert_eq!(moved_src.stream_index_raw(), 0);
     }
 
     #[test]
