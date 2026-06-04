@@ -9,6 +9,16 @@
 
 ## Compatible Today
 
+- Latest main-thread packet ordinary side-data shrink hidden-tail padding
+  evidence: pinned libavcodec row `packet:side-shrink-padding` now proves
+  `av_packet_shrink_side_data()` preserves truncated positive side-data bytes
+  in the hidden input-padding window for an ordinary packet-owned
+  `AV_PKT_DATA_NEW_EXTRADATA` shrink. Rust mirrors this through
+  `SideData::shrink` while retaining the padding allocation shape, with
+  focused unit, ignored oracle, mapped differential/FATE, upstream
+  `fate-avpacket`, clippy, and WSL `avutil_core_models` sanitizer smoke
+  coverage. `avutil-packet` remains `fate_pass`; strict completion remains
+  11/96.
 - Latest main-thread packet side-data shrink hidden-tail padding evidence:
   pinned libavcodec row `packet:side-shrink-duplicate-padding` now proves
   `av_packet_shrink_side_data()` preserves truncated caller-owned side-data

@@ -4956,6 +4956,10 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         side_data_summary_fields(&packet),
     );
     rows.insert(
+        "packet:side-shrink-padding".to_string(),
+        side_data_padding_fields(packet.side_data_by_kind("new_extradata")),
+    );
+    rows.insert(
         "packet:side-get-shrunk".to_string(),
         side_data_lookup_fields(packet.side_data_by_kind("new_extradata")),
     );
@@ -9085,6 +9089,8 @@ static void exercise_side_data_api(void) {
     ret = av_packet_shrink_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, 2);
     printf("packet:side-shrink-ret|%d\n", ret);
     print_side_data_summary("packet:side-shrink", pkt);
+    print_packet_side_data_padding("packet:side-shrink-padding", pkt,
+                                   AV_PKT_DATA_NEW_EXTRADATA);
     print_side_data_lookup("packet:side-get-shrunk", pkt, AV_PKT_DATA_NEW_EXTRADATA);
     print_side_data_lookup_size_null("packet:side-get-shrunk-size-null", pkt,
                                      AV_PKT_DATA_NEW_EXTRADATA, 2);
