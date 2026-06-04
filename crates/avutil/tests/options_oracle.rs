@@ -1164,6 +1164,45 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
             ret_value(expression_options.get_avoption_string("preset_level")),
         ],
     );
+
+    let mut expression_suffixes = sample_options();
+    insert_row(
+        &mut rows,
+        "ret:set-expression-suffixes",
+        [
+            ret(expression_suffixes.set_avoption_from_str("threads", "0x10+2B")),
+            ret(expression_suffixes.set_avoption_from_str("quality", "1B/32")),
+            ret(expression_suffixes.set_avoption_from_str("aspect_ratio", "(0x2+0x2)/3")),
+            ret(expression_suffixes.set_avoption_from_str("preset_level", "slow-0x2")),
+        ],
+    );
+    rows.insert(
+        "state:set-expression-suffixes".to_string(),
+        state_fields(&expression_suffixes),
+    );
+    insert_row(
+        &mut rows,
+        "get:set-expression-suffixes",
+        [
+            ret_value(expression_suffixes.get_avoption_string("threads")),
+            ret_value(expression_suffixes.get_avoption_string("quality")),
+            ret_value(expression_suffixes.get_avoption_string("aspect_ratio")),
+            ret_value(expression_suffixes.get_avoption_string("preset_level")),
+        ],
+    );
+
+    let mut expression_db = sample_options();
+    insert_row(
+        &mut rows,
+        "ret:set-expression-db",
+        [ret(expression_db.set_avoption_from_str("quality", "-0dB"))],
+    );
+    insert_row(
+        &mut rows,
+        "get:set-expression-db",
+        [ret_value(expression_db.get_avoption_string("quality"))],
+    );
+
     insert_row(
         &mut rows,
         "ret:set-expression-errors",
@@ -6397,6 +6436,34 @@ static void print_expression_rows(void) {
     print_get_value(&ctx, "aspect_ratio");
     print_get_value(&ctx, "preset_level");
     printf("\n");
+
+    TestOptions suffix_ctx;
+    init_context(&suffix_ctx);
+    ret_threads = av_opt_set(&suffix_ctx, "threads", "0x10+2B", 0);
+    ret_quality = av_opt_set(&suffix_ctx, "quality", "1B/32", 0);
+    ret_aspect = av_opt_set(&suffix_ctx, "aspect_ratio", "(0x2+0x2)/3", 0);
+    ret_preset = av_opt_set(&suffix_ctx, "preset_level", "slow-0x2", 0);
+    printf("ret:set-expression-suffixes|%d|%d|%d|%d\n",
+           ret_threads, ret_quality, ret_aspect, ret_preset);
+    print_state("state:set-expression-suffixes", &suffix_ctx);
+    printf("get:set-expression-suffixes");
+    print_get_value(&suffix_ctx, "threads");
+    print_get_value(&suffix_ctx, "quality");
+    print_get_value(&suffix_ctx, "aspect_ratio");
+    print_get_value(&suffix_ctx, "preset_level");
+    printf("\n");
+    av_opt_free(&suffix_ctx);
+    av_opt_free(&suffix_ctx.child);
+
+    TestOptions db_ctx;
+    init_context(&db_ctx);
+    ret_quality = av_opt_set(&db_ctx, "quality", "-0dB", 0);
+    printf("ret:set-expression-db|%d\n", ret_quality);
+    printf("get:set-expression-db");
+    print_get_value(&db_ctx, "quality");
+    printf("\n");
+    av_opt_free(&db_ctx);
+    av_opt_free(&db_ctx.child);
 
     ret_range = av_opt_set(&ctx, "threads", "1K", 0);
     ret_parse = av_opt_set(&ctx, "quality", "2*", 0);

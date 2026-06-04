@@ -9,6 +9,15 @@
 
 ## Compatible Today
 
+- Latest main-thread options evidence: pinned libavutil rows now prove AVOption
+  numeric expressions parse signs as part of numeric literals before dB suffix
+  conversion, so `-0dB` succeeds as `1.000000`. The same row set covers
+  hexadecimal literals plus byte suffix arithmetic through `0x10+2B`, `1B/32`,
+  `(0x2+0x2)/3`, and `slow-0x2`. Rust mirrors this in
+  `AvOptionExpressionParser`, focused unit/oracle coverage, mapped
+  avutil-options FATE/differential rows, and a 64-run WSL
+  `avutil_metadata_options` sanitizer smoke. `avutil-options` remains
+  `fate_pass`; strict completion remains 11/96.
 - Latest main-thread options fuzz evidence: a warmed WSL
   `avutil_metadata_options` 4096-run sanitizer smoke completed against a
   temporary copy of the tracked seed corpus without a crash. libFuzzer

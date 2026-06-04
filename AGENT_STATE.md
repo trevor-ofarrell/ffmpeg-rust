@@ -2,6 +2,35 @@
 
 ## Current Status
 
+Current authoritative turn status: main-thread WSL slice advanced
+`avutil-options` numeric-expression suffix parity after rechecking the required
+startup gates. Required startup checks passed from a clean tree at
+`master...origin/master [ahead 64]`: `CARGO_TARGET_DIR=target-orch-fate cargo
+run -p fate-runner -- status --next 15` reported 11/96 strict-complete
+components (11.5%), and `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask
+-- oracle-doctor` validated the pinned FFmpeg 8.1.1 oracle and ABI versions.
+The main thread kept the documented `avutil-packet` shared refcounted
+`av_shrink_packet()` blocker unchanged and advanced the next unblocked
+priority-1 options lane; no worker writes were delegated.
+
+Current main-thread slice: pinned libavutil rows now prove AVOption numeric
+expressions parse signs as part of numeric literals before dB suffix
+conversion, so `-0dB` succeeds as positive `1.000000` instead of applying
+unary negation after conversion. The same bounded row set proves hexadecimal
+literals and byte suffixes in `0x10+2B`, `1B/32`, `(0x2+0x2)/3`, and
+`slow-0x2`. Rust `AvOptionExpressionParser` now includes signed numeric
+literals before suffix handling while preserving unary signs for nonnumeric
+primaries. Focused unit, pinned oracle, mapped differential/FATE rows, clippy,
+and a 64-run WSL `avutil_metadata_options` sanitizer smoke passed. The fuzz
+smoke used a temporary copy of the five tracked seeds at
+`/tmp/ffmpegrust-avutil-options-suffix-fuzz.eRbxbs`, reached `DONE`, reported
+final corpus `35/1205b`, found no crash, and the scratch directory was removed;
+the repository corpus stayed at five tracked seeds. `avutil-options` remains
+`fate_pass`, not complete; strict completion remains 11/96 because full
+AVOption API parity, broader recursive child-object semantics, remaining
+expression/SI/raw-pointer edges, broader parser coverage, CLI option ordering,
+zero-known-limitation review, and sustained fuzz closure remain pending.
+
 Current authoritative turn status: main-thread WSL evidence slice strengthened
 `avutil-logging` fuzz smoke coverage. Required startup checks passed from a
 clean tree at `master...origin/master [ahead 63]`:

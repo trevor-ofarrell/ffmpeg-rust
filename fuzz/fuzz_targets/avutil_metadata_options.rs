@@ -1003,6 +1003,41 @@ fn exercise_fixtures() {
         expression_options.get("preset_level"),
         Some(&OptionValue::Int(10))
     );
+
+    let mut expression_suffixes = sample_options();
+    expression_suffixes
+        .set_avoption_from_str("threads", "0x10+2B")
+        .unwrap();
+    expression_suffixes
+        .set_avoption_from_str("quality", "1B/32")
+        .unwrap();
+    expression_suffixes
+        .set_avoption_from_str("aspect_ratio", "(0x2+0x2)/3")
+        .unwrap();
+    expression_suffixes
+        .set_avoption_from_str("preset_level", "slow-0x2")
+        .unwrap();
+    assert_eq!(
+        expression_suffixes.get("threads"),
+        Some(&OptionValue::Int(32))
+    );
+    assert_eq!(
+        expression_suffixes.get("quality"),
+        Some(&OptionValue::Float(0.25))
+    );
+    assert_eq!(
+        expression_suffixes.get("aspect_ratio"),
+        Some(&OptionValue::Rational(Rational::new(4, 3).unwrap()))
+    );
+    assert_eq!(
+        expression_suffixes.get("preset_level"),
+        Some(&OptionValue::Int(6))
+    );
+
+    let mut db_options = sample_options();
+    db_options.set_avoption_from_str("quality", "-0dB").unwrap();
+    assert_eq!(db_options.get("quality"), Some(&OptionValue::Float(1.0)));
+
     let before_expression_errors = expression_options.clone();
     assert_eq!(
         expression_options

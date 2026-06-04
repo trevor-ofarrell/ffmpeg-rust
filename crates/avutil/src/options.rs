@@ -4903,6 +4903,9 @@ impl AvOptionExpressionParser<'_> {
     }
 
     fn parse_unary(&mut self) -> AvResult<f64> {
+        if self.sign_starts_number() {
+            return self.parse_primary();
+        }
         if self.consume_ascii(b'+') {
             return self.parse_unary();
         }
@@ -4938,6 +4941,17 @@ impl AvOptionExpressionParser<'_> {
 
     fn parse_number(&mut self) -> AvResult<Option<f64>> {
         let start = self.pos;
+        let sign = match self.peek_ascii() {
+            Some(b'+') => {
+                self.pos += 1;
+                1.0
+            }
+            Some(b'-') => {
+                self.pos += 1;
+                -1.0
+            }
+            _ => 1.0,
+        };
         let mut value = if self.remaining().starts_with("0x") || self.remaining().starts_with("0X")
         {
             self.pos += 2;
@@ -4953,7 +4967,7 @@ impl AvOptionExpressionParser<'_> {
                 return Ok(None);
             }
             u128::from_str_radix(&self.source[digits_start..self.pos], 16)
-                .map(|value| value as f64)
+                .map(|value| sign * value as f64)
                 .map_err(|_| AvError::invalid_argument("invalid hexadecimal AVOption number"))?
         } else {
             let mut has_digits = false;
@@ -5075,6 +5089,16 @@ impl AvOptionExpressionParser<'_> {
         } else {
             false
         }
+    }
+
+    fn sign_starts_number(&self) -> bool {
+        if !matches!(self.peek_ascii(), Some(b'+') | Some(b'-')) {
+            return false;
+        }
+        matches!(
+            self.source.as_bytes().get(self.pos + 1),
+            Some(b'0'..=b'9') | Some(b'.')
+        )
     }
 }
 
@@ -7664,6 +7688,32 @@ mod tests {
             Some(AvErrorCode::EINVAL)
         );
         assert_eq!(options, before);
+    }
+
+    #[test]
+    fn set_avoption_from_str_parses_ffmpeg_expression_suffix_edges() {
+        let mut options = sample_options();
+
+        options.set_avoption_from_str("threads", "0x10+2B").unwrap();
+        options.set_avoption_from_str("quality", "1B/32").unwrap();
+        options
+            .set_avoption_from_str("aspect_ratio", "(0x2+0x2)/3")
+            .unwrap();
+        options
+            .set_avoption_from_str("preset_level", "slow-0x2")
+            .unwrap();
+
+        assert_eq!(options.get("threads"), Some(&OptionValue::Int(32)));
+        assert_eq!(options.get("quality"), Some(&OptionValue::Float(0.25)));
+        assert_eq!(
+            options.get("aspect_ratio"),
+            Some(&OptionValue::Rational(Rational::new(4, 3).unwrap()))
+        );
+        assert_eq!(options.get("preset_level"), Some(&OptionValue::Int(6)));
+
+        let mut db_options = sample_options();
+        db_options.set_avoption_from_str("quality", "-0dB").unwrap();
+        assert_eq!(db_options.get("quality"), Some(&OptionValue::Float(1.0)));
     }
 
     #[test]
