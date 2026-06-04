@@ -12752,6 +12752,23 @@ mod tests {
             PacketSideDataKind::MAX_FFMPEG_PACKET_SIDE_DATA_ELEMS + 1
         );
         assert_eq!(list.get(&extra_kind).unwrap().data(), &[0]);
+
+        let raw_type_kind =
+            PacketSideDataKind::from_ffmpeg_raw_value(PacketSideDataKind::KNOWN.len() as i32);
+        let mut raw_type_list = PacketSideDataList::new();
+        raw_type_list
+            .new_side_data(raw_type_kind.clone(), 2)
+            .unwrap()
+            .data_mut()
+            .copy_from_slice(&[0x7a, 0x7b]);
+        let raw_type_side = raw_type_list.get(&raw_type_kind).unwrap();
+        assert_eq!(raw_type_side.data(), &[0x7a, 0x7b]);
+        assert_eq!(raw_type_side.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+        assert!(raw_type_side
+            .padding_slice()
+            .iter()
+            .take(AV_INPUT_BUFFER_PADDING_SIZE)
+            .all(|byte| *byte == 0));
     }
 
     #[test]

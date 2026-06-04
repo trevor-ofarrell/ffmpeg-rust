@@ -14612,6 +14612,28 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     );
     assert_eq!(capacity_list.get(&extra_list_kind).unwrap().data(), &[0]);
 
+    let raw_type_array_kind =
+        PacketSideDataKind::from_ffmpeg_raw_value(PacketSideDataKind::KNOWN.len() as i32);
+    let mut raw_type_new_array_list = PacketSideDataList::new();
+    raw_type_new_array_list
+        .new_side_data(raw_type_array_kind.clone(), 2)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0x7a, 0x7b]);
+    let raw_type_new_array_side = raw_type_new_array_list
+        .get(&raw_type_array_kind)
+        .unwrap();
+    assert_eq!(raw_type_new_array_side.data(), &[0x7a, 0x7b]);
+    assert_eq!(
+        raw_type_new_array_side.padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(raw_type_new_array_side
+        .padding_slice()
+        .iter()
+        .take(AV_INPUT_BUFFER_PADDING_SIZE)
+        .all(|byte| *byte == 0));
+
     let raw_negative_array_kind = PacketSideDataKind::from_ffmpeg_raw_value(-1);
     let raw_min_array_kind = PacketSideDataKind::from_ffmpeg_raw_value(i32::MIN);
     let mut raw_array_list = PacketSideDataList::new();

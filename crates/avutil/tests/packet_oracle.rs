@@ -6042,6 +6042,29 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         side_data_padding_fields(raw_type_list.get(&raw_type_kind)),
     );
 
+    let mut raw_type_new_list = PacketSideDataList::new();
+    raw_type_new_list
+        .new_side_data(raw_type_kind.clone(), 2)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0x7a, 0x7b]);
+    rows.insert(
+        "packet:array-new-raw-type-ret".to_string(),
+        vec!["1".to_string()],
+    );
+    rows.insert(
+        "packet:array-new-raw-type".to_string(),
+        side_data_list_summary_fields(&raw_type_new_list),
+    );
+    rows.insert(
+        "packet:array-get-new-raw-type".to_string(),
+        side_data_lookup_fields(raw_type_new_list.get(&raw_type_kind)),
+    );
+    rows.insert(
+        "packet:array-new-raw-type-padding".to_string(),
+        side_data_padding_fields(raw_type_new_list.get(&raw_type_kind)),
+    );
+
     let mut raw_list = PacketSideDataList::new();
     let raw_negative_kind = PacketSideDataKind::from_ffmpeg_raw_value(-1);
     let raw_negative_added = raw_list
@@ -9925,6 +9948,30 @@ static void exercise_side_data_array_api(void) {
     print_side_data_array_padding("packet:array-add-raw-min-type-padding",
                                   sd, nb_sd,
                                   (enum AVPacketSideDataType)INT_MIN);
+
+    AVPacketSideData *raw_type_new_sd = NULL;
+    int raw_type_new_nb_sd = 0;
+    entry = av_packet_side_data_new(&raw_type_new_sd,
+                                    &raw_type_new_nb_sd,
+                                    (enum AVPacketSideDataType)AV_PKT_DATA_NB,
+                                    2, 0);
+    printf("packet:array-new-raw-type-ret|%d\n", entry != NULL);
+    fail_if(!entry, "av_packet_side_data_new raw type failed");
+    entry->data[0] = 0x7a;
+    entry->data[1] = 0x7b;
+    print_side_data_array_summary("packet:array-new-raw-type",
+                                  raw_type_new_sd,
+                                  raw_type_new_nb_sd);
+    print_side_data_array_lookup("packet:array-get-new-raw-type",
+                                 raw_type_new_sd,
+                                 raw_type_new_nb_sd,
+                                 (enum AVPacketSideDataType)AV_PKT_DATA_NB);
+    print_side_data_array_padding("packet:array-new-raw-type-padding",
+                                  raw_type_new_sd,
+                                  raw_type_new_nb_sd,
+                                  (enum AVPacketSideDataType)AV_PKT_DATA_NB);
+    av_packet_side_data_free(&raw_type_new_sd,
+                             &raw_type_new_nb_sd);
 
     AVPacketSideData *raw_negative_new_sd = NULL;
     int raw_negative_new_nb_sd = 0;
