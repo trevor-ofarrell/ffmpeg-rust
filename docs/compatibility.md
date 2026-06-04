@@ -9,6 +9,15 @@
 
 ## Compatible Today
 
+- Latest main-thread packet non-owned readonly shared-shrink fallback evidence:
+  Rust now explicitly fences shared static-slice, Arc-backed-slice, and external
+  opaque readonly `BufferRef` payloads out of FFmpeg-style alias tail writes.
+  `unsafe Packet::shrink_data_ffmpeg_aliasing()` falls back to safe shrink
+  materialization for these non-owned shapes, detaches the destination to
+  ordinary writable padded storage, leaves source/external bytes unchanged, and
+  delays external opaque release until the source drops. Unit and deterministic
+  `avutil_core_models` coverage pin the behavior. `avutil-packet` remains
+  `fate_pass`; strict completion remains 11/96.
 - Latest main-thread packet NULL-data shrink-boundary evidence: pinned
   libavcodec source plus an ignored child-process oracle diagnostic document
   that positive-size shared NULL-data `av_shrink_packet()` reaches the shrink

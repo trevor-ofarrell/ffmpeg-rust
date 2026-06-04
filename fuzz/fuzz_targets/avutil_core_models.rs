@@ -11870,6 +11870,113 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .iter()
         .all(|byte| *byte == 0));
 
+    let non_owned_shared_storage: Arc<[u8]> = Arc::from([0xaa, 0xbb, 0xcc, 0xdd]);
+    let non_owned_shared_src = Packet::with_buffer(
+        BufferRef::from_shared_slice_readonly(Arc::clone(&non_owned_shared_storage)),
+        stream_index,
+    );
+    let mut non_owned_shared_dst = Packet::default();
+    non_owned_shared_dst.ref_from(&non_owned_shared_src);
+    let non_owned_shared_dst_ptr = non_owned_shared_dst.data_buffer().as_padded_ptr();
+    assert!(non_owned_shared_dst
+        .data_buffer()
+        .shares_storage(non_owned_shared_src.data_buffer()));
+    // SAFETY: The deterministic fixture holds no packet payload slices across
+    // the call and performs no concurrent access. Non-owned readonly storage
+    // must reject FFmpeg-style alias mutation and fall back to safe detachment.
+    unsafe {
+        non_owned_shared_dst
+            .shrink_data_ffmpeg_aliasing(2)
+            .unwrap();
+    }
+    assert_eq!(non_owned_shared_src.data(), &[0xaa, 0xbb, 0xcc, 0xdd]);
+    assert_eq!(
+        non_owned_shared_storage.as_ref(),
+        &[0xaa, 0xbb, 0xcc, 0xdd]
+    );
+    assert!(non_owned_shared_src.data_buffer().is_readonly());
+    assert!(!non_owned_shared_src.is_data_writable());
+    assert_eq!(non_owned_shared_dst.data(), &[0xaa, 0xbb]);
+    assert_ne!(
+        non_owned_shared_dst.data_buffer().as_padded_ptr(),
+        non_owned_shared_dst_ptr
+    );
+    assert!(!non_owned_shared_dst
+        .data_buffer()
+        .shares_storage(non_owned_shared_src.data_buffer()));
+    assert!(!non_owned_shared_dst.data_buffer().is_readonly());
+    assert!(non_owned_shared_dst.is_data_writable());
+    assert!(non_owned_shared_dst
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+
+    let non_owned_external_releases = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let non_owned_external_storage: Arc<[u8]> = Arc::from([0xaa, 0xbb, 0xcc, 0xdd]);
+    {
+        let non_owned_external_release_capture = Arc::clone(&non_owned_external_releases);
+        let non_owned_external_src = Packet::with_buffer(
+            BufferRef::from_external_slice_with_opaque_readonly(
+                Arc::clone(&non_owned_external_storage),
+                920usize,
+                move |opaque| {
+                    non_owned_external_release_capture
+                        .lock()
+                        .unwrap()
+                        .push(opaque);
+                },
+            ),
+            stream_index,
+        );
+        let mut non_owned_external_dst = Packet::default();
+        non_owned_external_dst.ref_from(&non_owned_external_src);
+        let non_owned_external_dst_ptr = non_owned_external_dst.data_buffer().as_padded_ptr();
+        assert!(non_owned_external_dst
+            .data_buffer()
+            .shares_storage(non_owned_external_src.data_buffer()));
+        // SAFETY: The deterministic fixture holds no packet payload slices
+        // across the call and performs no concurrent access. External readonly
+        // storage must stay untouched and owned by its source reference.
+        unsafe {
+            non_owned_external_dst
+                .shrink_data_ffmpeg_aliasing(2)
+                .unwrap();
+        }
+        assert_eq!(non_owned_external_src.data(), &[0xaa, 0xbb, 0xcc, 0xdd]);
+        assert_eq!(
+            non_owned_external_storage.as_ref(),
+            &[0xaa, 0xbb, 0xcc, 0xdd]
+        );
+        assert_eq!(
+            non_owned_external_src.data_buffer().opaque_ref::<usize>(),
+            Some(&920)
+        );
+        assert_eq!(non_owned_external_dst.data(), &[0xaa, 0xbb]);
+        assert_ne!(
+            non_owned_external_dst.data_buffer().as_padded_ptr(),
+            non_owned_external_dst_ptr
+        );
+        assert!(!non_owned_external_dst
+            .data_buffer()
+            .shares_storage(non_owned_external_src.data_buffer()));
+        assert!(non_owned_external_dst
+            .data_buffer()
+            .opaque_ref::<usize>()
+            .is_none());
+        assert!(!non_owned_external_dst.data_buffer().is_readonly());
+        assert!(non_owned_external_dst.is_data_writable());
+        assert!(non_owned_external_releases.lock().unwrap().is_empty());
+        drop(non_owned_external_dst);
+        assert!(non_owned_external_releases.lock().unwrap().is_empty());
+        drop(non_owned_external_src);
+    }
+    assert_eq!(
+        non_owned_external_storage.as_ref(),
+        &[0xaa, 0xbb, 0xcc, 0xdd]
+    );
+    assert_eq!(*non_owned_external_releases.lock().unwrap(), vec![920]);
+
     let mut opaque_shrink_storage = vec![0xaa, 0xbb, 0xcc, 0xdd];
     opaque_shrink_storage.resize(4 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
     let opaque_shrink_src = Packet::with_buffer(

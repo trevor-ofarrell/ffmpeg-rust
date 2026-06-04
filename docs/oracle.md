@@ -1018,6 +1018,17 @@ FFmpeg 8.1.1 crash boundary from the source implementation's unguarded
 parity row set. Rust keeps the explicit unsafe helper from mutating nullable
 storage and falls back to safe materialization for actual shrink.
 
+Non-owned readonly Rust packet storage has a separate safe-model evidence path
+rather than a direct FFmpeg oracle row. Static slices, shared `Arc<[u8]>`
+slices, and external opaque readonly slices are Rust-safe memory ownership
+shapes where reproducing FFmpeg's aliasing write would mean mutating storage
+the Rust model does not own. The active packet unit covers all three shapes,
+and `avutil_core_models` covers the shared Arc and external opaque cases:
+`Packet::shrink_data_ffmpeg_aliasing()` rejects the alias path, detaches the
+destination into ordinary padded writable storage, leaves source/external bytes
+unchanged, clears detached opaque lookup, and delays external opaque release
+until the source reference drops.
+
 The harness also includes `packet:payload-grow-unrefcounted*`,
 `packet:payload-grow-unrefcounted-offset*`, and
 `packet:payload-make-writable-unrefcounted*` rows, proving raw

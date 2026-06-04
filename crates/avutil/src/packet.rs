@@ -13172,6 +13172,136 @@ mod tests {
     }
 
     #[test]
+    fn packet_shrink_shared_non_owned_readonly_falls_back_to_detached_storage() {
+        static STATIC_PAYLOAD: &[u8] = &[0xaa, 0xbb, 0xcc, 0xdd];
+
+        let static_src =
+            Packet::with_buffer(BufferRef::from_static_slice_readonly(STATIC_PAYLOAD), 0);
+        let mut static_dst = Packet::default();
+        static_dst.ref_from(&static_src);
+        let static_dst_ptr = static_dst.data_buffer().as_padded_ptr();
+        assert!(static_dst
+            .data_buffer()
+            .shares_storage(static_src.data_buffer()));
+
+        // SAFETY: The test holds no payload slices across the call and performs
+        // no concurrent access. Non-owned readonly storage must reject the
+        // FFmpeg aliasing write path and use the safe detach fallback.
+        unsafe {
+            static_dst.shrink_data_ffmpeg_aliasing(2).unwrap();
+        }
+
+        assert_eq!(static_src.data(), STATIC_PAYLOAD);
+        assert_eq!(static_src.len(), 4);
+        assert!(static_src.data_buffer().is_readonly());
+        assert!(!static_src.is_data_writable());
+        assert_eq!(static_dst.data(), &[0xaa, 0xbb]);
+        assert_ne!(static_dst.data_buffer().as_padded_ptr(), static_dst_ptr);
+        assert!(!static_dst
+            .data_buffer()
+            .shares_storage(static_src.data_buffer()));
+        assert!(!static_dst.data_buffer().is_readonly());
+        assert!(static_dst.is_data_writable());
+        assert_eq!(
+            static_dst.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(static_dst
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+
+        let shared_storage: Arc<[u8]> = Arc::from([0xaa, 0xbb, 0xcc, 0xdd]);
+        let shared_src = Packet::with_buffer(
+            BufferRef::from_shared_slice_readonly(Arc::clone(&shared_storage)),
+            0,
+        );
+        let mut shared_dst = Packet::default();
+        shared_dst.ref_from(&shared_src);
+        let shared_dst_ptr = shared_dst.data_buffer().as_padded_ptr();
+        assert_eq!(Arc::strong_count(&shared_storage), 2);
+        assert!(shared_dst
+            .data_buffer()
+            .shares_storage(shared_src.data_buffer()));
+
+        // SAFETY: The test holds no payload slices across the call and performs
+        // no concurrent access. Shared Arc-backed readonly storage is
+        // non-owned, so the unsafe helper must fall back to safe detachment.
+        unsafe {
+            shared_dst.shrink_data_ffmpeg_aliasing(2).unwrap();
+        }
+
+        assert_eq!(shared_src.data(), &[0xaa, 0xbb, 0xcc, 0xdd]);
+        assert_eq!(shared_storage.as_ref(), &[0xaa, 0xbb, 0xcc, 0xdd]);
+        assert!(shared_src.data_buffer().is_readonly());
+        assert!(!shared_src.is_data_writable());
+        assert_eq!(shared_dst.data(), &[0xaa, 0xbb]);
+        assert_ne!(shared_dst.data_buffer().as_padded_ptr(), shared_dst_ptr);
+        assert!(!shared_dst
+            .data_buffer()
+            .shares_storage(shared_src.data_buffer()));
+        assert!(!shared_dst.data_buffer().is_readonly());
+        assert!(shared_dst.is_data_writable());
+        assert_eq!(Arc::strong_count(&shared_storage), 2);
+        drop(shared_src);
+        assert_eq!(Arc::strong_count(&shared_storage), 1);
+
+        let external_releases = Arc::new(Mutex::new(Vec::<usize>::new()));
+        let external_storage: Arc<[u8]> = Arc::from([0xaa, 0xbb, 0xcc, 0xdd]);
+        {
+            let external_release_capture = Arc::clone(&external_releases);
+            let external_src = Packet::with_buffer(
+                BufferRef::from_external_slice_with_opaque_readonly(
+                    Arc::clone(&external_storage),
+                    929usize,
+                    move |opaque| {
+                        external_release_capture.lock().unwrap().push(opaque);
+                    },
+                ),
+                0,
+            );
+            let mut external_dst = Packet::default();
+            external_dst.ref_from(&external_src);
+            let external_dst_ptr = external_dst.data_buffer().as_padded_ptr();
+            assert_eq!(Arc::strong_count(&external_storage), 2);
+            assert!(external_dst
+                .data_buffer()
+                .shares_storage(external_src.data_buffer()));
+
+            // SAFETY: The test holds no payload slices across the call and
+            // performs no concurrent access. External opaque readonly storage is
+            // non-owned, so the unsafe helper must detach instead of writing
+            // through aliases.
+            unsafe {
+                external_dst.shrink_data_ffmpeg_aliasing(2).unwrap();
+            }
+
+            assert_eq!(external_src.data(), &[0xaa, 0xbb, 0xcc, 0xdd]);
+            assert_eq!(external_storage.as_ref(), &[0xaa, 0xbb, 0xcc, 0xdd]);
+            assert_eq!(external_src.data_buffer().opaque_ref::<usize>(), Some(&929));
+            assert!(external_src.data_buffer().is_readonly());
+            assert!(!external_src.is_data_writable());
+            assert_eq!(external_dst.data(), &[0xaa, 0xbb]);
+            assert_ne!(external_dst.data_buffer().as_padded_ptr(), external_dst_ptr);
+            assert!(!external_dst
+                .data_buffer()
+                .shares_storage(external_src.data_buffer()));
+            assert!(external_dst.data_buffer().opaque_ref::<usize>().is_none());
+            assert!(!external_dst.data_buffer().is_readonly());
+            assert!(external_dst.is_data_writable());
+            assert!(external_releases.lock().unwrap().is_empty());
+            drop(external_dst);
+            assert!(external_releases.lock().unwrap().is_empty());
+            assert_eq!(Arc::strong_count(&external_storage), 2);
+            drop(external_src);
+        }
+        assert_eq!(external_storage.as_ref(), &[0xaa, 0xbb, 0xcc, 0xdd]);
+        assert_eq!(Arc::strong_count(&external_storage), 1);
+        assert_eq!(*external_releases.lock().unwrap(), vec![929]);
+    }
+
+    #[test]
     fn packet_shrink_shared_opaque_refcounted_matches_ffmpeg_tail_zeroing() {
         let mut storage = vec![0xaa, 0xbb, 0xcc, 0xdd];
         storage.resize(4 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
