@@ -17444,6 +17444,21 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(raw_min_kind.ffmpeg_value(), Some(i32::MIN));
     assert!(raw_min_kind.ffmpeg_side_data_name().is_none());
     let mut raw_packet = Packet::default();
+    let raw_new_kind =
+        PacketSideDataKind::from_ffmpeg_raw_value(PacketSideDataKind::KNOWN.len() as i32 + 1);
+    raw_packet
+        .new_side_data(raw_new_kind.clone(), 2)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0x6a, 0x6b]);
+    let raw_new_side = raw_packet.side_data_by_kind_id(&raw_new_kind).unwrap();
+    assert_eq!(raw_new_side.data(), &[0x6a, 0x6b]);
+    assert_eq!(raw_new_side.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+    assert!(raw_new_side
+        .padding_slice()
+        .iter()
+        .take(AV_INPUT_BUFFER_PADDING_SIZE)
+        .all(|byte| *byte == 0));
     raw_packet
         .try_add_side_data(
             SideData::new_with_kind(raw_negative_kind.clone(), vec![0xf1]).unwrap(),
@@ -17465,6 +17480,27 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         raw_packet.side_data_by_kind_id(&raw_min_kind).unwrap().data(),
         &[0xe0]
     );
+    let raw_min_side = raw_packet.side_data_by_kind_id(&raw_min_kind).unwrap();
+    assert_eq!(raw_min_side.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+    assert!(raw_min_side
+        .padding_slice()
+        .iter()
+        .take(AV_INPUT_BUFFER_PADDING_SIZE)
+        .all(|byte| *byte == 0));
+
+    let raw_min_oversize = raw_packet
+        .shrink_side_data_by_kind_id(&raw_min_kind, 2)
+        .unwrap_err();
+    assert_eq!(raw_min_oversize.kind(), AvErrorKind::External);
+    assert_eq!(raw_min_oversize.code(), Some(AvErrorCode::ENOMEM));
+    let raw_min_side = raw_packet.side_data_by_kind_id(&raw_min_kind).unwrap();
+    assert_eq!(raw_min_side.data(), &[0xe0]);
+    assert_eq!(raw_min_side.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+    assert!(raw_min_side
+        .padding_slice()
+        .iter()
+        .take(AV_INPUT_BUFFER_PADDING_SIZE)
+        .all(|byte| *byte == 0));
 
     packet.push_side_data(SideData::new("ref_side_data", vec![0xbb, 0xcc]).unwrap());
     packet

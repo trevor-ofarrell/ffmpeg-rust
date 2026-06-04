@@ -5409,6 +5409,10 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:side-get-new-raw-type".to_string(),
         side_data_lookup_fields(raw_packet.side_data_by_kind_id(&raw_new_kind)),
     );
+    rows.insert(
+        "packet:side-new-raw-type-padding".to_string(),
+        side_data_padding_fields(raw_packet.side_data_by_kind_id(&raw_new_kind)),
+    );
 
     let raw_negative_kind = PacketSideDataKind::from_ffmpeg_raw_value(-1);
     let raw_negative_added = raw_packet
@@ -5450,6 +5454,10 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:side-get-raw-min-type".to_string(),
         side_data_lookup_fields(raw_packet.side_data_by_kind_id(&raw_min_kind)),
     );
+    rows.insert(
+        "packet:side-new-raw-min-type-padding".to_string(),
+        side_data_padding_fields(raw_packet.side_data_by_kind_id(&raw_min_kind)),
+    );
 
     raw_packet
         .shrink_side_data_by_kind_id(&raw_negative_kind, 0)
@@ -5485,6 +5493,10 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:side-get-raw-min-oversize".to_string(),
         side_data_lookup_fields(raw_packet.side_data_by_kind_id(&raw_min_kind)),
+    );
+    rows.insert(
+        "packet:side-shrink-raw-min-oversize-padding".to_string(),
+        side_data_padding_fields(raw_packet.side_data_by_kind_id(&raw_min_kind)),
     );
 }
 
@@ -9320,6 +9332,8 @@ static void exercise_side_data_api(void) {
     print_side_data_summary("packet:side-new-raw-type", pkt);
     print_side_data_lookup("packet:side-get-new-raw-type", pkt,
                            (enum AVPacketSideDataType)(AV_PKT_DATA_NB + 1));
+    print_packet_side_data_padding("packet:side-new-raw-type-padding", pkt,
+                                   (enum AVPacketSideDataType)(AV_PKT_DATA_NB + 1));
 
     owned = av_mallocz(1 + AV_INPUT_BUFFER_PADDING_SIZE);
     fail_if(!owned, "av_mallocz negative raw packet side data failed");
@@ -9345,6 +9359,8 @@ static void exercise_side_data_api(void) {
     print_side_data_summary("packet:side-new-raw-min-type", pkt);
     print_side_data_lookup("packet:side-get-raw-min-type", pkt,
                            (enum AVPacketSideDataType)INT_MIN);
+    print_packet_side_data_padding("packet:side-new-raw-min-type-padding",
+                                   pkt, (enum AVPacketSideDataType)INT_MIN);
 
     ret = av_packet_shrink_side_data(pkt, (enum AVPacketSideDataType)-1, 0);
     printf("packet:side-shrink-raw-negative-type-ret|%d\n", ret);
@@ -9359,6 +9375,8 @@ static void exercise_side_data_api(void) {
     printf("packet:side-shrink-raw-min-oversize-ret|%d\n", ret);
     print_side_data_lookup("packet:side-get-raw-min-oversize", pkt,
                            (enum AVPacketSideDataType)INT_MIN);
+    print_packet_side_data_padding("packet:side-shrink-raw-min-oversize-padding",
+                                   pkt, (enum AVPacketSideDataType)INT_MIN);
     av_packet_free(&pkt);
 }
 

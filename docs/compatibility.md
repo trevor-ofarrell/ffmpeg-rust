@@ -9,6 +9,18 @@
 
 ## Compatible Today
 
+- Latest main-thread packet raw side-data allocation/no-mutation padding
+  evidence: pinned libavcodec rows `packet:side-new-raw-type-padding`,
+  `packet:side-new-raw-min-type-padding`, and
+  `packet:side-shrink-raw-min-oversize-padding` now prove raw
+  `AV_PKT_DATA_NB + 1` and `INT_MIN` packet-owned
+  `av_packet_new_side_data()` allocations get zeroed input padding, and an
+  oversize `INT_MIN` `av_packet_shrink_side_data()` failure preserves payload
+  plus padding. Rust mirrors this through padded `new_side_data` allocation and
+  no-mutation shrink errors, with focused unit, ignored oracle, mapped
+  differential/FATE, upstream `fate-avpacket`, clippy, and WSL
+  `avutil_core_models` sanitizer smoke coverage. `avutil-packet` remains
+  `fate_pass`; strict completion remains 11/96.
 - Latest main-thread packet raw negative side-data shrink hidden-tail padding
   evidence: pinned libavcodec row
   `packet:side-shrink-raw-negative-type-padding` now proves

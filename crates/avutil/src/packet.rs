@@ -11829,6 +11829,13 @@ mod tests {
             packet.side_data_by_kind_id(&raw_new_kind).unwrap().data(),
             &[0x6a, 0x6b]
         );
+        let raw_new_side = packet.side_data_by_kind_id(&raw_new_kind).unwrap();
+        assert_eq!(raw_new_side.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+        assert!(raw_new_side
+            .padding_slice()
+            .iter()
+            .take(AV_INPUT_BUFFER_PADDING_SIZE)
+            .all(|byte| *byte == 0));
 
         let raw_negative_kind = PacketSideDataKind::from_ffmpeg_raw_value(-1);
         assert!(packet
@@ -11857,6 +11864,13 @@ mod tests {
             packet.side_data_by_kind_id(&raw_min_kind).unwrap().data(),
             &[0xe0]
         );
+        let raw_min_side = packet.side_data_by_kind_id(&raw_min_kind).unwrap();
+        assert_eq!(raw_min_side.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+        assert!(raw_min_side
+            .padding_slice()
+            .iter()
+            .take(AV_INPUT_BUFFER_PADDING_SIZE)
+            .all(|byte| *byte == 0));
 
         packet
             .shrink_side_data_by_kind_id(&raw_negative_kind, 0)
@@ -11882,6 +11896,13 @@ mod tests {
             packet.side_data_by_kind_id(&raw_min_kind).unwrap().data(),
             &[0xe0]
         );
+        let raw_min_side = packet.side_data_by_kind_id(&raw_min_kind).unwrap();
+        assert_eq!(raw_min_side.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+        assert!(raw_min_side
+            .padding_slice()
+            .iter()
+            .take(AV_INPUT_BUFFER_PADDING_SIZE)
+            .all(|byte| *byte == 0));
     }
 
     #[test]

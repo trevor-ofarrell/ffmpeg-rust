@@ -243,6 +243,14 @@ when shrinking a raw `-1` packet-owned entry to zero. The deterministic
 `avutil_core_models` fixture mirrors the same hidden-tail padding shape through
 `SideData::shrink()`.
 
+The latest packet raw side-data allocation/no-mutation padding fixture adds
+`packet:side-new-raw-type-padding`,
+`packet:side-new-raw-min-type-padding`, and
+`packet:side-shrink-raw-min-oversize-padding` rows. These prove raw
+`AV_PKT_DATA_NB + 1` and `INT_MIN` packet-owned `av_packet_new_side_data()`
+allocations include zeroed input padding, and an oversize shrink failure for the
+raw `INT_MIN` entry leaves both visible payload and padding unchanged.
+
 The latest packet capacity side-data add padding fixture adds
 `packet:side-add-capacity-replace-padding` and
 `packet:side-add-capacity-overflow-owned-padding` rows. These prove
