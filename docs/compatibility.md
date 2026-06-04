@@ -9,6 +9,19 @@
 
 ## Compatible Today
 
+- Latest main-thread packet standalone raw negative add-path removal/free
+  evidence: pinned libavcodec rows
+  `packet:array-get-raw-negative-type-after-min-remove`,
+  `packet:array-remove-raw-negative-type`,
+  `packet:array-get-raw-negative-type-removed`, and
+  `packet:array-free-raw-negative-type` now prove a transferred standalone raw
+  `-1` entry survives `INT_MIN` replacement/removal, can then be removed,
+  misses lookup afterward, and leaves `av_packet_side_data_free()` with an
+  empty state after removal. Rust mirrors this through
+  `PacketSideDataList::remove_kind` and `clear`, with focused unit, ignored
+  oracle, mapped differential/FATE, upstream `fate-avpacket`, clippy, and WSL
+  `avutil_core_models` sanitizer smoke coverage. `avutil-packet` remains
+  `fate_pass`; strict completion remains 11/96.
 - Latest main-thread packet standalone raw negative new-side-data removal/free
   evidence: pinned libavcodec rows
   `packet:array-remove-new-raw-negative-type`,

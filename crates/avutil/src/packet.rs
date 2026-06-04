@@ -12971,6 +12971,11 @@ mod tests {
         assert_eq!(list.entries().len(), 1);
         assert_eq!(list.get(&raw_negative_kind).unwrap().data(), &[0xf1]);
         assert!(list.get(&raw_min_kind).is_none());
+        let removed = list.remove_kind(&raw_negative_kind).unwrap();
+        assert_eq!(removed.data(), &[0xf1]);
+        assert!(list.get(&raw_negative_kind).is_none());
+        list.clear();
+        assert!(list.is_empty());
     }
 
     #[test]

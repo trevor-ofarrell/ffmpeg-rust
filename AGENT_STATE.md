@@ -3,28 +3,30 @@
 ## Current Status
 
 Current authoritative turn status: main-thread WSL advanced the top incomplete
-`avutil-packet` row with standalone raw negative new-side-data removal/free
+`avutil-packet` row with standalone raw negative add-path removal/free
 evidence.
 Required startup checks passed from a clean tree at
-`master...origin/master [ahead 112]`: `CARGO_TARGET_DIR=target-orch-fate
+`master...origin/master [ahead 113]`: `CARGO_TARGET_DIR=target-orch-fate
 cargo run -p fate-runner -- status --next 15` reported 11/96 strict-complete
 components (11.5%) with `avutil-packet` as the first incomplete row, and
 `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
 validated the pinned FFmpeg 8.1.1 oracle and ABI versions.
 
 Current main-thread slice: pinned libavcodec rows
-`packet:array-remove-new-raw-negative-type`,
-`packet:array-get-new-raw-negative-type-removed`, and
-`packet:array-free-new-raw-negative-type` now prove standalone
-`av_packet_side_data_remove()` removes a newly allocated raw `-1` entry,
-lookup misses afterward, and `av_packet_side_data_free()` preserves the empty
+`packet:array-get-raw-negative-type-after-min-remove`,
+`packet:array-remove-raw-negative-type`,
+`packet:array-get-raw-negative-type-removed`, and
+`packet:array-free-raw-negative-type` now prove a transferred standalone raw
+`-1` entry survives `INT_MIN` replacement/removal, can then be removed, misses
+lookup afterward, and leaves `av_packet_side_data_free()` with an empty
 post-removal state. Rust `PacketSideDataList::remove_kind` and `clear` already
-match the singleton removal/free shape; focused unit coverage, the ignored
-packet oracle, mapped differential/FATE rows, upstream `fate-avpacket`, clippy,
-and deterministic `avutil_core_models` sanitizer smoke cover the bounded
-shape. `avutil-packet` remains `fate_pass`, not complete; strict completion
-remains 11/96 because broader safe API design, ABI/media integration vectors,
-broader packet integration, and longer sustained fuzz evidence remain pending.
+match the add-path removal/free shape; focused unit coverage, the ignored
+packet oracle, mapped differential/FATE rows, upstream `fate-avpacket`,
+clippy, and deterministic `avutil_core_models` sanitizer smoke cover the
+bounded shape. `avutil-packet` remains `fate_pass`, not complete; strict
+completion remains 11/96 because broader safe API design, ABI/media
+integration vectors, broader packet integration, and longer sustained fuzz
+evidence remain pending.
 
 Validation passed for this slice with `cargo fmt --all`;
 `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --lib
@@ -42,9 +44,9 @@ clippy -p avutil --all-targets --all-features -- -D warnings`;
 `CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy --manifest-path fuzz/Cargo.toml
 --all-targets -- -D warnings`; and a one-input `avutil_core_models` sanitizer
 smoke under `CARGO_TARGET_DIR=target-wsl-fuzz` and
-`ASAN_OPTIONS=detect_leaks=0`, which rebuilt the sanitizer target in 6m44s,
+`ASAN_OPTIONS=detect_leaks=0`, which rebuilt the sanitizer target in 6m35s,
 loaded the four copied seed files from
-`/tmp/ffmpegrust-avutil-core-models.DtPpWn`, reached `DONE` after 5 runs, and
+`/tmp/ffmpegrust-avutil-core-models.iFDy6K`, reached `DONE` after 5 runs, and
 found no crash. The temporary scratch corpus was removed after the run.
 
 Current authoritative turn status: main-thread WSL advanced the top incomplete

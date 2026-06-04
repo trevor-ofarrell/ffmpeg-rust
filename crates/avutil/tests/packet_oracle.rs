@@ -6366,6 +6366,27 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:array-remove-raw-min-type".to_string(),
         side_data_list_summary_fields(&raw_list),
     );
+    rows.insert(
+        "packet:array-get-raw-negative-type-after-min-remove".to_string(),
+        side_data_lookup_fields(raw_list.get(&raw_negative_kind)),
+    );
+    let removed = raw_list
+        .remove_kind(&raw_negative_kind)
+        .expect("raw negative array side data should be removable");
+    assert_eq!(removed.data(), &[0xf1]);
+    rows.insert(
+        "packet:array-remove-raw-negative-type".to_string(),
+        side_data_list_summary_fields(&raw_list),
+    );
+    rows.insert(
+        "packet:array-get-raw-negative-type-removed".to_string(),
+        side_data_lookup_fields(raw_list.get(&raw_negative_kind)),
+    );
+    raw_list.clear();
+    rows.insert(
+        "packet:array-free-raw-negative-type".to_string(),
+        side_data_list_summary_fields(&raw_list),
+    );
 
     let mut capacity_list = PacketSideDataList::new();
     for (index, kind) in PacketSideDataKind::KNOWN.iter().enumerate() {
@@ -10370,7 +10391,20 @@ static void exercise_side_data_array_api(void) {
                                (enum AVPacketSideDataType)INT_MIN);
     print_side_data_array_summary("packet:array-remove-raw-min-type",
                                   sd, nb_sd);
+    print_side_data_array_lookup(
+        "packet:array-get-raw-negative-type-after-min-remove",
+        sd, nb_sd,
+        (enum AVPacketSideDataType)-1);
+    av_packet_side_data_remove(sd, &nb_sd,
+                               (enum AVPacketSideDataType)-1);
+    print_side_data_array_summary("packet:array-remove-raw-negative-type",
+                                  sd, nb_sd);
+    print_side_data_array_lookup("packet:array-get-raw-negative-type-removed",
+                                 sd, nb_sd,
+                                 (enum AVPacketSideDataType)-1);
     av_packet_side_data_free(&sd, &nb_sd);
+    print_side_data_array_summary("packet:array-free-raw-negative-type",
+                                  sd, nb_sd);
 
     for (int type = 0; type < AV_PKT_DATA_NB; type++) {
         entry = av_packet_side_data_new(&sd, &nb_sd,

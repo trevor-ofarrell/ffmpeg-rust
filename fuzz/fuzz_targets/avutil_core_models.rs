@@ -14819,6 +14819,13 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             .data(),
         &[0xf1]
     );
+    let removed_raw_negative = raw_array_list
+        .remove_kind(&raw_negative_array_kind)
+        .unwrap();
+    assert_eq!(removed_raw_negative.data(), &[0xf1]);
+    assert!(raw_array_list.get(&raw_negative_array_kind).is_none());
+    raw_array_list.clear();
+    assert!(raw_array_list.is_empty());
 
     let mut packet_fifo = PacketFifo::new();
     assert_eq!(packet_fifo.can_read(), 0);
