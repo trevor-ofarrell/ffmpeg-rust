@@ -247,7 +247,10 @@ storage directly, including that zeroed padding window, while clearing the
 source packet side-data list. Packet-owned `new_side_data` and standalone
 `PacketSideDataList::new_side_data` allocate replacement entries with zeroed
 input padding when replacing the first matching duplicate-kind entry, matching
-the current duplicate new-padding rows. Packet-owned `try_add_side_data_owned` and
+the current duplicate new-padding rows. Standalone `PacketSideDataList`
+removal and clear behavior also matches the pinned empty-state rows for newly
+allocated raw `AV_PKT_DATA_NB`, `AV_PKT_DATA_NB + 1`, and `-1` entries.
+Packet-owned `try_add_side_data_owned` and
 standalone `PacketSideDataList::try_add_side_data_with_flags` transfer
 caller-owned `SideData` directly, so caller-provided padded storage remains
 padded after first-match replacement or append, matching the current

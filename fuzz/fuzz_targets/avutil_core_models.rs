@@ -14771,6 +14771,18 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .iter()
         .take(AV_INPUT_BUFFER_PADDING_SIZE)
         .all(|byte| *byte == 0));
+    let removed_raw_negative_new_array_side = raw_negative_new_array_list
+        .remove_kind(&raw_negative_array_kind)
+        .unwrap();
+    assert_eq!(
+        removed_raw_negative_new_array_side.data(),
+        &[0xd1, 0xd2]
+    );
+    assert!(raw_negative_new_array_list
+        .get(&raw_negative_array_kind)
+        .is_none());
+    raw_negative_new_array_list.clear();
+    assert!(raw_negative_new_array_list.is_empty());
     raw_array_list
         .new_side_data(raw_min_array_kind.clone(), 1)
         .unwrap()

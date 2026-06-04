@@ -12924,6 +12924,13 @@ mod tests {
             .iter()
             .take(AV_INPUT_BUFFER_PADDING_SIZE)
             .all(|byte| *byte == 0));
+        let removed = raw_negative_new_list
+            .remove_kind(&raw_negative_kind)
+            .unwrap();
+        assert_eq!(removed.data(), &[0xd1, 0xd2]);
+        assert!(raw_negative_new_list.get(&raw_negative_kind).is_none());
+        raw_negative_new_list.clear();
+        assert!(raw_negative_new_list.is_empty());
 
         let raw_min_kind = PacketSideDataKind::from_ffmpeg_raw_value(i32::MIN);
         let mut raw_min_owner = Packet::default();

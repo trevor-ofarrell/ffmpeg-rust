@@ -6319,6 +6319,23 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:array-new-raw-negative-type-padding".to_string(),
         side_data_padding_fields(raw_negative_new_list.get(&raw_negative_kind)),
     );
+    let removed = raw_negative_new_list
+        .remove_kind(&raw_negative_kind)
+        .expect("new raw negative standalone side data should be removable");
+    assert_eq!(removed.data(), &[0xd1, 0xd2]);
+    rows.insert(
+        "packet:array-remove-new-raw-negative-type".to_string(),
+        side_data_list_summary_fields(&raw_negative_new_list),
+    );
+    rows.insert(
+        "packet:array-get-new-raw-negative-type-removed".to_string(),
+        side_data_lookup_fields(raw_negative_new_list.get(&raw_negative_kind)),
+    );
+    raw_negative_new_list.clear();
+    rows.insert(
+        "packet:array-free-new-raw-negative-type".to_string(),
+        side_data_list_summary_fields(&raw_negative_new_list),
+    );
 
     raw_list
         .new_side_data(raw_min_kind.clone(), 1)
@@ -10316,8 +10333,24 @@ static void exercise_side_data_array_api(void) {
                                   raw_negative_new_sd,
                                   raw_negative_new_nb_sd,
                                   (enum AVPacketSideDataType)-1);
+    av_packet_side_data_remove(raw_negative_new_sd,
+                               &raw_negative_new_nb_sd,
+                               (enum AVPacketSideDataType)-1);
+    print_side_data_array_summary(
+        "packet:array-remove-new-raw-negative-type",
+        raw_negative_new_sd,
+        raw_negative_new_nb_sd);
+    print_side_data_array_lookup(
+        "packet:array-get-new-raw-negative-type-removed",
+        raw_negative_new_sd,
+        raw_negative_new_nb_sd,
+        (enum AVPacketSideDataType)-1);
     av_packet_side_data_free(&raw_negative_new_sd,
                              &raw_negative_new_nb_sd);
+    print_side_data_array_summary(
+        "packet:array-free-new-raw-negative-type",
+        raw_negative_new_sd,
+        raw_negative_new_nb_sd);
 
     entry = av_packet_side_data_new(&sd, &nb_sd,
                                     (enum AVPacketSideDataType)INT_MIN,
