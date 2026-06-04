@@ -988,10 +988,14 @@ opaque-owner `AVBufferRef` shapes: the callback-owned row proves the owner stays
 shared and unreleased while either packet keeps a reference, then releases once
 with the tail-zeroed backing bytes after final unref, while the default-free
 opaque-owner row proves `av_buffer_get_opaque()` identity is preserved on both
-shared refs during the aliasing shrink. Safe Rust `Packet::shrink_data()` still
+shared refs during the aliasing shrink. Pool-owned rows prove the same
+destination pointer, shared-storage, non-writability, and tail-zeroing behavior
+while preserving `av_buffer_pool_buffer_get_opaque()` identity on both refs and
+delaying both the per-buffer release callback and pool-free callback until final
+unref after `av_buffer_pool_uninit()`. Safe Rust `Packet::shrink_data()` still
 copy-on-write detaches shared storage, while the active ordinary,
-callback-owned, and default-free opaque-owner shared-shrink units plus
-`avutil_core_models` invariants cover the explicit `unsafe
+callback-owned, default-free opaque-owner, and pool-owned shared-shrink units
+plus `avutil_core_models` invariants cover the explicit `unsafe
 Packet::shrink_data_ffmpeg_aliasing()` helper for the corresponding Rust
 payload storage.
 

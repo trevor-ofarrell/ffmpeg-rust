@@ -5578,8 +5578,9 @@ impl Packet {
     /// destination `AVPacket` view in place and zeroes the truncated input-padding
     /// window through the shared backing allocation. This helper exposes that
     /// behavior only for owned, non-readonly refcounted payload storage,
-    /// including callback-owned and default-free opaque-owner buffers; readonly,
-    /// NULL-data, and non-owned shapes fall back to the safe shrink path.
+    /// including callback-owned, default-free opaque-owner, and pool-owned
+    /// buffers; readonly, NULL-data, and non-owned shapes fall back to the safe
+    /// shrink path.
     ///
     /// # Safety
     ///
@@ -6485,6 +6486,7 @@ fn validate_webvtt_identifier_payload(data: &[u8]) -> AvResult<()> {
 mod tests {
     use super::*;
     use crate::frame::{FrameExifEndian, FrameExifTiffType};
+    use crate::{BufferPool, BufferPoolAllocation, BufferPoolCallbacks};
     use std::sync::{Arc, Mutex};
 
     fn minimal_icc_profile() -> Vec<u8> {
@@ -13090,6 +13092,111 @@ mod tests {
             .iter()
             .take(AV_INPUT_BUFFER_PADDING_SIZE)
             .all(|byte| *byte == 0));
+    }
+
+    #[test]
+    fn packet_shrink_shared_pool_refcounted_matches_ffmpeg_tail_zeroing() {
+        #[derive(Debug)]
+        struct PoolToken {
+            id: usize,
+        }
+
+        let releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let pool_frees = Arc::new(Mutex::new(Vec::<&'static str>::new()));
+        {
+            let release_capture = Arc::clone(&releases);
+            let pool_free_capture = Arc::clone(&pool_frees);
+            let mut pool = Some(
+                BufferPool::with_callbacks(
+                    4,
+                    AV_INPUT_BUFFER_PADDING_SIZE,
+                    BufferPoolCallbacks::with_allocation_callbacks(
+                        |allocated_len| {
+                            let mut storage = vec![0xaa, 0xbb, 0xcc, 0xdd];
+                            storage.resize(allocated_len, 0x5a);
+                            Ok(BufferPoolAllocation::with_opaque(
+                                storage,
+                                PoolToken { id: 919 },
+                            ))
+                        },
+                        move |allocation| {
+                            let id = allocation
+                                .opaque_ref::<PoolToken>()
+                                .map(|token| token.id)
+                                .unwrap_or_default();
+                            release_capture
+                                .lock()
+                                .unwrap()
+                                .push((id, allocation.into_vec()));
+                        },
+                    )
+                    .with_pool_free(move || {
+                        pool_free_capture.lock().unwrap().push("pool-free");
+                    }),
+                )
+                .unwrap(),
+            );
+
+            let shared_src = Packet::with_buffer(pool.as_ref().unwrap().get().unwrap(), 0);
+            let mut shared_dst = Packet::default();
+            shared_dst.ref_from(&shared_src);
+            let shared_dst_ptr = shared_dst.data_buffer().as_padded_ptr();
+
+            // SAFETY: The test holds no payload slices across the call and
+            // performs no concurrent access while modeling FFmpeg's shared
+            // pool-owned AVBuffer mutation.
+            unsafe {
+                shared_dst.shrink_data_ffmpeg_aliasing(2).unwrap();
+            }
+
+            assert_eq!(shared_dst.data_buffer().as_padded_ptr(), shared_dst_ptr);
+            assert!(shared_dst
+                .data_buffer()
+                .shares_storage(shared_src.data_buffer()));
+            assert_eq!(
+                shared_src
+                    .data_buffer()
+                    .pool_opaque_ref::<PoolToken>()
+                    .map(|token| token.id),
+                Some(919)
+            );
+            assert_eq!(
+                shared_dst
+                    .data_buffer()
+                    .pool_opaque_ref::<PoolToken>()
+                    .map(|token| token.id),
+                Some(919)
+            );
+            assert!(!shared_src.is_data_writable());
+            assert!(!shared_dst.is_data_writable());
+            assert_eq!(shared_src.data(), &[0xaa, 0xbb, 0x00, 0x00]);
+            assert_eq!(shared_dst.data(), &[0xaa, 0xbb]);
+            assert!(shared_dst
+                .data_buffer()
+                .padding_slice()
+                .iter()
+                .take(AV_INPUT_BUFFER_PADDING_SIZE)
+                .all(|byte| *byte == 0));
+            assert!(releases.lock().unwrap().is_empty());
+            assert!(pool_frees.lock().unwrap().is_empty());
+
+            drop(shared_dst);
+            assert!(releases.lock().unwrap().is_empty());
+            assert!(pool_frees.lock().unwrap().is_empty());
+            BufferPool::uninit(&mut pool);
+            assert!(releases.lock().unwrap().is_empty());
+            assert!(pool_frees.lock().unwrap().is_empty());
+            drop(shared_src);
+        }
+
+        let releases = releases.lock().unwrap();
+        assert_eq!(releases.len(), 1);
+        assert_eq!(releases[0].0, 919);
+        assert_eq!(&releases[0].1[..4], &[0xaa, 0xbb, 0x00, 0x00]);
+        assert!(releases[0].1[2..2 + AV_INPUT_BUFFER_PADDING_SIZE]
+            .iter()
+            .all(|byte| *byte == 0));
+        assert_eq!(*pool_frees.lock().unwrap(), vec!["pool-free"]);
     }
 
     #[test]

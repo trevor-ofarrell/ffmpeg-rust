@@ -11738,6 +11738,93 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .take(AV_INPUT_BUFFER_PADDING_SIZE)
         .all(|byte| *byte == 0));
 
+    let pool_shrink_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let pool_shrink_frees = Arc::new(Mutex::new(Vec::<&'static str>::new()));
+    {
+        let pool_release_capture = Arc::clone(&pool_shrink_releases);
+        let pool_free_capture = Arc::clone(&pool_shrink_frees);
+        let mut pool = Some(
+            BufferPool::with_callbacks(
+                4,
+                AV_INPUT_BUFFER_PADDING_SIZE,
+                BufferPoolCallbacks::with_allocation_callbacks(
+                    |allocated_len| {
+                        let mut storage = vec![0xaa, 0xbb, 0xcc, 0xdd];
+                        storage.resize(allocated_len, 0x5a);
+                        Ok(BufferPoolAllocation::with_opaque(storage, 916usize))
+                    },
+                    move |allocation| {
+                        let opaque = allocation.opaque_ref::<usize>().copied().unwrap_or_default();
+                        pool_release_capture
+                            .lock()
+                            .unwrap()
+                            .push((opaque, allocation.into_vec()));
+                    },
+                )
+                .with_pool_free(move || {
+                    pool_free_capture.lock().unwrap().push("pool-free");
+                }),
+            )
+            .unwrap(),
+        );
+        let pool_shrink_src = Packet::with_buffer(pool.as_ref().unwrap().get().unwrap(), 0);
+        let mut pool_shrink_dst = Packet::default();
+        pool_shrink_dst.ref_from(&pool_shrink_src);
+        let pool_shrink_dst_ptr = pool_shrink_dst.data_buffer().as_padded_ptr();
+        // SAFETY: The deterministic fixture holds no packet payload slices
+        // across the call and performs no concurrent access while modeling
+        // FFmpeg's shared pool-owned AVBuffer tail-zeroing behavior.
+        unsafe {
+            pool_shrink_dst
+                .shrink_data_ffmpeg_aliasing(2)
+                .unwrap();
+        }
+        assert_eq!(
+            pool_shrink_dst.data_buffer().as_padded_ptr(),
+            pool_shrink_dst_ptr
+        );
+        assert!(pool_shrink_dst
+            .data_buffer()
+            .shares_storage(pool_shrink_src.data_buffer()));
+        assert_eq!(
+            pool_shrink_src.data_buffer().pool_opaque_ref::<usize>(),
+            Some(&916)
+        );
+        assert_eq!(
+            pool_shrink_dst.data_buffer().pool_opaque_ref::<usize>(),
+            Some(&916)
+        );
+        assert!(!pool_shrink_src.is_data_writable());
+        assert!(!pool_shrink_dst.is_data_writable());
+        assert_eq!(pool_shrink_src.data(), &[0xaa, 0xbb, 0x00, 0x00]);
+        assert_eq!(pool_shrink_dst.data(), &[0xaa, 0xbb]);
+        assert!(pool_shrink_dst
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .take(AV_INPUT_BUFFER_PADDING_SIZE)
+            .all(|byte| *byte == 0));
+        assert!(pool_shrink_releases.lock().unwrap().is_empty());
+        assert!(pool_shrink_frees.lock().unwrap().is_empty());
+        drop(pool_shrink_dst);
+        assert!(pool_shrink_releases.lock().unwrap().is_empty());
+        BufferPool::uninit(&mut pool);
+        assert!(pool_shrink_releases.lock().unwrap().is_empty());
+        assert!(pool_shrink_frees.lock().unwrap().is_empty());
+        drop(pool_shrink_src);
+    }
+    let pool_shrink_releases = pool_shrink_releases.lock().unwrap();
+    assert_eq!(pool_shrink_releases.len(), 1);
+    assert_eq!(pool_shrink_releases[0].0, 916);
+    assert_eq!(
+        &pool_shrink_releases[0].1[..4],
+        &[0xaa, 0xbb, 0x00, 0x00]
+    );
+    assert!(pool_shrink_releases[0].1[2..2 + AV_INPUT_BUFFER_PADDING_SIZE]
+        .iter()
+        .all(|byte| *byte == 0));
+    assert_eq!(*pool_shrink_frees.lock().unwrap(), vec!["pool-free"]);
+
     let unpadded_grow_by = usize::from(cursor.next().unwrap_or_default() % 8);
     let mut unpadded_grown_packet = Packet::new(payload.clone(), stream_index);
     unpadded_grown_packet.grow_data(unpadded_grow_by).unwrap();

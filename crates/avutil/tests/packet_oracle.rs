@@ -247,6 +247,46 @@ fn libavcodec_packet_shared_shrink_oracle_documents_aliasing() {
             "packet:shared-shrink-opaque-zero-window".to_string(),
             vec!["0000000000000000".to_string()],
         ),
+        (
+            "packet:shared-shrink-pool-state".to_string(),
+            vec![
+                "4".to_string(),
+                "2".to_string(),
+                "1".to_string(),
+                "1".to_string(),
+                "2".to_string(),
+                "2".to_string(),
+                "0".to_string(),
+                "0".to_string(),
+                "1".to_string(),
+                "1".to_string(),
+                "0".to_string(),
+                "0".to_string(),
+            ],
+        ),
+        (
+            "packet:shared-shrink-pool-src".to_string(),
+            vec!["aabb0000".to_string()],
+        ),
+        (
+            "packet:shared-shrink-pool-dst".to_string(),
+            vec!["aabb".to_string()],
+        ),
+        (
+            "packet:shared-shrink-pool-zero-window".to_string(),
+            vec!["0000000000000000".to_string()],
+        ),
+        (
+            "packet:shared-shrink-pool-release".to_string(),
+            vec![
+                "1".to_string(),
+                "921".to_string(),
+                "aabb0000".to_string(),
+                "0000000000000000".to_string(),
+                "1".to_string(),
+                "921".to_string(),
+            ],
+        ),
     ]);
 
     assert_eq!(
@@ -6631,6 +6671,17 @@ static int custom_release_opaque = 0;
 static uint8_t custom_release_prefix[4] = {0};
 static uint8_t custom_release_zero_window[8] = {0};
 
+typedef struct PoolOpaque {
+    int id;
+} PoolOpaque;
+
+static int pool_release_count = 0;
+static int pool_release_opaque = 0;
+static uint8_t pool_release_prefix[4] = {0};
+static uint8_t pool_release_zero_window[8] = {0};
+static int pool_free_count = 0;
+static int pool_free_opaque = 0;
+
 static void fail_if(int condition, const char *message)
 {
     if (condition) {
@@ -6652,6 +6703,36 @@ static void custom_buffer_free(void *opaque, uint8_t *data)
     memcpy(custom_release_prefix, data, sizeof(custom_release_prefix));
     memcpy(custom_release_zero_window, data + 2, sizeof(custom_release_zero_window));
     av_free(data);
+}
+
+static void shared_shrink_pool_buffer_free(void *opaque, uint8_t *data)
+{
+    PoolOpaque *pool_opaque = (PoolOpaque *)opaque;
+    pool_release_count++;
+    pool_release_opaque = pool_opaque ? pool_opaque->id : -1;
+    memcpy(pool_release_prefix, data, sizeof(pool_release_prefix));
+    memcpy(pool_release_zero_window, data + 2, sizeof(pool_release_zero_window));
+    av_free(data);
+}
+
+static AVBufferRef *shared_shrink_pool_alloc(void *opaque, size_t size)
+{
+    uint8_t *data = av_malloc(size);
+    fail_if(!data, "pool av_malloc failed");
+    fail_if(size < 4 + AV_INPUT_BUFFER_PADDING_SIZE, "pool allocation too small");
+    data[0] = 0xaa;
+    data[1] = 0xbb;
+    data[2] = 0xcc;
+    data[3] = 0xdd;
+    memset(data + 4, 0x5a, size - 4);
+    return av_buffer_create(data, size, shared_shrink_pool_buffer_free, opaque, 0);
+}
+
+static void shared_shrink_pool_free(void *opaque)
+{
+    PoolOpaque *pool_opaque = (PoolOpaque *)opaque;
+    pool_free_count++;
+    pool_free_opaque = pool_opaque ? pool_opaque->id : -1;
 }
 
 int main(void)
@@ -6802,6 +6883,64 @@ int main(void)
     fail_if(opaque_src->buf && av_buffer_get_ref_count(opaque_src->buf) != 1,
             "opaque source refcount diverged after freeing destination");
     av_packet_free(&opaque_src);
+
+    PoolOpaque pool_opaque = {921};
+    AVBufferPool *pool = av_buffer_pool_init2(4 + AV_INPUT_BUFFER_PADDING_SIZE,
+                                              &pool_opaque,
+                                              shared_shrink_pool_alloc,
+                                              shared_shrink_pool_free);
+    fail_if(!pool, "shared shrink pool init failed");
+    AVPacket *pool_src = av_packet_alloc();
+    AVPacket *pool_dst = av_packet_alloc();
+    fail_if(!pool_src || !pool_dst, "pool av_packet_alloc failed");
+    pool_src->buf = av_buffer_pool_get(pool);
+    fail_if(!pool_src->buf, "av_buffer_pool_get failed");
+    pool_src->data = pool_src->buf->data;
+    pool_src->size = 4;
+    ret = av_packet_ref(pool_dst, pool_src);
+    fail_if(ret < 0, "pool av_packet_ref failed");
+    uint8_t *pool_dst_before = pool_dst->data;
+
+    av_shrink_packet(pool_dst, 2);
+
+    printf("packet:shared-shrink-pool-state|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d\n",
+           pool_src->size,
+           pool_dst->size,
+           pool_dst->data == pool_dst_before,
+           pool_src->buf && pool_dst->buf && pool_src->buf->buffer == pool_dst->buf->buffer,
+           pool_src->buf ? av_buffer_get_ref_count(pool_src->buf) : 0,
+           pool_dst->buf ? av_buffer_get_ref_count(pool_dst->buf) : 0,
+           pool_src->buf ? av_buffer_is_writable(pool_src->buf) : 0,
+           pool_dst->buf ? av_buffer_is_writable(pool_dst->buf) : 0,
+           pool_src->buf ? av_buffer_pool_buffer_get_opaque(pool_src->buf) == &pool_opaque : 0,
+           pool_dst->buf ? av_buffer_pool_buffer_get_opaque(pool_dst->buf) == &pool_opaque : 0,
+           pool_release_count,
+           pool_free_count);
+    printf("packet:shared-shrink-pool-src|");
+    print_hex(pool_src->data, pool_src->size);
+    printf("\n");
+    printf("packet:shared-shrink-pool-dst|");
+    print_hex(pool_dst->data, pool_dst->size);
+    printf("\n");
+    printf("packet:shared-shrink-pool-zero-window|");
+    print_hex(pool_dst->data + pool_dst->size, 8);
+    printf("\n");
+
+    av_packet_free(&pool_dst);
+    fail_if(pool_release_count != 0 || pool_free_count != 0,
+            "pool released while source still references it");
+    av_buffer_pool_uninit(&pool);
+    fail_if(pool != NULL, "pool uninit did not NULL pool pointer");
+    fail_if(pool_release_count != 0 || pool_free_count != 0,
+            "pool released before final packet unref");
+    av_packet_free(&pool_src);
+    printf("packet:shared-shrink-pool-release|%d|%d|",
+           pool_release_count,
+           pool_release_opaque);
+    print_hex(pool_release_prefix, sizeof(pool_release_prefix));
+    printf("|");
+    print_hex(pool_release_zero_window, sizeof(pool_release_zero_window));
+    printf("|%d|%d\n", pool_free_count, pool_free_opaque);
     return 0;
 }
 "#

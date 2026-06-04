@@ -1073,6 +1073,7 @@ impl BufferRef {
             None | Some(BufferOwner::Callback(_))
                 | Some(BufferOwner::Opaque(_))
                 | Some(BufferOwner::OpaqueData(_))
+                | Some(BufferOwner::Pool { .. })
         );
         if self.is_readonly()
             || !supports_aliasing_owner
@@ -1088,7 +1089,7 @@ impl BufferRef {
             // SAFETY: The method contract requires the caller to exclude live
             // byte slices and concurrent access to this shared storage. The
             // checks above restrict mutation to owned, non-readonly storage,
-            // including opaque/callback-owned storage, and prove that
+            // including pool/opaque/callback-owned storage, and prove that
             // padding_start..padding_start + padding is in bounds.
             unsafe {
                 self.data
