@@ -3,6 +3,53 @@
 ## Current Status
 
 Current authoritative turn status: main-thread WSL parity slice advanced
+`avutil-buffer` non-NULL zero-size `av_buffer_replace()` evidence. Required
+startup checks passed from a clean tree at `master...origin/master [ahead 73]`:
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15` reported 11/96 strict-complete components (11.5%), and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validated the pinned FFmpeg 8.1.1 oracle and ABI versions.
+
+Current main-thread slice: pinned libavutil rows now prove
+`av_buffer_replace(&dst, src)` over an existing destination and
+`av_buffer_replace(&src, src)` self-replace preserve the non-NULL public data
+pointer shape of zero-size `av_buffer_create(data, 0, free, opaque, flags)`
+custom-owner refs. Writable and READONLY sources keep opaque lookup, pointer
+identity, storage sharing where applicable, refcount/writability state, and
+release timing according to flags. Existing destination owners release
+immediately during replacement, while the replacement source owner releases
+only after the final unref. Rust mirrors this with focused
+`zero_length_nonnull_owner_refs_and_replace_preserve_shape` unit coverage, the
+mapped libavutil buffer oracle, and deterministic `avutil_core_models`
+invariants. `avutil-buffer` remains `fate_pass`, not complete; strict
+completion remains 11/96 because broader AVBufferRef/AVBufferPool ABI and
+lifetime closure, hardware/device/frame ownership integration,
+zero-known-limitation review, and sustained fuzz campaign evidence remain
+pending.
+
+Validation passed for this slice with `cargo fmt --all`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil
+zero_length_nonnull_owner_refs_and_replace_preserve_shape -- --nocapture`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
+buffer_oracle libavutil_buffer_refs_match_current_model -- --ignored
+--nocapture`; `cargo fmt --all -- --check`; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt
+--component avutil-buffer --target oracle-libavutil-buffer`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run --component
+avutil-buffer`; `CARGO_TARGET_DIR=target-orch-fate cargo test -p fate-runner
+current_ledger -- --nocapture`; `CARGO_TARGET_DIR=target-orch-avutil cargo
+clippy -p avutil --all-targets --all-features -- -D warnings`;
+`CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy --manifest-path fuzz/Cargo.toml
+--all-targets -- -D warnings`; `CARGO_TARGET_DIR=target-wsl-fuzz
+ASAN_OPTIONS=detect_leaks=0 cargo fuzz run avutil_core_models -- -runs=1`,
+which rebuilt the sanitizer target, loaded the four tracked seeds, reached
+`DONE` after 5 runs, and found no crash; `git diff --check` with CRLF
+conversion warnings only; `CARGO_TARGET_DIR=target-orch-fate cargo run -p
+xtask -- guard-runtime`; final `CARGO_TARGET_DIR=target-orch-fate cargo run -p
+fate-runner -- status --next 15`; and final `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p xtask -- oracle-doctor`.
+
+Current authoritative turn status: main-thread WSL parity slice advanced
 `avutil-packet` zero-visible non-NULL `av_packet_from_data()` custom-padding
 evidence. Required startup checks passed from a clean tree at
 `master...origin/master [ahead 72]`: `CARGO_TARGET_DIR=target-orch-fate cargo

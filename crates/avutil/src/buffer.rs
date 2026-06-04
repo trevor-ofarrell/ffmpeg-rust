@@ -3733,6 +3733,89 @@ mod tests {
         drop(replace_source);
         assert_eq!(*replace_released.lock().unwrap(), vec![(679, Vec::new())]);
 
+        let existing_dst_old_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let existing_dst_old_capture = std::sync::Arc::clone(&existing_dst_old_released);
+        let existing_dst_source_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let existing_dst_source_capture = std::sync::Arc::clone(&existing_dst_source_released);
+        let existing_dst_source = BufferRef::from_vec_with_opaque_release_callback(
+            Vec::new(),
+            681usize,
+            move |opaque, bytes| {
+                existing_dst_source_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        );
+        let mut existing_dst = Some(BufferRef::from_vec_with_opaque_release_callback(
+            vec![0xd4, 0xd5],
+            1681usize,
+            move |opaque, bytes| {
+                existing_dst_old_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        ));
+        BufferRef::replace(&mut existing_dst, Some(&existing_dst_source));
+        assert_eq!(
+            *existing_dst_old_released.lock().unwrap(),
+            vec![(1681, vec![0xd4, 0xd5])]
+        );
+        let existing_dst = existing_dst.expect("existing destination is replaced");
+        assert!(!existing_dst_source.is_data_ptr_null());
+        assert!(!existing_dst.is_data_ptr_null());
+        assert!(std::ptr::eq(
+            existing_dst_source.as_ptr(),
+            existing_dst.as_ptr(),
+        ));
+        assert!(existing_dst_source.shares_storage(&existing_dst));
+        assert_eq!(existing_dst_source.strong_count(), 2);
+        assert_eq!(existing_dst.strong_count(), 2);
+        assert_eq!(existing_dst_source.opaque_ref::<usize>(), Some(&681));
+        assert_eq!(existing_dst.opaque_ref::<usize>(), Some(&681));
+        assert!(!existing_dst_source.is_writable());
+        assert!(!existing_dst.is_writable());
+        assert!(existing_dst_source_released.lock().unwrap().is_empty());
+        drop(existing_dst);
+        assert!(existing_dst_source_released.lock().unwrap().is_empty());
+        assert_eq!(existing_dst_source.strong_count(), 1);
+        assert!(existing_dst_source.is_writable());
+        drop(existing_dst_source);
+        assert_eq!(
+            *existing_dst_source_released.lock().unwrap(),
+            vec![(681, Vec::new())]
+        );
+
+        let self_replace_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let self_replace_capture = std::sync::Arc::clone(&self_replace_released);
+        let mut self_replace = Some(BufferRef::from_vec_with_opaque_release_callback(
+            Vec::new(),
+            683usize,
+            move |opaque, bytes| {
+                self_replace_capture.lock().unwrap().push((opaque, bytes));
+            },
+        ));
+        let self_replace_before = self_replace.as_ref().unwrap().as_ptr();
+        let self_replace_source = BufferRef::ref_from(self_replace.as_ref().unwrap());
+        BufferRef::replace(&mut self_replace, Some(&self_replace_source));
+        drop(self_replace_source);
+        let self_replace = self_replace.expect("zero-size self replace keeps destination");
+        assert!(!self_replace.is_data_ptr_null());
+        assert!(std::ptr::eq(self_replace_before, self_replace.as_ptr()));
+        assert_eq!(self_replace.strong_count(), 1);
+        assert_eq!(self_replace.opaque_ref::<usize>(), Some(&683));
+        assert!(self_replace.is_writable());
+        assert!(self_replace_released.lock().unwrap().is_empty());
+        drop(self_replace);
+        assert_eq!(
+            *self_replace_released.lock().unwrap(),
+            vec![(683, Vec::new())]
+        );
+
         let readonly_ref_released =
             std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
         let readonly_ref_capture = std::sync::Arc::clone(&readonly_ref_released);
@@ -3819,6 +3902,121 @@ mod tests {
         assert_eq!(
             *readonly_replace_released.lock().unwrap(),
             vec![(680, Vec::new())]
+        );
+
+        let readonly_existing_dst_old_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let readonly_existing_dst_old_capture =
+            std::sync::Arc::clone(&readonly_existing_dst_old_released);
+        let readonly_existing_dst_source_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let readonly_existing_dst_source_capture =
+            std::sync::Arc::clone(&readonly_existing_dst_source_released);
+        let readonly_existing_dst_source =
+            BufferRef::from_vec_with_opaque_release_callback_readonly(
+                Vec::new(),
+                682usize,
+                move |opaque, bytes| {
+                    readonly_existing_dst_source_capture
+                        .lock()
+                        .unwrap()
+                        .push((opaque, bytes));
+                },
+            );
+        let mut readonly_existing_dst = Some(BufferRef::from_vec_with_opaque_release_callback(
+            vec![0xd6, 0xd7],
+            1682usize,
+            move |opaque, bytes| {
+                readonly_existing_dst_old_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        ));
+        BufferRef::replace(
+            &mut readonly_existing_dst,
+            Some(&readonly_existing_dst_source),
+        );
+        assert_eq!(
+            *readonly_existing_dst_old_released.lock().unwrap(),
+            vec![(1682, vec![0xd6, 0xd7])]
+        );
+        let readonly_existing_dst =
+            readonly_existing_dst.expect("existing destination is replaced by readonly source");
+        assert!(!readonly_existing_dst_source.is_data_ptr_null());
+        assert!(!readonly_existing_dst.is_data_ptr_null());
+        assert!(std::ptr::eq(
+            readonly_existing_dst_source.as_ptr(),
+            readonly_existing_dst.as_ptr(),
+        ));
+        assert!(readonly_existing_dst_source.shares_storage(&readonly_existing_dst));
+        assert_eq!(readonly_existing_dst_source.strong_count(), 2);
+        assert_eq!(readonly_existing_dst.strong_count(), 2);
+        assert_eq!(
+            readonly_existing_dst_source.opaque_ref::<usize>(),
+            Some(&682)
+        );
+        assert_eq!(readonly_existing_dst.opaque_ref::<usize>(), Some(&682));
+        assert!(readonly_existing_dst_source.is_readonly());
+        assert!(readonly_existing_dst.is_readonly());
+        assert!(!readonly_existing_dst_source.is_writable());
+        assert!(!readonly_existing_dst.is_writable());
+        assert!(readonly_existing_dst_source_released
+            .lock()
+            .unwrap()
+            .is_empty());
+        drop(readonly_existing_dst);
+        assert!(readonly_existing_dst_source_released
+            .lock()
+            .unwrap()
+            .is_empty());
+        assert_eq!(readonly_existing_dst_source.strong_count(), 1);
+        assert!(readonly_existing_dst_source.is_readonly());
+        assert!(!readonly_existing_dst_source.is_writable());
+        drop(readonly_existing_dst_source);
+        assert_eq!(
+            *readonly_existing_dst_source_released.lock().unwrap(),
+            vec![(682, Vec::new())]
+        );
+
+        let readonly_self_replace_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let readonly_self_replace_capture = std::sync::Arc::clone(&readonly_self_replace_released);
+        let mut readonly_self_replace =
+            Some(BufferRef::from_vec_with_opaque_release_callback_readonly(
+                Vec::new(),
+                684usize,
+                move |opaque, bytes| {
+                    readonly_self_replace_capture
+                        .lock()
+                        .unwrap()
+                        .push((opaque, bytes));
+                },
+            ));
+        let readonly_self_replace_before = readonly_self_replace.as_ref().unwrap().as_ptr();
+        let readonly_self_replace_source =
+            BufferRef::ref_from(readonly_self_replace.as_ref().unwrap());
+        BufferRef::replace(
+            &mut readonly_self_replace,
+            Some(&readonly_self_replace_source),
+        );
+        drop(readonly_self_replace_source);
+        let readonly_self_replace =
+            readonly_self_replace.expect("readonly zero-size self replace keeps destination");
+        assert!(!readonly_self_replace.is_data_ptr_null());
+        assert!(std::ptr::eq(
+            readonly_self_replace_before,
+            readonly_self_replace.as_ptr(),
+        ));
+        assert_eq!(readonly_self_replace.strong_count(), 1);
+        assert_eq!(readonly_self_replace.opaque_ref::<usize>(), Some(&684));
+        assert!(readonly_self_replace.is_readonly());
+        assert!(!readonly_self_replace.is_writable());
+        assert!(readonly_self_replace_released.lock().unwrap().is_empty());
+        drop(readonly_self_replace);
+        assert_eq!(
+            *readonly_self_replace_released.lock().unwrap(),
+            vec![(684, Vec::new())]
         );
     }
 

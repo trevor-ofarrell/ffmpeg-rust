@@ -9,6 +9,14 @@
 
 ## Compatible Today
 
+- Latest main-thread buffer non-null zero replace evidence: pinned libavutil
+  rows now prove `av_buffer_replace()` over an existing destination and
+  self-replace preserve the non-NULL public data-pointer shape of zero-size
+  `av_buffer_create(data, 0, free, opaque, flags)` custom owners. Writable and
+  READONLY refs keep opaque lookup, pointer identity, refcount/writability
+  state, and release timing according to flags. Rust unit, mapped oracle, and
+  deterministic `avutil_core_models` invariants cover this bounded shape.
+  `avutil-buffer` remains `fate_pass`, not complete.
 - Latest main-thread packet oracle-harness evidence: the ignored pinned
   libavcodec/libavutil packet oracle now honors `CARGO_TARGET_DIR` for its
   scratch C helper directory. A focused ignored run passed with

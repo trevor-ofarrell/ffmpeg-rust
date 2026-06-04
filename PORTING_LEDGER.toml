@@ -2,6 +2,16 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest main-thread buffer non-null zero replace slice: pinned libavutil rows
+# now prove `av_buffer_replace()` on non-NULL zero-size
+# `av_buffer_create(data, 0, free, opaque, flags)` custom-owner refs preserves
+# the distinct non-NULL public data pointer for both existing-destination and
+# self-replace paths. Writable and READONLY refs keep opaque lookup, pointer
+# identity, refcount/writability state, and release timing according to flags;
+# the existing destination owner is released immediately, while the replacement
+# source owner is delayed until final unref. Rust unit, mapped oracle, and
+# `avutil_core_models` invariants cover the bounded shape; avutil-buffer
+# remains fate_pass, not complete.
 # Latest main-thread packet from-data zero-visible custom-padding slice: pinned
 # libavcodec rows now prove `av_packet_from_data()` preserves caller-provided
 # nonzero `AV_INPUT_BUFFER_PADDING_SIZE` padding bytes even when the adopted
@@ -1932,6 +1942,14 @@ fate_tests = [
   "not_applicable: upstream FFmpeg FATE has no standalone AVBufferRef/AVBufferPool API target; covered by unit tests plus pinned libavutil differential oracle",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest non-null zero replace slice: pinned libavutil rows now prove
+# `av_buffer_replace(&dst, src)` with an existing destination and
+# `av_buffer_replace(&src, src)` self-replace preserve the non-NULL public data
+# pointer shape of zero-size `av_buffer_create(data, 0, free, opaque, flags)`
+# custom owners. Writable and READONLY sources keep opaque lookup, storage
+# identity, refcount/writability state, and source-owner release timing
+# according to flags; existing destination owners release immediately. This is
+# evidence-strengthening only; no status was promoted.
 # Latest null/nonzero parity slice: safe Rust `BufferRef` now represents the
 # pinned `av_buffer_create(NULL, 3, free, opaque, 0)` shape by preserving the
 # public NULL `data` pointer through refs, unique make-writable, and same-size
