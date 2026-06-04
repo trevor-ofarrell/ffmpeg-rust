@@ -236,7 +236,11 @@ Packet copy-props, ref, and clone helpers also reallocate copied side data with
 the same zeroed input-padding window, matching the current
 `packet:*side-padding` oracle rows. Move-ref preserves packet-owned side-data
 storage directly, including that zeroed padding window, while clearing the
-source packet side-data list.
+source packet side-data list. Packet-owned `try_add_side_data_owned` and
+standalone `PacketSideDataList::try_add_side_data_with_flags` transfer
+caller-owned `SideData` directly, so caller-provided padded storage remains
+padded after first-match replacement or append, matching the current
+`packet:*add-*-padding` oracle rows.
 
 `PacketFlags` stores raw `AVPacket.flags` bits instead of truncating to the
 known public mask. Known-bit helpers still drive ergonomic checks for

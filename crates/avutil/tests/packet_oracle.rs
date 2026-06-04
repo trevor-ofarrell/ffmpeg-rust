@@ -5059,7 +5059,10 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     );
 
     let replaced = packet
-        .add_side_data(SideData::new_extradata(vec![0x55, 0x66]).unwrap())
+        .add_side_data(padded_side_data(
+            PacketSideDataKind::NewExtradata,
+            &[0x55, 0x66],
+        ))
         .expect("new_extradata should be replaced");
     assert_eq!(replaced.data(), &[0xaa, 0xbb, 0xcc]);
     rows.insert(
@@ -5070,9 +5073,12 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:side-add-replace".to_string(),
         side_data_summary_fields(&packet),
     );
+    rows.insert(
+        "packet:side-add-replace-padding".to_string(),
+        side_data_padding_fields(packet.side_data_by_kind_id(&PacketSideDataKind::NewExtradata)),
+    );
 
-    let appended = packet
-        .add_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x77]).unwrap());
+    let appended = packet.add_side_data(padded_side_data(PacketSideDataKind::Palette, &[0x77]));
     assert!(appended.is_none(), "palette side data should append");
     rows.insert(
         "packet:side-add-append-ret".to_string(),
@@ -5081,6 +5087,10 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:side-add-append".to_string(),
         side_data_summary_fields(&packet),
+    );
+    rows.insert(
+        "packet:side-add-append-padding".to_string(),
+        side_data_padding_fields(packet.side_data_by_kind_id(&PacketSideDataKind::Palette)),
     );
 
     let mut duplicate_packet = Packet::default();
@@ -5566,7 +5576,10 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     );
 
     let replaced = list
-        .add_side_data(SideData::new_extradata(vec![0x55, 0x66, 0x77]).unwrap())
+        .add_side_data(padded_side_data(
+            PacketSideDataKind::NewExtradata,
+            &[0x55, 0x66, 0x77],
+        ))
         .expect("new_extradata should be replaced");
     assert_eq!(replaced.data(), &[0xaa, 0xbb]);
     rows.insert(
@@ -5577,9 +5590,12 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:array-add-replace".to_string(),
         side_data_list_summary_fields(&list),
     );
+    rows.insert(
+        "packet:array-add-replace-padding".to_string(),
+        side_data_padding_fields(list.get(&PacketSideDataKind::NewExtradata)),
+    );
 
-    let appended = list
-        .add_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x99]).unwrap());
+    let appended = list.add_side_data(padded_side_data(PacketSideDataKind::Palette, &[0x99]));
     assert!(appended.is_none(), "palette side data should append");
     rows.insert(
         "packet:array-add-append-ret".to_string(),
@@ -5588,6 +5604,10 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:array-add-append".to_string(),
         side_data_list_summary_fields(&list),
+    );
+    rows.insert(
+        "packet:array-add-append-padding".to_string(),
+        side_data_padding_fields(list.get(&PacketSideDataKind::Palette)),
     );
     rows.insert(
         "packet:array-get-palette".to_string(),
@@ -6485,6 +6505,18 @@ fn side_data_padding_fields(side_data: Option<&SideData>) -> Vec<String> {
             "-".to_string(),
         ],
     }
+}
+
+fn padded_side_data(kind: PacketSideDataKind, data: &[u8]) -> SideData {
+    let mut packet = Packet::default();
+    packet
+        .new_side_data(kind.clone(), data.len())
+        .expect("padded packet side data allocation should succeed")
+        .data_mut()
+        .copy_from_slice(data);
+    packet
+        .take_side_data_kind(&kind)
+        .expect("padded packet side data should remain present")
 }
 
 fn payload_fields(packet: &Packet) -> Vec<String> {
@@ -9064,6 +9096,8 @@ static void exercise_side_data_api(void) {
     ret = av_packet_add_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, owned, 2);
     printf("packet:side-add-replace-ret|%d\n", ret);
     print_side_data_summary("packet:side-add-replace", pkt);
+    print_packet_side_data_padding("packet:side-add-replace-padding", pkt,
+                                   AV_PKT_DATA_NEW_EXTRADATA);
 
     owned = av_mallocz(1 + AV_INPUT_BUFFER_PADDING_SIZE);
     fail_if(!owned, "av_mallocz append side data failed");
@@ -9071,6 +9105,8 @@ static void exercise_side_data_api(void) {
     ret = av_packet_add_side_data(pkt, AV_PKT_DATA_PALETTE, owned, 1);
     printf("packet:side-add-append-ret|%d\n", ret);
     print_side_data_summary("packet:side-add-append", pkt);
+    print_packet_side_data_padding("packet:side-add-append-padding", pkt,
+                                   AV_PKT_DATA_PALETTE);
     av_packet_free(&pkt);
 
     pkt = new_packet();
@@ -9355,6 +9391,8 @@ static void exercise_side_data_array_api(void) {
                                     owned, 3, 0);
     printf("packet:array-add-replace-ret|%d\n", entry != NULL);
     print_side_data_array_summary("packet:array-add-replace", sd, nb_sd);
+    print_side_data_array_padding("packet:array-add-replace-padding", sd, nb_sd,
+                                  AV_PKT_DATA_NEW_EXTRADATA);
 
     owned = av_mallocz(1 + AV_INPUT_BUFFER_PADDING_SIZE);
     fail_if(!owned, "av_mallocz array append side data failed");
@@ -9363,6 +9401,8 @@ static void exercise_side_data_array_api(void) {
                                     owned, 1, 0);
     printf("packet:array-add-append-ret|%d\n", entry != NULL);
     print_side_data_array_summary("packet:array-add-append", sd, nb_sd);
+    print_side_data_array_padding("packet:array-add-append-padding", sd, nb_sd,
+                                  AV_PKT_DATA_PALETTE);
     print_side_data_array_lookup("packet:array-get-palette", sd, nb_sd,
                                  AV_PKT_DATA_PALETTE);
 

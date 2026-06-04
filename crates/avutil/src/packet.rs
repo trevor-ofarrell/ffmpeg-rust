@@ -11965,6 +11965,93 @@ mod tests {
     }
 
     #[test]
+    fn packet_add_side_data_transfers_caller_owned_padding() {
+        fn padded_side_data(kind: PacketSideDataKind, data: &[u8]) -> SideData {
+            let mut owner = Packet::default();
+            owner
+                .new_side_data(kind.clone(), data.len())
+                .unwrap()
+                .data_mut()
+                .copy_from_slice(data);
+            owner.take_side_data_kind(&kind).unwrap()
+        }
+
+        fn assert_padded_side_data(side_data: &SideData, expected: &[u8]) {
+            assert_eq!(side_data.data(), expected);
+            assert_eq!(side_data.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+            assert!(side_data
+                .padding_slice()
+                .iter()
+                .take(AV_INPUT_BUFFER_PADDING_SIZE)
+                .all(|byte| *byte == 0));
+        }
+
+        let mut packet = Packet::default();
+        packet
+            .new_side_data(PacketSideDataKind::NewExtradata, 2)
+            .unwrap()
+            .data_mut()
+            .copy_from_slice(&[0x11, 0x22]);
+        let mut replacement = Some(padded_side_data(
+            PacketSideDataKind::NewExtradata,
+            &[0x55, 0x66],
+        ));
+        let replaced = packet
+            .try_add_side_data_owned(&mut replacement)
+            .unwrap()
+            .unwrap();
+        assert!(replacement.is_none());
+        assert_padded_side_data(&replaced, &[0x11, 0x22]);
+        assert_padded_side_data(
+            packet
+                .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+                .unwrap(),
+            &[0x55, 0x66],
+        );
+
+        let mut appended = Some(padded_side_data(PacketSideDataKind::Palette, &[0x77]));
+        assert!(packet
+            .try_add_side_data_owned(&mut appended)
+            .unwrap()
+            .is_none());
+        assert!(appended.is_none());
+        assert_padded_side_data(
+            packet
+                .side_data_by_kind_id(&PacketSideDataKind::Palette)
+                .unwrap(),
+            &[0x77],
+        );
+
+        let mut list = PacketSideDataList::new();
+        list.new_side_data(PacketSideDataKind::NewExtradata, 2)
+            .unwrap()
+            .data_mut()
+            .copy_from_slice(&[0xaa, 0xbb]);
+        let mut list_replacement = Some(padded_side_data(
+            PacketSideDataKind::NewExtradata,
+            &[0x55, 0x66, 0x77],
+        ));
+        let replaced = list
+            .try_add_side_data_with_flags(&mut list_replacement, 0)
+            .unwrap()
+            .unwrap();
+        assert!(list_replacement.is_none());
+        assert_padded_side_data(&replaced, &[0xaa, 0xbb]);
+        assert_padded_side_data(
+            list.get(&PacketSideDataKind::NewExtradata).unwrap(),
+            &[0x55, 0x66, 0x77],
+        );
+
+        let mut list_appended = Some(padded_side_data(PacketSideDataKind::Palette, &[0x99]));
+        assert!(list
+            .try_add_side_data_with_flags(&mut list_appended, i32::MAX)
+            .unwrap()
+            .is_none());
+        assert!(list_appended.is_none());
+        assert_padded_side_data(list.get(&PacketSideDataKind::Palette).unwrap(), &[0x99]);
+    }
+
+    #[test]
     fn packet_null_zero_side_data_add_preserves_entry_and_null_lookup_shape() {
         let mut packet = Packet::default();
         assert!(packet

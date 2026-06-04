@@ -207,6 +207,16 @@ positive-size packet-owned side data with its zeroed
 side-data list. The deterministic `avutil_core_models` fixture mirrors the
 same ownership transfer with `Packet::move_ref_from()`.
 
+The latest packet side-data add adoption padding fixture adds
+`packet:side-add-replace-padding`, `packet:side-add-append-padding`,
+`packet:array-add-replace-padding`, and `packet:array-add-append-padding` rows.
+These prove packet-owned `av_packet_add_side_data()` and standalone
+`av_packet_side_data_add()` preserve caller-owned positive side data with its
+zeroed `AV_INPUT_BUFFER_PADDING_SIZE` padding window after first-match
+replacement and append. The deterministic `avutil_core_models` fixture mirrors
+the same direct `SideData` ownership transfer through
+`try_add_side_data_owned()` and `PacketSideDataList::try_add_side_data_with_flags()`.
+
 A later warmed WSL `avutil_core_models` smoke ran 4096 inputs with
 `CARGO_TARGET_DIR=target-wsl-fuzz` and `ASAN_OPTIONS=detect_leaks=0` against a
 temporary copy of the four tracked seed files. It reached `DONE`, libFuzzer
