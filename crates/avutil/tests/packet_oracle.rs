@@ -5466,6 +5466,10 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:side-get-raw-negative-type-shrunk".to_string(),
         side_data_lookup_fields(raw_packet.side_data_by_kind_id(&raw_negative_kind)),
     );
+    rows.insert(
+        "packet:side-shrink-raw-negative-type-padding".to_string(),
+        side_data_padding_fields(raw_packet.side_data_by_kind_id(&raw_negative_kind)),
+    );
 
     let raw_min_oversize = raw_packet
         .shrink_side_data_by_kind_id(&raw_min_kind, 2)
@@ -9348,6 +9352,8 @@ static void exercise_side_data_api(void) {
     print_side_data_summary("packet:side-shrink-raw-negative-type", pkt);
     print_side_data_lookup("packet:side-get-raw-negative-type-shrunk", pkt,
                            (enum AVPacketSideDataType)-1);
+    print_packet_side_data_padding("packet:side-shrink-raw-negative-type-padding",
+                                   pkt, (enum AVPacketSideDataType)-1);
 
     ret = av_packet_shrink_side_data(pkt, (enum AVPacketSideDataType)INT_MIN, 2);
     printf("packet:side-shrink-raw-min-oversize-ret|%d\n", ret);

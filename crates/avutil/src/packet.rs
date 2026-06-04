@@ -12075,6 +12075,21 @@ mod tests {
             packet.side_data_by_kind_id(&raw_negative_kind).unwrap(),
             &[0xf1],
         );
+        packet
+            .shrink_side_data_by_kind_id(&raw_negative_kind, 0)
+            .unwrap();
+        let shrunk_raw_negative = packet.side_data_by_kind_id(&raw_negative_kind).unwrap();
+        assert_eq!(shrunk_raw_negative.data(), &[]);
+        assert_eq!(
+            shrunk_raw_negative.padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert_eq!(shrunk_raw_negative.padding_slice()[0], 0xf1);
+        assert!(
+            shrunk_raw_negative.padding_slice()[1..AV_INPUT_BUFFER_PADDING_SIZE]
+                .iter()
+                .all(|byte| *byte == 0)
+        );
 
         let mut list = PacketSideDataList::new();
         list.new_side_data(PacketSideDataKind::NewExtradata, 2)

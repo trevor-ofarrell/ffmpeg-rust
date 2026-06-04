@@ -249,9 +249,10 @@ ownership, so same-kind replacement still consumes padded caller storage while
 new-kind ERANGE failure leaves the caller-owned padded entry intact. Packet-owned
 side-data shrink preserves truncated visible bytes in the hidden padding area
 while retaining the padding allocation shape, matching the current
-`packet:side-shrink-padding` row for ordinary positive shrink and
+`packet:side-shrink-padding` row for ordinary positive shrink,
 `packet:side-shrink-duplicate-padding` row for shrinking the first duplicate
-caller-owned entry to zero.
+caller-owned entry to zero, and
+`packet:side-shrink-raw-negative-type-padding` row for raw `-1` side data.
 
 `PacketFlags` stores raw `AVPacket.flags` bits instead of truncating to the
 known public mask. Known-bit helpers still drive ergonomic checks for
