@@ -239,15 +239,16 @@ padding window when replacing the first matching entry in duplicate-kind
 side-data arrays.
 
 The latest packet side-data shrink hidden-tail padding fixture adds
+`packet:side-shrink-raw-nb-type-padding`,
 `packet:side-shrink-raw-negative-type-padding` and
 `packet:side-shrink-raw-min-type-padding` alongside
 `packet:side-shrink-padding` and `packet:side-shrink-duplicate-padding`. These
 prove `av_packet_shrink_side_data()` preserves truncated side-data bytes in the
 hidden input-padding window for ordinary positive packet-owned shrink, when
 shrinking the first matching duplicate-kind packet-owned entry to zero, and
-when shrinking raw `-1` or `INT_MIN` packet-owned entries to zero. The
-deterministic `avutil_core_models` fixture mirrors the same hidden-tail padding
-shape through `SideData::shrink()`.
+when shrinking raw exact `AV_PKT_DATA_NB`, `-1`, or `INT_MIN` packet-owned
+entries to zero. The deterministic `avutil_core_models` fixture mirrors the
+same hidden-tail padding shape through `SideData::shrink()`.
 
 The latest packet raw side-data allocation/no-mutation padding fixture adds
 `packet:side-new-raw-type-padding`,

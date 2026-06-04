@@ -5481,6 +5481,26 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         side_data_padding_fields(raw_packet.side_data_by_kind_id(&raw_min_kind)),
     );
 
+    raw_packet
+        .shrink_side_data_by_kind_id(&raw_add_kind, 0)
+        .unwrap();
+    rows.insert(
+        "packet:side-shrink-raw-nb-type-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:side-shrink-raw-nb-type".to_string(),
+        side_data_summary_fields(&raw_packet),
+    );
+    rows.insert(
+        "packet:side-get-raw-nb-type-shrunk".to_string(),
+        side_data_lookup_fields(raw_packet.side_data_by_kind_id(&raw_add_kind)),
+    );
+    rows.insert(
+        "packet:side-shrink-raw-nb-type-padding".to_string(),
+        side_data_padding_fields(raw_packet.side_data_by_kind_id(&raw_add_kind)),
+    );
+
     let mut raw_negative_new_packet = Packet::default();
     raw_negative_new_packet
         .new_side_data(raw_negative_kind.clone(), 2)
@@ -9566,6 +9586,15 @@ static void exercise_side_data_api(void) {
                            (enum AVPacketSideDataType)INT_MIN);
     print_packet_side_data_padding("packet:side-add-raw-min-type-padding",
                                    pkt, (enum AVPacketSideDataType)INT_MIN);
+
+    ret = av_packet_shrink_side_data(pkt, (enum AVPacketSideDataType)AV_PKT_DATA_NB, 0);
+    printf("packet:side-shrink-raw-nb-type-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_shrink_side_data AV_PKT_DATA_NB raw type failed");
+    print_side_data_summary("packet:side-shrink-raw-nb-type", pkt);
+    print_side_data_lookup("packet:side-get-raw-nb-type-shrunk", pkt,
+                           (enum AVPacketSideDataType)AV_PKT_DATA_NB);
+    print_packet_side_data_padding("packet:side-shrink-raw-nb-type-padding",
+                                   pkt, (enum AVPacketSideDataType)AV_PKT_DATA_NB);
 
     AVPacket *raw_negative_new_pkt = new_packet();
     sd = av_packet_new_side_data(raw_negative_new_pkt,

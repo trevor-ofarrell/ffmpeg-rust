@@ -4,6 +4,52 @@
 
 Current authoritative turn status: main-thread WSL advanced the top incomplete
 `avutil-packet` row with exact raw `AV_PKT_DATA_NB` packet-owned side-data
+shrink hidden-tail padding evidence. Required startup checks passed from a
+clean tree at `master...origin/master [ahead 105]`:
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15` reported 11/96 strict-complete components (11.5%) with `avutil-packet` as
+the first incomplete row, and `CARGO_TARGET_DIR=target-orch-fate cargo run -p
+xtask -- oracle-doctor` validated the pinned FFmpeg 8.1.1 oracle and ABI
+versions.
+
+Current main-thread slice: pinned libavcodec row
+`packet:side-shrink-raw-nb-type-padding` now proves
+`av_packet_shrink_side_data()` preserves the truncated caller-owned byte in the
+hidden input-padding window when shrinking an exact raw `AV_PKT_DATA_NB`
+packet-owned side-data entry to zero. Rust `SideData::shrink` already preserves
+that hidden tail for padded caller-owned raw side data; focused unit coverage,
+the ignored packet oracle, mapped differential/FATE rows, upstream
+`fate-avpacket`, clippy, and deterministic `avutil_core_models` sanitizer
+smoke cover the bounded shape. `avutil-packet` remains `fate_pass`, not
+complete; strict completion remains 11/96 because broader safe API design,
+ABI/media integration vectors, broader packet integration, and longer sustained
+fuzz evidence remain pending.
+
+Validation passed for this slice with `cargo fmt --all`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --lib
+packet_accepts_raw_ffmpeg_side_data_types_before_capacity -- --nocapture`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --lib
+packet_add_side_data_transfers_caller_owned_padding -- --nocapture`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
+packet_oracle libavcodec_packet_core_lifecycle_matches_packet_model -- --ignored
+--nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner --
+run --component avutil-packet`; `CARGO_TARGET_DIR=target-orch-fate cargo run
+-p fate-runner -- run --mappings tests/differential/mappings.txt --component
+avutil-packet --target oracle-libavcodec-packet-core`; the upstream
+`fate-avpacket` mapping after the first sandboxed attempt failed with FFmpeg's
+`tests/data/fate/avpacket` cache path read-only and the approved rerun outside
+the sandbox passed; `CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p
+avutil --all-targets --all-features -- -D warnings`;
+`CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy --manifest-path fuzz/Cargo.toml
+--all-targets -- -D warnings`; and a one-input `avutil_core_models` sanitizer
+smoke under `CARGO_TARGET_DIR=target-wsl-fuzz` and
+`ASAN_OPTIONS=detect_leaks=0`, which rebuilt the sanitizer target in 7m12s,
+loaded the four copied seed files from
+`/tmp/ffmpegrust-avutil-core-models.ehaKte`, reached `DONE` after 5 runs, and
+found no crash. The temporary scratch corpus was removed after the run.
+
+Current authoritative turn status: main-thread WSL advanced the top incomplete
+`avutil-packet` row with exact raw `AV_PKT_DATA_NB` packet-owned side-data
 allocation padding evidence. Required startup checks passed from a clean tree
 at `master...origin/master [ahead 104]`: `CARGO_TARGET_DIR=target-orch-fate
 cargo run -p fate-runner -- status --next 15` reported 11/96 strict-complete

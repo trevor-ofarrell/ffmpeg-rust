@@ -9,6 +9,16 @@
 
 ## Compatible Today
 
+- Latest main-thread packet raw `AV_PKT_DATA_NB` side-data shrink hidden-tail
+  evidence: pinned libavcodec row `packet:side-shrink-raw-nb-type-padding`
+  now proves `av_packet_shrink_side_data()` preserves the truncated
+  caller-owned byte in the hidden input-padding window when shrinking an exact
+  raw `AV_PKT_DATA_NB` packet-owned side-data entry to zero. Rust mirrors this
+  through `SideData::shrink` for padded caller-owned raw side data, with
+  focused unit, ignored oracle, mapped differential/FATE, upstream
+  `fate-avpacket`, clippy, and WSL `avutil_core_models` sanitizer smoke
+  coverage. `avutil-packet` remains `fate_pass`; strict completion remains
+  11/96.
 - Latest main-thread packet raw `AV_PKT_DATA_NB` new-side-data padding
   evidence: pinned libavcodec row `packet:side-new-raw-nb-type-padding` now
   proves exact raw `AV_PKT_DATA_NB` packet-owned
@@ -109,13 +119,14 @@
   `fate_pass`; strict completion remains 11/96.
 - Latest main-thread packet raw negative/minimum side-data shrink hidden-tail
   padding evidence: pinned libavcodec rows
-  `packet:side-shrink-raw-negative-type-padding` and
+  `packet:side-shrink-raw-nb-type-padding`,
+  `packet:side-shrink-raw-negative-type-padding`, and
   `packet:side-shrink-raw-min-type-padding` now prove
   `av_packet_shrink_side_data()` preserves the truncated caller-owned byte in
-  the hidden input-padding window when shrinking raw `-1` and `INT_MIN`
-  packet-owned side-data entries to zero. Rust mirrors this through
-  `SideData::shrink` while retaining the padding allocation shape, with focused
-  units, ignored oracle rows, mapped differential/FATE, upstream
+  the hidden input-padding window when shrinking raw exact `AV_PKT_DATA_NB`,
+  `-1`, and `INT_MIN` packet-owned side-data entries to zero. Rust mirrors
+  this through `SideData::shrink` while retaining the padding allocation shape,
+  with focused units, ignored oracle rows, mapped differential/FATE, upstream
   `fate-avpacket`, clippy, and WSL `avutil_core_models` sanitizer smoke
   coverage. `avutil-packet` remains `fate_pass`; strict completion remains
   11/96.

@@ -12147,6 +12147,17 @@ mod tests {
         assert!(raw_add.is_none());
         assert_padded_side_data(packet.side_data_by_kind_id(&raw_kind).unwrap(), &[0x7e]);
 
+        packet.shrink_side_data_by_kind_id(&raw_kind, 0).unwrap();
+        let shrunk_raw_kind = packet.side_data_by_kind_id(&raw_kind).unwrap();
+        assert_eq!(shrunk_raw_kind.data(), &[]);
+        assert_eq!(shrunk_raw_kind.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+        assert_eq!(shrunk_raw_kind.padding_slice()[0], 0x7e);
+        assert!(
+            shrunk_raw_kind.padding_slice()[1..AV_INPUT_BUFFER_PADDING_SIZE]
+                .iter()
+                .all(|byte| *byte == 0)
+        );
+
         let raw_negative_kind = PacketSideDataKind::from_ffmpeg_raw_value(-1);
         let mut raw_negative_add = Some(padded_side_data(raw_negative_kind.clone(), &[0xf1]));
         assert!(packet

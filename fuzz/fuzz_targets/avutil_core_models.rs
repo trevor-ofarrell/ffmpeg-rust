@@ -14585,7 +14585,6 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             .data(),
         &[0x6a, 0x6b]
     );
-
     let mut capacity_list = PacketSideDataList::new();
     for (index, kind) in PacketSideDataKind::KNOWN.iter().enumerate() {
         assert!(capacity_list
@@ -17291,6 +17290,19 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             .unwrap(),
         &[0x7e],
     );
+    add_owned_packet
+        .shrink_side_data_by_kind_id(&raw_add_kind, 0)
+        .unwrap();
+    let shrunk_raw_add = add_owned_packet
+        .side_data_by_kind_id(&raw_add_kind)
+        .unwrap();
+    assert_eq!(shrunk_raw_add.data(), &[]);
+    assert_eq!(shrunk_raw_add.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+    assert_eq!(shrunk_raw_add.padding_slice()[0], 0x7e);
+    assert!(shrunk_raw_add.padding_slice()[1..AV_INPUT_BUFFER_PADDING_SIZE]
+        .iter()
+        .all(|byte| *byte == 0));
+
     let raw_negative_kind = PacketSideDataKind::from_ffmpeg_raw_value(-1);
     let mut raw_negative_add = Some(padded_side_data(raw_negative_kind.clone(), &[0xf1]));
     assert!(add_owned_packet
