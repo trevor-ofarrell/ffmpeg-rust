@@ -12123,6 +12123,16 @@ mod tests {
             packet.side_data_by_kind_id(&raw_negative_kind).unwrap(),
             &[0xf1],
         );
+
+        let raw_min_kind = PacketSideDataKind::from_ffmpeg_raw_value(i32::MIN);
+        let mut raw_min_add = Some(padded_side_data(raw_min_kind.clone(), &[0xe1]));
+        assert!(packet
+            .try_add_side_data_owned(&mut raw_min_add)
+            .unwrap()
+            .is_none());
+        assert!(raw_min_add.is_none());
+        assert_padded_side_data(packet.side_data_by_kind_id(&raw_min_kind).unwrap(), &[0xe1]);
+
         packet
             .shrink_side_data_by_kind_id(&raw_negative_kind, 0)
             .unwrap();
@@ -12174,6 +12184,14 @@ mod tests {
             .is_none());
         assert!(raw_negative_list_add.is_none());
         assert_padded_side_data(list.get(&raw_negative_kind).unwrap(), &[0xf1]);
+
+        let mut raw_min_list_add = Some(padded_side_data(raw_min_kind.clone(), &[0xe1]));
+        assert!(list
+            .try_add_side_data_with_flags(&mut raw_min_list_add, 0)
+            .unwrap()
+            .is_none());
+        assert!(raw_min_list_add.is_none());
+        assert_padded_side_data(list.get(&raw_min_kind).unwrap(), &[0xe1]);
 
         list.new_side_data_with_flags(PacketSideDataKind::SkipSamples, 2, 1)
             .unwrap()
@@ -12746,6 +12764,25 @@ mod tests {
             .all(|byte| *byte == 0));
 
         let raw_min_kind = PacketSideDataKind::from_ffmpeg_raw_value(i32::MIN);
+        let mut raw_min_owner = Packet::default();
+        raw_min_owner
+            .new_side_data(raw_min_kind.clone(), 1)
+            .unwrap()
+            .data_mut()
+            .copy_from_slice(&[0xe1]);
+        let raw_min_added = raw_min_owner.take_side_data_kind(&raw_min_kind).unwrap();
+        assert!(list.try_add_side_data(raw_min_added).unwrap().is_none());
+        let raw_min_added_side = list.get(&raw_min_kind).unwrap();
+        assert_eq!(raw_min_added_side.data(), &[0xe1]);
+        assert_eq!(
+            raw_min_added_side.padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(raw_min_added_side
+            .padding_slice()
+            .iter()
+            .take(AV_INPUT_BUFFER_PADDING_SIZE)
+            .all(|byte| *byte == 0));
         list.new_side_data(raw_min_kind.clone(), 1)
             .unwrap()
             .data_mut()

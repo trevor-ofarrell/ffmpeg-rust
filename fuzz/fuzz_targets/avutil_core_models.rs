@@ -17262,6 +17262,19 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             .unwrap(),
         &[0xf1],
     );
+    let raw_min_add_kind = PacketSideDataKind::from_ffmpeg_raw_value(i32::MIN);
+    let mut raw_min_add = Some(padded_side_data(raw_min_add_kind.clone(), &[0xe1]));
+    assert!(add_owned_packet
+        .try_add_side_data_owned(&mut raw_min_add)
+        .unwrap()
+        .is_none());
+    assert!(raw_min_add.is_none());
+    assert_padded_side_data(
+        add_owned_packet
+            .side_data_by_kind_id(&raw_min_add_kind)
+            .unwrap(),
+        &[0xe1],
+    );
     add_owned_packet
         .shrink_side_data_by_kind_id(&raw_negative_kind, 0)
         .unwrap();
@@ -17320,6 +17333,13 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         add_owned_list.get(&raw_negative_kind).unwrap(),
         &[0xf1],
     );
+    let mut raw_min_list_add = Some(padded_side_data(raw_min_add_kind.clone(), &[0xe1]));
+    assert!(add_owned_list
+        .try_add_side_data_with_flags(&mut raw_min_list_add, 0)
+        .unwrap()
+        .is_none());
+    assert!(raw_min_list_add.is_none());
+    assert_padded_side_data(add_owned_list.get(&raw_min_add_kind).unwrap(), &[0xe1]);
     add_owned_list
         .new_side_data_with_flags(PacketSideDataKind::SkipSamples, 2, 1)
         .unwrap()

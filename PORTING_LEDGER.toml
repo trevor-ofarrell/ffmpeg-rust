@@ -2,6 +2,15 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest main-thread packet raw INT_MIN side-data add padding slice:
+# pinned libavcodec rows `packet:side-add-raw-min-type-padding` and
+# `packet:array-add-raw-min-type-padding` now prove packet-owned and standalone
+# `av_packet*_side_data_add()` preserve caller-owned raw `INT_MIN` positive
+# side data with AV_INPUT_BUFFER_PADDING_SIZE zero padding after direct
+# ownership transfer. Rust direct `SideData` transfer already matched this;
+# focused unit, ignored oracle rows, mapped differential/FATE, upstream
+# fate-avpacket, clippy, and `avutil_core_models` sanitizer smoke cover the
+# bounded shape. avutil-packet remains fate_pass, not complete.
 # Latest main-thread packet standalone raw INT_MIN new-side-data padding slice:
 # pinned libavcodec row `packet:array-new-raw-min-type-padding` now proves raw
 # `INT_MIN` standalone `av_packet_side_data_new()` allocations get zeroed input
@@ -96,13 +105,14 @@ default_profile = "ffmpeg-8.1.1-default-native"
 # avutil-packet remains fate_pass, not complete.
 # Latest main-thread packet raw/flagged side-data add padding slice: pinned
 # libavcodec rows now prove packet-owned positive-size side-data adds under raw
-# `AV_PKT_DATA_NB` and `-1` kinds, plus standalone raw `-1` append and
-# nonzero-flag `av_packet_side_data_add()` replacement, preserve caller-owned
-# positive side data with `AV_INPUT_BUFFER_PADDING_SIZE` zero padding. Rust
-# direct `SideData` transfer already matched this; focused unit, ignored oracle
-# rows, mapped differential/FATE, upstream fate-avpacket, clippy, and
-# `avutil_core_models` sanitizer smoke cover the bounded shape. avutil-packet
-# remains fate_pass, not complete.
+# `AV_PKT_DATA_NB`, `-1`, and `INT_MIN` kinds, plus standalone raw `-1` and
+# `INT_MIN` append and nonzero-flag `av_packet_side_data_add()` replacement,
+# preserve caller-owned positive side data with
+# `AV_INPUT_BUFFER_PADDING_SIZE` zero padding. Rust direct `SideData` transfer
+# already matched this; focused unit, ignored oracle rows, mapped
+# differential/FATE, upstream fate-avpacket, clippy, and `avutil_core_models`
+# sanitizer smoke cover the bounded shape. avutil-packet remains fate_pass, not
+# complete.
 # Latest main-thread packet side-data add adoption padding slice: pinned
 # libavcodec rows now prove packet-owned `av_packet_add_side_data()` and
 # standalone `av_packet_side_data_add()` preserve caller-owned positive side
@@ -2045,12 +2055,15 @@ notes = "FATE pass for the current bounded AVPacket helper surface under the sel
 # Latest raw/flagged side-data add padding slice:
 # `packet:side-add-raw-type-padding`,
 # `packet:side-add-raw-negative-type-padding`,
-# `packet:array-add-raw-negative-type-padding`, and
+# `packet:side-add-raw-min-type-padding`,
+# `packet:array-add-raw-negative-type-padding`,
+# `packet:array-add-raw-min-type-padding`, and
 # `packet:array-add-flags-nonzero-padding` rows prove raw packet-owned
-# positive-size side-data adds under raw kinds, standalone raw `-1` append, and
-# standalone nonzero-flag replacement preserve caller-owned side-data padding.
-# Focused packet unit and deterministic `avutil_core_models` invariants assert
-# the same direct Rust ownership transfer.
+# positive-size side-data adds under raw kinds, standalone raw `-1`/`INT_MIN`
+# append, and standalone nonzero-flag replacement preserve caller-owned
+# side-data padding. Focused packet unit and deterministic
+# `avutil_core_models` invariants assert the same direct Rust ownership
+# transfer.
 # Latest standalone raw INT_MIN new-side-data padding slice:
 # `packet:array-new-raw-min-type-padding` proves standalone raw `INT_MIN`
 # `av_packet_side_data_new()` allocation carries zeroed FFmpeg input padding.

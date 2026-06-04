@@ -3,6 +3,64 @@
 ## Current Status
 
 Current authoritative turn status: main-thread WSL advanced the top incomplete
+`avutil-packet` row with raw `INT_MIN` side-data add padding evidence.
+Required startup checks ran from `master...origin/master [ahead 100]` with an
+existing dirty packet slice: `CARGO_TARGET_DIR=target-orch-fate cargo run -p
+fate-runner -- status --next 15` reported 11/96 strict-complete components
+(11.5%) with `avutil-packet` as the first incomplete row, and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validated the pinned FFmpeg 8.1.1 oracle and ABI versions. An initial startup
+rerun accidentally used Cargo's default `target/` cache; the stable-lane checks
+were rerun successfully and the accidental cache should be removed before the
+commit.
+
+Current main-thread slice: pinned libavcodec rows
+`packet:side-add-raw-min-type-padding` and
+`packet:array-add-raw-min-type-padding` now prove packet-owned and standalone
+`av_packet*_side_data_add()` preserve caller-owned raw `INT_MIN` positive side
+data with zeroed input padding after direct ownership transfer. Rust direct
+`SideData` transfer already matched this through
+`Packet::try_add_side_data_owned` and
+`PacketSideDataList::try_add_side_data_with_flags`; focused unit coverage, the
+ignored packet oracle, mapped differential/FATE rows, upstream `fate-avpacket`,
+clippy, and deterministic `avutil_core_models` sanitizer smoke cover the
+bounded shape. `avutil-packet` remains `fate_pass`, not complete; strict
+completion remains 11/96 because broader safe API design, ABI/media
+integration vectors, broader packet integration, and longer sustained fuzz
+evidence remain pending.
+
+Validation passed for this slice with `cargo fmt --all`; an initial focused
+unit attempt that exposed an out-of-scope helper in
+`packet_side_data_list_accepts_negative_raw_ffmpeg_types`, fixed before final
+validation; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --lib
+packet_add_side_data_transfers_caller_owned_padding -- --nocapture`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --lib
+packet_side_data_list_accepts_negative_raw_ffmpeg_types -- --nocapture`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
+packet_oracle libavcodec_packet_core_lifecycle_matches_packet_model -- --ignored
+--nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner --
+run --component avutil-packet`; `CARGO_TARGET_DIR=target-orch-fate cargo run
+-p fate-runner -- run --mappings tests/differential/mappings.txt --component
+avutil-packet --target oracle-libavcodec-packet-core`; the upstream
+`fate-avpacket` mapping after the first sandboxed attempt failed with FFmpeg's
+`tests/data/fate/avpacket` cache path read-only and the approved rerun outside
+the sandbox passed; `CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p
+avutil --all-targets --all-features -- -D warnings`;
+`CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy --manifest-path fuzz/Cargo.toml
+--all-targets -- -D warnings`; and a one-input `avutil_core_models` sanitizer
+smoke under `CARGO_TARGET_DIR=target-wsl-fuzz` and
+`ASAN_OPTIONS=detect_leaks=0`, which rebuilt the sanitizer target in 7m43s,
+loaded the four copied seed files from
+`/tmp/ffmpegrust-avutil-core-models.Ky88Ml`, reached `DONE` after 5 runs, and
+found no crash. The temporary scratch corpus was removed after the run. Final
+guards passed with `cargo fmt --all -- --check`; `git diff --check` with CRLF
+conversion warnings only; `CARGO_TARGET_DIR=target-orch-fate cargo test -p
+fate-runner current_ledger -- --nocapture`; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p xtask -- guard-runtime`; final `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- status --next 15`; and final oracle doctor under
+`CARGO_TARGET_DIR=target-orch-fate`.
+
+Current authoritative turn status: main-thread WSL advanced the top incomplete
 `avutil-packet` row with standalone raw `INT_MIN` side-data allocation padding
 evidence. Required startup checks passed from a clean tree at
 `master...origin/master [ahead 99]`: `CARGO_TARGET_DIR=target-orch-fate cargo

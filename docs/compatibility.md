@@ -9,6 +9,17 @@
 
 ## Compatible Today
 
+- Latest main-thread packet raw `INT_MIN` side-data add padding evidence:
+  pinned libavcodec rows `packet:side-add-raw-min-type-padding` and
+  `packet:array-add-raw-min-type-padding` now prove packet-owned and
+  standalone `av_packet*_side_data_add()` preserve caller-owned raw `INT_MIN`
+  positive side data with `AV_INPUT_BUFFER_PADDING_SIZE` zero padding after
+  direct ownership transfer. Rust mirrors this through direct `SideData`
+  transfer in `try_add_side_data_owned` and
+  `PacketSideDataList::try_add_side_data_with_flags`, with focused unit,
+  ignored oracle, mapped differential/FATE, upstream `fate-avpacket`, clippy,
+  and WSL `avutil_core_models` sanitizer smoke coverage. `avutil-packet`
+  remains `fate_pass`; strict completion remains 11/96.
 - Latest main-thread packet standalone raw `INT_MIN` new-side-data padding
   evidence: pinned libavcodec row
   `packet:array-new-raw-min-type-padding` now proves raw `INT_MIN` standalone
