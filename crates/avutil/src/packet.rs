@@ -12828,6 +12828,11 @@ mod tests {
             .iter()
             .take(AV_INPUT_BUFFER_PADDING_SIZE)
             .all(|byte| *byte == 0));
+        let removed = raw_type_list.remove_kind(&raw_type_kind).unwrap();
+        assert_eq!(removed.data(), &[0x7a, 0x7b]);
+        assert!(raw_type_list.get(&raw_type_kind).is_none());
+        raw_type_list.clear();
+        assert!(raw_type_list.is_empty());
 
         let raw_plus_one_kind =
             PacketSideDataKind::from_ffmpeg_raw_value(PacketSideDataKind::KNOWN.len() as i32 + 1);

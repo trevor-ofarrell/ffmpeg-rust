@@ -6113,6 +6113,23 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:array-add-raw-type-padding".to_string(),
         side_data_padding_fields(raw_type_list.get(&raw_type_kind)),
     );
+    let removed = raw_type_list
+        .remove_kind(&raw_type_kind)
+        .expect("raw AV_PKT_DATA_NB standalone side data should be removable");
+    assert_eq!(removed.data(), &[0x7e]);
+    rows.insert(
+        "packet:array-remove-raw-type".to_string(),
+        side_data_list_summary_fields(&raw_type_list),
+    );
+    rows.insert(
+        "packet:array-get-raw-type-removed".to_string(),
+        side_data_lookup_fields(raw_type_list.get(&raw_type_kind)),
+    );
+    raw_type_list.clear();
+    rows.insert(
+        "packet:array-free-raw-type".to_string(),
+        side_data_list_summary_fields(&raw_type_list),
+    );
 
     let mut raw_type_new_list = PacketSideDataList::new();
     raw_type_new_list
@@ -10085,7 +10102,14 @@ static void exercise_side_data_array_api(void) {
     print_side_data_array_padding("packet:array-add-raw-type-padding",
                                   sd, nb_sd,
                                   (enum AVPacketSideDataType)AV_PKT_DATA_NB);
+    av_packet_side_data_remove(sd, &nb_sd,
+                               (enum AVPacketSideDataType)AV_PKT_DATA_NB);
+    print_side_data_array_summary("packet:array-remove-raw-type", sd, nb_sd);
+    print_side_data_array_lookup("packet:array-get-raw-type-removed",
+                                 sd, nb_sd,
+                                 (enum AVPacketSideDataType)AV_PKT_DATA_NB);
     av_packet_side_data_free(&sd, &nb_sd);
+    print_side_data_array_summary("packet:array-free-raw-type", sd, nb_sd);
 
     owned = av_mallocz(1 + AV_INPUT_BUFFER_PADDING_SIZE);
     fail_if(!owned, "av_mallocz array negative raw type failed");
