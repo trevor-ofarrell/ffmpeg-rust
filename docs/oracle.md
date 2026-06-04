@@ -147,6 +147,13 @@ reported final corpus `283/20Kb`, found no crash, and the tracked corpus stayed
 at four files. This strengthens current packet-model smoke evidence, but it is
 still not a sustained fuzz campaign.
 
+A later warmed WSL `avutil_core_models` smoke ran 4096 inputs with
+`CARGO_TARGET_DIR=target-wsl-fuzz` and `ASAN_OPTIONS=detect_leaks=0` against a
+temporary copy of the four tracked seed files. It reached `DONE`, libFuzzer
+reported final corpus `346/23Kb`, found no crash, and the tracked corpus stayed
+at four files after the scratch corpus was removed. This strengthens current
+frame-model smoke evidence, but it is still not a sustained fuzz campaign.
+
 The latest packet empty zero-growth fixture extends `avutil_core_models` with
 `Packet::default().grow_data(0)`. The pinned libavcodec packet oracle emits the
 matching `packet:payload-grow-empty-zero*` rows, proving

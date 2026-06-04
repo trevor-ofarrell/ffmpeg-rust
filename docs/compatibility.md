@@ -9,6 +9,13 @@
 
 ## Compatible Today
 
+- Latest main-thread frame fuzz evidence: a warmed WSL `avutil_core_models`
+  4096-run sanitizer smoke completed against a temporary copy of the tracked
+  seed corpus without a crash. libFuzzer reported final corpus `346/23Kb`, the
+  scratch corpus was removed, and the repository corpus stayed at four seed
+  files. This strengthens current frame deterministic invariants for
+  `avutil-frame`; strict completion remains 11/96 and the row remains
+  `fate_pass`.
 - Latest main-thread packet fuzz evidence: a warmed WSL `avutil_core_models`
   4096-run sanitizer smoke completed against a temporary copy of the tracked
   seed corpus without a crash. libFuzzer reported final corpus `283/20Kb`,

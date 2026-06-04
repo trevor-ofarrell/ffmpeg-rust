@@ -3,6 +3,45 @@
 ## Current Status
 
 Current authoritative turn status: main-thread WSL evidence slice strengthened
+`avutil-frame` fuzz smoke coverage. Required startup checks passed from a clean
+tree at `master...origin/master [ahead 61]`:
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15` reported 11/96 strict-complete components (11.5%), and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validated the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
+kept the documented `avutil-packet` shared refcounted `av_shrink_packet()`
+blocker unchanged and advanced the next unblocked priority-1 frame fuzz
+evidence lane; no worker writes were delegated.
+
+Current main-thread slice: a warmed WSL `avutil_core_models` sanitizer smoke
+ran 4096 inputs with `CARGO_TARGET_DIR=target-wsl-fuzz` and
+`ASAN_OPTIONS=detect_leaks=0` against a temporary copy of the four tracked seed
+files at `/tmp/ffmpegrust-avutil-frame-fuzz.2Ikx22`. libFuzzer reached `DONE`,
+reported final corpus `346/23Kb`, and found no crash. The scratch directory
+was about 1.4 MiB and was removed after the run, while the repository corpus
+stayed at the four tracked seed files. This strengthens the current frame
+deterministic invariants inside `avutil_core_models`, including audio/video
+frame shapes, plane storage, side data, packet/frame side-data bridging, and
+frame lifecycle fixtures. `avutil-frame` remains `fate_pass`, not complete;
+strict completion remains 11/96 because broader AVFrame fields,
+hardware/context behavior, alignment policy, media integration,
+zero-known-limitation review, and sustained fuzz campaign evidence remain
+pending.
+
+Latest validation command for this frame fuzz evidence passed:
+`CARGO_TARGET_DIR=target-wsl-fuzz ASAN_OPTIONS=detect_leaks=0 cargo fuzz run
+avutil_core_models /tmp/ffmpegrust-avutil-frame-fuzz.2Ikx22 -- -runs=4096`.
+The scratch corpus was removed with `rm -rf
+/tmp/ffmpegrust-avutil-frame-fuzz.2Ikx22`.
+Final documentation/ledger guards also passed:
+`CARGO_TARGET_DIR=target-orch-fate cargo test -p fate-runner current_ledger`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- guard-runtime`;
+`cargo fmt --all -- --check`; `git diff --check` with CRLF conversion
+warnings only; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner --
+status --next 15`; and `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask
+-- oracle-doctor`.
+
+Current authoritative turn status: main-thread WSL evidence slice strengthened
 `avutil-buffer` fuzz smoke coverage. Required startup checks passed from a
 clean tree at `master...origin/master [ahead 60]`:
 `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
