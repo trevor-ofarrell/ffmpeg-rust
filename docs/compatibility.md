@@ -9,6 +9,13 @@
 
 ## Compatible Today
 
+- Latest main-thread buffer oracle-harness evidence: the ignored pinned
+  libavutil buffer oracle now honors `CARGO_TARGET_DIR` for its scratch C
+  helper directory. A focused ignored run passed with
+  `CARGO_TARGET_DIR=target-orch-avutil` and generated the helper under
+  `target-orch-avutil/oracle/avutil-buffer`, keeping repeatable buffer oracle
+  evidence on the stable WSL target lane. `avutil-buffer` remains `fate_pass`;
+  strict completion remains 11/96.
 - Latest main-thread options evidence: pinned libavutil rows now prove AVOption
   numeric expressions parse signs as part of numeric literals before dB suffix
   conversion, so `-0dB` succeeds as `1.000000`. The same row set covers

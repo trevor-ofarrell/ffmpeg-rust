@@ -33,6 +33,13 @@ cargo run -p xtask -- oracle-doctor
 
 The doctor command locates the default local `ffmpeg` and `ffprobe` oracle wrappers, runs `-version`, and fails unless both tools report FFmpeg 8.1.1 with the pinned library ABI versions (`libavutil 60.26.101`, `libavcodec 62.28.101`, `libavformat 62.12.101`, `libavdevice 62.3.101`, `libavfilter 11.14.101`, `libswscale 9.5.101`, and `libswresample 6.3.101`). Non-default paths can be checked with `--ffmpeg <path>` and `--ffprobe <path>`.
 
+Ignored oracle harnesses that compile temporary C helpers should write those
+helpers under the active Cargo target directory when `CARGO_TARGET_DIR` is set.
+The `avutil-buffer` harness now uses `CARGO_TARGET_DIR/oracle/avutil-buffer`,
+or falls back to `target/oracle/avutil-buffer` for default Cargo runs, matching
+the `avutil-options` harness pattern and keeping WSL evidence runs on stable
+target lanes.
+
 ## Inventory Generation
 
 Run:

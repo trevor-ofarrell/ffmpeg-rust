@@ -2,6 +2,31 @@
 
 ## Current Status
 
+Current authoritative turn status: main-thread WSL evidence-harness slice
+strengthened `avutil-buffer` oracle execution hygiene after rechecking the
+required startup gates. Required startup checks passed from a clean tree at
+`master...origin/master [ahead 65]`: `CARGO_TARGET_DIR=target-orch-fate cargo
+run -p fate-runner -- status --next 15` reported 11/96 strict-complete
+components (11.5%), and `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask
+-- oracle-doctor` validated the pinned FFmpeg 8.1.1 oracle and ABI versions.
+The main thread kept the documented `avutil-packet` shared refcounted
+`av_shrink_packet()` blocker unchanged and advanced the next unblocked
+priority-1 buffer lane; no worker writes were delegated.
+
+Current main-thread slice: the ignored pinned libavutil buffer oracle harness
+now honors `CARGO_TARGET_DIR` for its scratch C build directory, mirroring the
+options oracle behavior and keeping repeated WSL oracle runs inside the stable
+target lane instead of recreating the default top-level `target/oracle` path.
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
+buffer_oracle libavutil_buffer_refs_match_current_model -- --ignored
+--nocapture` passed and generated its helper under
+`target-orch-avutil/oracle/avutil-buffer`; the mapped differential row also
+passed under `target-orch-fate/oracle/avutil-buffer`. `avutil-buffer` remains
+`fate_pass`, not complete; strict completion remains 11/96 because broader
+ABI/lifetime closure, hardware device/frame ownership integration,
+zero-known-limitation review, and sustained fuzz campaign evidence remain
+pending.
+
 Current authoritative turn status: main-thread WSL slice advanced
 `avutil-options` numeric-expression suffix parity after rechecking the required
 startup gates. Required startup checks passed from a clean tree at

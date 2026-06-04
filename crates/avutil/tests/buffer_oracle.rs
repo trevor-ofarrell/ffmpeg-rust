@@ -32,7 +32,17 @@ fn libavutil_buffer_refs_match_current_model() {
         libavutil.display()
     );
 
-    let work_dir = repo_root.join("target/oracle/avutil-buffer");
+    let target_dir = env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .map(|path| {
+            if path.is_absolute() {
+                path
+            } else {
+                repo_root.join(path)
+            }
+        })
+        .unwrap_or_else(|| repo_root.join("target"));
+    let work_dir = target_dir.join("oracle/avutil-buffer");
     fs::create_dir_all(&work_dir).expect("create avutil-buffer oracle work dir");
     let source = work_dir.join("buffer_oracle.c");
     let executable = work_dir.join("buffer_oracle");
