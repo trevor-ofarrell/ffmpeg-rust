@@ -5578,8 +5578,8 @@ impl Packet {
     /// destination `AVPacket` view in place and zeroes the truncated input-padding
     /// window through the shared backing allocation. This helper exposes that
     /// behavior only for owned, non-readonly refcounted payload storage,
-    /// including callback-owned buffers; readonly, NULL-data, and non-owned
-    /// shapes fall back to the safe shrink path.
+    /// including callback-owned and default-free opaque-owner buffers; readonly,
+    /// NULL-data, and non-owned shapes fall back to the safe shrink path.
     ///
     /// # Safety
     ///
@@ -13052,6 +13052,43 @@ mod tests {
         assert_eq!(&releases[0].1[..4], &[0xaa, 0xbb, 0x00, 0x00]);
         assert!(releases[0].1[2..2 + AV_INPUT_BUFFER_PADDING_SIZE]
             .iter()
+            .all(|byte| *byte == 0));
+    }
+
+    #[test]
+    fn packet_shrink_shared_opaque_refcounted_matches_ffmpeg_tail_zeroing() {
+        let mut storage = vec![0xaa, 0xbb, 0xcc, 0xdd];
+        storage.resize(4 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+        let shared_src = Packet::with_buffer(
+            BufferRef::from_vec_with_len_and_opaque(storage, 4, 917usize).unwrap(),
+            0,
+        );
+        let mut shared_dst = Packet::default();
+        shared_dst.ref_from(&shared_src);
+        let shared_dst_ptr = shared_dst.data_buffer().as_padded_ptr();
+
+        // SAFETY: The test holds no payload slices across the call and
+        // performs no concurrent access while modeling FFmpeg's shared
+        // default-free opaque-owner AVBuffer mutation.
+        unsafe {
+            shared_dst.shrink_data_ffmpeg_aliasing(2).unwrap();
+        }
+
+        assert_eq!(shared_dst.data_buffer().as_padded_ptr(), shared_dst_ptr);
+        assert!(shared_dst
+            .data_buffer()
+            .shares_storage(shared_src.data_buffer()));
+        assert_eq!(shared_src.data_buffer().opaque_ref::<usize>(), Some(&917));
+        assert_eq!(shared_dst.data_buffer().opaque_ref::<usize>(), Some(&917));
+        assert!(!shared_src.is_data_writable());
+        assert!(!shared_dst.is_data_writable());
+        assert_eq!(shared_src.data(), &[0xaa, 0xbb, 0x00, 0x00]);
+        assert_eq!(shared_dst.data(), &[0xaa, 0xbb]);
+        assert!(shared_dst
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .take(AV_INPUT_BUFFER_PADDING_SIZE)
             .all(|byte| *byte == 0));
     }
 

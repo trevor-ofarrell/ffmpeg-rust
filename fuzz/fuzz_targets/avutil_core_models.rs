@@ -11695,6 +11695,49 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .iter()
         .all(|byte| *byte == 0));
 
+    let mut opaque_shrink_storage = vec![0xaa, 0xbb, 0xcc, 0xdd];
+    opaque_shrink_storage.resize(4 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+    let opaque_shrink_src = Packet::with_buffer(
+        BufferRef::from_vec_with_len_and_opaque(opaque_shrink_storage, 4, 915usize).unwrap(),
+        0,
+    );
+    let mut opaque_shrink_dst = Packet::default();
+    opaque_shrink_dst.ref_from(&opaque_shrink_src);
+    let opaque_shrink_dst_ptr = opaque_shrink_dst.data_buffer().as_padded_ptr();
+    // SAFETY: The deterministic fixture holds no packet payload slices across
+    // the call and performs no concurrent access while modeling FFmpeg's shared
+    // default-free opaque-owner AVBuffer tail-zeroing behavior.
+    unsafe {
+        opaque_shrink_dst
+            .shrink_data_ffmpeg_aliasing(2)
+            .unwrap();
+    }
+    assert_eq!(
+        opaque_shrink_dst.data_buffer().as_padded_ptr(),
+        opaque_shrink_dst_ptr
+    );
+    assert!(opaque_shrink_dst
+        .data_buffer()
+        .shares_storage(opaque_shrink_src.data_buffer()));
+    assert_eq!(
+        opaque_shrink_src.data_buffer().opaque_ref::<usize>(),
+        Some(&915)
+    );
+    assert_eq!(
+        opaque_shrink_dst.data_buffer().opaque_ref::<usize>(),
+        Some(&915)
+    );
+    assert!(!opaque_shrink_src.is_data_writable());
+    assert!(!opaque_shrink_dst.is_data_writable());
+    assert_eq!(opaque_shrink_src.data(), &[0xaa, 0xbb, 0x00, 0x00]);
+    assert_eq!(opaque_shrink_dst.data(), &[0xaa, 0xbb]);
+    assert!(opaque_shrink_dst
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .take(AV_INPUT_BUFFER_PADDING_SIZE)
+        .all(|byte| *byte == 0));
+
     let unpadded_grow_by = usize::from(cursor.next().unwrap_or_default() % 8);
     let mut unpadded_grown_packet = Packet::new(payload.clone(), stream_index);
     unpadded_grown_packet.grow_data(unpadded_grow_by).unwrap();

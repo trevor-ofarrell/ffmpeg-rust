@@ -220,6 +220,33 @@ fn libavcodec_packet_shared_shrink_oracle_documents_aliasing() {
                 "0000000000000000".to_string(),
             ],
         ),
+        (
+            "packet:shared-shrink-opaque-state".to_string(),
+            vec![
+                "4".to_string(),
+                "2".to_string(),
+                "1".to_string(),
+                "1".to_string(),
+                "2".to_string(),
+                "2".to_string(),
+                "0".to_string(),
+                "0".to_string(),
+                "1".to_string(),
+                "1".to_string(),
+            ],
+        ),
+        (
+            "packet:shared-shrink-opaque-src".to_string(),
+            vec!["aabb0000".to_string()],
+        ),
+        (
+            "packet:shared-shrink-opaque-dst".to_string(),
+            vec!["aabb".to_string()],
+        ),
+        (
+            "packet:shared-shrink-opaque-zero-window".to_string(),
+            vec!["0000000000000000".to_string()],
+        ),
     ]);
 
     assert_eq!(
@@ -6724,6 +6751,57 @@ int main(void)
     printf("|");
     print_hex(custom_release_zero_window, sizeof(custom_release_zero_window));
     printf("\n");
+
+    int opaque_opaque = 917;
+    AVPacket *opaque_src = av_packet_alloc();
+    AVPacket *opaque_dst = av_packet_alloc();
+    fail_if(!opaque_src || !opaque_dst, "opaque av_packet_alloc failed");
+    uint8_t *opaque_data = av_malloc(4 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!opaque_data, "opaque av_malloc failed");
+    opaque_data[0] = 0xaa;
+    opaque_data[1] = 0xbb;
+    opaque_data[2] = 0xcc;
+    opaque_data[3] = 0xdd;
+    memset(opaque_data + 4, 0x5a, AV_INPUT_BUFFER_PADDING_SIZE);
+    opaque_src->buf = av_buffer_create(opaque_data,
+                                       4 + AV_INPUT_BUFFER_PADDING_SIZE,
+                                       NULL,
+                                       &opaque_opaque,
+                                       0);
+    fail_if(!opaque_src->buf, "opaque av_buffer_create failed");
+    opaque_src->data = opaque_src->buf->data;
+    opaque_src->size = 4;
+    ret = av_packet_ref(opaque_dst, opaque_src);
+    fail_if(ret < 0, "opaque av_packet_ref failed");
+    uint8_t *opaque_dst_before = opaque_dst->data;
+
+    av_shrink_packet(opaque_dst, 2);
+
+    printf("packet:shared-shrink-opaque-state|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d\n",
+           opaque_src->size,
+           opaque_dst->size,
+           opaque_dst->data == opaque_dst_before,
+           opaque_src->buf && opaque_dst->buf && opaque_src->buf->buffer == opaque_dst->buf->buffer,
+           opaque_src->buf ? av_buffer_get_ref_count(opaque_src->buf) : 0,
+           opaque_dst->buf ? av_buffer_get_ref_count(opaque_dst->buf) : 0,
+           opaque_src->buf ? av_buffer_is_writable(opaque_src->buf) : 0,
+           opaque_dst->buf ? av_buffer_is_writable(opaque_dst->buf) : 0,
+           opaque_src->buf ? av_buffer_get_opaque(opaque_src->buf) == &opaque_opaque : 0,
+           opaque_dst->buf ? av_buffer_get_opaque(opaque_dst->buf) == &opaque_opaque : 0);
+    printf("packet:shared-shrink-opaque-src|");
+    print_hex(opaque_src->data, opaque_src->size);
+    printf("\n");
+    printf("packet:shared-shrink-opaque-dst|");
+    print_hex(opaque_dst->data, opaque_dst->size);
+    printf("\n");
+    printf("packet:shared-shrink-opaque-zero-window|");
+    print_hex(opaque_dst->data + opaque_dst->size, 8);
+    printf("\n");
+
+    av_packet_free(&opaque_dst);
+    fail_if(opaque_src->buf && av_buffer_get_ref_count(opaque_src->buf) != 1,
+            "opaque source refcount diverged after freeing destination");
+    av_packet_free(&opaque_src);
     return 0;
 }
 "#

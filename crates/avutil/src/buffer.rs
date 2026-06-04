@@ -512,6 +512,24 @@ impl BufferRef {
         }
     }
 
+    pub fn from_vec_with_len_and_opaque<T>(data: Vec<u8>, len: usize, opaque: T) -> AvResult<Self>
+    where
+        T: Any + Send + Sync + 'static,
+    {
+        if len > data.len() {
+            return Err(AvError::invalid_argument(format!(
+                "visible buffer length {len} exceeds {} allocated bytes",
+                data.len()
+            )));
+        }
+        Ok(Self {
+            data: Arc::new(BufferStorage::with_opaque(data, opaque, false)),
+            offset: 0,
+            len,
+            data_ptr_null: false,
+        })
+    }
+
     pub fn from_vec_with_opaque_readonly<T>(data: Vec<u8>, opaque: T) -> Self
     where
         T: Any + Send + Sync + 'static,
@@ -1052,7 +1070,9 @@ impl BufferRef {
         })?;
         let supports_aliasing_owner = matches!(
             &self.data.owner,
-            None | Some(BufferOwner::Callback(_)) | Some(BufferOwner::OpaqueData(_))
+            None | Some(BufferOwner::Callback(_))
+                | Some(BufferOwner::Opaque(_))
+                | Some(BufferOwner::OpaqueData(_))
         );
         if self.is_readonly()
             || !supports_aliasing_owner
@@ -1068,8 +1088,8 @@ impl BufferRef {
             // SAFETY: The method contract requires the caller to exclude live
             // byte slices and concurrent access to this shared storage. The
             // checks above restrict mutation to owned, non-readonly storage,
-            // including callback-owned storage, and prove that padding_start..
-            // padding_start + padding is in bounds.
+            // including opaque/callback-owned storage, and prove that
+            // padding_start..padding_start + padding is in bounds.
             unsafe {
                 self.data
                     .bytes

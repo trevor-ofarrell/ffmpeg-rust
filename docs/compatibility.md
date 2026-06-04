@@ -9,6 +9,13 @@
 
 ## Compatible Today
 
+- Latest main-thread packet default-free opaque-owner shared-shrink evidence:
+  pinned libavcodec rows now prove `av_shrink_packet()` preserves aliasing,
+  non-writability, source-visible tail zeroing, and `av_buffer_get_opaque()`
+  identity for a shared default-free opaque-owner `AVBufferRef`. Rust mirrors it
+  through `unsafe Packet::shrink_data_ffmpeg_aliasing()` with unit and
+  deterministic `avutil_core_models` coverage. `avutil-packet` remains
+  `fate_pass`; strict completion remains 11/96.
 - Latest main-thread packet callback-owned shared-shrink evidence: pinned
   libavcodec rows now prove `av_shrink_packet()` preserves aliasing and delayed
   release for a shared callback-owned `AVBufferRef`, and Rust mirrors it through
