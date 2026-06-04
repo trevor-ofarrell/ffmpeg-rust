@@ -3,6 +3,47 @@
 ## Current Status
 
 Current authoritative turn status: main-thread WSL blocker-evidence slice
+finished and validated the `avutil-buffer` null/nonzero creation oracle
+diagnostic. Required startup checks passed from the dirty in-progress tree at
+`master...origin/master [ahead 68]`: `CARGO_TARGET_DIR=target-orch-fate cargo
+run -p fate-runner -- status --next 15` reported 11/96 strict-complete
+components (11.5%), and `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask
+-- oracle-doctor` validated the pinned FFmpeg 8.1.1 oracle and ABI versions.
+The separate ignored
+`buffer_oracle::libavutil_buffer_null_nonzero_create_documents_unmodeled_shape`
+FFmpeg-only test now compiles a small C helper under
+`CARGO_TARGET_DIR/oracle/avutil-buffer` and pins
+`av_buffer_create(NULL, 3, free, opaque, 0)`: FFmpeg creates a size-3
+`AVBufferRef` with `data == NULL`, reports it writable while unique, reports
+both refs non-writable after `av_buffer_ref()` raises the refcount to 2, and
+preserves the NULL public data pointer through unique
+`av_buffer_make_writable()` and same-size `av_buffer_realloc()`.
+
+Final validation for this slice passed with `cargo fmt --all -- --check`;
+`git diff --check` with CRLF conversion warnings only;
+`CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil --test
+buffer_oracle --all-features -- -D warnings`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
+buffer_oracle libavutil_buffer_null_nonzero_create_documents_unmodeled_shape
+-- --ignored --nocapture`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p
+avutil --test buffer_oracle libavutil_buffer_refs_match_current_model -- --ignored
+--nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner --
+run --mappings tests/differential/mappings.txt --component avutil-buffer
+--target oracle-libavutil-buffer`; `CARGO_TARGET_DIR=target-orch-fate cargo
+run -p fate-runner -- run --component avutil-buffer`;
+`CARGO_TARGET_DIR=target-orch-fate cargo test -p fate-runner current_ledger`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- guard-runtime`; final
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15`; and final `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask --
+oracle-doctor`. The `avutil-buffer|oracle-libavutil-buffer` mapping was
+narrowed to `libavutil_buffer_refs_match_current_model` so this FFmpeg-only
+diagnostic is not counted as Rust parity. This is blocker evidence only:
+`avutil-buffer` remains `fate_pass`, not complete, until the safe Rust
+`BufferRef` model can represent or explicitly reject nonzero NULL public data
+without panics or unsound visible-byte access, and broader ABI/lifetime plus
+hardware/device ownership integration remain pending.
+
+Current authoritative turn status: main-thread WSL blocker-evidence slice
 finished and validated the `avutil-packet` shared `av_shrink_packet()` oracle
 diagnostic. Required startup checks passed from the dirty in-progress tree at
 `master...origin/master [ahead 67]`: `CARGO_TARGET_DIR=target-orch-fate cargo

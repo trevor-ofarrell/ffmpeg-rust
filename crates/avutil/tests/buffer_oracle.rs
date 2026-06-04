@@ -67,6 +67,56 @@ fn libavutil_buffer_refs_match_current_model() {
     }
 }
 
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 libavutil oracle under third_party/ffmpeg-oracle/wsl"]
+fn libavutil_buffer_null_nonzero_create_documents_unmodeled_shape() {
+    let repo_root = repo_root();
+    let oracle_root = oracle_root(&repo_root);
+    let include_dir = oracle_root.join("wsl/include");
+    let libavutil = oracle_root.join("wsl/lib/libavutil.a");
+
+    assert!(
+        include_dir.join("libavutil/buffer.h").is_file(),
+        "missing pinned FFmpeg libavutil buffer headers under `{}`",
+        include_dir.display()
+    );
+    assert!(
+        libavutil.is_file(),
+        "missing pinned FFmpeg libavutil static library `{}`",
+        libavutil.display()
+    );
+
+    let target_dir = env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .map(|path| {
+            if path.is_absolute() {
+                path
+            } else {
+                repo_root.join(path)
+            }
+        })
+        .unwrap_or_else(|| repo_root.join("target"));
+    let work_dir = target_dir.join("oracle/avutil-buffer");
+    fs::create_dir_all(&work_dir).expect("create avutil-buffer oracle work dir");
+    let source = work_dir.join("buffer_null_nonzero_oracle.c");
+    let executable = work_dir.join("buffer_null_nonzero_oracle");
+    fs::write(&source, null_nonzero_buffer_oracle_c_source())
+        .expect("write avutil-buffer null-nonzero oracle C source");
+
+    let stdout = compile_and_run_oracle(&include_dir, &libavutil, &source, &executable);
+    assert_eq!(
+        stdout,
+        "\
+buffer:null-nonzero-create|3|1|1|1|711\n\
+buffer:null-nonzero-ref-src|3|1|2|0\n\
+buffer:null-nonzero-ref-dst|3|1|2|0|1|711\n\
+buffer:null-nonzero-after-ref-unref|1|1|1|0\n\
+buffer:null-nonzero-make-writable|0|3|1|1|1|0\n\
+buffer:null-nonzero-realloc-same|0|3|1|1|1|0\n\
+buffer:null-nonzero-release|1|711|1\n"
+    );
+}
+
 fn expected_rows() -> BTreeMap<String, Vec<String>> {
     let mut rows = BTreeMap::new();
 
@@ -8149,6 +8199,79 @@ int main(void) {
     av_buffer_pool_uninit(&pool);
     printf("pool:alloc-fail-uninit|%d|%" PRIuPTR "\n",
            pool_free_count, last_pool_free_id);
+
+    return 0;
+}
+"#
+}
+
+fn null_nonzero_buffer_oracle_c_source() -> &'static str {
+    r#"#include <inttypes.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <libavutil/buffer.h>
+#include <libavutil/mem.h>
+
+static int free_count = 0;
+static uintptr_t last_opaque = 0;
+static int last_data_null = 0;
+
+static void test_free(void *opaque, uint8_t *data) {
+    free_count++;
+    last_opaque = (uintptr_t)opaque;
+    last_data_null = data == NULL;
+    av_free(data);
+}
+
+static void fail_if(int condition, const char *message) {
+    if (condition) {
+        fprintf(stderr, "%s\n", message);
+        exit(1);
+    }
+}
+
+int main(void) {
+    AVBufferRef *src =
+        av_buffer_create(NULL, 3, test_free, (void *)(uintptr_t)711, 0);
+    fail_if(!src, "av_buffer_create NULL/nonzero failed");
+
+    printf("buffer:null-nonzero-create|%zu|%d|%d|%d|%" PRIuPTR "\n",
+           src->size, src->data == NULL, av_buffer_get_ref_count(src),
+           av_buffer_is_writable(src), (uintptr_t)av_buffer_get_opaque(src));
+
+    AVBufferRef *dst = av_buffer_ref(src);
+    fail_if(!dst, "av_buffer_ref NULL/nonzero failed");
+    printf("buffer:null-nonzero-ref-src|%zu|%d|%d|%d\n",
+           src->size, src->data == NULL, av_buffer_get_ref_count(src),
+           av_buffer_is_writable(src));
+    printf("buffer:null-nonzero-ref-dst|%zu|%d|%d|%d|%d|%" PRIuPTR "\n",
+           dst->size, dst->data == NULL, av_buffer_get_ref_count(dst),
+           av_buffer_is_writable(dst), dst->buffer == src->buffer,
+           (uintptr_t)av_buffer_get_opaque(dst));
+
+    av_buffer_unref(&dst);
+    printf("buffer:null-nonzero-after-ref-unref|%d|%d|%d|%d\n",
+           dst == NULL, av_buffer_get_ref_count(src),
+           av_buffer_is_writable(src), free_count);
+
+    int ret = av_buffer_make_writable(&src);
+    fail_if(ret < 0, "av_buffer_make_writable NULL/nonzero failed");
+    printf("buffer:null-nonzero-make-writable|%d|%zu|%d|%d|%d|%d\n",
+           ret, src->size, src->data == NULL,
+           av_buffer_get_ref_count(src), av_buffer_is_writable(src),
+           free_count);
+
+    ret = av_buffer_realloc(&src, 3);
+    fail_if(ret < 0, "av_buffer_realloc same-size NULL/nonzero failed");
+    printf("buffer:null-nonzero-realloc-same|%d|%zu|%d|%d|%d|%d\n",
+           ret, src->size, src->data == NULL,
+           av_buffer_get_ref_count(src), av_buffer_is_writable(src),
+           free_count);
+
+    av_buffer_unref(&src);
+    printf("buffer:null-nonzero-release|%d|%" PRIuPTR "|%d\n",
+           free_count, last_opaque, last_data_null);
 
     return 0;
 }

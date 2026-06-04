@@ -25,6 +25,13 @@ default_profile = "ffmpeg-8.1.1-default-native"
 # and generated its helper under target-orch-avutil/oracle/avutil-buffer instead
 # of the default top-level target/oracle path. This strengthens repeatable
 # evidence execution only; avutil-buffer remains fate_pass, not complete.
+# Latest main-thread buffer blocker diagnostic: a separate ignored FFmpeg-only
+# oracle test now pins `av_buffer_create(NULL, 3, free, opaque, 0)`. The row
+# proves FFmpeg creates a size-3 ref whose public data pointer is NULL, reports
+# it writable while unique, makes shared refs non-writable at refcount 2, and
+# preserves the NULL pointer through unique `av_buffer_make_writable()` and
+# same-size `av_buffer_realloc()`. Current safe Rust BufferRef only models NULL
+# data for zero-size refs, so this is blocker evidence and no status changed.
 # Latest main-thread options expression evidence: pinned libavutil rows now
 # prove signed numeric literals are parsed before dB suffix conversion, so
 # `-0dB` succeeds as positive `1.000000`, and the same row set proves
@@ -1896,6 +1903,13 @@ fuzz_targets = ["avutil_core_models"]
 # spare without a second allocation, and releases empty storage at pool uninit.
 # Rust unit/fuzz invariants mirror this boundary. This is evidence-strengthening
 # only; no status was promoted.
+# Latest null-nonzero blocker diagnostic: a separate ignored FFmpeg-only oracle
+# test pins `av_buffer_create(NULL, 3, free, opaque, 0)`. FFmpeg reports a
+# nonzero-size ref with `data == NULL`, unique writability, refcount-2
+# non-writability after `av_buffer_ref()`, and NULL-pointer preservation through
+# unique make-writable and same-size realloc. Current safe Rust BufferRef has no
+# alias-safe/nonpanicking visible-byte representation for nonzero NULL data, so
+# this is recorded as a blocker rather than parity progress.
 # Latest non-null zero-size owner ref/replace slice: pinned libavutil rows now
 # prove `av_buffer_ref()` and `av_buffer_replace(&dst, src)` with a NULL
 # destination preserve the distinct `av_buffer_create(data, 0, free, opaque,
@@ -2249,7 +2263,7 @@ notes = "Initial reference-counted byte buffer model implemented with owned/copy
 # Latest zero-length allocation slice: the pinned libavutil oracle validates `av_buffer_alloc(0)` and `av_buffer_allocz(0)` as successful writable zero-length refs with refcount 1; Rust models those through empty owned and zeroed `BufferRef`s, and WSL `cargo fuzz run avutil_core_models -- -runs=1` passes locally with zero-length allocation invariants.
 # Latest reallocatable-origin slice: `BufferRef::realloc(&mut Option<BufferRef>, len)` models FFmpeg's `BUFFER_FLAG_REALLOCATABLE` split: nullable realloc results become reallocatable, ordinary/custom buffers allocate-copy-replace, and custom owners are released on replacement. The pinned libavutil oracle validates ordinary alloc-origin replacement, writable `av_buffer_create` custom-owner realloc release, zero-size existing/NULL realloc status, and repeated nullable-realloc status rows, while content introduced by `av_realloc` growth is treated as unspecified. WSL `cargo fuzz run avutil_core_models -- -runs=1` passes locally with custom-owner and zero-size realloc invariants.
 # Previous nullable realloc slice: `BufferRef::realloc(&mut Option<BufferRef>, len)` models `av_buffer_realloc(&buf, len)` when `buf` is NULL, while preserving no-mutation failure behavior. The pinned libavutil oracle validates the NULL realloc status row.
-blocked_reason = ""
+blocked_reason = "Pinned FFmpeg 8.1.1 permits `av_buffer_create(NULL, nonzero, free, opaque, 0)` to produce a nonzero-size AVBufferRef with `data == NULL`, unique writability, shared non-writability, and NULL-pointer preservation through unique make-writable and same-size realloc. Current safe Rust BufferRef only models NULL data for zero-size refs; broader ABI/lifetime closure and hardware/device ownership integration also remain pending."
 # Latest byte-packed crop slice: pinned libavutil rows now prove
 # `av_frame_apply_cropping()` for `rgb8`, `bgr8`, `rgb4_byte`,
 # `bgr4_byte`, `bayer_bggr8`, `bayer_rggb8`, `bayer_gbrg8`, and
