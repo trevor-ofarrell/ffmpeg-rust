@@ -5436,6 +5436,29 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         side_data_padding_fields(raw_packet.side_data_by_kind_id(&raw_negative_kind)),
     );
 
+    let mut raw_negative_new_packet = Packet::default();
+    raw_negative_new_packet
+        .new_side_data(raw_negative_kind.clone(), 2)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0xd1, 0xd2]);
+    rows.insert(
+        "packet:side-new-raw-negative-type-ret".to_string(),
+        vec!["1".to_string()],
+    );
+    rows.insert(
+        "packet:side-new-raw-negative-type".to_string(),
+        side_data_summary_fields(&raw_negative_new_packet),
+    );
+    rows.insert(
+        "packet:side-get-new-raw-negative-type".to_string(),
+        side_data_lookup_fields(raw_negative_new_packet.side_data_by_kind_id(&raw_negative_kind)),
+    );
+    rows.insert(
+        "packet:side-new-raw-negative-type-padding".to_string(),
+        side_data_padding_fields(raw_negative_new_packet.side_data_by_kind_id(&raw_negative_kind)),
+    );
+
     let raw_min_kind = PacketSideDataKind::from_ffmpeg_raw_value(i32::MIN);
     raw_packet
         .new_side_data(raw_min_kind.clone(), 1)
@@ -9349,6 +9372,23 @@ static void exercise_side_data_api(void) {
                            (enum AVPacketSideDataType)-1);
     print_packet_side_data_padding("packet:side-add-raw-negative-type-padding",
                                    pkt, (enum AVPacketSideDataType)-1);
+
+    AVPacket *raw_negative_new_pkt = new_packet();
+    sd = av_packet_new_side_data(raw_negative_new_pkt,
+                                 (enum AVPacketSideDataType)-1, 2);
+    printf("packet:side-new-raw-negative-type-ret|%d\n", sd != NULL);
+    fail_if(!sd, "av_packet_new_side_data negative raw type failed");
+    sd[0] = 0xd1;
+    sd[1] = 0xd2;
+    print_side_data_summary("packet:side-new-raw-negative-type",
+                            raw_negative_new_pkt);
+    print_side_data_lookup("packet:side-get-new-raw-negative-type",
+                           raw_negative_new_pkt,
+                           (enum AVPacketSideDataType)-1);
+    print_packet_side_data_padding("packet:side-new-raw-negative-type-padding",
+                                   raw_negative_new_pkt,
+                                   (enum AVPacketSideDataType)-1);
+    av_packet_free(&raw_negative_new_pkt);
 
     sd = av_packet_new_side_data(pkt,
                                  (enum AVPacketSideDataType)INT_MIN,

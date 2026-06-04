@@ -220,7 +220,8 @@ The logging repeat key includes the emitted target identity and printed timestam
 such as `AV_PKT_DATA_NB`, `AV_PKT_DATA_NB + 1`, `-1`, and `INT_MIN` for
 packet-owned helper parity while keeping validated safe display names. The
 packet oracle now exercises raw numeric add/new-side-data rows before the
-packet-owned capacity limit, and raw values participate in packet-owned shrink
+packet-owned capacity limit, including `av_packet_new_side_data()` allocation
+padding for raw `-1`, and raw values participate in packet-owned shrink
 behavior: raw `-1` can be shrunk to zero bytes, while an oversize raw `INT_MIN`
 shrink reports ENOMEM without mutating the entry.
 
@@ -230,7 +231,7 @@ provided storage, while packet-owned and standalone `new_side_data` helpers add
 `AV_INPUT_BUFFER_PADDING_SIZE` zero bytes after the visible payload, matching the
 bounded `av_packet_new_side_data()` and `av_packet_side_data_new()` allocation
 evidence, including raw packet-owned side-data kinds such as
-`AV_PKT_DATA_NB + 1` and `INT_MIN`. Those helpers reject visible sizes that
+`AV_PKT_DATA_NB + 1`, `-1`, and `INT_MIN`. Those helpers reject visible sizes that
 would overflow the padded allocation before mutating packet-owned side data or
 standalone side-data lists, matching the pinned `SIZE_MAX` oracle rows with
 typed ENOMEM errors; oversize side-data shrink failures similarly leave payload

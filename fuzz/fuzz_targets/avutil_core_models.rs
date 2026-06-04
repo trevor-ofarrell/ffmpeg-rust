@@ -17459,6 +17459,25 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .iter()
         .take(AV_INPUT_BUFFER_PADDING_SIZE)
         .all(|byte| *byte == 0));
+    let mut raw_negative_new_packet = Packet::default();
+    raw_negative_new_packet
+        .new_side_data(raw_negative_kind.clone(), 2)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0xd1, 0xd2]);
+    let raw_negative_new_side = raw_negative_new_packet
+        .side_data_by_kind_id(&raw_negative_kind)
+        .unwrap();
+    assert_eq!(raw_negative_new_side.data(), &[0xd1, 0xd2]);
+    assert_eq!(
+        raw_negative_new_side.padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(raw_negative_new_side
+        .padding_slice()
+        .iter()
+        .take(AV_INPUT_BUFFER_PADDING_SIZE)
+        .all(|byte| *byte == 0));
     raw_packet
         .try_add_side_data(
             SideData::new_with_kind(raw_negative_kind.clone(), vec![0xf1]).unwrap(),
