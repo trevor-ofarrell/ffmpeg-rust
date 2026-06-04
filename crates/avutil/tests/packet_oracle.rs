@@ -6160,6 +6160,23 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:array-add-raw-plus-one-type-padding".to_string(),
         side_data_padding_fields(raw_plus_one_add_list.get(&raw_plus_one_kind)),
     );
+    let removed = raw_plus_one_add_list
+        .remove_kind(&raw_plus_one_kind)
+        .expect("raw plus-one standalone side data should be removable");
+    assert_eq!(removed.data(), &[0x6a, 0x6b]);
+    rows.insert(
+        "packet:array-remove-raw-plus-one-type".to_string(),
+        side_data_list_summary_fields(&raw_plus_one_add_list),
+    );
+    rows.insert(
+        "packet:array-get-raw-plus-one-type-removed".to_string(),
+        side_data_lookup_fields(raw_plus_one_add_list.get(&raw_plus_one_kind)),
+    );
+    raw_plus_one_add_list.clear();
+    rows.insert(
+        "packet:array-free-raw-plus-one-type".to_string(),
+        side_data_list_summary_fields(&raw_plus_one_add_list),
+    );
 
     let mut raw_plus_one_new_list = PacketSideDataList::new();
     raw_plus_one_new_list
@@ -10156,8 +10173,21 @@ static void exercise_side_data_array_api(void) {
         "packet:array-add-raw-plus-one-type-padding",
         raw_plus_one_add_sd, raw_plus_one_add_nb_sd,
         (enum AVPacketSideDataType)(AV_PKT_DATA_NB + 1));
+    av_packet_side_data_remove(
+        raw_plus_one_add_sd, &raw_plus_one_add_nb_sd,
+        (enum AVPacketSideDataType)(AV_PKT_DATA_NB + 1));
+    print_side_data_array_summary("packet:array-remove-raw-plus-one-type",
+                                  raw_plus_one_add_sd,
+                                  raw_plus_one_add_nb_sd);
+    print_side_data_array_lookup(
+        "packet:array-get-raw-plus-one-type-removed",
+        raw_plus_one_add_sd, raw_plus_one_add_nb_sd,
+        (enum AVPacketSideDataType)(AV_PKT_DATA_NB + 1));
     av_packet_side_data_free(&raw_plus_one_add_sd,
                              &raw_plus_one_add_nb_sd);
+    print_side_data_array_summary("packet:array-free-raw-plus-one-type",
+                                  raw_plus_one_add_sd,
+                                  raw_plus_one_add_nb_sd);
 
     AVPacketSideData *raw_plus_one_new_sd = NULL;
     int raw_plus_one_new_nb_sd = 0;
