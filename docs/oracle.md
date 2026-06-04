@@ -992,12 +992,16 @@ shared refs during the aliasing shrink. Pool-owned rows prove the same
 destination pointer, shared-storage, non-writability, and tail-zeroing behavior
 while preserving `av_buffer_pool_buffer_get_opaque()` identity on both refs and
 delaying both the per-buffer release callback and pool-free callback until final
-unref after `av_buffer_pool_uninit()`. Safe Rust `Packet::shrink_data()` still
-copy-on-write detaches shared storage, while the active ordinary,
-callback-owned, default-free opaque-owner, and pool-owned shared-shrink units
-plus `avutil_core_models` invariants cover the explicit `unsafe
-Packet::shrink_data_ffmpeg_aliasing()` helper for the corresponding Rust
-payload storage.
+unref after `av_buffer_pool_uninit()`. Readonly-flagged custom-owner rows prove
+FFmpeg ignores `AV_BUFFER_FLAG_READONLY` for the shrink write itself while
+leaving the shared storage non-writable, preserving `av_buffer_get_opaque()` on
+both refs, keeping the source non-writable after the destination ref drops, and
+releasing the owner once with the tail-zeroed bytes after final unref. Safe Rust
+`Packet::shrink_data()` still copy-on-write detaches shared storage, while the
+active ordinary, callback-owned, readonly-flagged owned, default-free
+opaque-owner, and pool-owned shared-shrink units plus `avutil_core_models`
+invariants cover the explicit `unsafe Packet::shrink_data_ffmpeg_aliasing()`
+helper for the corresponding Rust payload storage.
 
 The harness also includes `packet:payload-grow-unrefcounted*`,
 `packet:payload-grow-unrefcounted-offset*`, and

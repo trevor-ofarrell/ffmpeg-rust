@@ -5577,10 +5577,10 @@ impl Packet {
     /// copy-on-write detaching shared buffers. FFmpeg's C API instead shrinks the
     /// destination `AVPacket` view in place and zeroes the truncated input-padding
     /// window through the shared backing allocation. This helper exposes that
-    /// behavior only for owned, non-readonly refcounted payload storage,
-    /// including callback-owned, default-free opaque-owner, and pool-owned
-    /// buffers; readonly, NULL-data, and non-owned shapes fall back to the safe
-    /// shrink path.
+    /// behavior only for owned refcounted payload storage, including
+    /// callback-owned, default-free opaque-owner, pool-owned, and
+    /// readonly-flagged owned buffers; NULL-data and non-owned shapes fall back
+    /// to the safe shrink path.
     ///
     /// # Safety
     ///
@@ -13051,6 +13051,73 @@ mod tests {
         let releases = releases.lock().unwrap();
         assert_eq!(releases.len(), 1);
         assert_eq!(releases[0].0, 913);
+        assert_eq!(&releases[0].1[..4], &[0xaa, 0xbb, 0x00, 0x00]);
+        assert!(releases[0].1[2..2 + AV_INPUT_BUFFER_PADDING_SIZE]
+            .iter()
+            .all(|byte| *byte == 0));
+    }
+
+    #[test]
+    fn packet_shrink_shared_readonly_refcounted_matches_ffmpeg_tail_zeroing() {
+        let releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        {
+            let mut storage = vec![0xaa, 0xbb, 0xcc, 0xdd];
+            storage.resize(4 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+            let release_capture = Arc::clone(&releases);
+            let shared_src = Packet::with_buffer(
+                BufferRef::from_vec_with_len_and_opaque_release_callback_readonly(
+                    storage,
+                    4,
+                    923usize,
+                    move |opaque, bytes| {
+                        release_capture.lock().unwrap().push((opaque, bytes));
+                    },
+                )
+                .unwrap(),
+                0,
+            );
+            let mut shared_dst = Packet::default();
+            shared_dst.ref_from(&shared_src);
+            let shared_dst_ptr = shared_dst.data_buffer().as_padded_ptr();
+
+            // SAFETY: The test holds no payload slices across the call and
+            // performs no concurrent access while modeling FFmpeg's shared
+            // readonly-flagged AVBuffer mutation.
+            unsafe {
+                shared_dst.shrink_data_ffmpeg_aliasing(2).unwrap();
+            }
+
+            assert_eq!(shared_dst.data_buffer().as_padded_ptr(), shared_dst_ptr);
+            assert!(shared_dst
+                .data_buffer()
+                .shares_storage(shared_src.data_buffer()));
+            assert_eq!(shared_src.data_buffer().opaque_ref::<usize>(), Some(&923));
+            assert_eq!(shared_dst.data_buffer().opaque_ref::<usize>(), Some(&923));
+            assert!(shared_src.data_buffer().is_readonly());
+            assert!(shared_dst.data_buffer().is_readonly());
+            assert!(!shared_src.is_data_writable());
+            assert!(!shared_dst.is_data_writable());
+            assert_eq!(shared_src.data(), &[0xaa, 0xbb, 0x00, 0x00]);
+            assert_eq!(shared_dst.data(), &[0xaa, 0xbb]);
+            assert!(shared_dst
+                .data_buffer()
+                .padding_slice()
+                .iter()
+                .take(AV_INPUT_BUFFER_PADDING_SIZE)
+                .all(|byte| *byte == 0));
+            assert!(releases.lock().unwrap().is_empty());
+
+            drop(shared_dst);
+            assert_eq!(shared_src.data_buffer().strong_count(), 1);
+            assert!(shared_src.data_buffer().is_readonly());
+            assert!(!shared_src.is_data_writable());
+            assert!(releases.lock().unwrap().is_empty());
+            drop(shared_src);
+        }
+
+        let releases = releases.lock().unwrap();
+        assert_eq!(releases.len(), 1);
+        assert_eq!(releases[0].0, 923);
         assert_eq!(&releases[0].1[..4], &[0xaa, 0xbb, 0x00, 0x00]);
         assert!(releases[0].1[2..2 + AV_INPUT_BUFFER_PADDING_SIZE]
             .iter()

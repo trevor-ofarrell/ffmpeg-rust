@@ -9,6 +9,15 @@
 
 ## Compatible Today
 
+- Latest main-thread packet readonly shared-shrink evidence: pinned
+  libavcodec rows now prove `av_shrink_packet()` preserves destination pointer,
+  shared storage, opaque identity, source-visible tail zeroing, and
+  non-writable readonly state for a shared readonly-flagged custom `AVBufferRef`;
+  final release sees the mutated backing bytes. Rust mirrors it through
+  `unsafe Packet::shrink_data_ffmpeg_aliasing()` for owned readonly
+  `BufferRef` payloads with unit and deterministic `avutil_core_models`
+  coverage. `avutil-packet` remains `fate_pass`; strict completion remains
+  11/96.
 - Latest main-thread packet pool-owned shared-shrink evidence: pinned
   libavcodec rows now prove `av_shrink_packet()` preserves destination pointer,
   shared pool storage identity, non-writability, source-visible tail zeroing,

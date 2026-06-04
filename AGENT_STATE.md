@@ -3,6 +3,61 @@
 ## Current Status
 
 Current authoritative turn status: main-thread WSL advanced the top incomplete
+`avutil-packet` row with readonly-flagged shared-refcounted
+`av_shrink_packet()` parity evidence. Required startup checks passed from a
+clean tree at `master...origin/master [ahead 79]`:
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15` reported 11/96 strict-complete components (11.5%) with `avutil-packet` as
+the first incomplete row, and `CARGO_TARGET_DIR=target-orch-fate cargo run -p
+xtask -- oracle-doctor` validated the pinned FFmpeg 8.1.1 oracle and ABI
+versions.
+
+Current main-thread slice: safe `Packet::shrink_data()` remains copy-on-write
+for Rust aliasing guarantees, while explicit `unsafe
+Packet::shrink_data_ffmpeg_aliasing()` now mirrors the pinned C aliasing edge
+for ordinary owned, callback-owned, default-free opaque-owner, pool-owned, and
+readonly-flagged owned shared refcounted payload storage. The readonly path
+preserves the destination data pointer and shared storage identity, keeps both
+refs non-writable/readonly, shrinks only the destination visible length, zeroes
+the truncated tail through bytes still visible in the source packet, preserves
+typed opaque lookup on both shared refs, keeps the source non-writable after
+the destination ref drops, and runs the owner release callback once after the
+final unref with mutated backing bytes. `avutil-packet` remains `fate_pass`,
+not complete; strict completion remains 11/96 because NULL-data,
+non-owned readonly storage, broader safe API design, media integration, and
+sustained fuzz evidence remain pending.
+
+Validation passed for this slice with `cargo fmt --all`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --lib
+packet_shrink_shared_readonly_refcounted_matches_ffmpeg_tail_zeroing --
+--nocapture`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
+packet_oracle libavcodec_packet_shared_shrink_oracle_documents_aliasing --
+--ignored --nocapture`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p
+avutil --test packet_oracle libavcodec_packet_core_lifecycle_matches_packet_model
+-- --ignored --nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p
+fate-runner -- run --component avutil-packet`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run --mappings
+tests/differential/mappings.txt --component avutil-packet --target
+oracle-libavcodec-packet-core`; `CARGO_TARGET_DIR=target-orch-fate cargo run
+-p fate-runner -- run --mappings tests/fate/upstream-mappings.txt --component
+avutil-packet --target fate-avpacket` after the first sandboxed attempt failed
+with FFmpeg's `tests/data/fate/avpacket` cache path read-only and the rerun
+outside the sandbox passed; `CARGO_TARGET_DIR=target-orch-avutil cargo clippy
+-p avutil --all-targets --all-features -- -D warnings`;
+`CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy --manifest-path fuzz/Cargo.toml
+--all-targets -- -D warnings`; `CARGO_TARGET_DIR=target-wsl-fuzz
+ASAN_OPTIONS=detect_leaks=0 cargo fuzz run avutil_core_models
+/tmp/ffmpegrust-avutil-core-models.7cflpF -- -runs=1`, which rebuilt the
+sanitizer target, loaded the four copied seed files, reached `DONE` after 5
+runs, and found no crash; `cargo fmt --all -- --check`; `git diff --check`
+with CRLF conversion warnings only; `CARGO_TARGET_DIR=target-orch-fate cargo
+test -p fate-runner current_ledger -- --nocapture`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- guard-runtime`; final
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15`; and final `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask --
+oracle-doctor`.
+
+Current authoritative turn status: main-thread WSL advanced the top incomplete
 `avutil-packet` row with pool-owned shared-refcounted `av_shrink_packet()`
 parity evidence. Required startup checks passed from the current tree at
 `master...origin/master [ahead 78]` with an existing dirty pool-shrink slice:

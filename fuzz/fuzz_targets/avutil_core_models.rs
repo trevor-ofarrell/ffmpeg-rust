@@ -11695,6 +11695,83 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .iter()
         .all(|byte| *byte == 0));
 
+    let readonly_shrink_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    {
+        let mut readonly_storage = vec![0xaa, 0xbb, 0xcc, 0xdd];
+        readonly_storage.resize(4 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+        let readonly_release_capture = Arc::clone(&readonly_shrink_releases);
+        let readonly_shrink_src = Packet::with_buffer(
+            BufferRef::from_vec_with_len_and_opaque_release_callback_readonly(
+                readonly_storage,
+                4,
+                918usize,
+                move |opaque, bytes| {
+                    readonly_release_capture
+                        .lock()
+                        .unwrap()
+                        .push((opaque, bytes));
+                },
+            )
+            .unwrap(),
+            0,
+        );
+        let mut readonly_shrink_dst = Packet::default();
+        readonly_shrink_dst.ref_from(&readonly_shrink_src);
+        let readonly_shrink_dst_ptr = readonly_shrink_dst.data_buffer().as_padded_ptr();
+        // SAFETY: The deterministic fixture holds no packet payload slices
+        // across the call and performs no concurrent access while modeling
+        // FFmpeg's shared readonly-flagged AVBuffer tail-zeroing behavior.
+        unsafe {
+            readonly_shrink_dst
+                .shrink_data_ffmpeg_aliasing(2)
+                .unwrap();
+        }
+        assert_eq!(
+            readonly_shrink_dst.data_buffer().as_padded_ptr(),
+            readonly_shrink_dst_ptr
+        );
+        assert!(readonly_shrink_dst
+            .data_buffer()
+            .shares_storage(readonly_shrink_src.data_buffer()));
+        assert_eq!(
+            readonly_shrink_src.data_buffer().opaque_ref::<usize>(),
+            Some(&918)
+        );
+        assert_eq!(
+            readonly_shrink_dst.data_buffer().opaque_ref::<usize>(),
+            Some(&918)
+        );
+        assert!(readonly_shrink_src.data_buffer().is_readonly());
+        assert!(readonly_shrink_dst.data_buffer().is_readonly());
+        assert!(!readonly_shrink_src.is_data_writable());
+        assert!(!readonly_shrink_dst.is_data_writable());
+        assert_eq!(readonly_shrink_src.data(), &[0xaa, 0xbb, 0x00, 0x00]);
+        assert_eq!(readonly_shrink_dst.data(), &[0xaa, 0xbb]);
+        assert!(readonly_shrink_dst
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .take(AV_INPUT_BUFFER_PADDING_SIZE)
+            .all(|byte| *byte == 0));
+        assert!(readonly_shrink_releases.lock().unwrap().is_empty());
+        drop(readonly_shrink_dst);
+        assert_eq!(readonly_shrink_src.data_buffer().strong_count(), 1);
+        assert!(readonly_shrink_src.data_buffer().is_readonly());
+        assert!(!readonly_shrink_src.is_data_writable());
+        assert!(readonly_shrink_releases.lock().unwrap().is_empty());
+        drop(readonly_shrink_src);
+    }
+    let readonly_shrink_releases = readonly_shrink_releases.lock().unwrap();
+    assert_eq!(readonly_shrink_releases.len(), 1);
+    assert_eq!(readonly_shrink_releases[0].0, 918);
+    assert_eq!(
+        &readonly_shrink_releases[0].1[..4],
+        &[0xaa, 0xbb, 0x00, 0x00]
+    );
+    assert!(readonly_shrink_releases[0].1[2..2 + AV_INPUT_BUFFER_PADDING_SIZE]
+        .iter()
+        .all(|byte| *byte == 0));
+
     let mut opaque_shrink_storage = vec![0xaa, 0xbb, 0xcc, 0xdd];
     opaque_shrink_storage.resize(4 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
     let opaque_shrink_src = Packet::with_buffer(

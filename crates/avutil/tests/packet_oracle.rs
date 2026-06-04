@@ -221,6 +221,47 @@ fn libavcodec_packet_shared_shrink_oracle_documents_aliasing() {
             ],
         ),
         (
+            "packet:shared-shrink-readonly-state".to_string(),
+            vec![
+                "4".to_string(),
+                "2".to_string(),
+                "1".to_string(),
+                "1".to_string(),
+                "2".to_string(),
+                "2".to_string(),
+                "0".to_string(),
+                "0".to_string(),
+                "1".to_string(),
+                "1".to_string(),
+                "0".to_string(),
+            ],
+        ),
+        (
+            "packet:shared-shrink-readonly-src".to_string(),
+            vec!["aabb0000".to_string()],
+        ),
+        (
+            "packet:shared-shrink-readonly-dst".to_string(),
+            vec!["aabb".to_string()],
+        ),
+        (
+            "packet:shared-shrink-readonly-zero-window".to_string(),
+            vec!["0000000000000000".to_string()],
+        ),
+        (
+            "packet:shared-shrink-readonly-post-dst".to_string(),
+            vec!["1".to_string(), "0".to_string(), "0".to_string()],
+        ),
+        (
+            "packet:shared-shrink-readonly-release".to_string(),
+            vec![
+                "1".to_string(),
+                "923".to_string(),
+                "aabb0000".to_string(),
+                "0000000000000000".to_string(),
+            ],
+        ),
+        (
             "packet:shared-shrink-opaque-state".to_string(),
             vec![
                 "4".to_string(),
@@ -6671,6 +6712,11 @@ static int custom_release_opaque = 0;
 static uint8_t custom_release_prefix[4] = {0};
 static uint8_t custom_release_zero_window[8] = {0};
 
+static int readonly_release_count = 0;
+static int readonly_release_opaque = 0;
+static uint8_t readonly_release_prefix[4] = {0};
+static uint8_t readonly_release_zero_window[8] = {0};
+
 typedef struct PoolOpaque {
     int id;
 } PoolOpaque;
@@ -6702,6 +6748,15 @@ static void custom_buffer_free(void *opaque, uint8_t *data)
     custom_release_opaque = opaque ? *(int *)opaque : -1;
     memcpy(custom_release_prefix, data, sizeof(custom_release_prefix));
     memcpy(custom_release_zero_window, data + 2, sizeof(custom_release_zero_window));
+    av_free(data);
+}
+
+static void readonly_buffer_free(void *opaque, uint8_t *data)
+{
+    readonly_release_count++;
+    readonly_release_opaque = opaque ? *(int *)opaque : -1;
+    memcpy(readonly_release_prefix, data, sizeof(readonly_release_prefix));
+    memcpy(readonly_release_zero_window, data + 2, sizeof(readonly_release_zero_window));
     av_free(data);
 }
 
@@ -6831,6 +6886,71 @@ int main(void)
     print_hex(custom_release_prefix, sizeof(custom_release_prefix));
     printf("|");
     print_hex(custom_release_zero_window, sizeof(custom_release_zero_window));
+    printf("\n");
+
+    int readonly_opaque = 923;
+    AVPacket *readonly_src = av_packet_alloc();
+    AVPacket *readonly_dst = av_packet_alloc();
+    fail_if(!readonly_src || !readonly_dst, "readonly av_packet_alloc failed");
+    uint8_t *readonly_data = av_malloc(4 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!readonly_data, "readonly av_malloc failed");
+    readonly_data[0] = 0xaa;
+    readonly_data[1] = 0xbb;
+    readonly_data[2] = 0xcc;
+    readonly_data[3] = 0xdd;
+    memset(readonly_data + 4, 0x5a, AV_INPUT_BUFFER_PADDING_SIZE);
+    readonly_src->buf = av_buffer_create(readonly_data,
+                                         4 + AV_INPUT_BUFFER_PADDING_SIZE,
+                                         readonly_buffer_free,
+                                         &readonly_opaque,
+                                         AV_BUFFER_FLAG_READONLY);
+    fail_if(!readonly_src->buf, "readonly av_buffer_create failed");
+    readonly_src->data = readonly_src->buf->data;
+    readonly_src->size = 4;
+    ret = av_packet_ref(readonly_dst, readonly_src);
+    fail_if(ret < 0, "readonly av_packet_ref failed");
+    uint8_t *readonly_dst_before = readonly_dst->data;
+
+    av_shrink_packet(readonly_dst, 2);
+
+    printf("packet:shared-shrink-readonly-state|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d\n",
+           readonly_src->size,
+           readonly_dst->size,
+           readonly_dst->data == readonly_dst_before,
+           readonly_src->buf && readonly_dst->buf && readonly_src->buf->buffer == readonly_dst->buf->buffer,
+           readonly_src->buf ? av_buffer_get_ref_count(readonly_src->buf) : 0,
+           readonly_dst->buf ? av_buffer_get_ref_count(readonly_dst->buf) : 0,
+           readonly_src->buf ? av_buffer_is_writable(readonly_src->buf) : 0,
+           readonly_dst->buf ? av_buffer_is_writable(readonly_dst->buf) : 0,
+           readonly_src->buf ? av_buffer_get_opaque(readonly_src->buf) == &readonly_opaque : 0,
+           readonly_dst->buf ? av_buffer_get_opaque(readonly_dst->buf) == &readonly_opaque : 0,
+           readonly_release_count);
+    printf("packet:shared-shrink-readonly-src|");
+    print_hex(readonly_src->data, readonly_src->size);
+    printf("\n");
+    printf("packet:shared-shrink-readonly-dst|");
+    print_hex(readonly_dst->data, readonly_dst->size);
+    printf("\n");
+    printf("packet:shared-shrink-readonly-zero-window|");
+    print_hex(readonly_dst->data + readonly_dst->size, 8);
+    printf("\n");
+
+    av_packet_free(&readonly_dst);
+    printf("packet:shared-shrink-readonly-post-dst|%d|%d|%d\n",
+           readonly_src->buf ? av_buffer_get_ref_count(readonly_src->buf) : 0,
+           readonly_src->buf ? av_buffer_is_writable(readonly_src->buf) : 0,
+           readonly_release_count);
+    fail_if(readonly_release_count != 0,
+            "readonly buffer released while source still references it");
+    fail_if(readonly_src->buf && av_buffer_is_writable(readonly_src->buf),
+            "readonly source became writable after freeing destination");
+    av_packet_free(&readonly_src);
+    printf("packet:shared-shrink-readonly-release|%d|%d|",
+           readonly_release_count,
+           readonly_release_opaque);
+    print_hex(readonly_release_prefix, sizeof(readonly_release_prefix));
+    printf("|");
+    print_hex(readonly_release_zero_window, sizeof(readonly_release_zero_window));
     printf("\n");
 
     int opaque_opaque = 917;
