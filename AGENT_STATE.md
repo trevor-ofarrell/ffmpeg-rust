@@ -3,6 +3,32 @@
 ## Current Status
 
 Current authoritative turn status: main-thread WSL advanced the top incomplete
+`avutil-packet` row with deeper `avutil_core_models` fuzz evidence only.
+Required startup checks passed from a clean tree at
+`master...origin/master [ahead 83]`: `CARGO_TARGET_DIR=target-orch-fate cargo
+run -p fate-runner -- status --next 15` reported 11/96 strict-complete
+components (11.5%) with `avutil-packet` as the first incomplete row, and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validated the pinned FFmpeg 8.1.1 oracle and ABI versions.
+
+Current main-thread slice: a warmed WSL `avutil_core_models` sanitizer run
+executed 65,536 inputs against a temporary copy of the four tracked seed files
+with `CARGO_TARGET_DIR=target-wsl-fuzz` and `ASAN_OPTIONS=detect_leaks=0`.
+libFuzzer reached `DONE`, reported final corpus `887/66Kb`, and found no
+crash. The scratch corpus was removed after the run, and tracked fuzz corpus
+files were left unchanged. `avutil-packet` remains `fate_pass`, not complete;
+strict completion remains 11/96 because broader safe API design, media
+integration, ABI closure review, and a sustained fuzz campaign remain pending.
+
+Validation passed for this evidence slice with
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`;
+and the 65,536-run
+`CARGO_TARGET_DIR=target-wsl-fuzz ASAN_OPTIONS=detect_leaks=0 cargo fuzz run
+avutil_core_models /tmp/ffmpegrust-avutil-core-models.ev8ZDh` sanitizer pass,
+which completed `Done 65536 runs in 2852 second(s)` without a crash artifact.
+
+Current authoritative turn status: main-thread WSL advanced the top incomplete
 `avutil-packet` row with non-owned readonly shared-shrink safe fallback
 evidence. Required startup checks passed from a clean tree at
 `master...origin/master [ahead 82]`: `CARGO_TARGET_DIR=target-orch-fate cargo

@@ -162,6 +162,14 @@ reported final corpus `283/20Kb`, found no crash, and the tracked corpus stayed
 at four files. This strengthens current packet-model smoke evidence, but it is
 still not a sustained fuzz campaign.
 
+A later warmed WSL `avutil_core_models` sanitizer run executed 65,536 inputs
+with `CARGO_TARGET_DIR=target-wsl-fuzz` and `ASAN_OPTIONS=detect_leaks=0`
+against a temporary copy of the four tracked seed files. It reached `DONE`,
+libFuzzer reported final corpus `887/66Kb`, found no crash, and the scratch
+corpus was removed while the tracked corpus stayed at four files. This
+strengthens packet/core-model fuzz evidence, but it is still not a sustained
+fuzz campaign.
+
 A later warmed WSL `avutil_core_models` smoke ran 4096 inputs with
 `CARGO_TARGET_DIR=target-wsl-fuzz` and `ASAN_OPTIONS=detect_leaks=0` against a
 temporary copy of the four tracked seed files. It reached `DONE`, libFuzzer

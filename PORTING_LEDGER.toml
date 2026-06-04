@@ -2,6 +2,13 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest main-thread packet fuzz evidence: a warmed WSL `avutil_core_models`
+# sanitizer run executed 65,536 inputs with `CARGO_TARGET_DIR=target-wsl-fuzz`
+# and leak detection disabled against a temporary copy of the four tracked
+# seeds. libFuzzer reached `DONE`, reported final corpus `887/66Kb`, and found
+# no crash; the scratch corpus was removed and the tracked corpus stayed
+# unchanged. This strengthens packet/core-model fuzz evidence only;
+# avutil-packet remains fate_pass, not complete.
 # Latest main-thread packet non-owned readonly shared-shrink fallback slice:
 # Rust now has active unit coverage for `unsafe
 # Packet::shrink_data_ffmpeg_aliasing()` over shared static-slice,
@@ -1216,6 +1223,13 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: warmed WSL `avutil_core_models` sanitizer coverage for packet
+# invariants now includes a 65,536-run temporary-corpus pass with
+# `CARGO_TARGET_DIR=target-wsl-fuzz` and leak detection disabled. libFuzzer
+# expanded only the scratch corpus from the four tracked seeds to `887/66Kb`,
+# reached `DONE`, and found no crash; the scratch corpus was removed and the
+# tracked corpus stayed unchanged. This is fuzz-evidence strengthening only;
+# the row remains fate_pass, not complete.
 # Latest update: warmed WSL `avutil_core_models` sanitizer smoke coverage for
 # packet invariants now includes a 4096-run temporary-corpus pass with
 # `CARGO_TARGET_DIR=target-wsl-fuzz` and leak detection disabled. libFuzzer

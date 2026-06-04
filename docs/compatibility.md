@@ -9,6 +9,13 @@
 
 ## Compatible Today
 
+- Latest main-thread packet fuzz evidence: a warmed WSL `avutil_core_models`
+  sanitizer run completed 65,536 inputs against a temporary copy of the four
+  tracked seeds with `CARGO_TARGET_DIR=target-wsl-fuzz` and
+  `ASAN_OPTIONS=detect_leaks=0`. libFuzzer reached `DONE`, reported final
+  corpus `887/66Kb`, found no crash, and the scratch corpus was removed. This
+  strengthens packet/core-model fuzz evidence only; `avutil-packet` remains
+  `fate_pass`; strict completion remains 11/96.
 - Latest main-thread packet non-owned readonly shared-shrink fallback evidence:
   Rust now explicitly fences shared static-slice, Arc-backed-slice, and external
   opaque readonly `BufferRef` payloads out of FFmpeg-style alias tail writes.
