@@ -2,6 +2,43 @@
 
 ## Current Status
 
+Current authoritative turn status: main-thread WSL committed the prior
+`avutil-buffer` non-NULL zero-size replace slice as `4d21ed51`, then advanced
+`avutil-logging` oracle-harness hygiene. Required startup checks passed:
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15` reported 11/96 strict-complete components (11.5%), and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validated the pinned FFmpeg 8.1.1 oracle and ABI versions. `avutil-packet`
+remains the top incomplete row, but the current shared
+`av_shrink_packet()` alias-tail-zeroing edge still requires a broader
+alias-safe `BufferRef` storage design rather than a local packet-only edit, so
+this turn moved to the next unblocked priority-1 evidence-infrastructure lane.
+
+Current logging slice: the ignored
+`logging_oracle::libavutil_logging_constants_and_state_match_current_model`
+harness now honors `CARGO_TARGET_DIR` for its scratch C helper build
+directory, matching the existing options, buffer, and packet oracle harnesses.
+Focused evidence runs generated helper sources under
+`target-orch-avutil/oracle/avutil-logging` and
+`target-orch-fate/oracle/avutil-logging`, avoiding a fresh default
+`target/oracle/avutil-logging` path during stable WSL lane execution.
+`avutil-logging` remains `fate_pass`, not complete; strict completion remains
+11/96 because broader zero-known-limitation review and sustained fuzz closure
+remain pending.
+
+Validation passed for this logging slice with `cargo fmt --all`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
+logging_oracle libavutil_logging_constants_and_state_match_current_model --
+--ignored --nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p
+fate-runner -- run --mappings tests/differential/mappings.txt --component
+avutil-logging --target oracle-libavutil-logging`; direct file checks for
+`target-orch-avutil/oracle/avutil-logging/logging_oracle.c` and
+`target-orch-fate/oracle/avutil-logging/logging_oracle.c`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil --test
+logging_oracle --all-features -- -D warnings`; `cargo fmt --all -- --check`;
+and `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run
+--component avutil-logging`.
+
 Current authoritative turn status: main-thread WSL parity slice advanced
 `avutil-buffer` non-NULL zero-size `av_buffer_replace()` evidence. Required
 startup checks passed from a clean tree at `master...origin/master [ahead 73]`:

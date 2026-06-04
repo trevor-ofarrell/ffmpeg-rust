@@ -9,6 +9,11 @@
 
 ## Compatible Today
 
+- Latest main-thread logging oracle-harness evidence: the ignored pinned
+  libavutil logging oracle now honors `CARGO_TARGET_DIR` for its scratch C
+  helper directory, matching the buffer, packet, and options harnesses and
+  keeping WSL evidence runs on stable target lanes. `avutil-logging` remains
+  `fate_pass`; strict completion remains 11/96.
 - Latest main-thread buffer non-null zero replace evidence: pinned libavutil
   rows now prove `av_buffer_replace()` over an existing destination and
   self-replace preserve the non-NULL public data-pointer shape of zero-size

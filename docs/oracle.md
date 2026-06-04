@@ -35,7 +35,7 @@ The doctor command locates the default local `ffmpeg` and `ffprobe` oracle wrapp
 
 Ignored oracle harnesses that compile temporary C helpers should write those
 helpers under the active Cargo target directory when `CARGO_TARGET_DIR` is set.
-The `avutil-buffer` and `avutil-packet` harnesses now use
+The `avutil-buffer`, `avutil-packet`, and `avutil-logging` harnesses now use
 `CARGO_TARGET_DIR/oracle/<component>`, or fall back to
 `target/oracle/<component>` for default Cargo runs, matching the
 `avutil-options` harness pattern and keeping WSL evidence runs on stable target

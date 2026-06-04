@@ -32,7 +32,17 @@ fn libavutil_logging_constants_and_state_match_current_model() {
         libavutil.display()
     );
 
-    let work_dir = repo_root.join("target/oracle/avutil-logging");
+    let target_dir = env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .map(|path| {
+            if path.is_absolute() {
+                path
+            } else {
+                repo_root.join(path)
+            }
+        })
+        .unwrap_or_else(|| repo_root.join("target"));
+    let work_dir = target_dir.join("oracle/avutil-logging");
     fs::create_dir_all(&work_dir).expect("create avutil-logging oracle work dir");
     let source = work_dir.join("logging_oracle.c");
     let executable = work_dir.join("logging_oracle");

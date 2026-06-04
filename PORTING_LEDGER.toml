@@ -2,6 +2,14 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest main-thread logging oracle hygiene: the ignored libavutil logging
+# oracle harness now honors CARGO_TARGET_DIR for its scratch C helper build
+# directory, matching the buffer, packet, and options harnesses. Focused and
+# mapped runs can now keep helpers under stable target lanes such as
+# target-orch-avutil/oracle/avutil-logging and
+# target-orch-fate/oracle/avutil-logging instead of recreating the default
+# top-level target/oracle path. This strengthens repeatable evidence execution
+# only; avutil-logging remains fate_pass, not complete.
 # Latest main-thread buffer non-null zero replace slice: pinned libavutil rows
 # now prove `av_buffer_replace()` on non-NULL zero-size
 # `av_buffer_create(data, 0, free, opaque, flags)` custom-owner refs preserves
@@ -3342,6 +3350,11 @@ fate_tests = [
   "not_applicable: pinned FFmpeg 8.1.1 tests/fate/libavutil.mak has no fate-log target; libavutil/tests/log is an upstream TESTPROGS utility and is built/run through the upstream mapping",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest oracle-harness hygiene: `logging_oracle::libavutil_logging_constants_and_state_match_current_model`
+# now builds its scratch C helper under `CARGO_TARGET_DIR/oracle/avutil-logging`
+# when that environment variable is set, matching the buffer, packet, and
+# options oracle harnesses. This is repeatability evidence and does not promote
+# the row.
 # Latest logging callback lifecycle update: pinned libavutil rows now prove
 # `av_log_set_callback()` replacement dispatches only to the active callback,
 # restoring the default callback stops custom dispatch, and installing a custom
