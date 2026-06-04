@@ -14730,6 +14730,18 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .iter()
         .take(AV_INPUT_BUFFER_PADDING_SIZE)
         .all(|byte| *byte == 0));
+    let removed_raw_plus_one_new_array_side = raw_plus_one_new_array_list
+        .remove_kind(&raw_plus_one_array_kind)
+        .unwrap();
+    assert_eq!(
+        removed_raw_plus_one_new_array_side.data(),
+        &[0x6c, 0x6d]
+    );
+    assert!(raw_plus_one_new_array_list
+        .get(&raw_plus_one_array_kind)
+        .is_none());
+    raw_plus_one_new_array_list.clear();
+    assert!(raw_plus_one_new_array_list.is_empty());
 
     let raw_negative_array_kind = PacketSideDataKind::from_ffmpeg_raw_value(-1);
     let raw_min_array_kind = PacketSideDataKind::from_ffmpeg_raw_value(i32::MIN);

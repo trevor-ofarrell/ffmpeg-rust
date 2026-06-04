@@ -12886,6 +12886,13 @@ mod tests {
             .iter()
             .take(AV_INPUT_BUFFER_PADDING_SIZE)
             .all(|byte| *byte == 0));
+        let removed = raw_plus_one_new_list
+            .remove_kind(&raw_plus_one_kind)
+            .unwrap();
+        assert_eq!(removed.data(), &[0x6c, 0x6d]);
+        assert!(raw_plus_one_new_list.get(&raw_plus_one_kind).is_none());
+        raw_plus_one_new_list.clear();
+        assert!(raw_plus_one_new_list.is_empty());
     }
 
     #[test]
