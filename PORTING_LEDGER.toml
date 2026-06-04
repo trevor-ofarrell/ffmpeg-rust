@@ -2,6 +2,15 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest main-thread packet shared-shrink parity slice: Rust now exposes
+# `unsafe Packet::shrink_data_ffmpeg_aliasing()` for the pinned
+# `av_shrink_packet()` shared-refcounted aliasing edge on ordinary owned,
+# non-readonly payload buffers. The safe `Packet::shrink_data()` path remains
+# copy-on-write, while the unsafe helper preserves the destination data pointer,
+# keeps storage shared/non-writable, zeroes the truncated tail through the source
+# packet, and is covered by an active unit plus `avutil_core_models` invariant
+# alongside the existing FFmpeg-only oracle diagnostic. avutil-packet remains
+# fate_pass, not complete.
 # Latest main-thread logging oracle hygiene: the ignored libavutil logging
 # oracle harness now honors CARGO_TARGET_DIR for its scratch C helper build
 # directory, matching the buffer, packet, and options harnesses. Focused and
@@ -41,14 +50,12 @@ default_profile = "ffmpeg-8.1.1-default-native"
 # would copy from or grow a NULL data pointer. Rust mirrors this with
 # `Packet::from_null_data_with_len` backed by a padding-aware nullable
 # `BufferRef`; avutil-packet remains fate_pass, not complete.
-# Latest main-thread packet shared-shrink diagnostic: a separate ignored
-# FFmpeg-only oracle test now pins `av_shrink_packet()` on one reference of a
-# shared refcounted packet. The row proves source size 4, destination size 2,
-# destination data-pointer preservation, shared buffer identity, refcount 2 on
-# both packet buffers, both refs non-writable, source visible bytes `aabb0000`,
-# destination visible bytes `aabb`, and an eight-byte zeroed shrink window from
-# destination `data + size`. The Rust ignored regression still fails at pointer
-# preservation because BufferRef shared resize detaches; no status was promoted.
+# Prior packet shared-shrink diagnostic: a separate ignored FFmpeg-only oracle
+# test pins `av_shrink_packet()` on one reference of a shared refcounted packet.
+# The row proves source size 4, destination size 2, destination data-pointer
+# preservation, shared buffer identity, refcount 2 on both packet buffers, both
+# refs non-writable, source visible bytes `aabb0000`, destination visible bytes
+# `aabb`, and an eight-byte zeroed shrink window from destination `data + size`.
 # Latest main-thread packet oracle hygiene: the ignored libavcodec/libavutil
 # packet oracle harness now honors CARGO_TARGET_DIR for its scratch C helper
 # build directory. The focused ignored oracle test passed with
@@ -86,12 +93,11 @@ default_profile = "ffmpeg-8.1.1-default-native"
 # scratch corpus was removed and the tracked corpus stayed unchanged. This
 # strengthens current AVOption deterministic invariants only; no status was
 # promoted.
-# Latest main-thread packet blocker check: the ignored
+# Prior packet blocker check: the previously ignored
 # packet::tests::packet_shrink_shared_refcounted_matches_ffmpeg_tail_zeroing
-# test still fails at the destination pointer-preservation assertion. Current
-# BufferRef shared resize detaches, while the pinned FFmpeg av_shrink_packet()
-# edge preserves shared storage and zeroes truncated tail bytes visible through
-# the source packet. avutil-packet remains fate_pass, not complete.
+# regression documented that safe BufferRef shared resize detaches, while the
+# pinned FFmpeg av_shrink_packet() edge preserves shared storage and zeroes
+# truncated tail bytes visible through the source packet.
 # Latest main-thread packet fuzz evidence: a warmed WSL `avutil_core_models`
 # sanitizer smoke ran 4096 inputs with leak detection disabled against a
 # temporary copy of the four tracked seed files. libFuzzer reported final
@@ -964,6 +970,7 @@ unit_tests = [
   "packet::tests::packet_alloc_new_packet_payload_zero_resets_metadata",
   "packet::tests::packet_signed_payload_size_apis_preserve_on_negative_inputs",
   "packet::tests::packet_grow_and_shrink_data_preserve_payload_and_padding",
+  "packet::tests::packet_shrink_shared_refcounted_matches_ffmpeg_tail_zeroing",
   "packet::tests::packet_make_writable_detaches_shared_payload_with_padding",
   "packet::tests::packet_make_writable_preserves_metadata_and_detaches_shared_payloads",
   "packet::tests::packet_make_refcounted_adds_padding_without_detaching_padded_refs",
@@ -1777,16 +1784,15 @@ fuzz_targets = ["avutil_core_models"]
 # proves `av_packet_rescale_ts()` rescales a positive duration even when both
 # PTS and DTS are `AV_NOPTS_VALUE`, while preserving payload, position, flags,
 # stream index, and raw packet time base.
-# Latest shared-shrink blocker: the separate ignored
+# Latest shared-shrink helper: the separate ignored
 # `packet_oracle::libavcodec_packet_shared_shrink_oracle_documents_aliasing`
-# oracle test now pins that `av_shrink_packet()` on one reference of a shared
+# oracle test pins that `av_shrink_packet()` on one reference of a shared
 # refcounted payload preserves the destination data pointer, leaves both refs
 # non-writable, and zeroes the truncated tail through bytes still visible in
-# the source packet. The current safe `BufferRef::resize_with_padding` path
-# copy-on-write detaches instead; `packet_shrink_shared_refcounted_matches_ffmpeg_tail_zeroing`
-# remains ignored until a broader alias-safe shared-storage mutation design
-# exists.
-notes = "FATE pass for the current bounded AVPacket helper surface under the selected ffmpeg-8.1.1-default-native profile. The Rust Packet model covers timestamps, FFmpeg-shaped invalid/overflow rescale writes through Packet::rescale_ts_ffmpeg, duration-only rescale with missing PTS/DTS, signed duration, signed raw stream_index storage with a nonnegative Rust indexing helper, signed optional byte position with `-1` as the unknown sentinel, raw AVPacket.time_base storage with FFmpeg-style reset defaults, packet flags, BufferRef-backed payload and opaque_ref ownership, padded payload allocation/grow/shrink/refcounted/writable helpers, packet-owned and standalone side-data lifecycle helpers including nullable-zero NULL/0 add/get rows plus copy/ref/clone reallocation vs move preservation, packet/frame side-data bridge helpers, dictionary pack/unpack helpers including destination-mutating unpack swap-removal replacement order and partial-error mutation, property copy/ref/clone/move/unref lifecycles, packet FIFO lifecycles, and the typed packet side-data payload parsers listed in the unit-test inventory. The ignored packet_oracle harness validates this bounded surface against pinned FFmpeg 8.1.1 libavcodec/libavutil rows, including public packet side-data/flag/picture-type inventories, ABI layout metadata, payload helper boundaries, duplicate side-data behavior, nullable-zero side-data add rows `packet:side-add-null-zero*` and `packet:array-add-null-zero*`, nullable-zero lifecycle rows `packet:*null-zero-side*`, opaque/opaque_ref behavior, FIFO rows, display-matrix helper rows, malformed dictionary return rows, destination-mutating dictionary rows `packet:dict-unpack-into-*`, `packet:rescale-duration-only`, signed duration/position/stream_index rows, `packet:rescale-overflow`, `packet:rescale-invalid-time-base`, `packet:rescale-invalid-dst-time-base`, and raw time_base rows `packet:copy-props-raw-time-base`, `packet:ref-raw-time-base`, `packet:clone-raw-time-base`, and `packet:move-raw-time-base-*`. The mapped differential row `avutil-packet|oracle-libavcodec-packet-core`, local packet FATE-runner unit row, and upstream FFmpeg `fate-avpacket` wrapper pass locally through the pinned oracle/source cache. The separate ignored `packet_oracle::libavcodec_packet_shared_shrink_oracle_documents_aliasing` diagnostic pins the known shared-shrink blocker against FFmpeg only and is not a Rust parity row. The `avutil_core_models` cargo-fuzz target covers packet timestamp, duration-only rescale with missing PTS/DTS, FFmpeg-shaped invalid/overflow rescale writes, signed stream-index/position/duration, raw time_base, payload, side-data including nullable-zero add/get invariants, dictionary, displaymatrix, FIFO, and lifecycle invariants for the safe Rust model; its corpus now includes `packet_rescale_sentinel`, and a bounded WSL 64-run sanitizer smoke passed with local leak detection disabled against a temporary corpus copy. Known blocked edge: pinned FFmpeg `av_shrink_packet()` on one reference of a shared refcounted packet preserves shared storage, keeps both refs non-writable, and zeroes the truncated tail through source-visible bytes; the current safe Rust `BufferRef` resize path detaches instead, so the ignored `packet_shrink_shared_refcounted_matches_ffmpeg_tail_zeroing` regression remains pending a broader alias-safe storage design. Not complete: remaining ABI/media-integration vectors, broader packet integration, and longer sustained fuzz evidence remain pending."
+# the source packet. Rust now exposes the bounded explicit-unsafe
+# `Packet::shrink_data_ffmpeg_aliasing()` helper for ordinary owned payload
+# storage while keeping safe `BufferRef::resize_with_padding` copy-on-write.
+notes = "FATE pass for the current bounded AVPacket helper surface under the selected ffmpeg-8.1.1-default-native profile. The Rust Packet model covers timestamps, FFmpeg-shaped invalid/overflow rescale writes through Packet::rescale_ts_ffmpeg, duration-only rescale with missing PTS/DTS, signed duration, signed raw stream_index storage with a nonnegative Rust indexing helper, signed optional byte position with `-1` as the unknown sentinel, raw AVPacket.time_base storage with FFmpeg-style reset defaults, packet flags, BufferRef-backed payload and opaque_ref ownership, padded payload allocation/grow/shrink/refcounted/writable helpers plus the explicit-unsafe `Packet::shrink_data_ffmpeg_aliasing()` shared-tail-zeroing helper for ordinary owned refcounted storage, packet-owned and standalone side-data lifecycle helpers including nullable-zero NULL/0 add/get rows plus copy/ref/clone reallocation vs move preservation, packet/frame side-data bridge helpers, dictionary pack/unpack helpers including destination-mutating unpack swap-removal replacement order and partial-error mutation, property copy/ref/clone/move/unref lifecycles, packet FIFO lifecycles, and the typed packet side-data payload parsers listed in the unit-test inventory. The ignored packet_oracle harness validates this bounded surface against pinned FFmpeg 8.1.1 libavcodec/libavutil rows, including public packet side-data/flag/picture-type inventories, ABI layout metadata, payload helper boundaries, duplicate side-data behavior, nullable-zero side-data add rows `packet:side-add-null-zero*` and `packet:array-add-null-zero*`, nullable-zero lifecycle rows `packet:*null-zero-side*`, opaque/opaque_ref behavior, FIFO rows, display-matrix helper rows, malformed dictionary return rows, destination-mutating dictionary rows `packet:dict-unpack-into-*`, `packet:rescale-duration-only`, signed duration/position/stream_index rows, `packet:rescale-overflow`, `packet:rescale-invalid-time-base`, `packet:rescale-invalid-dst-time-base`, and raw time_base rows `packet:copy-props-raw-time-base`, `packet:ref-raw-time-base`, `packet:clone-raw-time-base`, and `packet:move-raw-time-base-*`. The mapped differential row `avutil-packet|oracle-libavcodec-packet-core`, local packet FATE-runner unit row, and upstream FFmpeg `fate-avpacket` wrapper pass locally through the pinned oracle/source cache. The separate ignored `packet_oracle::libavcodec_packet_shared_shrink_oracle_documents_aliasing` diagnostic pins the FFmpeg shared-shrink aliasing edge; the active `packet_shrink_shared_refcounted_matches_ffmpeg_tail_zeroing` unit and deterministic `avutil_core_models` invariant cover the matching unsafe Rust helper while the safe shrink path remains copy-on-write. The `avutil_core_models` cargo-fuzz target covers packet timestamp, duration-only rescale with missing PTS/DTS, FFmpeg-shaped invalid/overflow rescale writes, signed stream-index/position/duration, raw time_base, payload including the unsafe shared-shrink helper, side-data including nullable-zero add/get invariants, dictionary, displaymatrix, FIFO, and lifecycle invariants for the safe Rust model; its corpus now includes `packet_rescale_sentinel`, and a bounded WSL 64-run sanitizer smoke passed with local leak detection disabled against a temporary corpus copy. Remaining shared-shrink limitations: the aliasing helper is explicit unsafe and currently bounded to ordinary owned, non-readonly storage; callback-owner, pool-owner, readonly, NULL-data, broader safe API design, media integration, and sustained fuzz evidence remain pending. Not complete: remaining ABI/media-integration vectors, broader packet integration, and longer sustained fuzz evidence remain pending."
 # Latest empty-array slice: pinned libavcodec rows now validate standalone
 # `av_packet_side_data_get(NULL, 0, type)`, `av_packet_side_data_remove(NULL,
 # &count, type)`, and `av_packet_side_data_free(&ptr, &count)` as empty

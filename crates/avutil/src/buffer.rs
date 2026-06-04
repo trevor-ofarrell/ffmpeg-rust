@@ -1,5 +1,6 @@
 use crate::{AvError, AvErrorCode, AvErrorKind, AvResult};
 use std::any::Any;
+use std::cell::UnsafeCell;
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1037,6 +1038,43 @@ impl BufferRef {
             && self.data.bytes.is_owned()
     }
 
+    pub(crate) unsafe fn shrink_visible_len_and_zero_aliasing_tail(
+        &mut self,
+        len: usize,
+        padding: usize,
+    ) -> AvResult<bool> {
+        if len > self.len {
+            return Ok(false);
+        }
+        let total_len = checked_storage_len(len, padding)?;
+        let required_len = self.offset.checked_add(total_len).ok_or_else(|| {
+            AvError::invalid_argument("buffer offset plus aliasing shrink length overflows")
+        })?;
+        if self.is_readonly()
+            || self.data.owner.is_some()
+            || !self.data.bytes.is_owned()
+            || self.is_data_ptr_null()
+            || required_len > self.data.len()
+        {
+            return Ok(false);
+        }
+
+        if padding != 0 {
+            let padding_start = self.offset + len;
+            // SAFETY: The method contract requires the caller to exclude live
+            // byte slices and concurrent access to this shared storage. The
+            // checks above restrict mutation to owned, non-readonly storage and
+            // prove that padding_start..padding_start + padding is in bounds.
+            unsafe {
+                self.data
+                    .bytes
+                    .write_bytes_aliasing(padding_start, padding, 0);
+            }
+        }
+        self.len = len;
+        Ok(true)
+    }
+
     pub fn ref_from(source: &Self) -> Self {
         source.clone()
     }
@@ -1167,6 +1205,12 @@ struct BufferStorage {
     readonly: bool,
     reallocatable: bool,
 }
+
+// SAFETY: Safe mutation of owned bytes only happens when the Arc storage is
+// unique. The only shared-storage mutation path is crate-private, unsafe, and
+// requires callers to exclude live slices and concurrent access while modeling
+// FFmpeg's C aliasing semantics.
+unsafe impl Sync for BufferStorage {}
 
 type BufferReleaseCallback = Arc<dyn Fn(Vec<u8>) + Send + Sync + 'static>;
 
@@ -1425,14 +1469,14 @@ impl BufferStorage {
 }
 
 enum BufferBytes {
-    Owned(Vec<u8>),
+    Owned(UnsafeCell<Vec<u8>>),
     Static(&'static [u8]),
     Shared(Arc<[u8]>),
 }
 
 impl BufferBytes {
     fn owned(bytes: Vec<u8>) -> Self {
-        Self::Owned(bytes)
+        Self::Owned(UnsafeCell::new(bytes))
     }
 
     fn static_slice(bytes: &'static [u8]) -> Self {
@@ -1445,7 +1489,12 @@ impl BufferBytes {
 
     fn as_slice(&self) -> &[u8] {
         match self {
-            Self::Owned(bytes) => bytes.as_slice(),
+            Self::Owned(bytes) => {
+                // SAFETY: Safe APIs mutate owned bytes only through unique
+                // BufferStorage access. The unsafe aliasing mutation helper
+                // requires callers to avoid live slices while it writes.
+                unsafe { (&*bytes.get()).as_slice() }
+            }
             Self::Static(bytes) => bytes,
             Self::Shared(bytes) => bytes,
         }
@@ -1453,7 +1502,11 @@ impl BufferBytes {
 
     fn as_mut_vec(&mut self) -> Option<&mut Vec<u8>> {
         match self {
-            Self::Owned(bytes) => Some(bytes),
+            Self::Owned(bytes) => {
+                // SAFETY: &mut self proves unique access to the BufferBytes
+                // enum variant, so no other safe reference can access this Vec.
+                Some(unsafe { &mut *bytes.get() })
+            }
             Self::Static(_) | Self::Shared(_) => None,
         }
     }
@@ -1467,10 +1520,25 @@ impl BufferBytes {
     }
 
     fn take_vec(&mut self) -> Vec<u8> {
-        match std::mem::replace(self, Self::Owned(Vec::new())) {
-            Self::Owned(bytes) => bytes,
+        match std::mem::replace(self, Self::Owned(UnsafeCell::new(Vec::new()))) {
+            Self::Owned(bytes) => bytes.into_inner(),
             Self::Static(bytes) => bytes.to_vec(),
             Self::Shared(bytes) => bytes.to_vec(),
+        }
+    }
+
+    unsafe fn write_bytes_aliasing(&self, offset: usize, len: usize, value: u8) {
+        if len == 0 {
+            return;
+        }
+        let Self::Owned(bytes) = self else {
+            return;
+        };
+        // SAFETY: The caller guarantees aliasing writes are currently valid for
+        // this owned storage, and has already bounds-checked offset..offset+len.
+        unsafe {
+            let ptr = (&mut *bytes.get()).as_mut_ptr().add(offset);
+            std::ptr::write_bytes(ptr, value, len);
         }
     }
 }
@@ -1478,10 +1546,10 @@ impl BufferBytes {
 impl std::fmt::Debug for BufferBytes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Owned(bytes) => f
+            Self::Owned(_) => f
                 .debug_struct("BufferBytes")
                 .field("kind", &"owned")
-                .field("bytes", bytes)
+                .field("bytes", &self.as_slice())
                 .finish(),
             Self::Static(bytes) => f
                 .debug_struct("BufferBytes")

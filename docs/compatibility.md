@@ -9,6 +9,13 @@
 
 ## Compatible Today
 
+- Latest main-thread packet shared-shrink evidence: `unsafe
+  Packet::shrink_data_ffmpeg_aliasing()` now mirrors the pinned
+  `av_shrink_packet()` edge for ordinary owned shared refcounted payloads,
+  preserving the destination data pointer, shared storage identity,
+  non-writability, and source-visible tail zeroing while safe
+  `Packet::shrink_data()` remains copy-on-write. `avutil-packet` remains
+  `fate_pass`; strict completion remains 11/96.
 - Latest main-thread logging oracle-harness evidence: the ignored pinned
   libavutil logging oracle now honors `CARGO_TARGET_DIR` for its scratch C
   helper directory, matching the buffer, packet, and options harnesses and

@@ -5571,6 +5571,43 @@ impl Packet {
             .resize_with_padding(size, AV_INPUT_BUFFER_PADDING_SIZE)
     }
 
+    /// FFmpeg-shaped `av_shrink_packet()` helper for shared refcounted payloads.
+    ///
+    /// The safe [`Packet::shrink_data`] path preserves Rust aliasing guarantees by
+    /// copy-on-write detaching shared buffers. FFmpeg's C API instead shrinks the
+    /// destination `AVPacket` view in place and zeroes the truncated input-padding
+    /// window through the shared backing allocation. This helper exposes that
+    /// behavior only for ordinary owned, non-readonly refcounted payload storage;
+    /// other shapes fall back to the safe shrink path.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure there are no live Rust references to the packet
+    /// payload or any shared alias of its backing storage, and no concurrent access
+    /// to that storage, for the duration of the call.
+    pub unsafe fn shrink_data_ffmpeg_aliasing(&mut self, size: usize) -> AvResult<()> {
+        if size >= self.data.len() {
+            return Ok(());
+        }
+
+        if self.data_ownership == PacketPayloadOwnership::RefCountedBuffer
+            && self.data.strong_count() > 1
+        {
+            // SAFETY: This public unsafe method transfers the aliasing exclusion
+            // requirement to its caller. The BufferRef helper bounds-checks the
+            // zeroing range and rejects storage shapes outside this bounded C API
+            // parity surface.
+            if unsafe {
+                self.data
+                    .shrink_visible_len_and_zero_aliasing_tail(size, AV_INPUT_BUFFER_PADDING_SIZE)?
+            } {
+                return Ok(());
+            }
+        }
+
+        self.shrink_data(size)
+    }
+
     pub fn pts(&self) -> Option<i64> {
         pts_option(self.pts)
     }
@@ -12931,14 +12968,17 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "documents a pinned FFmpeg av_shrink_packet shared-buffer edge that needs a broader BufferRef interior-mutability design"]
     fn packet_shrink_shared_refcounted_matches_ffmpeg_tail_zeroing() {
         let shared_src = Packet::from_data(vec![0xaa, 0xbb, 0xcc, 0xdd]).unwrap();
         let mut shared_dst = Packet::default();
         shared_dst.ref_from(&shared_src);
         let shared_dst_ptr = shared_dst.data_buffer().as_padded_ptr();
 
-        shared_dst.shrink_data(2).unwrap();
+        // SAFETY: The test holds no payload slices across the call and performs
+        // no concurrent access while modeling FFmpeg's shared AVBuffer mutation.
+        unsafe {
+            shared_dst.shrink_data_ffmpeg_aliasing(2).unwrap();
+        }
 
         assert_eq!(shared_dst.data_buffer().as_padded_ptr(), shared_dst_ptr);
         assert!(shared_dst

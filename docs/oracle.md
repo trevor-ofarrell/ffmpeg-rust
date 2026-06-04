@@ -979,14 +979,16 @@ The harness also includes `packet:payload-grow-shared*` rows, proving shared ref
 
 The separate ignored
 `packet_oracle::libavcodec_packet_shared_shrink_oracle_documents_aliasing` test
-keeps the shared `av_shrink_packet()` blocker as a pinned FFmpeg-only
+keeps the shared `av_shrink_packet()` aliasing edge pinned as an FFmpeg-only
 diagnostic outside the mapped Rust parity row set. It proves that shrinking one
 reference of a shared refcounted packet preserves the destination data pointer,
 keeps both refs non-writable, and zeroes the truncated tail through bytes still
-visible in the source packet. The current safe Rust `BufferRef` resize path
-copy-on-write detaches instead, so the ignored
-`packet_shrink_shared_refcounted_matches_ffmpeg_tail_zeroing` regression records
-this as a pending alias-safe storage-design gap.
+visible in the source packet. Safe Rust `Packet::shrink_data()` still
+copy-on-write detaches shared storage, while the active
+`packet_shrink_shared_refcounted_matches_ffmpeg_tail_zeroing` unit and
+`avutil_core_models` invariant cover the explicit `unsafe
+Packet::shrink_data_ffmpeg_aliasing()` helper for ordinary owned refcounted
+payload storage.
 
 The harness also includes `packet:payload-grow-unrefcounted*`,
 `packet:payload-grow-unrefcounted-offset*`, and

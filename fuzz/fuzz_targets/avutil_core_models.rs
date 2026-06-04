@@ -11593,6 +11593,39 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert!(shared_grow_dst.is_data_writable());
     assert!(shared_grow_src.is_data_writable());
 
+    let shared_shrink_src = Packet::from_data(vec![0xaa, 0xbb, 0xcc, 0xdd]).unwrap();
+    let mut shared_shrink_dst = Packet::default();
+    shared_shrink_dst.ref_from(&shared_shrink_src);
+    assert!(shared_shrink_dst
+        .data_buffer()
+        .shares_storage(shared_shrink_src.data_buffer()));
+    let shared_shrink_dst_ptr = shared_shrink_dst.data_buffer().as_padded_ptr();
+    // SAFETY: The deterministic fixture holds no packet payload slices across
+    // the call and performs no concurrent access while modeling FFmpeg's shared
+    // AVBuffer tail-zeroing behavior.
+    unsafe {
+        shared_shrink_dst
+            .shrink_data_ffmpeg_aliasing(2)
+            .unwrap();
+    }
+    assert_eq!(
+        shared_shrink_dst.data_buffer().as_padded_ptr(),
+        shared_shrink_dst_ptr
+    );
+    assert!(shared_shrink_dst
+        .data_buffer()
+        .shares_storage(shared_shrink_src.data_buffer()));
+    assert!(!shared_shrink_src.is_data_writable());
+    assert!(!shared_shrink_dst.is_data_writable());
+    assert_eq!(shared_shrink_src.data(), &[0xaa, 0xbb, 0x00, 0x00]);
+    assert_eq!(shared_shrink_dst.data(), &[0xaa, 0xbb]);
+    assert!(shared_shrink_dst
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .take(AV_INPUT_BUFFER_PADDING_SIZE)
+        .all(|byte| *byte == 0));
+
     let unpadded_grow_by = usize::from(cursor.next().unwrap_or_default() % 8);
     let mut unpadded_grown_packet = Packet::new(payload.clone(), stream_index);
     unpadded_grown_packet.grow_data(unpadded_grow_by).unwrap();
