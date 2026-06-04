@@ -9,6 +9,13 @@
 
 ## Compatible Today
 
+- Latest main-thread buffer fuzz evidence: a warmed WSL `avutil_core_models`
+  4096-run sanitizer smoke completed against a temporary copy of the tracked
+  seed corpus without a crash. libFuzzer reported final corpus `323/22Kb`, the
+  temporary directory held 326 files, and the repository corpus stayed at four
+  seed files. This strengthens the shared BufferRef/BufferPool deterministic
+  invariants for `avutil-buffer`; strict completion remains 11/96 and the row
+  remains `fate_pass`.
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
   packet-owned and standalone `av_packet*_side_data_add(..., NULL, 1, ...)`
   accept a NULL data pointer with nonzero visible size. Packet-owned lookup
@@ -33,11 +40,6 @@
   152 entries, leaving the repository corpus unchanged. This strengthens
   `avutil-packet`; strict completion remains 11/96 and the row remains
   `fate_pass`.
-- Latest main-thread buffer fuzz evidence: a warmed WSL `avutil_core_models`
-  64-run sanitizer smoke completed against the tracked seed corpus without a
-  crash after rebuilding in `target-wsl-fuzz`. This strengthens the shared
-  BufferRef/BufferPool deterministic invariants for `avutil-buffer`; strict
-  completion remains 11/96 and the row remains `fate_pass`.
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
   `av_packet_unpack_dictionary(NULL, nonzero_size, &dict)` and
   `av_packet_unpack_dictionary(data, size, NULL)` return success without
