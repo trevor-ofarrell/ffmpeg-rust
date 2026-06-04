@@ -9,6 +9,15 @@
 
 ## Compatible Today
 
+- Latest main-thread packet standalone raw negative add padding evidence:
+  pinned libavcodec row `packet:array-add-raw-negative-type-padding` now proves
+  raw `-1` standalone `av_packet_side_data_add()` preserves caller-owned
+  positive side data with `AV_INPUT_BUFFER_PADDING_SIZE` zero padding after
+  direct ownership transfer. Rust mirrors this through
+  `PacketSideDataList::try_add_side_data_with_flags`, with focused unit,
+  ignored oracle, mapped differential/FATE, upstream `fate-avpacket`, clippy,
+  and WSL `avutil_core_models` sanitizer smoke coverage. `avutil-packet`
+  remains `fate_pass`; strict completion remains 11/96.
 - Latest main-thread packet standalone raw negative new-side-data padding
   evidence: pinned libavcodec row
   `packet:array-new-raw-negative-type-padding` now proves raw `-1`

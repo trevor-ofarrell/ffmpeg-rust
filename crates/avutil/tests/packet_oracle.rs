@@ -5980,7 +5980,7 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     let mut raw_list = PacketSideDataList::new();
     let raw_negative_kind = PacketSideDataKind::from_ffmpeg_raw_value(-1);
     let raw_negative_added = raw_list
-        .try_add_side_data(SideData::new_with_kind(raw_negative_kind.clone(), vec![0xf1]).unwrap())
+        .try_add_side_data(padded_side_data(raw_negative_kind.clone(), &[0xf1]))
         .unwrap();
     assert!(raw_negative_added.is_none());
     rows.insert(
@@ -5994,6 +5994,10 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:array-get-raw-negative-type".to_string(),
         side_data_lookup_fields(raw_list.get(&raw_negative_kind)),
+    );
+    rows.insert(
+        "packet:array-add-raw-negative-type-padding".to_string(),
+        side_data_padding_fields(raw_list.get(&raw_negative_kind)),
     );
 
     let mut raw_negative_new_list = PacketSideDataList::new();
@@ -9765,6 +9769,9 @@ static void exercise_side_data_array_api(void) {
     print_side_data_array_lookup("packet:array-get-raw-negative-type",
                                  sd, nb_sd,
                                  (enum AVPacketSideDataType)-1);
+    print_side_data_array_padding("packet:array-add-raw-negative-type-padding",
+                                  sd, nb_sd,
+                                  (enum AVPacketSideDataType)-1);
 
     AVPacketSideData *raw_negative_new_sd = NULL;
     int raw_negative_new_nb_sd = 0;
