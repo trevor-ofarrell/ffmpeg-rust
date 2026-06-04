@@ -223,9 +223,10 @@ packet oracle now exercises raw numeric add/new-side-data rows before the
 packet-owned capacity limit, including `av_packet_new_side_data()` allocation
 padding for exact raw `AV_PKT_DATA_NB`, raw `AV_PKT_DATA_NB + 1`, raw `-1`,
 and raw `INT_MIN`, and raw values participate in packet-owned shrink behavior:
-exact raw `AV_PKT_DATA_NB`, raw `-1`, and raw `INT_MIN` can be shrunk to zero
-bytes while preserving hidden-tail padding, while an oversize raw `INT_MIN`
-shrink reports ENOMEM without mutating the entry.
+exact raw `AV_PKT_DATA_NB`, raw `AV_PKT_DATA_NB + 1`, raw `-1`, and raw
+`INT_MIN` can be shrunk to zero bytes while preserving hidden-tail padding,
+while an oversize raw `INT_MIN` shrink reports ENOMEM without mutating the
+entry.
 
 `SideData` keeps visible packet side-data bytes separate from optional hidden
 input padding. Caller-owned `SideData::new_with_kind` entries expose only the
@@ -266,6 +267,8 @@ while retaining the padding allocation shape, matching the current
 caller-owned entry to zero, and
 `packet:side-shrink-raw-nb-type-padding` row for exact raw `AV_PKT_DATA_NB`
 side data,
+`packet:side-shrink-raw-type-padding` row for raw `AV_PKT_DATA_NB + 1` side
+data,
 `packet:side-shrink-raw-negative-type-padding` row for raw `-1` side data, and
 `packet:side-shrink-raw-min-type-padding` row for raw `INT_MIN` side data.
 

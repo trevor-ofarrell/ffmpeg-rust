@@ -11858,6 +11858,18 @@ mod tests {
             .iter()
             .take(AV_INPUT_BUFFER_PADDING_SIZE)
             .all(|byte| *byte == 0));
+        packet
+            .shrink_side_data_by_kind_id(&raw_new_kind, 0)
+            .unwrap();
+        let shrunk_raw_new = packet.side_data_by_kind_id(&raw_new_kind).unwrap();
+        assert_eq!(shrunk_raw_new.data(), &[]);
+        assert_eq!(shrunk_raw_new.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+        assert_eq!(&shrunk_raw_new.padding_slice()[..2], &[0x6a, 0x6b]);
+        assert!(
+            shrunk_raw_new.padding_slice()[2..AV_INPUT_BUFFER_PADDING_SIZE]
+                .iter()
+                .all(|byte| *byte == 0)
+        );
 
         let raw_negative_kind = PacketSideDataKind::from_ffmpeg_raw_value(-1);
         let mut raw_negative_new_packet = Packet::new(Vec::new(), 0);

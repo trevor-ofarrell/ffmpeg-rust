@@ -5442,6 +5442,25 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:side-new-raw-type-padding".to_string(),
         side_data_padding_fields(raw_packet.side_data_by_kind_id(&raw_new_kind)),
     );
+    raw_packet
+        .shrink_side_data_by_kind_id(&raw_new_kind, 0)
+        .unwrap();
+    rows.insert(
+        "packet:side-shrink-raw-type-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:side-shrink-raw-type".to_string(),
+        side_data_summary_fields(&raw_packet),
+    );
+    rows.insert(
+        "packet:side-get-raw-type-shrunk".to_string(),
+        side_data_lookup_fields(raw_packet.side_data_by_kind_id(&raw_new_kind)),
+    );
+    rows.insert(
+        "packet:side-shrink-raw-type-padding".to_string(),
+        side_data_padding_fields(raw_packet.side_data_by_kind_id(&raw_new_kind)),
+    );
 
     let raw_negative_kind = PacketSideDataKind::from_ffmpeg_raw_value(-1);
     let raw_negative_added = raw_packet
@@ -9568,6 +9587,16 @@ static void exercise_side_data_api(void) {
                            (enum AVPacketSideDataType)(AV_PKT_DATA_NB + 1));
     print_packet_side_data_padding("packet:side-new-raw-type-padding", pkt,
                                    (enum AVPacketSideDataType)(AV_PKT_DATA_NB + 1));
+    ret = av_packet_shrink_side_data(
+        pkt, (enum AVPacketSideDataType)(AV_PKT_DATA_NB + 1), 0);
+    printf("packet:side-shrink-raw-type-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_shrink_side_data raw type failed");
+    print_side_data_summary("packet:side-shrink-raw-type", pkt);
+    print_side_data_lookup("packet:side-get-raw-type-shrunk", pkt,
+                           (enum AVPacketSideDataType)(AV_PKT_DATA_NB + 1));
+    print_packet_side_data_padding(
+        "packet:side-shrink-raw-type-padding", pkt,
+        (enum AVPacketSideDataType)(AV_PKT_DATA_NB + 1));
 
     owned = av_mallocz(1 + AV_INPUT_BUFFER_PADDING_SIZE);
     fail_if(!owned, "av_mallocz negative raw packet side data failed");
