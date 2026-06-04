@@ -6743,6 +6743,19 @@ mod tests {
             assert!(!format.has_chroma_subsampling());
         }
 
+        for format in [
+            PixelFormat::ZeroRgb,
+            PixelFormat::Rgb0,
+            PixelFormat::ZeroBgr,
+            PixelFormat::Bgr0,
+        ] {
+            let descriptor = format.descriptor();
+            assert_eq!(descriptor.component_count, 3);
+            assert_eq!(descriptor.bits_per_pixel, bpp(24));
+            assert_eq!(descriptor.packed_bytes_per_pixel, Some(4));
+            assert!(!descriptor.has_alpha);
+        }
+
         for (format, expected_name, expected_bits_per_component, expected_bits_per_pixel) in [
             (PixelFormat::Rgb565Be, "rgb565be", 6, bpp(16)),
             (PixelFormat::Rgb565Le, "rgb565le", 6, bpp(16)),

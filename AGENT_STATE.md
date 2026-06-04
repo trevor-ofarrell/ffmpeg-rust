@@ -2,6 +2,52 @@
 
 ## Current Status
 
+Current authoritative turn status: main-thread WSL slice fixed the recorded
+`avutil_core_models` pixel-format descriptor invariant crash. Required startup
+checks passed from a clean tree at `master...origin/master [ahead 54]`:
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15` reported 11/96 strict-complete components (11.5%), and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validated the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
+kept the work local because the slice was bounded to shared pixel descriptor
+tests plus one fuzz target invariant; no worker writes were delegated.
+
+Current main-thread slice: the saved reproducer
+`fuzz/artifacts/avutil_core_models/crash-a41196e9ee31e7c3d4e23857a5a7805c4136ab98`
+was replayed and diagnosed as selecting `PixelFormat::ZeroRgb`, whose FFmpeg
+descriptor exposes 24 logical component bits in a four-byte packed storage lane.
+The `avutil_core_models` invariant now treats `0rgb`, `rgb0`, `0bgr`, and
+`bgr0` as explicit padding-byte formats alongside the existing YUV/XYZ/XV
+storage-lane exceptions, and the avutil descriptor unit test now asserts the
+four RGB padding-byte rows as three-component, no-alpha, 24-bpp descriptors in
+four storage bytes. `avutil-pixel-format` remains `fate_pass`, not complete;
+strict completion remains 11/96 because full AVPixFmtDescriptor inventory
+parity, broader conversion behavior, hardware frame/device integration, zero
+known limitations, and sustained fuzz campaigns remain pending.
+
+Latest validation commands for this pixel-format fuzz-invariant slice passed:
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil
+pixel_formats_report_descriptor_metadata -- --nocapture`;
+`CARGO_TARGET_DIR=target-wsl-fuzz cargo check --manifest-path fuzz/Cargo.toml
+--bin avutil_core_models`; `CARGO_TARGET_DIR=target-wsl-fuzz
+ASAN_OPTIONS=detect_leaks=0 cargo fuzz run avutil_core_models
+fuzz/artifacts/avutil_core_models/crash-a41196e9ee31e7c3d4e23857a5a7805c4136ab98
+-- -runs=1` after an initial diagnostic-only replay confirmed
+`ZeroRgb has 24 descriptor bits in 4 storage bytes`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil --all-targets
+--all-features -- -D warnings`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy
+--manifest-path fuzz/Cargo.toml --bin avutil_core_models -- -D warnings`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run --component
+avutil-pixel-format`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p
+fate-runner -- run --mappings tests/differential/mappings.txt --component
+avutil-pixel-format --target oracle-ffmpeg-pix-fmts-subset --oracle-ffmpeg
+./third_party/ffmpeg-oracle/build/bin/ffmpeg`; and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run --mappings
+tests/fate/upstream-mappings.txt --component avutil-pixel-format --target
+fate-pixfmt_best` after escalation allowed the pinned FFmpeg build cache to
+write its result file. A first upstream FATE attempt failed only on the sandbox
+read-only cache write.
+
 Current authoritative turn status: main-thread WSL slice added
 `avutil-options` `av_opt_query_ranges()` search-flag evidence. Required
 startup checks passed from a dirty tree at `master...origin/master [ahead 53]`:

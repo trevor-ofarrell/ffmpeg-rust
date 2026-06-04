@@ -9,6 +9,14 @@
 
 ## Compatible Today
 
+- Latest main-thread pixel-format fuzz evidence: the saved
+  `avutil_core_models` crash seed selected `PixelFormat::ZeroRgb`, proving the
+  harness invariant had missed RGB padding-byte formats where FFmpeg reports 24
+  logical descriptor bits in a four-byte packed lane. The invariant now covers
+  `0rgb`, `rgb0`, `0bgr`, and `bgr0`, the descriptor unit test pins the same
+  shape, and the saved seed replay, local pixel-format row, differential
+  oracle, and upstream `fate-pixfmt_best` row pass. `avutil-pixel-format`
+  remains `fate_pass`; strict completion remains 11/96.
 - Latest main-thread packet fuzz evidence: a warmed WSL `avutil_core_models`
   1024-run sanitizer smoke completed against a temporary copy of the tracked
   seed corpus without a crash. libFuzzer expanded only the temporary corpus to

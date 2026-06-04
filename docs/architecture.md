@@ -51,6 +51,12 @@ This repository is a Rust workspace for a compatibility-oriented FFmpeg 8.1.1 re
 
 `PixelFormat::find_best_of_2` and `PixelFormat::find_best` expose the current bounded `av_find_best_pix_fmt_of_2` selection shape for modeled descriptors. The scoring covers the upstream `fate-pixfmt_best` candidate families, including native-endian aliases, semi-planar and packed YUV layout choices, subsampling/depth tradeoffs, alpha-ignored selection, and hardware identity tie behavior. It is evidence-backed helper parity, not full swscale conversion support.
 
+The shared `avutil_core_models` pixel-format invariants distinguish logical
+descriptor bits from storage-lane bytes. RGB padding-byte formats
+`0rgb`/`rgb0`/`0bgr`/`bgr0`, selected high-bit packed YUV rows, packed XYZ12,
+and selected XV formats may legitimately report fewer descriptor bits than the
+number of bytes occupied by one packed storage lane.
+
 `OptionKind::SampleFormat` models the current bounded `AV_OPT_TYPE_SAMPLE_FMT` surface as an optional `SampleFormat`, where `None` represents `AV_SAMPLE_FMT_NONE`. AVOption-shaped string setters accept `none`, native FFmpeg sample-format names, and C base-0 numeric strings; string numeric `AV_SAMPLE_FMT_NB` values return `EINVAL` while generic numeric setters return range errors at the declared max. Typed sample-format get/set helpers mirror `av_opt_get_sample_fmt` / `av_opt_set_sample_fmt`; generic numeric helpers expose the native enum index; string getters format the FFmpeg name or `none`; and range queries expose the declared `-1..AV_SAMPLE_FMT_NB - 1` scalar bounds.
 
 `OptionKind::ChannelLayout` models the current bounded `AV_OPT_TYPE_CHLAYOUT` surface as a `ChannelLayoutSpec`. AVOption-shaped string setters use the shared channel-layout parser for native names, native masks, and count-only forms such as `2C`; invalid string setters mirror FFmpeg's destination reset to a zero-channel layout before returning `EINVAL`; typed get/set helpers mirror `av_opt_get_chlayout` / `av_opt_set_chlayout`; string getters format the channel-layout description; generic numeric setters preserve the pinned ERANGE/EINVAL split; numeric getters return `EINVAL`; and default range queries return `ENOSYS`.

@@ -98,6 +98,17 @@ wsl -d Ubuntu --exec bash -lc "cd /mnt/c/Users/trevo/code/ffmpegrust && . /home/
 
 The same form is used for `avutil_bitreader`, `avutil_byteio`, and `avutil_metadata_options`. Windows-side `cargo-fuzz` is installed, but MSVC ASan runtime/path behavior has been unreliable in this workspace, so WSL is the current recorded fuzz-evidence path.
 
+The latest `avutil_core_models` saved-crash replay covers pixel-format storage
+lane padding for RGB X/zero-byte formats. The ignored artifact
+`fuzz/artifacts/avutil_core_models/crash-a41196e9ee31e7c3d4e23857a5a7805c4136ab98`
+selects `PixelFormat::ZeroRgb`; FFmpeg's descriptor model exposes three
+8-bit components, 24 logical bits per pixel, no alpha, and four packed storage
+bytes for `0rgb`/`rgb0`/`0bgr`/`bgr0`. The fuzzer invariant now treats those
+four names as explicit descriptor-bpp-below-storage-lane cases, and
+`CARGO_TARGET_DIR=target-wsl-fuzz ASAN_OPTIONS=detect_leaks=0 cargo fuzz run
+avutil_core_models fuzz/artifacts/avutil_core_models/crash-a41196e9ee31e7c3d4e23857a5a7805c4136ab98
+-- -runs=1` passes locally.
+
 The latest `avutil_core_models` deterministic logging fixtures include the UTC+05:30 default-callback timestamp row, the POSIX Pacific DST spring-forward/fall-back timestamp rows, the wrapped AEST/AEDT southern-hemisphere DST timestamp rows, the context-sensitive default-callback repeat row where identical text from distinct AVClass instances is not coalesced, the default-callback carriage-return prefix reset row, low-level `av_log_format_line()` / `av_log_format_line2()` carriage-return prefix reset rows, low-level `AV_LOG_QUIET` prefix-suppression rows including the no-prefix `av_log_format_line2(NULL, AV_LOG_QUIET, PRINT_LEVEL)` row, exact-size `av_log_format_line2()` truncation rows for NULL and AVClass contexts, forced-color default-callback `AV_LOG_QUIET` message coloring, forced-color default-callback carriage-return prefix reset, presence-only empty/zero force-color and force-no-color environment rows, no-force pseudo-terminal TERM palette rows including `TERM=dumb` BASIC quiet-message coloring and `TERM=xterm-256color` severity colors, and custom-callback raw delivered levels `-1`, `23`, and `57` with quiet/context delivery. The latest recorded WSL smoke evidence includes 1024 inputs after the UTC+05:30 timestamp addition, a warmed one-input run after adding the context-sensitive repeat fixture, a warmed one-input run after adding the default-callback carriage-return reset fixture, a dedicated one-input run after adding the low-level format-line carriage-return reset fixture, a dedicated one-input run after adding the low-level quiet prefix-suppression fixture, a dedicated one-input run after adding the raw custom-callback delivered-level fixture, a warmed one-input run after adding forced-color quiet rows, a warmed one-input run after adding forced-color carriage-return rows, a warmed one-input run after adding empty/zero force-env rows, a warmed one-input run after adding no-force TTY TERM palette rows, a warmed one-input run after adding no-force `TERM=xterm-256color` severity rows, a warmed one-input run after adding custom-callback raw negative/high-level plus quiet-context rows, a warmed one-input run after adding Pacific POSIX DST rows, and a warmed one-input run after adding wrapped AEST/AEDT DST rows; those sanitizer-backed smokes are useful, but not a sustained fuzz campaign.
 
 The latest packet display-rotation boundary fixture extends

@@ -6835,7 +6835,11 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         assert!(bits_per_pixel <= bytes_per_pixel * 8);
         let descriptor_bpp_is_below_storage_lane = matches!(
             pixel_format,
-            PixelFormat::Y210Le
+            PixelFormat::ZeroRgb
+                | PixelFormat::Rgb0
+                | PixelFormat::ZeroBgr
+                | PixelFormat::Bgr0
+                | PixelFormat::Y210Le
                 | PixelFormat::Y210Be
                 | PixelFormat::Y212Le
                 | PixelFormat::Y212Be
@@ -6849,7 +6853,8 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         );
         assert!(
             bits_per_pixel > bytes_per_pixel.saturating_sub(1) * 8
-                || descriptor_bpp_is_below_storage_lane
+                || descriptor_bpp_is_below_storage_lane,
+            "{pixel_format:?} has {bits_per_pixel} descriptor bits in {bytes_per_pixel} storage bytes"
         );
     } else {
         let bit_packed_single_plane = matches!(
