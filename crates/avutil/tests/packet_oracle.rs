@@ -185,6 +185,41 @@ fn libavcodec_packet_shared_shrink_oracle_documents_aliasing() {
             "packet:shared-shrink-zero-window".to_string(),
             vec!["0000000000000000".to_string()],
         ),
+        (
+            "packet:shared-shrink-custom-state".to_string(),
+            vec![
+                "4".to_string(),
+                "2".to_string(),
+                "1".to_string(),
+                "1".to_string(),
+                "2".to_string(),
+                "2".to_string(),
+                "0".to_string(),
+                "0".to_string(),
+                "0".to_string(),
+            ],
+        ),
+        (
+            "packet:shared-shrink-custom-src".to_string(),
+            vec!["aabb0000".to_string()],
+        ),
+        (
+            "packet:shared-shrink-custom-dst".to_string(),
+            vec!["aabb".to_string()],
+        ),
+        (
+            "packet:shared-shrink-custom-zero-window".to_string(),
+            vec!["0000000000000000".to_string()],
+        ),
+        (
+            "packet:shared-shrink-custom-release".to_string(),
+            vec![
+                "1".to_string(),
+                "913".to_string(),
+                "aabb0000".to_string(),
+                "0000000000000000".to_string(),
+            ],
+        ),
     ]);
 
     assert_eq!(
@@ -6562,6 +6597,12 @@ fn shared_shrink_oracle_c_source() -> &'static str {
 #include "libavcodec/packet.h"
 #include "libavutil/avutil.h"
 #include "libavutil/buffer.h"
+#include "libavutil/mem.h"
+
+static int custom_release_count = 0;
+static int custom_release_opaque = 0;
+static uint8_t custom_release_prefix[4] = {0};
+static uint8_t custom_release_zero_window[8] = {0};
 
 static void fail_if(int condition, const char *message)
 {
@@ -6575,6 +6616,15 @@ static void print_hex(const uint8_t *data, size_t size)
 {
     for (size_t i = 0; i < size; i++)
         printf("%02x", data[i]);
+}
+
+static void custom_buffer_free(void *opaque, uint8_t *data)
+{
+    custom_release_count++;
+    custom_release_opaque = opaque ? *(int *)opaque : -1;
+    memcpy(custom_release_prefix, data, sizeof(custom_release_prefix));
+    memcpy(custom_release_zero_window, data + 2, sizeof(custom_release_zero_window));
+    av_free(data);
 }
 
 int main(void)
@@ -6618,6 +6668,62 @@ int main(void)
 
     av_packet_free(&dst);
     av_packet_free(&src);
+
+    int custom_opaque = 913;
+    AVPacket *custom_src = av_packet_alloc();
+    AVPacket *custom_dst = av_packet_alloc();
+    fail_if(!custom_src || !custom_dst, "custom av_packet_alloc failed");
+    uint8_t *custom_data = av_malloc(4 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!custom_data, "custom av_malloc failed");
+    custom_data[0] = 0xaa;
+    custom_data[1] = 0xbb;
+    custom_data[2] = 0xcc;
+    custom_data[3] = 0xdd;
+    memset(custom_data + 4, 0x5a, AV_INPUT_BUFFER_PADDING_SIZE);
+    custom_src->buf = av_buffer_create(custom_data,
+                                       4 + AV_INPUT_BUFFER_PADDING_SIZE,
+                                       custom_buffer_free,
+                                       &custom_opaque,
+                                       0);
+    fail_if(!custom_src->buf, "custom av_buffer_create failed");
+    custom_src->data = custom_src->buf->data;
+    custom_src->size = 4;
+    ret = av_packet_ref(custom_dst, custom_src);
+    fail_if(ret < 0, "custom av_packet_ref failed");
+    uint8_t *custom_dst_before = custom_dst->data;
+
+    av_shrink_packet(custom_dst, 2);
+
+    printf("packet:shared-shrink-custom-state|%d|%d|%d|%d|%d|%d|%d|%d|%d\n",
+           custom_src->size,
+           custom_dst->size,
+           custom_dst->data == custom_dst_before,
+           custom_src->buf && custom_dst->buf && custom_src->buf->buffer == custom_dst->buf->buffer,
+           custom_src->buf ? av_buffer_get_ref_count(custom_src->buf) : 0,
+           custom_dst->buf ? av_buffer_get_ref_count(custom_dst->buf) : 0,
+           custom_src->buf ? av_buffer_is_writable(custom_src->buf) : 0,
+           custom_dst->buf ? av_buffer_is_writable(custom_dst->buf) : 0,
+           custom_release_count);
+    printf("packet:shared-shrink-custom-src|");
+    print_hex(custom_src->data, custom_src->size);
+    printf("\n");
+    printf("packet:shared-shrink-custom-dst|");
+    print_hex(custom_dst->data, custom_dst->size);
+    printf("\n");
+    printf("packet:shared-shrink-custom-zero-window|");
+    print_hex(custom_dst->data + custom_dst->size, 8);
+    printf("\n");
+
+    av_packet_free(&custom_dst);
+    fail_if(custom_release_count != 0, "custom buffer released while source still references it");
+    av_packet_free(&custom_src);
+    printf("packet:shared-shrink-custom-release|%d|%d|",
+           custom_release_count,
+           custom_release_opaque);
+    print_hex(custom_release_prefix, sizeof(custom_release_prefix));
+    printf("|");
+    print_hex(custom_release_zero_window, sizeof(custom_release_zero_window));
+    printf("\n");
     return 0;
 }
 "#

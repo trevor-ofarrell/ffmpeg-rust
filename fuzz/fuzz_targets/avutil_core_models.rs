@@ -11626,6 +11626,75 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .take(AV_INPUT_BUFFER_PADDING_SIZE)
         .all(|byte| *byte == 0));
 
+    let callback_shrink_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    {
+        let mut callback_storage = vec![0xaa, 0xbb, 0xcc, 0xdd];
+        callback_storage.resize(4 + AV_INPUT_BUFFER_PADDING_SIZE, 0x5a);
+        let callback_release_capture = Arc::clone(&callback_shrink_releases);
+        let callback_shrink_src = Packet::with_buffer(
+            BufferRef::from_vec_with_len_and_opaque_release_callback(
+                callback_storage,
+                4,
+                914usize,
+                move |opaque, bytes| {
+                    callback_release_capture
+                        .lock()
+                        .unwrap()
+                        .push((opaque, bytes));
+                },
+            )
+            .unwrap(),
+            0,
+        );
+        let mut callback_shrink_dst = Packet::default();
+        callback_shrink_dst.ref_from(&callback_shrink_src);
+        let callback_shrink_dst_ptr = callback_shrink_dst.data_buffer().as_padded_ptr();
+        // SAFETY: The deterministic fixture holds no packet payload slices
+        // across the call and performs no concurrent access while modeling
+        // FFmpeg's shared callback-owned AVBuffer tail-zeroing behavior.
+        unsafe {
+            callback_shrink_dst
+                .shrink_data_ffmpeg_aliasing(2)
+                .unwrap();
+        }
+        assert_eq!(
+            callback_shrink_dst.data_buffer().as_padded_ptr(),
+            callback_shrink_dst_ptr
+        );
+        assert!(callback_shrink_dst
+            .data_buffer()
+            .shares_storage(callback_shrink_src.data_buffer()));
+        assert_eq!(
+            callback_shrink_src.data_buffer().opaque_ref::<usize>(),
+            Some(&914)
+        );
+        assert_eq!(
+            callback_shrink_dst.data_buffer().opaque_ref::<usize>(),
+            Some(&914)
+        );
+        assert!(!callback_shrink_src.is_data_writable());
+        assert!(!callback_shrink_dst.is_data_writable());
+        assert_eq!(callback_shrink_src.data(), &[0xaa, 0xbb, 0x00, 0x00]);
+        assert_eq!(callback_shrink_dst.data(), &[0xaa, 0xbb]);
+        assert!(callback_shrink_dst
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .take(AV_INPUT_BUFFER_PADDING_SIZE)
+            .all(|byte| *byte == 0));
+        assert!(callback_shrink_releases.lock().unwrap().is_empty());
+    }
+    let callback_shrink_releases = callback_shrink_releases.lock().unwrap();
+    assert_eq!(callback_shrink_releases.len(), 1);
+    assert_eq!(callback_shrink_releases[0].0, 914);
+    assert_eq!(
+        &callback_shrink_releases[0].1[..4],
+        &[0xaa, 0xbb, 0x00, 0x00]
+    );
+    assert!(callback_shrink_releases[0].1[2..2 + AV_INPUT_BUFFER_PADDING_SIZE]
+        .iter()
+        .all(|byte| *byte == 0));
+
     let unpadded_grow_by = usize::from(cursor.next().unwrap_or_default() % 8);
     let mut unpadded_grown_packet = Packet::new(payload.clone(), stream_index);
     unpadded_grown_packet.grow_data(unpadded_grow_by).unwrap();

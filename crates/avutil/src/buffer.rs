@@ -1050,8 +1050,12 @@ impl BufferRef {
         let required_len = self.offset.checked_add(total_len).ok_or_else(|| {
             AvError::invalid_argument("buffer offset plus aliasing shrink length overflows")
         })?;
+        let supports_aliasing_owner = matches!(
+            &self.data.owner,
+            None | Some(BufferOwner::Callback(_)) | Some(BufferOwner::OpaqueData(_))
+        );
         if self.is_readonly()
-            || self.data.owner.is_some()
+            || !supports_aliasing_owner
             || !self.data.bytes.is_owned()
             || self.is_data_ptr_null()
             || required_len > self.data.len()
@@ -1063,8 +1067,9 @@ impl BufferRef {
             let padding_start = self.offset + len;
             // SAFETY: The method contract requires the caller to exclude live
             // byte slices and concurrent access to this shared storage. The
-            // checks above restrict mutation to owned, non-readonly storage and
-            // prove that padding_start..padding_start + padding is in bounds.
+            // checks above restrict mutation to owned, non-readonly storage,
+            // including callback-owned storage, and prove that padding_start..
+            // padding_start + padding is in bounds.
             unsafe {
                 self.data
                     .bytes

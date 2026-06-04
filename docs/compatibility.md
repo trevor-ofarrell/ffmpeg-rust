@@ -9,6 +9,12 @@
 
 ## Compatible Today
 
+- Latest main-thread packet callback-owned shared-shrink evidence: pinned
+  libavcodec rows now prove `av_shrink_packet()` preserves aliasing and delayed
+  release for a shared callback-owned `AVBufferRef`, and Rust mirrors it through
+  `unsafe Packet::shrink_data_ffmpeg_aliasing()` with unit and deterministic
+  `avutil_core_models` coverage. `avutil-packet` remains `fate_pass`; strict
+  completion remains 11/96.
 - Latest main-thread packet shared-shrink evidence: `unsafe
   Packet::shrink_data_ffmpeg_aliasing()` now mirrors the pinned
   `av_shrink_packet()` edge for ordinary owned shared refcounted payloads,
