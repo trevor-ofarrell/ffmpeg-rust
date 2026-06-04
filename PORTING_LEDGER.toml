@@ -2,6 +2,12 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest main-thread logging fuzz evidence: a warmed WSL `avutil_core_models`
+# sanitizer smoke ran 2048 inputs with leak detection disabled against a
+# temporary copy of the four tracked seed files. libFuzzer reported final
+# corpus `203/13413b`, reached `DONE`, and found no crash; the tracked corpus
+# stayed unchanged and the scratch corpus was removed. This strengthens
+# deterministic logging invariants only; no status was promoted.
 # Latest main-thread buffer fuzz evidence: a warmed WSL `avutil_core_models`
 # sanitizer smoke ran 4096 inputs with leak detection disabled against a
 # temporary copy of the four tracked seed files. libFuzzer reported final
@@ -3360,6 +3366,11 @@ fuzz_targets = ["avutil_core_models"]
 # after adding deterministic UTC+05:30 default-callback fixed-offset timestamp
 # invariants, with sanitizer instrumentation and no assertion failures. This is
 # still smoke evidence, not a sustained campaign.
+# Latest fuzz evidence: WSL cargo-fuzz `avutil_core_models` ran 2048 inputs
+# against a temporary copy of the tracked seed corpus with sanitizer
+# instrumentation and leak detection disabled. libFuzzer reached DONE with
+# final corpus `203/13413b`, no crash, and no repository corpus changes. This
+# remains smoke evidence only, so avutil-logging remains fate_pass.
 # Latest update: pinned libavutil default-callback rows now override
 # `av_gettime()` in the oracle helper and set deterministic `TZ` values,
 # proving byte-identical fixed local-time timestamp output for a UTC+2

@@ -3,38 +3,43 @@
 ## Current Status
 
 Current authoritative turn status: main-thread WSL evidence slice strengthened
-`avutil-buffer` fuzz smoke coverage. Required startup checks passed from a
-clean tree at `master...origin/master [ahead 56]`:
+`avutil-logging` fuzz smoke coverage. Required startup checks passed from a
+clean tree at `master...origin/master [ahead 57]`:
 `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
 15` reported 11/96 strict-complete components (11.5%), and
 `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
 validated the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
 kept the documented `avutil-packet` shared refcounted `av_shrink_packet()`
-blocker unchanged and advanced the next unblocked priority-1 buffer evidence
+blocker unchanged and advanced the next unblocked priority-1 logging evidence
 lane; no worker writes were delegated.
 
 Current main-thread slice: a warmed WSL `avutil_core_models` sanitizer smoke
-ran 4096 inputs with `CARGO_TARGET_DIR=target-wsl-fuzz` and
+ran 2048 inputs with `CARGO_TARGET_DIR=target-wsl-fuzz` and
 `ASAN_OPTIONS=detect_leaks=0` against a temporary copy of the four tracked seed
-files at `/tmp/ffmpegrust-avutil-core-models.6CGeqK`. libFuzzer reported final
-corpus `323/22Kb`, reached `DONE`, and found no crash. The temporary directory
-held 326 files after completion, while the repository corpus stayed at the four
-tracked seed files. This strengthens the deterministic BufferRef/BufferPool
-invariants behind `avutil-buffer`; `avutil-buffer` remains `fate_pass`, not
-complete, and strict completion remains 11/96 because broader ABI/lifetime
-parity, hardware/device ownership integration, zero-known-limitation review,
+files at `/tmp/ffmpegrust-avutil-core-models.xE7hsJ`. libFuzzer reported final
+corpus `203/13413b`, reached `DONE`, and found no crash. The temporary
+directory held 205 files after completion, while the repository corpus stayed
+at the four tracked seed files; the temporary directory was removed after the
+run. This strengthens the deterministic logging invariants inside
+`avutil_core_models`, including raw levels/flags, default-callback formatting,
+color policy, timestamp/DST rows, repeat handling, and custom-callback
+dispatch. `avutil-logging` remains `fate_pass`, not complete, and strict
+completion remains 11/96 because the exported C callback ABI, broader
+byte-identical default stderr/color/timezone behavior, media-progress stderr,
 and sustained fuzz evidence remain pending.
 
-Latest validation command for this buffer fuzz evidence passed:
+Latest validation command for this logging fuzz evidence passed:
 `CARGO_TARGET_DIR=target-wsl-fuzz ASAN_OPTIONS=detect_leaks=0 cargo fuzz run
-avutil_core_models /tmp/ffmpegrust-avutil-core-models.6CGeqK -- -runs=4096`.
+avutil_core_models /tmp/ffmpegrust-avutil-core-models.xE7hsJ -- -runs=2048`.
+The scratch corpus was removed with `rm -rf
+/tmp/ffmpegrust-avutil-core-models.xE7hsJ`.
 Final documentation/ledger guards also passed:
 `CARGO_TARGET_DIR=target-orch-fate cargo test -p fate-runner current_ledger`;
 `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- guard-runtime`;
-`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
-15`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`;
-`cargo fmt --all -- --check`; and `git diff --check` with CRLF conversion
-warnings only.
+`cargo fmt --all -- --check`; `git diff --check` with CRLF conversion
+warnings only; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner --
+status --next 15`; and `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask
+-- oracle-doctor`.
 
 Current authoritative turn status: main-thread WSL slice finished
 `avutil-packet` NULL/nonzero side-data ownership evidence that was already

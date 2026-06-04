@@ -9,6 +9,13 @@
 
 ## Compatible Today
 
+- Latest main-thread logging fuzz evidence: a warmed WSL
+  `avutil_core_models` 2048-run sanitizer smoke completed against a temporary
+  copy of the tracked seed corpus without a crash. libFuzzer reported final
+  corpus `203/13413b`, the temporary directory held 205 files and was removed,
+  and the repository corpus stayed at four seed files. This strengthens the
+  shared logging deterministic invariants for `avutil-logging`; strict
+  completion remains 11/96 and the row remains `fate_pass`.
 - Latest main-thread buffer fuzz evidence: a warmed WSL `avutil_core_models`
   4096-run sanitizer smoke completed against a temporary copy of the tracked
   seed corpus without a crash. libFuzzer reported final corpus `323/22Kb`, the
