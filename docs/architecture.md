@@ -253,9 +253,10 @@ caller-owned `SideData` directly, so caller-provided padded storage remains
 padded after first-match replacement or append, matching the current
 `packet:*add-*-padding` oracle rows. The same transfer covers duplicate-kind
 first-match replacement, packet-owned raw side-data kinds such as
-`AV_PKT_DATA_NB`, `-1`, and `INT_MIN`, standalone raw `AV_PKT_DATA_NB`, `-1`,
-and `INT_MIN` append, and standalone nonzero-flag replacement, as pinned by
-the current duplicate and raw/flagged add-padding rows. At the packet-owned
+`AV_PKT_DATA_NB`, `-1`, and `INT_MIN`, standalone raw `AV_PKT_DATA_NB`,
+`AV_PKT_DATA_NB + 1`, `-1`, and `INT_MIN` append, and standalone nonzero-flag
+replacement, as pinned by the current duplicate and raw/flagged add-padding
+rows. At the packet-owned
 capacity limit,
 `try_add_side_data_owned` checks capacity before taking
 ownership, so same-kind replacement still consumes padded caller storage while

@@ -6137,6 +6137,53 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         side_data_padding_fields(raw_type_new_list.get(&raw_type_kind)),
     );
 
+    let raw_plus_one_kind =
+        PacketSideDataKind::from_ffmpeg_raw_value(PacketSideDataKind::KNOWN.len() as i32 + 1);
+    let mut raw_plus_one_add_list = PacketSideDataList::new();
+    let raw_plus_one_added = raw_plus_one_add_list
+        .try_add_side_data(padded_side_data(raw_plus_one_kind.clone(), &[0x6a, 0x6b]))
+        .unwrap();
+    assert!(raw_plus_one_added.is_none());
+    rows.insert(
+        "packet:array-add-raw-plus-one-type-ret".to_string(),
+        vec!["1".to_string()],
+    );
+    rows.insert(
+        "packet:array-add-raw-plus-one-type".to_string(),
+        side_data_list_summary_fields(&raw_plus_one_add_list),
+    );
+    rows.insert(
+        "packet:array-get-raw-plus-one-type".to_string(),
+        side_data_lookup_fields(raw_plus_one_add_list.get(&raw_plus_one_kind)),
+    );
+    rows.insert(
+        "packet:array-add-raw-plus-one-type-padding".to_string(),
+        side_data_padding_fields(raw_plus_one_add_list.get(&raw_plus_one_kind)),
+    );
+
+    let mut raw_plus_one_new_list = PacketSideDataList::new();
+    raw_plus_one_new_list
+        .new_side_data(raw_plus_one_kind.clone(), 2)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0x6c, 0x6d]);
+    rows.insert(
+        "packet:array-new-raw-plus-one-type-ret".to_string(),
+        vec!["1".to_string()],
+    );
+    rows.insert(
+        "packet:array-new-raw-plus-one-type".to_string(),
+        side_data_list_summary_fields(&raw_plus_one_new_list),
+    );
+    rows.insert(
+        "packet:array-get-new-raw-plus-one-type".to_string(),
+        side_data_lookup_fields(raw_plus_one_new_list.get(&raw_plus_one_kind)),
+    );
+    rows.insert(
+        "packet:array-new-raw-plus-one-type-padding".to_string(),
+        side_data_padding_fields(raw_plus_one_new_list.get(&raw_plus_one_kind)),
+    );
+
     let mut raw_list = PacketSideDataList::new();
     let raw_negative_kind = PacketSideDataKind::from_ffmpeg_raw_value(-1);
     let raw_negative_added = raw_list
@@ -10084,6 +10131,56 @@ static void exercise_side_data_array_api(void) {
                                   (enum AVPacketSideDataType)AV_PKT_DATA_NB);
     av_packet_side_data_free(&raw_type_new_sd,
                              &raw_type_new_nb_sd);
+
+    AVPacketSideData *raw_plus_one_add_sd = NULL;
+    int raw_plus_one_add_nb_sd = 0;
+    owned = av_mallocz(2 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!owned, "av_mallocz array plus-one raw type failed");
+    owned[0] = 0x6a;
+    owned[1] = 0x6b;
+    entry = av_packet_side_data_add(
+        &raw_plus_one_add_sd, &raw_plus_one_add_nb_sd,
+        (enum AVPacketSideDataType)(AV_PKT_DATA_NB + 1), owned, 2, 0);
+    printf("packet:array-add-raw-plus-one-type-ret|%d\n", entry != NULL);
+    if (!entry)
+        av_free(owned);
+    fail_if(!entry, "av_packet_side_data_add plus-one raw type failed");
+    print_side_data_array_summary("packet:array-add-raw-plus-one-type",
+                                  raw_plus_one_add_sd,
+                                  raw_plus_one_add_nb_sd);
+    print_side_data_array_lookup(
+        "packet:array-get-raw-plus-one-type",
+        raw_plus_one_add_sd, raw_plus_one_add_nb_sd,
+        (enum AVPacketSideDataType)(AV_PKT_DATA_NB + 1));
+    print_side_data_array_padding(
+        "packet:array-add-raw-plus-one-type-padding",
+        raw_plus_one_add_sd, raw_plus_one_add_nb_sd,
+        (enum AVPacketSideDataType)(AV_PKT_DATA_NB + 1));
+    av_packet_side_data_free(&raw_plus_one_add_sd,
+                             &raw_plus_one_add_nb_sd);
+
+    AVPacketSideData *raw_plus_one_new_sd = NULL;
+    int raw_plus_one_new_nb_sd = 0;
+    entry = av_packet_side_data_new(
+        &raw_plus_one_new_sd, &raw_plus_one_new_nb_sd,
+        (enum AVPacketSideDataType)(AV_PKT_DATA_NB + 1), 2, 0);
+    printf("packet:array-new-raw-plus-one-type-ret|%d\n", entry != NULL);
+    fail_if(!entry, "av_packet_side_data_new plus-one raw type failed");
+    entry->data[0] = 0x6c;
+    entry->data[1] = 0x6d;
+    print_side_data_array_summary("packet:array-new-raw-plus-one-type",
+                                  raw_plus_one_new_sd,
+                                  raw_plus_one_new_nb_sd);
+    print_side_data_array_lookup(
+        "packet:array-get-new-raw-plus-one-type",
+        raw_plus_one_new_sd, raw_plus_one_new_nb_sd,
+        (enum AVPacketSideDataType)(AV_PKT_DATA_NB + 1));
+    print_side_data_array_padding(
+        "packet:array-new-raw-plus-one-type-padding",
+        raw_plus_one_new_sd, raw_plus_one_new_nb_sd,
+        (enum AVPacketSideDataType)(AV_PKT_DATA_NB + 1));
+    av_packet_side_data_free(&raw_plus_one_new_sd,
+                             &raw_plus_one_new_nb_sd);
 
     AVPacketSideData *raw_negative_new_sd = NULL;
     int raw_negative_new_nb_sd = 0;

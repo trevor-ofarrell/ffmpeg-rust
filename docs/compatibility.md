@@ -9,6 +9,18 @@
 
 ## Compatible Today
 
+- Latest main-thread packet standalone raw `AV_PKT_DATA_NB + 1` side-data
+  add/new padding evidence: pinned libavcodec rows
+  `packet:array-add-raw-plus-one-type-padding` and
+  `packet:array-new-raw-plus-one-type-padding` now prove standalone
+  `av_packet_side_data_add()` and `av_packet_side_data_new()` accept raw
+  `AV_PKT_DATA_NB + 1` entries and preserve or allocate zeroed
+  `AV_INPUT_BUFFER_PADDING_SIZE` input padding. Rust mirrors this through
+  `PacketSideDataList::try_add_side_data` and
+  `PacketSideDataList::new_side_data`, with focused unit, ignored oracle,
+  mapped differential/FATE, upstream `fate-avpacket`, clippy, and WSL
+  `avutil_core_models` sanitizer smoke coverage. `avutil-packet` remains
+  `fate_pass`; strict completion remains 11/96.
 - Latest main-thread packet raw `AV_PKT_DATA_NB + 1` side-data shrink
   hidden-tail evidence: pinned libavcodec row
   `packet:side-shrink-raw-type-padding` now proves
@@ -127,12 +139,14 @@
   evidence: pinned libavcodec rows `packet:side-new-raw-type-padding`,
   `packet:side-new-raw-nb-type-padding`,
   `packet:side-new-raw-min-type-padding`,
-  `packet:array-new-raw-type-padding`, and
+  `packet:array-new-raw-type-padding`,
+  `packet:array-new-raw-plus-one-type-padding`, and
   `packet:side-shrink-raw-min-oversize-padding` now prove raw exact
   `AV_PKT_DATA_NB`, `AV_PKT_DATA_NB + 1`, and `INT_MIN` packet-owned
   `av_packet_new_side_data()` allocations get zeroed input padding, raw
-  `AV_PKT_DATA_NB` standalone `av_packet_side_data_new()` allocations get the
-  same zeroed padding, and an oversize `INT_MIN`
+  `AV_PKT_DATA_NB` and `AV_PKT_DATA_NB + 1` standalone
+  `av_packet_side_data_new()` allocations get the same zeroed padding, and an
+  oversize `INT_MIN`
   `av_packet_shrink_side_data()` failure preserves payload plus padding. Rust
   mirrors this through padded `new_side_data` allocation and no-mutation shrink
   errors, with focused unit, ignored oracle, mapped
@@ -197,7 +211,7 @@
 - Latest main-thread packet raw/flagged side-data add padding evidence: pinned
   libavcodec rows now prove packet-owned positive-size side-data adds under raw
   `AV_PKT_DATA_NB`, `-1`, and `INT_MIN` kinds, plus standalone raw
-  `AV_PKT_DATA_NB`, `-1`, and `INT_MIN` append and
+  `AV_PKT_DATA_NB`, `AV_PKT_DATA_NB + 1`, `-1`, and `INT_MIN` append and
   `av_packet_side_data_add()` with nonzero flags, preserve caller-owned positive
   side data with `AV_INPUT_BUFFER_PADDING_SIZE` zero padding. Rust mirrors this
   through direct `SideData` ownership transfer in

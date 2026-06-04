@@ -12828,6 +12828,52 @@ mod tests {
             .iter()
             .take(AV_INPUT_BUFFER_PADDING_SIZE)
             .all(|byte| *byte == 0));
+
+        let raw_plus_one_kind =
+            PacketSideDataKind::from_ffmpeg_raw_value(PacketSideDataKind::KNOWN.len() as i32 + 1);
+        let mut raw_plus_one_add_list = PacketSideDataList::new();
+        let mut raw_plus_one_add_owner = Packet::default();
+        raw_plus_one_add_owner
+            .new_side_data(raw_plus_one_kind.clone(), 2)
+            .unwrap()
+            .data_mut()
+            .copy_from_slice(&[0x6a, 0x6b]);
+        let raw_plus_one_add_side_data = raw_plus_one_add_owner
+            .take_side_data_kind(&raw_plus_one_kind)
+            .unwrap();
+        assert!(raw_plus_one_add_list
+            .try_add_side_data(raw_plus_one_add_side_data)
+            .unwrap()
+            .is_none());
+        let raw_plus_one_added = raw_plus_one_add_list.get(&raw_plus_one_kind).unwrap();
+        assert_eq!(raw_plus_one_added.data(), &[0x6a, 0x6b]);
+        assert_eq!(
+            raw_plus_one_added.padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(raw_plus_one_added
+            .padding_slice()
+            .iter()
+            .take(AV_INPUT_BUFFER_PADDING_SIZE)
+            .all(|byte| *byte == 0));
+
+        let mut raw_plus_one_new_list = PacketSideDataList::new();
+        raw_plus_one_new_list
+            .new_side_data(raw_plus_one_kind.clone(), 2)
+            .unwrap()
+            .data_mut()
+            .copy_from_slice(&[0x6c, 0x6d]);
+        let raw_plus_one_new_side = raw_plus_one_new_list.get(&raw_plus_one_kind).unwrap();
+        assert_eq!(raw_plus_one_new_side.data(), &[0x6c, 0x6d]);
+        assert_eq!(
+            raw_plus_one_new_side.padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(raw_plus_one_new_side
+            .padding_slice()
+            .iter()
+            .take(AV_INPUT_BUFFER_PADDING_SIZE)
+            .all(|byte| *byte == 0));
     }
 
     #[test]

@@ -14664,6 +14664,54 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .iter()
         .take(AV_INPUT_BUFFER_PADDING_SIZE)
         .all(|byte| *byte == 0));
+    let raw_plus_one_array_kind =
+        PacketSideDataKind::from_ffmpeg_raw_value(PacketSideDataKind::KNOWN.len() as i32 + 1);
+    let mut raw_plus_one_add_array_list = PacketSideDataList::new();
+    let mut raw_plus_one_add_owner = Packet::default();
+    raw_plus_one_add_owner
+        .new_side_data(raw_plus_one_array_kind.clone(), 2)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0x6a, 0x6b]);
+    let raw_plus_one_add_side_data = raw_plus_one_add_owner
+        .take_side_data_kind(&raw_plus_one_array_kind)
+        .unwrap();
+    assert!(raw_plus_one_add_array_list
+        .try_add_side_data(raw_plus_one_add_side_data)
+        .unwrap()
+        .is_none());
+    let raw_plus_one_add_array_side = raw_plus_one_add_array_list
+        .get(&raw_plus_one_array_kind)
+        .unwrap();
+    assert_eq!(raw_plus_one_add_array_side.data(), &[0x6a, 0x6b]);
+    assert_eq!(
+        raw_plus_one_add_array_side.padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(raw_plus_one_add_array_side
+        .padding_slice()
+        .iter()
+        .take(AV_INPUT_BUFFER_PADDING_SIZE)
+        .all(|byte| *byte == 0));
+    let mut raw_plus_one_new_array_list = PacketSideDataList::new();
+    raw_plus_one_new_array_list
+        .new_side_data(raw_plus_one_array_kind.clone(), 2)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0x6c, 0x6d]);
+    let raw_plus_one_new_array_side = raw_plus_one_new_array_list
+        .get(&raw_plus_one_array_kind)
+        .unwrap();
+    assert_eq!(raw_plus_one_new_array_side.data(), &[0x6c, 0x6d]);
+    assert_eq!(
+        raw_plus_one_new_array_side.padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(raw_plus_one_new_array_side
+        .padding_slice()
+        .iter()
+        .take(AV_INPUT_BUFFER_PADDING_SIZE)
+        .all(|byte| *byte == 0));
 
     let raw_negative_array_kind = PacketSideDataKind::from_ffmpeg_raw_value(-1);
     let raw_min_array_kind = PacketSideDataKind::from_ffmpeg_raw_value(i32::MIN);
