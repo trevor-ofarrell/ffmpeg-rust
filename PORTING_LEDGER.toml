@@ -8,6 +8,12 @@ default_profile = "ffmpeg-8.1.1-default-native"
 # corpus `203/13413b`, reached `DONE`, and found no crash; the tracked corpus
 # stayed unchanged and the scratch corpus was removed. This strengthens
 # deterministic logging invariants only; no status was promoted.
+# Latest main-thread options evidence: pinned libavutil recursive
+# `AV_OPT_SEARCH_CHILDREN` rows now prove nested child option sets are searched
+# before their direct parent and before root fallback for find/get/set/range
+# helpers. Rust unit, oracle, FATE, and WSL `avutil_metadata_options` 64-run
+# sanitizer smoke evidence cover this bounded shape. avutil-options remains
+# fate_pass, not complete.
 # Latest main-thread buffer fuzz evidence: a warmed WSL `avutil_core_models`
 # sanitizer smoke ran 4096 inputs with leak detection disabled against a
 # temporary copy of the four tracked seed files. libFuzzer reported final
@@ -3858,6 +3864,7 @@ unit_tests = [
   "options::tests::option_queries_can_search_child_option_sets",
   "options::tests::avoption_entries_and_find_follow_ffmpeg_search_shape",
   "options::tests::avoption_get_set_with_search_flags_use_child_target_before_root",
+  "options::tests::avoption_search_children_recurses_into_nested_children_before_root",
   "options::tests::set_avoptions_from_dict_matches_bounded_ffmpeg_remainder_shape",
   "options::tests::set_avoptions_from_string_matches_bounded_ffmpeg_shape",
   "options::tests::serialize_avoptions_matches_bounded_ffmpeg_shape",
@@ -3875,6 +3882,15 @@ fate_tests = [
   "options_oracle::upstream_fate_opt_passes",
 ]
 fuzz_targets = ["avutil_metadata_options"]
+# Latest orchestrated update: pinned libavutil recursive child rows now prove
+# AV_OPT_SEARCH_CHILDREN searches a child object's own children before that
+# direct child and before root fallback. The bounded rows cover
+# av_opt_find/av_opt_find2 target identity, av_opt_get, av_opt_set,
+# av_opt_set_int, av_opt_query_ranges, duplicate `threads` resolution to the
+# nested `leaf` child, a grandchild-only option that is absent without child
+# search, and post-set state. Rust mirrors the ordering across the shared
+# find/get/set/range/array helper paths and deterministic fuzz fixtures.
+# avutil-options remains fate_pass, not complete.
 # Latest orchestrated update: pinned libavutil `av_opt_query_ranges()` rows now
 # prove AV_OPT_SEARCH_CHILDREN selects direct child ranges before root ranges,
 # child-only names remain ENOMEM without child search, and AV_OPT_SEARCH_FAKE_OBJ

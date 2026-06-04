@@ -1030,13 +1030,7 @@ impl OptionSet {
         }
 
         if query.searches_children() {
-            for child in &self.children {
-                for definition in child.options().definitions() {
-                    if query.matches(definition) {
-                        matches.push(OptionMatch::child(child.name(), definition));
-                    }
-                }
-            }
+            self.collect_child_definitions_matching(query, &mut matches);
         }
 
         matches
@@ -1064,10 +1058,8 @@ impl OptionSet {
         let search_flags = OptionSearchFlags::from_bits_truncate(search_flags.bits());
 
         if search_flags.contains(OptionSearchFlags::CHILDREN) {
-            for child in &self.children {
-                if let Some(found) = child.options().find_root_avoption(name, unit, opt_flags) {
-                    return Some(OptionEntryMatch::child(child.name(), found));
-                }
+            if let Some(found) = self.find_child_avoption(name, unit, opt_flags) {
+                return Some(found);
             }
         }
 
@@ -1124,14 +1116,12 @@ impl OptionSet {
 
         let allow_null = search_flags.contains(OptionSearchFlags::ALLOW_NULL);
         if search_flags.contains(OptionSearchFlags::CHILDREN) {
-            for child in &self.children {
-                if let Some(index) = child.options.find_exact_index(name) {
-                    return Ok(format_avoption_value_for_kind_nullable(
-                        child.options.definitions[index].kind(),
-                        &child.options.values[index],
-                        allow_null,
-                    ));
-                }
+            if let Some((options, index)) = self.find_child_exact_index(name) {
+                return Ok(format_avoption_value_for_kind_nullable(
+                    options.definitions[index].kind(),
+                    &options.values[index],
+                    allow_null,
+                ));
             }
         }
 
@@ -1195,6 +1185,10 @@ impl OptionSet {
 
     pub fn set_avoption_from_str(&mut self, name: &str, raw: &str) -> AvResult<()> {
         let index = self.avoption_index(name)?;
+        self.set_avoption_from_str_at_index(index, raw)
+    }
+
+    fn set_avoption_from_str_at_index(&mut self, index: usize, raw: &str) -> AvResult<()> {
         self.ensure_writable(index)?;
         if matches!(self.definitions[index].kind(), OptionKind::Color) {
             let current = match self.values[index] {
@@ -1267,10 +1261,8 @@ impl OptionSet {
         }
 
         if search_flags.contains(OptionSearchFlags::CHILDREN) {
-            for child in &mut self.children {
-                if child.options.find_exact_index(name).is_some() {
-                    return child.options.set_avoption_from_str(name, raw);
-                }
+            if let Some((options, index)) = self.find_child_exact_index_mut(name) {
+                return options.set_avoption_from_str_at_index(index, raw);
             }
         }
 
@@ -1341,12 +1333,8 @@ impl OptionSet {
         }
 
         if search_flags.contains(OptionSearchFlags::CHILDREN) {
-            for child in &mut self.children {
-                if let Some(index) = child.options.find_exact_index(name) {
-                    return child
-                        .options
-                        .set_avoption_image_size_at_index(index, width, height);
-                }
+            if let Some((options, index)) = self.find_child_exact_index_mut(name) {
+                return options.set_avoption_image_size_at_index(index, width, height);
             }
         }
 
@@ -1375,12 +1363,8 @@ impl OptionSet {
         }
 
         if search_flags.contains(OptionSearchFlags::CHILDREN) {
-            for child in &mut self.children {
-                if let Some(index) = child.options.find_exact_index(name) {
-                    return child
-                        .options
-                        .set_avoption_pixel_format_at_index(index, value);
-                }
+            if let Some((options, index)) = self.find_child_exact_index_mut(name) {
+                return options.set_avoption_pixel_format_at_index(index, value);
             }
         }
 
@@ -1409,12 +1393,8 @@ impl OptionSet {
         }
 
         if search_flags.contains(OptionSearchFlags::CHILDREN) {
-            for child in &mut self.children {
-                if let Some(index) = child.options.find_exact_index(name) {
-                    return child
-                        .options
-                        .set_avoption_sample_format_at_index(index, value);
-                }
+            if let Some((options, index)) = self.find_child_exact_index_mut(name) {
+                return options.set_avoption_sample_format_at_index(index, value);
             }
         }
 
@@ -1443,12 +1423,8 @@ impl OptionSet {
         }
 
         if search_flags.contains(OptionSearchFlags::CHILDREN) {
-            for child in &mut self.children {
-                if let Some(index) = child.options.find_exact_index(name) {
-                    return child
-                        .options
-                        .set_avoption_channel_layout_at_index(index, value.clone());
-                }
+            if let Some((options, index)) = self.find_child_exact_index_mut(name) {
+                return options.set_avoption_channel_layout_at_index(index, value);
             }
         }
 
@@ -1473,10 +1449,8 @@ impl OptionSet {
         }
 
         if search_flags.contains(OptionSearchFlags::CHILDREN) {
-            for child in &mut self.children {
-                if let Some(index) = child.options.find_exact_index(name) {
-                    return child.options.set_avoption_video_rate_at_index(index, value);
-                }
+            if let Some((options, index)) = self.find_child_exact_index_mut(name) {
+                return options.set_avoption_video_rate_at_index(index, value);
             }
         }
 
@@ -1501,10 +1475,8 @@ impl OptionSet {
         }
 
         if search_flags.contains(OptionSearchFlags::CHILDREN) {
-            for child in &mut self.children {
-                if let Some(index) = child.options.find_exact_index(name) {
-                    return child.options.set_avoption_binary_at_index(index, value);
-                }
+            if let Some((options, index)) = self.find_child_exact_index_mut(name) {
+                return options.set_avoption_binary_at_index(index, value);
             }
         }
 
@@ -1529,10 +1501,8 @@ impl OptionSet {
         }
 
         if search_flags.contains(OptionSearchFlags::CHILDREN) {
-            for child in &mut self.children {
-                if let Some(index) = child.options.find_exact_index(name) {
-                    return child.options.set_avoption_dictionary_at_index(index, value);
-                }
+            if let Some((options, index)) = self.find_child_exact_index_mut(name) {
+                return options.set_avoption_dictionary_at_index(index, value);
             }
         }
 
@@ -1598,10 +1568,8 @@ impl OptionSet {
         }
 
         if search_flags.contains(OptionSearchFlags::CHILDREN) {
-            for child in &self.children {
-                if let Some(index) = child.options.find_exact_index(name) {
-                    return child.options.get_avoption_image_size_at_index(index);
-                }
+            if let Some((options, index)) = self.find_child_exact_index(name) {
+                return options.get_avoption_image_size_at_index(index);
             }
         }
 
@@ -1625,10 +1593,8 @@ impl OptionSet {
         }
 
         if search_flags.contains(OptionSearchFlags::CHILDREN) {
-            for child in &self.children {
-                if let Some(index) = child.options.find_exact_index(name) {
-                    return child.options.get_avoption_pixel_format_at_index(index);
-                }
+            if let Some((options, index)) = self.find_child_exact_index(name) {
+                return options.get_avoption_pixel_format_at_index(index);
             }
         }
 
@@ -1652,10 +1618,8 @@ impl OptionSet {
         }
 
         if search_flags.contains(OptionSearchFlags::CHILDREN) {
-            for child in &self.children {
-                if let Some(index) = child.options.find_exact_index(name) {
-                    return child.options.get_avoption_sample_format_at_index(index);
-                }
+            if let Some((options, index)) = self.find_child_exact_index(name) {
+                return options.get_avoption_sample_format_at_index(index);
             }
         }
 
@@ -1679,10 +1643,8 @@ impl OptionSet {
         }
 
         if search_flags.contains(OptionSearchFlags::CHILDREN) {
-            for child in &self.children {
-                if let Some(index) = child.options.find_exact_index(name) {
-                    return child.options.get_avoption_channel_layout_at_index(index);
-                }
+            if let Some((options, index)) = self.find_child_exact_index(name) {
+                return options.get_avoption_channel_layout_at_index(index);
             }
         }
 
@@ -1718,10 +1680,8 @@ impl OptionSet {
         }
 
         if search_flags.contains(OptionSearchFlags::CHILDREN) {
-            for child in &self.children {
-                if let Some(index) = child.options.find_exact_index(name) {
-                    return child.options.get_avoption_binary_at_index(index);
-                }
+            if let Some((options, index)) = self.find_child_exact_index(name) {
+                return options.get_avoption_binary_at_index(index);
             }
         }
 
@@ -1745,10 +1705,8 @@ impl OptionSet {
         }
 
         if search_flags.contains(OptionSearchFlags::CHILDREN) {
-            for child in &self.children {
-                if let Some(index) = child.options.find_exact_index(name) {
-                    return child.options.get_avoption_dictionary_at_index(index);
-                }
+            if let Some((options, index)) = self.find_child_exact_index(name) {
+                return options.get_avoption_dictionary_at_index(index);
             }
         }
 
@@ -1772,10 +1730,8 @@ impl OptionSet {
         }
 
         if search_flags.contains(OptionSearchFlags::CHILDREN) {
-            for child in &self.children {
-                if let Some(index) = child.options.find_exact_index(name) {
-                    return child.options.get_avoption_array_size_at_index(index);
-                }
+            if let Some((options, index)) = self.find_child_exact_index(name) {
+                return options.get_avoption_array_size_at_index(index);
             }
         }
 
@@ -1806,12 +1762,8 @@ impl OptionSet {
         }
 
         if search_flags.contains(OptionSearchFlags::CHILDREN) {
-            for child in &self.children {
-                if let Some(index) = child.options.find_exact_index(name) {
-                    return child
-                        .options
-                        .get_avoption_array_at_index(index, start_elem, nb_elems);
-                }
+            if let Some((options, index)) = self.find_child_exact_index(name) {
+                return options.get_avoption_array_at_index(index, start_elem, nb_elems);
             }
         }
 
@@ -1842,12 +1794,8 @@ impl OptionSet {
         }
 
         if search_flags.contains(OptionSearchFlags::CHILDREN) {
-            for child in &self.children {
-                if let Some(index) = child.options.find_exact_index(name) {
-                    return child
-                        .options
-                        .get_avoption_array_strings_at_index(index, start_elem, nb_elems);
-                }
+            if let Some((options, index)) = self.find_child_exact_index(name) {
+                return options.get_avoption_array_strings_at_index(index, start_elem, nb_elems);
             }
         }
 
@@ -1878,12 +1826,8 @@ impl OptionSet {
         }
 
         if search_flags.contains(OptionSearchFlags::CHILDREN) {
-            for child in &self.children {
-                if let Some(index) = child.options.find_exact_index(name) {
-                    return child
-                        .options
-                        .get_avoption_array_doubles_at_index(index, start_elem, nb_elems);
-                }
+            if let Some((options, index)) = self.find_child_exact_index(name) {
+                return options.get_avoption_array_doubles_at_index(index, start_elem, nb_elems);
             }
         }
 
@@ -1914,12 +1858,8 @@ impl OptionSet {
         }
 
         if search_flags.contains(OptionSearchFlags::CHILDREN) {
-            for child in &self.children {
-                if let Some(index) = child.options.find_exact_index(name) {
-                    return child
-                        .options
-                        .get_avoption_array_rationals_at_index(index, start_elem, nb_elems);
-                }
+            if let Some((options, index)) = self.find_child_exact_index(name) {
+                return options.get_avoption_array_rationals_at_index(index, start_elem, nb_elems);
             }
         }
 
@@ -1940,15 +1880,13 @@ impl OptionSet {
         }
 
         if search_flags.contains(OptionSearchFlags::CHILDREN) {
-            for child in &mut self.children {
-                if let Some(index) = child.options.find_exact_index(name) {
-                    return child.options.set_avoption_array_at_index(
-                        index,
-                        start_elem,
-                        values,
-                        search_flags,
-                    );
-                }
+            if let Some((options, index)) = self.find_child_exact_index_mut(name) {
+                return options.set_avoption_array_at_index(
+                    index,
+                    start_elem,
+                    values,
+                    search_flags,
+                );
             }
         }
 
@@ -1969,12 +1907,8 @@ impl OptionSet {
         }
 
         if search_flags.contains(OptionSearchFlags::CHILDREN) {
-            for child in &mut self.children {
-                if let Some(index) = child.options.find_exact_index(name) {
-                    return child
-                        .options
-                        .remove_avoption_array_at_index(index, start_elem, nb_elems);
-                }
+            if let Some((options, index)) = self.find_child_exact_index_mut(name) {
+                return options.remove_avoption_array_at_index(index, start_elem, nb_elems);
             }
         }
 
@@ -2172,10 +2106,8 @@ impl OptionSet {
         }
 
         if search_flags.contains(OptionSearchFlags::CHILDREN) {
-            for child in &mut self.children {
-                if let Some(index) = child.options.find_exact_index(name) {
-                    return child.options.set_avoption_number_at_index(index, value);
-                }
+            if let Some((options, index)) = self.find_child_exact_index_mut(name) {
+                return options.set_avoption_number_at_index(index, value);
             }
         }
 
@@ -2341,10 +2273,8 @@ impl OptionSet {
         }
 
         if search_flags.contains(OptionSearchFlags::CHILDREN) {
-            for child in &self.children {
-                if let Some(index) = child.options.find_exact_index(name) {
-                    return child.options.get_avoption_number_at_index(index);
-                }
+            if let Some((options, index)) = self.find_child_exact_index(name) {
+                return options.get_avoption_number_at_index(index);
             }
         }
 
@@ -2890,15 +2820,85 @@ impl OptionSet {
         search_flags: OptionSearchFlags,
     ) -> AvResult<&OptionDefinition> {
         if search_flags.contains(OptionSearchFlags::CHILDREN) {
-            for child in &self.children {
-                if let Some(index) = child.options.find_exact_index(name) {
-                    return Ok(&child.options.definitions[index]);
-                }
+            if let Some((options, index)) = self.find_child_exact_index(name) {
+                return Ok(&options.definitions[index]);
             }
         }
 
         let index = self.avoption_query_ranges_index(name)?;
         Ok(&self.definitions[index])
+    }
+
+    fn collect_child_definitions_matching<'a>(
+        &'a self,
+        query: &OptionQuery,
+        matches: &mut Vec<OptionMatch<'a>>,
+    ) {
+        for child in &self.children {
+            for definition in child.options().definitions() {
+                if query.matches(definition) {
+                    matches.push(OptionMatch::child(child.name(), definition));
+                }
+            }
+            child
+                .options()
+                .collect_child_definitions_matching(query, matches);
+        }
+    }
+
+    fn find_child_avoption(
+        &self,
+        name: &str,
+        unit: Option<&str>,
+        opt_flags: OptionFlags,
+    ) -> Option<OptionEntryMatch<'_>> {
+        for child in &self.children {
+            if let Some(found) = child.options().find_child_avoption(name, unit, opt_flags) {
+                return Some(found);
+            }
+            if let Some(found) = child.options().find_root_avoption(name, unit, opt_flags) {
+                return Some(OptionEntryMatch::child(child.name(), found));
+            }
+        }
+        None
+    }
+
+    fn find_child_exact_index(&self, name: &str) -> Option<(&OptionSet, usize)> {
+        for child in &self.children {
+            if let Some(found) = child.options().find_child_exact_index(name) {
+                return Some(found);
+            }
+            if let Some(index) = child.options().find_exact_index(name) {
+                return Some((child.options(), index));
+            }
+        }
+        None
+    }
+
+    fn find_child_exact_index_mut(&mut self, name: &str) -> Option<(&mut OptionSet, usize)> {
+        let (path, index) = self.find_child_exact_path(name)?;
+        Some((self.child_options_mut_at_path(&path), index))
+    }
+
+    fn find_child_exact_path(&self, name: &str) -> Option<(Vec<usize>, usize)> {
+        for (child_index, child) in self.children.iter().enumerate() {
+            if let Some((mut path, index)) = child.options().find_child_exact_path(name) {
+                path.insert(0, child_index);
+                return Some((path, index));
+            }
+            if let Some(index) = child.options().find_exact_index(name) {
+                return Some((vec![child_index], index));
+            }
+        }
+        None
+    }
+
+    fn child_options_mut_at_path(&mut self, path: &[usize]) -> &mut OptionSet {
+        let mut options = self;
+        for &child_index in path {
+            options = options.children[child_index].options_mut();
+        }
+        options
     }
 
     fn child_by_name(&self, name: &str) -> AvResult<&OptionChild> {
@@ -8925,6 +8925,82 @@ mod tests {
     }
 
     #[test]
+    fn avoption_search_children_recurses_into_nested_children_before_root() {
+        let mut options = sample_flagged_options_with_nested_child();
+
+        let grand_only = options
+            .find_avoption(
+                "grand_only",
+                None,
+                OptionFlags::DECODING_PARAM,
+                OptionSearchFlags::CHILDREN,
+            )
+            .unwrap();
+        assert_eq!(grand_only.child_name(), Some("leaf"));
+        assert_eq!(grand_only.name(), "grand_only");
+        assert!(options
+            .find_avoption(
+                "grand_only",
+                None,
+                OptionFlags::DECODING_PARAM,
+                OptionSearchFlags::empty(),
+            )
+            .is_none());
+
+        let child_threads = options
+            .find_avoption(
+                "threads",
+                None,
+                OptionFlags::DECODING_PARAM,
+                OptionSearchFlags::CHILDREN,
+            )
+            .unwrap();
+        assert_eq!(child_threads.child_name(), Some("leaf"));
+        assert_eq!(
+            options
+                .get_avoption_string_with_flags("threads", OptionSearchFlags::CHILDREN)
+                .unwrap(),
+            "3"
+        );
+        assert_eq!(
+            options
+                .query_avoption_ranges_with_flags("grand_only", OptionSearchFlags::CHILDREN)
+                .unwrap()
+                .ranges()[0]
+                .value_max(),
+            12.0
+        );
+        assert_eq!(
+            options
+                .get_avoption_int_with_flags("grand_only", OptionSearchFlags::CHILDREN)
+                .unwrap(),
+            4
+        );
+        assert_eq!(
+            options
+                .get_avoption_int_with_flags("grand_only", OptionSearchFlags::empty())
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::OPTION_NOT_FOUND)
+        );
+
+        options
+            .set_avoption_from_str_with_flags("grand_only", "8", OptionSearchFlags::CHILDREN)
+            .unwrap();
+        assert_eq!(
+            options
+                .get_avoption_int_with_flags("grand_only", OptionSearchFlags::CHILDREN)
+                .unwrap(),
+            8
+        );
+        assert_eq!(options.get_avoption_int("threads").unwrap(), 1);
+        assert_eq!(
+            options.get_child_option("decoder", "threads").unwrap(),
+            &OptionValue::Int(2)
+        );
+    }
+
+    #[test]
     fn set_avoptions_from_dict_matches_bounded_ffmpeg_remainder_shape() {
         let mut options = sample_options();
         let mut dict = Dictionary::new();
@@ -9822,6 +9898,42 @@ mod tests {
                 )
                 .unwrap(),
             )
+            .unwrap();
+        options
+    }
+
+    fn sample_flagged_options_with_nested_child() -> OptionSet {
+        let mut options = sample_flagged_options_with_child_size();
+        let mut nested = OptionSet::new();
+        nested
+            .define(
+                OptionDefinition::new_with_flags(
+                    "threads",
+                    OptionKind::Int { min: 1, max: 32 },
+                    OptionValue::Int(3),
+                    "nested worker count",
+                    OptionFlags::DECODING_PARAM,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        nested
+            .define(
+                OptionDefinition::new_with_flags(
+                    "grand_only",
+                    OptionKind::Int { min: 0, max: 12 },
+                    OptionValue::Int(4),
+                    "grandchild-only value",
+                    OptionFlags::DECODING_PARAM,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        options
+            .child_mut("decoder")
+            .unwrap()
+            .options_mut()
+            .define_child(OptionChild::new("leaf", nested, "nested options").unwrap())
             .unwrap();
         options
     }

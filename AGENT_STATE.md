@@ -2,6 +2,69 @@
 
 ## Current Status
 
+Current authoritative turn status: main-thread WSL slice advanced
+`avutil-options` recursive `AV_OPT_SEARCH_CHILDREN` parity. Required startup
+checks passed from a dirty tree at `master...origin/master [ahead 58]`:
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15` reported 11/96 strict-complete components (11.5%), and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validated the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
+kept the documented `avutil-packet` shared refcounted `av_shrink_packet()`
+blocker unchanged and finished the existing dirty options evidence slice; no
+worker writes were delegated.
+
+Current main-thread slice: Rust `OptionSet` child-search helpers now recurse
+through nested child option sets for `AV_OPT_SEARCH_CHILDREN` before falling
+back to the direct child and then the root object. Pinned libavutil rows prove
+the observed ordering for duplicate `threads` options and a `grand_only`
+grandchild option across `av_opt_find`/`av_opt_find2`, `av_opt_get`,
+`av_opt_set`, `av_opt_set_int`, and `av_opt_query_ranges`; the nested leaf
+option wins over the direct child and root, while the grandchild-only option is
+not found without child search. The same ordering is covered by focused unit
+coverage and deterministic `avutil_metadata_options` fuzz invariants. The
+options oracle now honors `CARGO_TARGET_DIR` for its scratch C build directory,
+avoiding crate-local target directory creation when the test is run from
+subdirectories. `avutil-options` remains `fate_pass`, not complete; strict
+completion remains 11/96 because full AVOption API parity, remaining recursive
+API edges, broader expression/SI/raw-pointer behavior, CLI option ordering,
+zero-known-limitation review, and sustained fuzz evidence remain pending.
+
+Latest validation commands for this options recursive-child slice passed:
+`cargo fmt --all`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil
+avoption_search_children_recurses_into_nested_children_before_root --
+--nocapture`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil
+options::tests:: -- --nocapture`; `CARGO_TARGET_DIR=target-orch-avutil cargo
+test -p avutil --test options_oracle
+libavutil_option_helpers_match_current_model -- --ignored --nocapture`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run --component
+avutil-options`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
+-- run --mappings tests/differential/mappings.txt --component avutil-options
+--target oracle-libavutil-options --oracle-ffmpeg
+./third_party/ffmpeg-oracle/build/bin/ffmpeg` after escalation allowed the
+pinned FFmpeg build cache write; `CARGO_TARGET_DIR=target-orch-fate cargo run
+-p fate-runner -- run --mappings tests/fate/upstream-mappings.txt --component
+avutil-options --target fate-opt` after the same cache-write escalation;
+`CARGO_TARGET_DIR=target-wsl-fuzz cargo check --manifest-path fuzz/Cargo.toml
+--bin avutil_metadata_options`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy
+--manifest-path fuzz/Cargo.toml --bin avutil_metadata_options -- -D warnings`;
+and `CARGO_TARGET_DIR=target-wsl-fuzz ASAN_OPTIONS=detect_leaks=0 cargo fuzz
+run avutil_metadata_options -- -runs=64` after correcting two deterministic
+fixture assertions to the oracle-proven recursive ordering. Generated fuzz
+corpus/crash artifacts and accidental crate-local target directories were
+removed before this record update.
+
+Final documentation/ledger guards for this slice also passed after the record
+updates: `cargo fmt --all -- --check`; `git diff --check` with CRLF conversion
+warnings only; avutil clippy with
+`CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil --all-targets --all-features -- -D warnings`;
+fuzz clippy with
+`CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy --manifest-path fuzz/Cargo.toml --bin avutil_metadata_options -- -D warnings`;
+`CARGO_TARGET_DIR=target-orch-fate cargo test -p fate-runner current_ledger`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- guard-runtime`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15`; and `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask --
+oracle-doctor`.
+
 Current authoritative turn status: main-thread WSL evidence slice strengthened
 `avutil-logging` fuzz smoke coverage. Required startup checks passed from a
 clean tree at `master...origin/master [ahead 57]`:

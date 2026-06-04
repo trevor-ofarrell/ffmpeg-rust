@@ -9,6 +9,14 @@
 
 ## Compatible Today
 
+- Latest main-thread options evidence: pinned libavutil rows now prove
+  recursive `AV_OPT_SEARCH_CHILDREN` behavior for nested AVClass children.
+  A nested leaf option wins over the direct child and root for duplicate
+  `threads` lookup, and a grandchild-only option is found only with child
+  search. Rust now mirrors that ordering across find/get/set/range/array helper
+  paths, with focused unit coverage, the ignored options oracle, FATE-runner
+  rows, and a 64-run WSL `avutil_metadata_options` sanitizer smoke.
+  `avutil-options` remains `fate_pass`; strict completion remains 11/96.
 - Latest main-thread logging fuzz evidence: a warmed WSL
   `avutil_core_models` 2048-run sanitizer smoke completed against a temporary
   copy of the tracked seed corpus without a crash. libFuzzer reported final

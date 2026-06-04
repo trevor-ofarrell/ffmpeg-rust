@@ -2024,6 +2024,32 @@ fn exercise_fixtures() {
             .unwrap(),
         )
         .unwrap();
+    let mut leaf_options = OptionSet::new();
+    leaf_options
+        .define(
+            OptionDefinition::new(
+                "threads",
+                OptionKind::Int { min: 1, max: 32 },
+                OptionValue::Int(3),
+                "nested worker count",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    leaf_options
+        .define(
+            OptionDefinition::new(
+                "grand_only",
+                OptionKind::Int { min: 0, max: 12 },
+                OptionValue::Int(4),
+                "grandchild-only value",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    child_options
+        .define_child(OptionChild::new("leaf", leaf_options, "nested options").unwrap())
+        .unwrap();
     options
         .define_child(OptionChild::new("encoder", child_options, "encoder options").unwrap())
         .unwrap();
@@ -2035,7 +2061,7 @@ fn exercise_fixtures() {
         options
             .get_avoption_string_with_flags("threads", OptionSearchFlags::CHILDREN)
             .unwrap(),
-        "2"
+        "3"
     );
     options
         .set_child_from_str("encoder", "threads", "8")
@@ -2050,7 +2076,7 @@ fn exercise_fixtures() {
     assert_eq!(options.get("threads"), Some(&OptionValue::Int(8)));
     assert_eq!(
         options.get_child_option("encoder", "threads").unwrap(),
-        &OptionValue::Int(9)
+        &OptionValue::Int(8)
     );
     options
         .set_avoption_int_with_flags("threads", 10, OptionSearchFlags::CHILDREN)
@@ -2086,7 +2112,34 @@ fn exercise_fixtures() {
         .query_avoption_ranges_with_flags("threads", OptionSearchFlags::CHILDREN)
         .unwrap();
     assert_eq!(child_threads_ranges.ranges()[0].value_min(), 1.0);
-    assert_eq!(child_threads_ranges.ranges()[0].value_max(), 16.0);
+    assert_eq!(child_threads_ranges.ranges()[0].value_max(), 32.0);
+    assert_eq!(
+        options
+            .get_avoption_int_with_flags("grand_only", OptionSearchFlags::CHILDREN)
+            .unwrap(),
+        4
+    );
+    options
+        .set_avoption_from_str_with_flags("grand_only", "9", OptionSearchFlags::CHILDREN)
+        .unwrap();
+    assert_eq!(
+        options
+            .get_avoption_int_with_flags("grand_only", OptionSearchFlags::CHILDREN)
+            .unwrap(),
+        9
+    );
+    let grand_only_ranges = options
+        .query_avoption_ranges_with_flags("grand_only", OptionSearchFlags::CHILDREN)
+        .unwrap();
+    assert_eq!(grand_only_ranges.ranges()[0].value_min(), 0.0);
+    assert_eq!(grand_only_ranges.ranges()[0].value_max(), 12.0);
+    assert_eq!(
+        options
+            .get_avoption_int_with_flags("grand_only", OptionSearchFlags::empty())
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::OPTION_NOT_FOUND)
+    );
     let child_size_ranges = options
         .query_avoption_ranges_with_flags("child_size", OptionSearchFlags::CHILDREN)
         .unwrap();
@@ -2130,7 +2183,7 @@ fn exercise_fixtures() {
         .is_err());
     assert_eq!(
         options.get_child_option("encoder", "threads").unwrap(),
-        &OptionValue::Int(10)
+        &OptionValue::Int(8)
     );
     assert!(options
         .define_child(OptionChild::new("ENCODER", OptionSet::new(), "").unwrap())
@@ -2366,7 +2419,7 @@ fn exercise_fixtures() {
                     .include_children(true),
             )
             .len(),
-        2
+        3
     );
 
     let (removed_definition, removed_value) = options.remove_definition("THREADS").unwrap();

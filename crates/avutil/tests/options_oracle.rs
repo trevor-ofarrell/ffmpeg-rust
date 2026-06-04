@@ -31,7 +31,17 @@ fn libavutil_option_helpers_match_current_model() {
         libavutil.display()
     );
 
-    let work_dir = repo_root.join("target/oracle/avutil-options");
+    let target_dir = env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .map(|path| {
+            if path.is_absolute() {
+                path
+            } else {
+                repo_root.join(path)
+            }
+        })
+        .unwrap_or_else(|| repo_root.join("target"));
+    let work_dir = target_dir.join("oracle/avutil-options");
     fs::create_dir_all(&work_dir).expect("create avutil-options oracle work dir");
     let source = work_dir.join("options_oracle.c");
     let executable = work_dir.join("options_oracle");
@@ -333,6 +343,94 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
                 OptionSearchFlags::empty(),
             )),
         ],
+    );
+
+    let mut recursive_child_options = sample_options_with_nested_child();
+    insert_row(
+        &mut rows,
+        "query-ranges:children-recursive",
+        [
+            ret_ranges(
+                recursive_child_options
+                    .query_avoption_ranges_with_flags("grand_only", OptionSearchFlags::CHILDREN),
+            ),
+            ret_ranges(recursive_child_options.query_avoption_ranges("grand_only")),
+            ret_ranges(
+                recursive_child_options
+                    .query_avoption_ranges_with_flags("threads", OptionSearchFlags::CHILDREN),
+            ),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "find:children-recursive",
+        [
+            entry_target_name(recursive_child_options.find_avoption(
+                "grand_only",
+                None,
+                OptionFlags::DECODING_PARAM,
+                OptionSearchFlags::CHILDREN,
+            )),
+            entry_target_name(recursive_child_options.find_avoption(
+                "grand_only",
+                None,
+                OptionFlags::DECODING_PARAM,
+                OptionSearchFlags::empty(),
+            )),
+            entry_target_name(recursive_child_options.find_avoption(
+                "threads",
+                None,
+                OptionFlags::DECODING_PARAM,
+                OptionSearchFlags::CHILDREN,
+            )),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "get:children-recursive",
+        [
+            ret_value(
+                recursive_child_options
+                    .get_avoption_string_with_flags("grand_only", OptionSearchFlags::CHILDREN),
+            ),
+            ret_i64(
+                recursive_child_options
+                    .get_avoption_int_with_flags("grand_only", OptionSearchFlags::CHILDREN),
+            ),
+            ret_value(
+                recursive_child_options
+                    .get_avoption_string_with_flags("grand_only", OptionSearchFlags::empty()),
+            ),
+            ret_value(
+                recursive_child_options
+                    .get_avoption_string_with_flags("threads", OptionSearchFlags::CHILDREN),
+            ),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "ret:set-children-recursive",
+        [
+            ret(recursive_child_options.set_avoption_from_str_with_flags(
+                "grand_only",
+                "8",
+                OptionSearchFlags::CHILDREN,
+            )),
+            ret(recursive_child_options.set_avoption_int_with_flags(
+                "grand_only",
+                9,
+                OptionSearchFlags::CHILDREN,
+            )),
+            ret(recursive_child_options.set_avoption_from_str_with_flags(
+                "grand_only",
+                "10",
+                OptionSearchFlags::empty(),
+            )),
+        ],
+    );
+    rows.insert(
+        "state:children-recursive-after-set".to_string(),
+        nested_child_state_fields(&recursive_child_options),
     );
     insert_row(
         &mut rows,
@@ -2687,6 +2785,31 @@ fn sample_options() -> OptionSet {
 fn sample_options_with_child() -> OptionSet {
     let mut options = sample_options();
     let mut child_options = OptionSet::new();
+    let mut nested_options = OptionSet::new();
+    nested_options
+        .define(
+            OptionDefinition::new_with_flags(
+                "threads",
+                OptionKind::Int { min: 1, max: 32 },
+                OptionValue::Int(3),
+                "nested worker count",
+                OptionFlags::DECODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    nested_options
+        .define(
+            OptionDefinition::new_with_flags(
+                "grand_only",
+                OptionKind::Int { min: 0, max: 12 },
+                OptionValue::Int(4),
+                "grandchild-only value",
+                OptionFlags::DECODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
     child_options
         .define(
             OptionDefinition::new_with_flags(
@@ -2725,10 +2848,17 @@ fn sample_options_with_child() -> OptionSet {
             .unwrap(),
         )
         .unwrap();
+    child_options
+        .define_child(OptionChild::new("leaf", nested_options, "nested options").unwrap())
+        .unwrap();
     options
         .define_child(OptionChild::new("decoder", child_options, "decoder options").unwrap())
         .unwrap();
     options
+}
+
+fn sample_options_with_nested_child() -> OptionSet {
+    sample_options_with_child()
 }
 
 fn duration_options() -> OptionSet {
@@ -3124,6 +3254,17 @@ fn child_dict_state_fields(options: &OptionSet) -> Vec<String> {
         child_int_value(options, "decoder", "threads").to_string(),
         child_int_value(options, "decoder", "child_only").to_string(),
         format_float(float_value(options, "quality")),
+    ]
+}
+
+fn nested_child_state_fields(options: &OptionSet) -> Vec<String> {
+    let decoder = options.child("decoder").unwrap().options();
+    let leaf = decoder.child("leaf").unwrap().options();
+    vec![
+        int_value(options, "threads").to_string(),
+        int_value(decoder, "threads").to_string(),
+        int_value(leaf, "threads").to_string(),
+        int_value(leaf, "grand_only").to_string(),
     ]
 }
 
@@ -3882,8 +4023,15 @@ fn oracle_c_source() -> &'static str {
 
 #define ROW_INT(name, value) printf("%s|%d\n", name, (int)(value))
 
+typedef struct GrandChildOptions {
+    const AVClass *av_class;
+    int64_t threads;
+    int64_t grand_only;
+} GrandChildOptions;
+
 typedef struct ChildOptions {
     const AVClass *av_class;
+    GrandChildOptions leaf;
     int64_t threads;
     int64_t child_only;
     int64_t child_readonly;
@@ -3980,6 +4128,21 @@ typedef struct ColorOptions {
     int64_t scalar;
 } ColorOptions;
 
+static const AVOption grandchild_options[] = {
+    { "threads", "nested worker count", offsetof(GrandChildOptions, threads),
+      AV_OPT_TYPE_INT64, { .i64 = 3 }, 1, 32, AV_OPT_FLAG_DECODING_PARAM },
+    { "grand_only", "grandchild-only value", offsetof(GrandChildOptions, grand_only),
+      AV_OPT_TYPE_INT64, { .i64 = 4 }, 0, 12, AV_OPT_FLAG_DECODING_PARAM },
+    { NULL }
+};
+
+static const AVClass grandchild_class = {
+    .class_name = "rust-options-oracle-grandchild",
+    .item_name = av_default_item_name,
+    .option = grandchild_options,
+    .version = LIBAVUTIL_VERSION_INT,
+};
+
 static const AVOption child_options[] = {
     { "threads", "child worker count", offsetof(ChildOptions, threads),
       AV_OPT_TYPE_INT64, { .i64 = 2 }, 1, 16, AV_OPT_FLAG_DECODING_PARAM },
@@ -3990,11 +4153,20 @@ static const AVOption child_options[] = {
     { NULL }
 };
 
+static void *child_child_next(void *obj, void *prev) {
+    ChildOptions *ctx = (ChildOptions *)obj;
+
+    if (prev)
+        return NULL;
+    return &ctx->leaf;
+}
+
 static const AVClass child_class = {
     .class_name = "rust-options-oracle-child",
     .item_name = av_default_item_name,
     .option = child_options,
     .version = LIBAVUTIL_VERSION_INT,
+    .child_next = child_child_next,
 };
 
 static void *test_child_next(void *obj, void *prev) {
@@ -4251,8 +4423,10 @@ static void init_context(TestOptions *ctx) {
     memset(ctx, 0, sizeof(*ctx));
     ctx->av_class = &test_class;
     ctx->child.av_class = &child_class;
+    ctx->child.leaf.av_class = &grandchild_class;
     av_opt_set_defaults(ctx);
     av_opt_set_defaults(&ctx->child);
+    av_opt_set_defaults(&ctx->child.leaf);
 }
 
 static void init_duration_context(DurationOptions *ctx) {
@@ -4421,6 +4595,8 @@ static const char *target_name_or_null(const TestOptions *ctx, const void *targe
         return "root";
     if (target == &ctx->child)
         return "decoder";
+    if (target == &ctx->child.leaf)
+        return "leaf";
     return "<null>";
 }
 
@@ -4444,6 +4620,14 @@ static void print_find_children_row(const TestOptions *ctx) {
     printf("\n");
 }
 
+static void print_find_children_recursive_row(const TestOptions *ctx) {
+    printf("find:children-recursive");
+    print_find2_value(ctx, "grand_only", AV_OPT_FLAG_DECODING_PARAM, AV_OPT_SEARCH_CHILDREN);
+    print_find2_value(ctx, "grand_only", AV_OPT_FLAG_DECODING_PARAM, 0);
+    print_find2_value(ctx, "threads", AV_OPT_FLAG_DECODING_PARAM, AV_OPT_SEARCH_CHILDREN);
+    printf("\n");
+}
+
 static void print_state(const char *name, const TestOptions *ctx) {
     printf("%s|%" PRId64 "|%d|%.17g|%d/%d|%s|%" PRId64 "\n",
            name,
@@ -4463,6 +4647,15 @@ static void print_child_state(const char *name, const TestOptions *ctx) {
            ctx->child.threads,
            ctx->child.child_only,
            ctx->child.child_readonly);
+}
+
+static void print_nested_child_state(const char *name, const TestOptions *ctx) {
+    printf("%s|%" PRId64 "|%" PRId64 "|%" PRId64 "|%" PRId64 "\n",
+           name,
+           ctx->threads,
+           ctx->child.threads,
+           ctx->child.leaf.threads,
+           ctx->child.leaf.grand_only);
 }
 
 static void print_child_dict_state(const char *name, const TestOptions *ctx) {
@@ -4634,6 +4827,15 @@ static void print_get_children_row(const TestOptions *ctx) {
     printf("\n");
 }
 
+static void print_get_children_recursive_row(const TestOptions *ctx) {
+    printf("get:children-recursive");
+    print_get_value_flags(ctx, "grand_only", AV_OPT_SEARCH_CHILDREN);
+    print_get_int_value(ctx, "grand_only", AV_OPT_SEARCH_CHILDREN);
+    print_get_value_flags(ctx, "grand_only", 0);
+    print_get_value_flags(ctx, "threads", AV_OPT_SEARCH_CHILDREN);
+    printf("\n");
+}
+
 static void print_query_range_value_flags(const void *ctx, const char *name, int flags) {
     AVOptionRanges *ranges = NULL;
     int ret = av_opt_query_ranges(&ranges, (void *)ctx, name, flags);
@@ -4683,6 +4885,14 @@ static void print_query_ranges_children_row(const TestOptions *ctx) {
     printf("\n");
 }
 
+static void print_query_ranges_children_recursive_row(const TestOptions *ctx) {
+    printf("query-ranges:children-recursive");
+    print_query_range_value_flags(ctx, "grand_only", AV_OPT_SEARCH_CHILDREN);
+    print_query_range_value_flags(ctx, "grand_only", 0);
+    print_query_range_value_flags(ctx, "threads", AV_OPT_SEARCH_CHILDREN);
+    printf("\n");
+}
+
 static void print_set_children_row(TestOptions *ctx) {
     int ret_child_only_root = av_opt_set(ctx, "child_only", "7", 0);
     int ret_child_only_child = av_opt_set(ctx, "child_only", "7", AV_OPT_SEARCH_CHILDREN);
@@ -4696,6 +4906,17 @@ static void print_set_children_row(TestOptions *ctx) {
            ret_threads_child,
            ret_child_readonly,
            ret_threads_fake);
+}
+
+static void print_set_children_recursive_row(TestOptions *ctx) {
+    int ret_grand_string = av_opt_set(ctx, "grand_only", "8", AV_OPT_SEARCH_CHILDREN);
+    int ret_grand_int = av_opt_set_int(ctx, "grand_only", 9, AV_OPT_SEARCH_CHILDREN);
+    int ret_grand_root = av_opt_set(ctx, "grand_only", "10", 0);
+
+    printf("ret:set-children-recursive|%d|%d|%d\n",
+           ret_grand_string,
+           ret_grand_int,
+           ret_grand_root);
 }
 
 static void print_set_dict_rows(void) {
@@ -6264,8 +6485,10 @@ int main(void) {
     int ret_const_name;
     int ret_invalid_bool;
     int ret_readonly;
+    TestOptions recursive_ctx;
 
     init_context(&ctx);
+    init_context(&recursive_ctx);
 
     print_flags();
     print_types();
@@ -6279,10 +6502,15 @@ int main(void) {
     print_get_allow_null_row(&ctx);
     print_query_ranges_row(&ctx);
     print_query_ranges_children_row(&ctx);
+    print_query_ranges_children_recursive_row(&ctx);
     print_find_children_row(&ctx);
+    print_find_children_recursive_row(&ctx);
     print_get_children_row(&ctx);
+    print_get_children_recursive_row(&ctx);
     print_set_children_row(&ctx);
     print_child_state("state:children-after-set", &ctx);
+    print_set_children_recursive_row(&recursive_ctx);
+    print_nested_child_state("state:children-recursive-after-set", &recursive_ctx);
     print_set_dict_rows();
     print_copy_rows();
     print_set_from_string_rows();
