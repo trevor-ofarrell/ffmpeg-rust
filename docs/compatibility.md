@@ -9,6 +9,14 @@
 
 ## Compatible Today
 
+- Latest main-thread packet side-data no-op shrink evidence: pinned libavcodec
+  rows now prove `av_packet_shrink_side_data()` returns success and preserves
+  lookup, payload bytes, and zero-size entries when asked to shrink
+  packet-owned `AV_PKT_DATA_NEW_EXTRADATA` to its current size. Rust mirrors
+  this through `Packet::shrink_side_data_by_kind_id`, with focused unit,
+  ignored oracle, mapped differential/FATE, upstream `fate-avpacket`, clippy,
+  and WSL `avutil_core_models` sanitizer smoke coverage. `avutil-packet`
+  remains `fate_pass`; strict completion remains 11/96.
 - Latest main-thread packet standalone side-data flag-replacement evidence:
   pinned libavcodec rows now prove `av_packet_side_data_new()` ignores nonzero
   flags when replacing an existing standalone `AVPacketSideData` entry. Rust

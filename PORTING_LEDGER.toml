@@ -2,6 +2,14 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest main-thread packet side-data no-op shrink slice: pinned libavcodec rows
+# now prove `av_packet_shrink_side_data()` returns success and preserves lookup,
+# payload bytes, and zero-size entries when asked to shrink packet-owned
+# `AV_PKT_DATA_NEW_EXTRADATA` to its current size. Rust
+# `Packet::shrink_side_data_by_kind_id` already matched this behavior; focused
+# units, ignored oracle rows, mapped differential/FATE, upstream fate-avpacket,
+# clippy, and `avutil_core_models` sanitizer smoke cover it explicitly.
+# avutil-packet remains fate_pass, not complete.
 # Latest main-thread packet standalone side-data flag-replacement slice:
 # pinned libavcodec rows now prove `av_packet_side_data_new()` ignores nonzero
 # flags when replacing an existing standalone AVPacketSideData entry, preserving

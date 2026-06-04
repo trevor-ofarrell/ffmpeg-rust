@@ -11389,6 +11389,14 @@ mod tests {
 
         packet.push_side_data(SideData::new("palette", vec![0, 1, 2]).unwrap());
 
+        packet
+            .shrink_side_data_by_kind_id(&PacketSideDataKind::Palette, 3)
+            .unwrap();
+        assert_eq!(
+            packet.side_data_by_kind("palette").unwrap().data(),
+            &[0, 1, 2]
+        );
+
         let too_large = packet
             .shrink_side_data_by_kind_id(&PacketSideDataKind::Palette, 4)
             .unwrap_err();
@@ -11646,6 +11654,16 @@ mod tests {
         packet
             .new_side_data(PacketSideDataKind::NewExtradata, 0)
             .unwrap();
+
+        packet
+            .shrink_side_data_by_kind_id(&PacketSideDataKind::NewExtradata, 0)
+            .unwrap();
+        assert_eq!(packet.side_data().len(), 1);
+        assert!(packet
+            .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+            .unwrap()
+            .data()
+            .is_empty());
 
         let err = packet
             .shrink_side_data_by_kind_id(&PacketSideDataKind::NewExtradata, 1)

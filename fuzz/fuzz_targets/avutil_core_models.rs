@@ -13960,6 +13960,16 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .unwrap_err();
     assert_eq!(missing_shrink.kind(), AvErrorKind::NotFound);
     assert_eq!(missing_shrink.code(), Some(AvErrorCode::ENOENT));
+    new_side_data_packet
+        .shrink_side_data_by_kind_id(&typed_side_data_kind, new_side_data_replacement.len())
+        .unwrap();
+    assert_eq!(
+        new_side_data_packet
+            .side_data_by_kind_id(&typed_side_data_kind)
+            .unwrap()
+            .data(),
+        new_side_data_replacement.as_slice()
+    );
     let too_large_shrink = new_side_data_packet
         .shrink_side_data_by_kind_id(
             &typed_side_data_kind,
@@ -16871,6 +16881,13 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .unwrap()
         .data()
         .to_vec();
+    assert!(packet
+        .shrink_side_data("fuzz_side_data", shrunk_payload.len())
+        .unwrap());
+    assert_eq!(
+        packet.side_data_by_kind("fuzz_side_data").unwrap().data(),
+        shrunk_payload.as_slice()
+    );
     let oversized_shrink = packet
         .shrink_side_data("fuzz_side_data", shrunk_payload.len() + 1)
         .unwrap_err();
@@ -16926,6 +16943,15 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     zero_side_packet
         .new_side_data(PacketSideDataKind::NewExtradata, 0)
         .unwrap();
+    zero_side_packet
+        .shrink_side_data_by_kind_id(&PacketSideDataKind::NewExtradata, 0)
+        .unwrap();
+    assert_eq!(zero_side_packet.side_data().len(), 1);
+    assert!(zero_side_packet
+        .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+        .unwrap()
+        .data()
+        .is_empty());
     let zero_oversized_shrink = zero_side_packet
         .shrink_side_data_by_kind_id(&PacketSideDataKind::NewExtradata, 1)
         .unwrap_err();

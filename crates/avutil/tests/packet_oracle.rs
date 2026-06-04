@@ -4891,6 +4891,22 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         side_data_lookup_fields(packet.side_data_by_kind("new_extradata")),
     );
 
+    packet
+        .shrink_side_data_by_kind_id(&PacketSideDataKind::NewExtradata, 4)
+        .unwrap();
+    rows.insert(
+        "packet:side-shrink-same-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:side-shrink-same".to_string(),
+        side_data_summary_fields(&packet),
+    );
+    rows.insert(
+        "packet:side-get-same".to_string(),
+        side_data_lookup_fields(packet.side_data_by_kind("new_extradata")),
+    );
+
     let shrunk = packet.shrink_side_data("new_extradata", 2).unwrap();
     assert!(shrunk, "expected new_extradata side data to shrink");
     rows.insert("packet:side-shrink-ret".to_string(), vec!["0".to_string()]);
@@ -5117,6 +5133,21 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:side-new-zero".to_string(),
         side_data_summary_fields(&packet),
+    );
+    packet
+        .shrink_side_data_by_kind_id(&PacketSideDataKind::NewExtradata, 0)
+        .unwrap();
+    rows.insert(
+        "packet:side-shrink-zero-same-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:side-shrink-zero-same".to_string(),
+        side_data_summary_fields(&packet),
+    );
+    rows.insert(
+        "packet:side-get-zero-same".to_string(),
+        side_data_lookup_fields(packet.side_data_by_kind_id(&PacketSideDataKind::NewExtradata)),
     );
     let zero_oversize = packet
         .shrink_side_data_by_kind_id(&PacketSideDataKind::NewExtradata, 1)
@@ -8927,7 +8958,14 @@ static void exercise_side_data_api(void) {
                                    AV_PKT_DATA_NEW_EXTRADATA);
     print_side_data_lookup("packet:side-get", pkt, AV_PKT_DATA_NEW_EXTRADATA);
 
-    int ret = av_packet_shrink_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, 2);
+    int ret = av_packet_shrink_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, 4);
+    printf("packet:side-shrink-same-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_shrink_side_data same-size shrink failed");
+    print_side_data_summary("packet:side-shrink-same", pkt);
+    print_side_data_lookup("packet:side-get-same", pkt,
+                           AV_PKT_DATA_NEW_EXTRADATA);
+
+    ret = av_packet_shrink_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, 2);
     printf("packet:side-shrink-ret|%d\n", ret);
     print_side_data_summary("packet:side-shrink", pkt);
     print_side_data_lookup("packet:side-get-shrunk", pkt, AV_PKT_DATA_NEW_EXTRADATA);
@@ -9038,6 +9076,12 @@ static void exercise_side_data_api(void) {
     sd = av_packet_new_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, 0);
     fail_if(!sd, "av_packet_new_side_data zero failed");
     print_side_data_summary("packet:side-new-zero", pkt);
+    ret = av_packet_shrink_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, 0);
+    printf("packet:side-shrink-zero-same-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_shrink_side_data zero same-size failed");
+    print_side_data_summary("packet:side-shrink-zero-same", pkt);
+    print_side_data_lookup("packet:side-get-zero-same", pkt,
+                           AV_PKT_DATA_NEW_EXTRADATA);
     ret = av_packet_shrink_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, 1);
     printf("packet:side-shrink-zero-oversize-ret|%d\n", ret);
     print_side_data_summary("packet:side-shrink-zero-oversize", pkt);

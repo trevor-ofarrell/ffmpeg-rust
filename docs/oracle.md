@@ -181,6 +181,14 @@ avutil_core_models /tmp/ffmpegrust-avutil-core-models.l82cui -- -runs=1`
 smoke loaded a temporary copy of the four tracked seeds, completed 5 runs
 without a crash, and the scratch corpus was removed.
 
+The latest packet side-data no-op shrink fixture extends `avutil_core_models`
+with same-size and zero-size `Packet::shrink_side_data_by_kind_id()` calls.
+The pinned libavcodec packet oracle emits `packet:side-shrink-same*` and
+`packet:side-shrink-zero-same*` rows, proving
+`av_packet_shrink_side_data()` returns success while preserving lookup and
+payload state when asked to shrink packet-owned `AV_PKT_DATA_NEW_EXTRADATA` to
+its current size.
+
 A later warmed WSL `avutil_core_models` smoke ran 4096 inputs with
 `CARGO_TARGET_DIR=target-wsl-fuzz` and `ASAN_OPTIONS=detect_leaks=0` against a
 temporary copy of the four tracked seed files. It reached `DONE`, libFuzzer
