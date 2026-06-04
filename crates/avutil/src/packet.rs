@@ -13000,6 +13000,49 @@ mod tests {
     }
 
     #[test]
+    fn packet_shrink_shared_offset_refcounted_matches_ffmpeg_tail_zeroing() {
+        let mut storage = vec![0x5a; 2 + 4 + AV_INPUT_BUFFER_PADDING_SIZE];
+        storage[..6].copy_from_slice(&[0xe0, 0xe1, 0xaa, 0xbb, 0xcc, 0xdd]);
+        let base = BufferRef::from_vec(storage);
+        let shared_src = Packet::with_buffer(base.ref_slice(2, 4).unwrap(), 0);
+        let mut shared_dst = Packet::default();
+        shared_dst.ref_from(&shared_src);
+        let shared_dst_ptr = shared_dst.data_buffer().as_padded_ptr();
+
+        // SAFETY: The test holds no payload slices across the call and performs
+        // no concurrent access while modeling FFmpeg's shared AVBuffer mutation
+        // for an AVPacket.data pointer inside, not at the start of, the buffer.
+        unsafe {
+            shared_dst.shrink_data_ffmpeg_aliasing(2).unwrap();
+        }
+
+        assert_eq!(shared_dst.data_buffer().as_padded_ptr(), shared_dst_ptr);
+        assert_eq!(shared_src.data_buffer().offset(), 2);
+        assert_eq!(shared_dst.data_buffer().offset(), 2);
+        assert!(shared_dst
+            .data_buffer()
+            .shares_storage(shared_src.data_buffer()));
+        assert!(!shared_dst.is_data_writable());
+        assert!(!shared_src.is_data_writable());
+        assert_eq!(shared_src.data(), &[0xaa, 0xbb, 0x00, 0x00]);
+        assert_eq!(shared_dst.data(), &[0xaa, 0xbb]);
+        assert_eq!(&base.as_slice()[..6], &[0xe0, 0xe1, 0xaa, 0xbb, 0x00, 0x00]);
+        assert!(base.as_slice()[4..4 + AV_INPUT_BUFFER_PADDING_SIZE]
+            .iter()
+            .all(|byte| *byte == 0));
+        assert_eq!(
+            &base.as_slice()[4 + AV_INPUT_BUFFER_PADDING_SIZE..],
+            &[0x5a, 0x5a]
+        );
+        assert!(shared_dst
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .take(AV_INPUT_BUFFER_PADDING_SIZE)
+            .all(|byte| *byte == 0));
+    }
+
+    #[test]
     fn packet_shrink_shared_callback_refcounted_matches_ffmpeg_tail_zeroing() {
         let releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
         {

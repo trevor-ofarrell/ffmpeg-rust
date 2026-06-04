@@ -11626,6 +11626,53 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .take(AV_INPUT_BUFFER_PADDING_SIZE)
         .all(|byte| *byte == 0));
 
+    let mut offset_shrink_storage = vec![0x5a; 2 + 4 + AV_INPUT_BUFFER_PADDING_SIZE];
+    offset_shrink_storage[..6].copy_from_slice(&[0xe0, 0xe1, 0xaa, 0xbb, 0xcc, 0xdd]);
+    let offset_shrink_base = BufferRef::from_vec(offset_shrink_storage);
+    let offset_shrink_src =
+        Packet::with_buffer(offset_shrink_base.ref_slice(2, 4).unwrap(), stream_index);
+    let mut offset_shrink_dst = Packet::default();
+    offset_shrink_dst.ref_from(&offset_shrink_src);
+    let offset_shrink_dst_ptr = offset_shrink_dst.data_buffer().as_padded_ptr();
+    // SAFETY: The deterministic fixture holds no packet payload slices across
+    // the call and performs no concurrent access while modeling FFmpeg's
+    // shared AVBuffer tail-zeroing behavior for an offset AVPacket.data view.
+    unsafe {
+        offset_shrink_dst
+            .shrink_data_ffmpeg_aliasing(2)
+            .unwrap();
+    }
+    assert_eq!(
+        offset_shrink_dst.data_buffer().as_padded_ptr(),
+        offset_shrink_dst_ptr
+    );
+    assert_eq!(offset_shrink_src.data_buffer().offset(), 2);
+    assert_eq!(offset_shrink_dst.data_buffer().offset(), 2);
+    assert!(offset_shrink_dst
+        .data_buffer()
+        .shares_storage(offset_shrink_src.data_buffer()));
+    assert!(!offset_shrink_src.is_data_writable());
+    assert!(!offset_shrink_dst.is_data_writable());
+    assert_eq!(offset_shrink_src.data(), &[0xaa, 0xbb, 0x00, 0x00]);
+    assert_eq!(offset_shrink_dst.data(), &[0xaa, 0xbb]);
+    assert_eq!(
+        &offset_shrink_base.as_slice()[..6],
+        &[0xe0, 0xe1, 0xaa, 0xbb, 0x00, 0x00]
+    );
+    assert!(offset_shrink_base.as_slice()[4..4 + AV_INPUT_BUFFER_PADDING_SIZE]
+        .iter()
+        .all(|byte| *byte == 0));
+    assert_eq!(
+        &offset_shrink_base.as_slice()[4 + AV_INPUT_BUFFER_PADDING_SIZE..],
+        &[0x5a, 0x5a]
+    );
+    assert!(offset_shrink_dst
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .take(AV_INPUT_BUFFER_PADDING_SIZE)
+        .all(|byte| *byte == 0));
+
     let callback_shrink_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     {
         let mut callback_storage = vec![0xaa, 0xbb, 0xcc, 0xdd];

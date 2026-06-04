@@ -186,6 +186,37 @@ fn libavcodec_packet_shared_shrink_oracle_documents_aliasing() {
             vec!["0000000000000000".to_string()],
         ),
         (
+            "packet:shared-shrink-offset-state".to_string(),
+            vec![
+                "4".to_string(),
+                "2".to_string(),
+                "1".to_string(),
+                "1".to_string(),
+                "2".to_string(),
+                "2".to_string(),
+                "0".to_string(),
+                "0".to_string(),
+                "2".to_string(),
+                "2".to_string(),
+            ],
+        ),
+        (
+            "packet:shared-shrink-offset-buffer".to_string(),
+            vec!["e0e1aabb0000".to_string()],
+        ),
+        (
+            "packet:shared-shrink-offset-src".to_string(),
+            vec!["aabb0000".to_string()],
+        ),
+        (
+            "packet:shared-shrink-offset-dst".to_string(),
+            vec!["aabb".to_string()],
+        ),
+        (
+            "packet:shared-shrink-offset-zero-window".to_string(),
+            vec!["0000000000000000".to_string()],
+        ),
+        (
             "packet:shared-shrink-custom-state".to_string(),
             vec![
                 "4".to_string(),
@@ -6831,6 +6862,53 @@ int main(void)
 
     av_packet_free(&dst);
     av_packet_free(&src);
+
+    AVPacket *offset_src = av_packet_alloc();
+    AVPacket *offset_dst = av_packet_alloc();
+    fail_if(!offset_src || !offset_dst, "offset av_packet_alloc failed");
+    ret = av_new_packet(offset_src, 6);
+    fail_if(ret < 0, "offset av_new_packet failed");
+    offset_src->data[0] = 0xe0;
+    offset_src->data[1] = 0xe1;
+    offset_src->data[2] = 0xaa;
+    offset_src->data[3] = 0xbb;
+    offset_src->data[4] = 0xcc;
+    offset_src->data[5] = 0xdd;
+    memset(offset_src->data + offset_src->size, 0x5a, AV_INPUT_BUFFER_PADDING_SIZE);
+    offset_src->data += 2;
+    offset_src->size = 4;
+    ret = av_packet_ref(offset_dst, offset_src);
+    fail_if(ret < 0, "offset av_packet_ref failed");
+    uint8_t *offset_dst_before = offset_dst->data;
+
+    av_shrink_packet(offset_dst, 2);
+
+    printf("packet:shared-shrink-offset-state|%d|%d|%d|%d|%d|%d|%d|%d|%ld|%ld\n",
+           offset_src->size,
+           offset_dst->size,
+           offset_dst->data == offset_dst_before,
+           offset_src->buf && offset_dst->buf && offset_src->buf->buffer == offset_dst->buf->buffer,
+           offset_src->buf ? av_buffer_get_ref_count(offset_src->buf) : 0,
+           offset_dst->buf ? av_buffer_get_ref_count(offset_dst->buf) : 0,
+           offset_src->buf ? av_buffer_is_writable(offset_src->buf) : 0,
+           offset_dst->buf ? av_buffer_is_writable(offset_dst->buf) : 0,
+           offset_src->buf ? (long)(offset_src->data - offset_src->buf->data) : -1L,
+           offset_dst->buf ? (long)(offset_dst->data - offset_dst->buf->data) : -1L);
+    printf("packet:shared-shrink-offset-buffer|");
+    print_hex(offset_src->buf->data, 6);
+    printf("\n");
+    printf("packet:shared-shrink-offset-src|");
+    print_hex(offset_src->data, offset_src->size);
+    printf("\n");
+    printf("packet:shared-shrink-offset-dst|");
+    print_hex(offset_dst->data, offset_dst->size);
+    printf("\n");
+    printf("packet:shared-shrink-offset-zero-window|");
+    print_hex(offset_dst->data + offset_dst->size, 8);
+    printf("\n");
+
+    av_packet_free(&offset_dst);
+    av_packet_free(&offset_src);
 
     int custom_opaque = 913;
     AVPacket *custom_src = av_packet_alloc();

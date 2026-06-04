@@ -983,7 +983,11 @@ keeps the shared `av_shrink_packet()` aliasing edge pinned as an FFmpeg-only
 diagnostic outside the mapped Rust parity row set. It proves that shrinking one
 reference of a shared refcounted packet preserves the destination data pointer,
 keeps both refs non-writable, and zeroes the truncated tail through bytes still
-visible in the source packet. It also covers callback-owned and default-free
+visible in the source packet. The offset row proves the same behavior when the
+packet data pointer starts inside the shared `AVBufferRef`: FFmpeg preserves
+the nonzero data offset and prefix bytes before `AVPacket.data`, then zeroes
+the new `pkt->data + size` padding window over the truncated tail. It also
+covers callback-owned and default-free
 opaque-owner `AVBufferRef` shapes: the callback-owned row proves the owner stays
 shared and unreleased while either packet keeps a reference, then releases once
 with the tail-zeroed backing bytes after final unref, while the default-free
@@ -998,7 +1002,7 @@ leaving the shared storage non-writable, preserving `av_buffer_get_opaque()` on
 both refs, keeping the source non-writable after the destination ref drops, and
 releasing the owner once with the tail-zeroed bytes after final unref. Safe Rust
 `Packet::shrink_data()` still copy-on-write detaches shared storage, while the
-active ordinary, callback-owned, readonly-flagged owned, default-free
+active ordinary, offset ordinary, callback-owned, readonly-flagged owned, default-free
 opaque-owner, and pool-owned shared-shrink units plus `avutil_core_models`
 invariants cover the explicit `unsafe Packet::shrink_data_ffmpeg_aliasing()`
 helper for the corresponding Rust payload storage.
