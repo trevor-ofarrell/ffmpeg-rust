@@ -69,7 +69,7 @@ fn libavutil_buffer_refs_match_current_model() {
 
 #[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 libavutil oracle under third_party/ffmpeg-oracle/wsl"]
-fn libavutil_buffer_null_nonzero_create_documents_unmodeled_shape() {
+fn libavutil_buffer_null_nonzero_create_pins_pointer_shape() {
     let repo_root = repo_root();
     let oracle_root = oracle_root(&repo_root);
     let include_dir = oracle_root.join("wsl/include");
@@ -395,6 +395,95 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         "buffer:create-null-zero-release".to_string(),
         release_fields(&create_null_zero_released),
     );
+
+    let create_null_nonzero_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_null_nonzero_capture = Arc::clone(&create_null_nonzero_released);
+    let create_null_nonzero_src = BufferRef::from_null_data_with_len_and_opaque_release_callback(
+        3,
+        711usize,
+        move |opaque, bytes| {
+            create_null_nonzero_capture
+                .lock()
+                .unwrap()
+                .push((opaque, bytes));
+        },
+    )
+    .unwrap();
+    rows.insert(
+        "buffer:create-null-nonzero".to_string(),
+        buffer_shape_fields_with_data_null_and_opaque(&create_null_nonzero_src),
+    );
+    let create_null_nonzero_dst = BufferRef::ref_from(&create_null_nonzero_src);
+    rows.insert(
+        "buffer:create-null-nonzero-ref-src".to_string(),
+        buffer_shape_fields_with_data_null_and_opaque(&create_null_nonzero_src),
+    );
+    rows.insert(
+        "buffer:create-null-nonzero-ref-dst".to_string(),
+        buffer_shape_fields_with_data_null_and_opaque(&create_null_nonzero_dst),
+    );
+    rows.insert(
+        "buffer:create-null-nonzero-ref-shares".to_string(),
+        vec![
+            bool_field(create_null_nonzero_src.shares_storage(&create_null_nonzero_dst)),
+            create_null_nonzero_src.strong_count().to_string(),
+        ],
+    );
+    drop(create_null_nonzero_dst);
+    rows.insert(
+        "buffer:create-null-nonzero-after-ref-unref".to_string(),
+        vec![
+            "1".to_string(),
+            create_null_nonzero_src.strong_count().to_string(),
+            bool_field(create_null_nonzero_src.is_writable()),
+            create_null_nonzero_released
+                .lock()
+                .unwrap()
+                .len()
+                .to_string(),
+        ],
+    );
+    let mut create_null_nonzero_src = create_null_nonzero_src;
+    let create_null_nonzero_before = create_null_nonzero_src.as_ptr();
+    create_null_nonzero_src.make_writable().unwrap();
+    rows.insert(
+        "buffer:create-null-nonzero-make-writable-ret".to_string(),
+        vec![
+            "0".to_string(),
+            bool_field(create_null_nonzero_before == create_null_nonzero_src.as_ptr()),
+        ],
+    );
+    rows.insert(
+        "buffer:create-null-nonzero-make-writable".to_string(),
+        buffer_shape_fields_with_data_null_and_opaque(&create_null_nonzero_src),
+    );
+    let create_null_nonzero_before = create_null_nonzero_src.as_ptr();
+    let mut create_null_nonzero_realloc = Some(create_null_nonzero_src);
+    BufferRef::realloc(&mut create_null_nonzero_realloc, 3).unwrap();
+    let create_null_nonzero_realloc =
+        create_null_nonzero_realloc.expect("same-size nonzero-null realloc keeps destination");
+    rows.insert(
+        "buffer:create-null-nonzero-realloc-same-ret".to_string(),
+        vec![
+            "0".to_string(),
+            bool_field(create_null_nonzero_before == create_null_nonzero_realloc.as_ptr()),
+        ],
+    );
+    rows.insert(
+        "buffer:create-null-nonzero-realloc-same".to_string(),
+        buffer_shape_fields_with_data_null_and_opaque(&create_null_nonzero_realloc),
+    );
+    drop(create_null_nonzero_realloc);
+    let create_null_nonzero_release_values = create_null_nonzero_released.lock().unwrap();
+    rows.insert(
+        "buffer:create-null-nonzero-release".to_string(),
+        vec![
+            create_null_nonzero_release_values.len().to_string(),
+            create_null_nonzero_release_values[0].0.to_string(),
+            bool_field(true),
+        ],
+    );
+    drop(create_null_nonzero_release_values);
 
     let create_null_zero_ref_src = BufferRef::from_null_data_zero_with_opaque(656usize);
     let create_null_zero_ref_dst = BufferRef::ref_from(&create_null_zero_ref_src);
@@ -5031,7 +5120,11 @@ fn buffer_fields_with_data_null_and_opaque(buffer: &BufferRef) -> Vec<String> {
     let mut fields = vec![
         buffer.len().to_string(),
         bool_field(buffer.is_data_ptr_null()),
-        hex(buffer.as_slice()),
+        if buffer.is_data_ptr_null() {
+            String::new()
+        } else {
+            hex(buffer.as_slice())
+        },
         buffer.strong_count().to_string(),
         bool_field(buffer.is_writable()),
     ];
@@ -5175,6 +5268,7 @@ static int create_release_count = 0;
 static uintptr_t last_create_opaque = 0;
 static size_t last_create_release_size = 0;
 static uint8_t last_create_release[32];
+static int last_create_data_null = 0;
 static int pool_alloc_count = 0;
 static int pool_release_count = 0;
 static int pool_free_count = 0;
@@ -5218,6 +5312,7 @@ static void reset_create_release(void) {
     create_release_count = 0;
     last_create_opaque = 0;
     last_create_release_size = 0;
+    last_create_data_null = 0;
     for (size_t i = 0; i < sizeof(last_create_release); i++)
         last_create_release[i] = 0;
 }
@@ -5225,10 +5320,13 @@ static void reset_create_release(void) {
 static void test_create_free(void *opaque, uint8_t *data) {
     create_release_count++;
     last_create_opaque = (uintptr_t)opaque;
+    last_create_data_null = data == NULL;
     fail_if(last_create_release_size > sizeof(last_create_release),
             "create release fixture too large");
-    for (size_t i = 0; i < last_create_release_size; i++)
-        last_create_release[i] = data[i];
+    if (data) {
+        for (size_t i = 0; i < last_create_release_size; i++)
+            last_create_release[i] = data[i];
+    }
     av_free(data);
 }
 
@@ -5745,6 +5843,50 @@ int main(void) {
                                   create_null_zero);
     av_buffer_unref(&create_null_zero);
     print_create_release("buffer:create-null-zero-release");
+
+    reset_create_release();
+    last_create_release_size = 0;
+    AVBufferRef *create_null_nonzero =
+        av_buffer_create(NULL, 3, test_create_free,
+                         (void *)(uintptr_t)711, 0);
+    fail_if(!create_null_nonzero,
+            "av_buffer_create null nonzero failed");
+    print_buffer_opaque_shape_data_null("buffer:create-null-nonzero",
+                                        create_null_nonzero);
+    AVBufferRef *create_null_nonzero_ref =
+        av_buffer_ref(create_null_nonzero);
+    fail_if(!create_null_nonzero_ref,
+            "av_buffer_ref null nonzero failed");
+    print_buffer_opaque_shape_data_null("buffer:create-null-nonzero-ref-src",
+                                        create_null_nonzero);
+    print_buffer_opaque_shape_data_null("buffer:create-null-nonzero-ref-dst",
+                                        create_null_nonzero_ref);
+    printf("buffer:create-null-nonzero-ref-shares|%d|%d\n",
+           create_null_nonzero->buffer == create_null_nonzero_ref->buffer,
+           av_buffer_get_ref_count(create_null_nonzero));
+    av_buffer_unref(&create_null_nonzero_ref);
+    printf("buffer:create-null-nonzero-after-ref-unref|%d|%d|%d|%d\n",
+           create_null_nonzero_ref == NULL,
+           av_buffer_get_ref_count(create_null_nonzero),
+           av_buffer_is_writable(create_null_nonzero),
+           create_release_count);
+    uint8_t *create_null_nonzero_before = create_null_nonzero->data;
+    ret = av_buffer_make_writable(&create_null_nonzero);
+    printf("buffer:create-null-nonzero-make-writable-ret|%d|%d\n",
+           ret, create_null_nonzero_before == create_null_nonzero->data);
+    print_buffer_opaque_shape_data_null("buffer:create-null-nonzero-make-writable",
+                                        create_null_nonzero);
+    create_null_nonzero_before = create_null_nonzero->data;
+    ret = av_buffer_realloc(&create_null_nonzero, 3);
+    printf("buffer:create-null-nonzero-realloc-same-ret|%d|%d\n",
+           ret, create_null_nonzero_before == create_null_nonzero->data);
+    print_buffer_opaque_shape_data_null("buffer:create-null-nonzero-realloc-same",
+                                        create_null_nonzero);
+    av_buffer_unref(&create_null_nonzero);
+    printf("buffer:create-null-nonzero-release|%d|%llu|%d\n",
+           create_release_count,
+           (unsigned long long)last_create_opaque,
+           last_create_data_null);
 
     AVBufferRef *create_null_zero_ref_src =
         av_buffer_create(NULL, 0, NULL, (void *)(uintptr_t)656, 0);

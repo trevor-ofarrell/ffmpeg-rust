@@ -2,6 +2,48 @@
 
 ## Current Status
 
+Current authoritative turn status: main-thread WSL parity slice promoted the
+`avutil-buffer` null/nonzero public data-pointer shape from blocker evidence
+into the safe Rust model and mapped libavutil oracle row. Required startup
+checks passed from the dirty in-progress tree at `master...origin/master
+[ahead 69]`: `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner --
+status --next 15` reported 11/96 strict-complete components (11.5%), and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validated the pinned FFmpeg 8.1.1 oracle and ABI versions.
+
+Current main-thread slice: `BufferRef` now exposes fallible constructors for
+`av_buffer_create(NULL, nonzero, free, opaque, 0)`-style owners. The safe model
+preserves the public NULL `data` pointer through `as_ptr()` and
+`as_padded_ptr()` while storing zeroed Rust backing bytes for `as_slice()` and
+release callbacks. The mapped `buffer_oracle::libavutil_buffer_refs_match_current_model`
+row now compares create, ref, shared non-writability, destination unref, unique
+make-writable pointer preservation, same-size realloc pointer preservation, and
+release pointer-shape rows for the pinned size-3/opaque-711 case. The direct
+FFmpeg-only diagnostic was renamed to
+`buffer_oracle::libavutil_buffer_null_nonzero_create_pins_pointer_shape` and
+kept as supporting evidence.
+
+Validation passed for this slice with `cargo fmt --all -- --check`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil
+null_data_nonzero_opaque_buffer_preserves_c_pointer_shape_with_safe_backing`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
+buffer_oracle libavutil_buffer_refs_match_current_model -- --ignored
+--nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner --
+run --mappings tests/differential/mappings.txt --component avutil-buffer
+--target oracle-libavutil-buffer`; `CARGO_TARGET_DIR=target-orch-fate cargo run
+-p fate-runner -- run --component avutil-buffer`;
+`CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy --manifest-path fuzz/Cargo.toml
+--all-targets -- -D warnings`; and
+`CARGO_TARGET_DIR=target-wsl-fuzz ASAN_OPTIONS=detect_leaks=0 cargo fuzz run
+avutil_core_models -- -runs=1`, which rebuilt the sanitizer binary, loaded the
+four tracked seeds, reached `DONE` after 5 runs, and found no crash.
+`avutil-buffer` remains `fate_pass`, not complete; strict completion remains
+11/96 because broader AVBufferRef/AVBufferPool ABI and lifetime closure,
+hardware/device/frame ownership integration, zero-known-limitation review, and
+sustained fuzz campaign evidence remain pending. `avutil-packet` remains the
+highest-priority incomplete row because the shared `av_shrink_packet()` alias
+tail-zeroing blocker is still unresolved.
+
 Current authoritative turn status: main-thread WSL blocker-evidence slice
 finished and validated the `avutil-buffer` null/nonzero creation oracle
 diagnostic. Required startup checks passed from the dirty in-progress tree at
@@ -10,7 +52,7 @@ run -p fate-runner -- status --next 15` reported 11/96 strict-complete
 components (11.5%), and `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask
 -- oracle-doctor` validated the pinned FFmpeg 8.1.1 oracle and ABI versions.
 The separate ignored
-`buffer_oracle::libavutil_buffer_null_nonzero_create_documents_unmodeled_shape`
+`buffer_oracle::libavutil_buffer_null_nonzero_create_pins_pointer_shape`
 FFmpeg-only test now compiles a small C helper under
 `CARGO_TARGET_DIR/oracle/avutil-buffer` and pins
 `av_buffer_create(NULL, 3, free, opaque, 0)`: FFmpeg creates a size-3
@@ -24,7 +66,7 @@ Final validation for this slice passed with `cargo fmt --all -- --check`;
 `CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil --test
 buffer_oracle --all-features -- -D warnings`;
 `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
-buffer_oracle libavutil_buffer_null_nonzero_create_documents_unmodeled_shape
+buffer_oracle libavutil_buffer_null_nonzero_create_pins_pointer_shape
 -- --ignored --nocapture`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p
 avutil --test buffer_oracle libavutil_buffer_refs_match_current_model -- --ignored
 --nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner --
@@ -35,13 +77,11 @@ run -p fate-runner -- run --component avutil-buffer`;
 `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- guard-runtime`; final
 `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
 15`; and final `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask --
-oracle-doctor`. The `avutil-buffer|oracle-libavutil-buffer` mapping was
-narrowed to `libavutil_buffer_refs_match_current_model` so this FFmpeg-only
-diagnostic is not counted as Rust parity. This is blocker evidence only:
-`avutil-buffer` remains `fate_pass`, not complete, until the safe Rust
-`BufferRef` model can represent or explicitly reject nonzero NULL public data
-without panics or unsound visible-byte access, and broader ABI/lifetime plus
-hardware/device ownership integration remain pending.
+oracle-doctor`. At that point the `avutil-buffer|oracle-libavutil-buffer`
+mapping was narrowed to `libavutil_buffer_refs_match_current_model` so this
+FFmpeg-only diagnostic was not counted as Rust parity. The current slice above
+now models the same nonzero NULL public data-pointer shape; broader
+ABI/lifetime plus hardware/device ownership integration remain pending.
 
 Current authoritative turn status: main-thread WSL blocker-evidence slice
 finished and validated the `avutil-packet` shared `av_shrink_packet()` oracle

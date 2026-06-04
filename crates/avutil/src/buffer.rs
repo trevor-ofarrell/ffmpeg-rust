@@ -569,6 +569,34 @@ impl BufferRef {
         Self::from_null_data_zero_with_opaque_flags(opaque, AV_BUFFER_FLAG_READONLY)
     }
 
+    pub fn from_null_data_with_len_and_opaque<T>(len: usize, opaque: T) -> AvResult<Self>
+    where
+        T: Any + Send + Sync + 'static,
+    {
+        Self::from_null_data_with_len_and_opaque_flags(len, opaque, 0)
+    }
+
+    pub fn from_null_data_with_len_and_opaque_flags<T>(
+        len: usize,
+        opaque: T,
+        flags: i32,
+    ) -> AvResult<Self>
+    where
+        T: Any + Send + Sync + 'static,
+    {
+        let data = allocate_zeroed_len(len)?;
+        Ok(Self {
+            data: Arc::new(BufferStorage::with_opaque(
+                data,
+                opaque,
+                buffer_create_flags_readonly(flags),
+            )),
+            offset: 0,
+            len,
+            data_ptr_null: true,
+        })
+    }
+
     pub fn from_null_data_zero_with_opaque_release_callback<T, F>(opaque: T, on_release: F) -> Self
     where
         T: Any + Send + Sync + 'static,
@@ -597,6 +625,42 @@ impl BufferRef {
             len: 0,
             data_ptr_null: true,
         }
+    }
+
+    pub fn from_null_data_with_len_and_opaque_release_callback<T, F>(
+        len: usize,
+        opaque: T,
+        on_release: F,
+    ) -> AvResult<Self>
+    where
+        T: Any + Send + Sync + 'static,
+        F: FnOnce(T, Vec<u8>) + Send + Sync + 'static,
+    {
+        Self::from_null_data_with_len_and_opaque_release_callback_flags(len, opaque, 0, on_release)
+    }
+
+    pub fn from_null_data_with_len_and_opaque_release_callback_flags<T, F>(
+        len: usize,
+        opaque: T,
+        flags: i32,
+        on_release: F,
+    ) -> AvResult<Self>
+    where
+        T: Any + Send + Sync + 'static,
+        F: FnOnce(T, Vec<u8>) + Send + Sync + 'static,
+    {
+        let data = allocate_zeroed_len(len)?;
+        Ok(Self {
+            data: Arc::new(BufferStorage::with_opaque_data_release(
+                data,
+                opaque,
+                on_release,
+                buffer_create_flags_readonly(flags),
+            )),
+            offset: 0,
+            len,
+            data_ptr_null: true,
+        })
     }
 
     pub fn from_null_data_zero_with_opaque_release_callback_readonly<T, F>(
@@ -2555,6 +2619,66 @@ mod tests {
 
         drop(buffer);
         assert_eq!(*released.lock().unwrap(), vec![(655, Vec::new())]);
+    }
+
+    #[test]
+    fn null_data_nonzero_opaque_buffer_preserves_c_pointer_shape_with_safe_backing() {
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let capture = std::sync::Arc::clone(&released);
+        let source = BufferRef::from_null_data_with_len_and_opaque_release_callback(
+            3,
+            711usize,
+            move |opaque, bytes| {
+                capture.lock().unwrap().push((opaque, bytes));
+            },
+        )
+        .unwrap();
+
+        assert_eq!(source.len(), 3);
+        assert_eq!(source.allocated_len(), 3);
+        assert_eq!(source.as_slice(), &[0, 0, 0]);
+        assert!(source.is_data_ptr_null());
+        assert!(source.as_ptr().is_null());
+        assert!(source.as_padded_ptr().is_null());
+        assert!(source.is_writable());
+        assert_eq!(source.opaque_ref::<usize>(), Some(&711));
+
+        let mut destination = BufferRef::ref_from(&source);
+        assert!(source.shares_storage(&destination));
+        assert!(source.is_data_ptr_null());
+        assert!(destination.is_data_ptr_null());
+        assert_eq!(source.strong_count(), 2);
+        assert_eq!(destination.strong_count(), 2);
+        assert!(!source.is_writable());
+        assert!(!destination.is_writable());
+
+        drop(destination);
+        assert_eq!(source.strong_count(), 1);
+        assert!(source.is_writable());
+        assert!(released.lock().unwrap().is_empty());
+
+        destination = source;
+        let before = destination.as_ptr();
+        destination.make_writable().unwrap();
+        assert!(destination.is_data_ptr_null());
+        assert_eq!(destination.as_ptr(), before);
+        assert_eq!(destination.as_slice(), &[0, 0, 0]);
+        assert!(destination.is_writable());
+        assert!(released.lock().unwrap().is_empty());
+
+        let mut destination = Some(destination);
+        let before_realloc = destination.as_ref().unwrap().as_ptr();
+        BufferRef::realloc(&mut destination, 3).unwrap();
+        let destination = destination.expect("same-size nonzero-null realloc keeps destination");
+        assert!(destination.is_data_ptr_null());
+        assert_eq!(destination.as_ptr(), before_realloc);
+        assert_eq!(destination.as_slice(), &[0, 0, 0]);
+        assert_eq!(destination.opaque_ref::<usize>(), Some(&711));
+        assert!(destination.is_writable());
+        assert!(released.lock().unwrap().is_empty());
+
+        drop(destination);
+        assert_eq!(*released.lock().unwrap(), vec![(711, vec![0, 0, 0])]);
     }
 
     #[test]

@@ -1247,6 +1247,52 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         *null_zero_released.lock().unwrap(),
         vec![(payload_len, Vec::new())]
     );
+    let null_nonzero_len = usize::from(cursor.next().unwrap_or_default() % 4) + 1;
+    let null_nonzero_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let null_nonzero_capture = Arc::clone(&null_nonzero_released);
+    let mut null_nonzero = BufferRef::from_null_data_with_len_and_opaque_release_callback(
+        null_nonzero_len,
+        payload_len.wrapping_add(9),
+        move |opaque, bytes| {
+            null_nonzero_capture
+                .lock()
+                .unwrap()
+                .push((opaque, bytes));
+        },
+    )
+    .unwrap();
+    assert_eq!(null_nonzero.len(), null_nonzero_len);
+    assert_eq!(null_nonzero.allocated_len(), null_nonzero_len);
+    assert!(null_nonzero.as_slice().iter().all(|byte| *byte == 0));
+    assert!(null_nonzero.is_data_ptr_null());
+    assert!(null_nonzero.as_ptr().is_null());
+    assert!(null_nonzero.as_padded_ptr().is_null());
+    assert!(null_nonzero.is_writable());
+    let null_nonzero_ref = BufferRef::ref_from(&null_nonzero);
+    assert!(null_nonzero_ref.is_data_ptr_null());
+    assert!(null_nonzero.shares_storage(&null_nonzero_ref));
+    assert!(!null_nonzero.is_writable());
+    assert!(!null_nonzero_ref.is_writable());
+    drop(null_nonzero_ref);
+    assert!(null_nonzero.is_writable());
+    let null_nonzero_ptr = null_nonzero.as_ptr();
+    null_nonzero.make_writable().unwrap();
+    assert!(null_nonzero.is_data_ptr_null());
+    assert_eq!(null_nonzero.as_ptr(), null_nonzero_ptr);
+    let mut null_nonzero_realloc = Some(null_nonzero);
+    BufferRef::realloc(&mut null_nonzero_realloc, null_nonzero_len).unwrap();
+    let null_nonzero_realloc =
+        null_nonzero_realloc.expect("same-size null/nonzero realloc keeps destination");
+    assert!(null_nonzero_realloc.is_data_ptr_null());
+    assert_eq!(null_nonzero_realloc.as_ptr(), null_nonzero_ptr);
+    drop(null_nonzero_realloc);
+    assert_eq!(
+        *null_nonzero_released.lock().unwrap(),
+        vec![(
+            payload_len.wrapping_add(9),
+            vec![0; null_nonzero_len]
+        )]
+    );
     let null_zero_ref_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
     let null_zero_ref_capture = Arc::clone(&null_zero_ref_released);
     let null_zero_ref_source = BufferRef::from_null_data_zero_with_opaque_release_callback(

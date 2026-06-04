@@ -1348,18 +1348,17 @@ The latest buffer oracle rows add readonly offset custom-pool allocation coverag
 
 The latest buffer oracle rows add multi-spare pool ordering coverage: after two custom pool buffers are returned, the next two checkouts reuse the second returned buffer first and the first returned buffer second, and final pool uninit releases those spare allocations in LIFO order.
 
-The latest buffer blocker diagnostic is intentionally separate from the
-Rust-vs-oracle comparison row: `av_buffer_create(NULL, 3, free, opaque, 0)`
-creates a size-3 `AVBufferRef` whose public `data` pointer is NULL. The pinned
-FFmpeg-only helper proves unique writability, refcount-2 non-writability after
-`av_buffer_ref()`, and NULL-pointer preservation through unique
-`av_buffer_make_writable()` and same-size `av_buffer_realloc()`. The current
-safe Rust `BufferRef` only represents NULL data pointers for zero-size refs, so
-this remains an `avutil-buffer` blocker rather than claimed parity.
-Run that diagnostic directly with:
+The latest buffer null/nonzero row promotes the prior direct diagnostic into
+the Rust-vs-oracle comparison surface: `av_buffer_create(NULL, 3, free, opaque,
+0)` creates a size-3 `AVBufferRef` whose public `data` pointer is NULL. The
+mapped row now compares create, ref, refcount-2 non-writability, unique
+`av_buffer_make_writable()`, same-size `av_buffer_realloc()`, and release
+pointer-shape behavior. Rust preserves the public NULL pointer while using
+zeroed backing storage for safe byte access. The smaller FFmpeg-only helper is
+kept as direct diagnostic evidence and can be run with:
 
 ```sh
-cargo test -p avutil --test buffer_oracle libavutil_buffer_null_nonzero_create_documents_unmodeled_shape -- --ignored --nocapture
+cargo test -p avutil --test buffer_oracle libavutil_buffer_null_nonzero_create_pins_pointer_shape -- --ignored --nocapture
 ```
 
 Prior buffer oracle rows pin offset custom-pool allocation, readonly custom-pool allocation, default-free opaque owners, shared-readonly custom-owner make-writable, unique readonly make-writable, unique writable/readonly shrink-realloc, and shared writable/read-only shrink-realloc edges. The separate offset and readonly custom-pool rows prove the same base-pointer reuse and readonly-to-writable reuse behaviors independently.
