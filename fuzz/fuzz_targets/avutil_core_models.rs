@@ -17580,6 +17580,17 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .take(AV_INPUT_BUFFER_PADDING_SIZE)
         .all(|byte| *byte == 0));
 
+    raw_packet
+        .shrink_side_data_by_kind_id(&raw_min_kind, 0)
+        .unwrap();
+    let shrunk_raw_min = raw_packet.side_data_by_kind_id(&raw_min_kind).unwrap();
+    assert_eq!(shrunk_raw_min.data(), &[]);
+    assert_eq!(shrunk_raw_min.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+    assert_eq!(shrunk_raw_min.padding_slice()[0], 0xe0);
+    assert!(shrunk_raw_min.padding_slice()[1..AV_INPUT_BUFFER_PADDING_SIZE]
+        .iter()
+        .all(|byte| *byte == 0));
+
     packet.push_side_data(SideData::new("ref_side_data", vec![0xbb, 0xcc]).unwrap());
     packet
         .push_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x11]).unwrap());

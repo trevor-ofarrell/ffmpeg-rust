@@ -11930,6 +11930,19 @@ mod tests {
             .iter()
             .take(AV_INPUT_BUFFER_PADDING_SIZE)
             .all(|byte| *byte == 0));
+
+        packet
+            .shrink_side_data_by_kind_id(&raw_min_kind, 0)
+            .unwrap();
+        let shrunk_raw_min = packet.side_data_by_kind_id(&raw_min_kind).unwrap();
+        assert_eq!(shrunk_raw_min.data(), &[]);
+        assert_eq!(shrunk_raw_min.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+        assert_eq!(shrunk_raw_min.padding_slice()[0], 0xe0);
+        assert!(
+            shrunk_raw_min.padding_slice()[1..AV_INPUT_BUFFER_PADDING_SIZE]
+                .iter()
+                .all(|byte| *byte == 0)
+        );
     }
 
     #[test]

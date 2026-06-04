@@ -257,7 +257,8 @@ while retaining the padding allocation shape, matching the current
 `packet:side-shrink-padding` row for ordinary positive shrink,
 `packet:side-shrink-duplicate-padding` row for shrinking the first duplicate
 caller-owned entry to zero, and
-`packet:side-shrink-raw-negative-type-padding` row for raw `-1` side data.
+`packet:side-shrink-raw-negative-type-padding` row for raw `-1` side data, and
+`packet:side-shrink-raw-min-type-padding` row for raw `INT_MIN` side data.
 
 `PacketFlags` stores raw `AVPacket.flags` bits instead of truncating to the
 known public mask. Known-bit helpers still drive ergonomic checks for

@@ -5542,6 +5542,26 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:side-shrink-raw-min-oversize-padding".to_string(),
         side_data_padding_fields(raw_packet.side_data_by_kind_id(&raw_min_kind)),
     );
+
+    raw_packet
+        .shrink_side_data_by_kind_id(&raw_min_kind, 0)
+        .unwrap();
+    rows.insert(
+        "packet:side-shrink-raw-min-type-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:side-shrink-raw-min-type".to_string(),
+        side_data_summary_fields(&raw_packet),
+    );
+    rows.insert(
+        "packet:side-get-raw-min-type-shrunk".to_string(),
+        side_data_lookup_fields(raw_packet.side_data_by_kind_id(&raw_min_kind)),
+    );
+    rows.insert(
+        "packet:side-shrink-raw-min-type-padding".to_string(),
+        side_data_padding_fields(raw_packet.side_data_by_kind_id(&raw_min_kind)),
+    );
 }
 
 fn insert_side_data_capacity_rows(rows: &mut BTreeMap<String, Vec<String>>) {
@@ -9504,6 +9524,15 @@ static void exercise_side_data_api(void) {
     print_side_data_lookup("packet:side-get-raw-min-oversize", pkt,
                            (enum AVPacketSideDataType)INT_MIN);
     print_packet_side_data_padding("packet:side-shrink-raw-min-oversize-padding",
+                                   pkt, (enum AVPacketSideDataType)INT_MIN);
+
+    ret = av_packet_shrink_side_data(pkt, (enum AVPacketSideDataType)INT_MIN, 0);
+    printf("packet:side-shrink-raw-min-type-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_shrink_side_data INT_MIN raw type failed");
+    print_side_data_summary("packet:side-shrink-raw-min-type", pkt);
+    print_side_data_lookup("packet:side-get-raw-min-type-shrunk", pkt,
+                           (enum AVPacketSideDataType)INT_MIN);
+    print_packet_side_data_padding("packet:side-shrink-raw-min-type-padding",
                                    pkt, (enum AVPacketSideDataType)INT_MIN);
     av_packet_free(&pkt);
 }
