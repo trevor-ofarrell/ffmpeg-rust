@@ -6337,6 +6337,46 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         side_data_list_summary_fields(&raw_negative_new_list),
     );
 
+    let mut raw_min_new_list = PacketSideDataList::new();
+    raw_min_new_list
+        .new_side_data(raw_min_kind.clone(), 1)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0xe2]);
+    rows.insert(
+        "packet:array-new-raw-min-singleton-type-ret".to_string(),
+        vec!["1".to_string()],
+    );
+    rows.insert(
+        "packet:array-new-raw-min-singleton-type".to_string(),
+        side_data_list_summary_fields(&raw_min_new_list),
+    );
+    rows.insert(
+        "packet:array-get-new-raw-min-singleton-type".to_string(),
+        side_data_lookup_fields(raw_min_new_list.get(&raw_min_kind)),
+    );
+    rows.insert(
+        "packet:array-new-raw-min-singleton-type-padding".to_string(),
+        side_data_padding_fields(raw_min_new_list.get(&raw_min_kind)),
+    );
+    let removed = raw_min_new_list
+        .remove_kind(&raw_min_kind)
+        .expect("new raw INT_MIN standalone side data should be removable");
+    assert_eq!(removed.data(), &[0xe2]);
+    rows.insert(
+        "packet:array-remove-new-raw-min-singleton-type".to_string(),
+        side_data_list_summary_fields(&raw_min_new_list),
+    );
+    rows.insert(
+        "packet:array-get-new-raw-min-singleton-type-removed".to_string(),
+        side_data_lookup_fields(raw_min_new_list.get(&raw_min_kind)),
+    );
+    raw_min_new_list.clear();
+    rows.insert(
+        "packet:array-free-new-raw-min-singleton-type".to_string(),
+        side_data_list_summary_fields(&raw_min_new_list),
+    );
+
     raw_list
         .new_side_data(raw_min_kind.clone(), 1)
         .unwrap()
@@ -10372,6 +10412,49 @@ static void exercise_side_data_array_api(void) {
         "packet:array-free-new-raw-negative-type",
         raw_negative_new_sd,
         raw_negative_new_nb_sd);
+
+    AVPacketSideData *raw_min_new_sd = NULL;
+    int raw_min_new_nb_sd = 0;
+    entry = av_packet_side_data_new(&raw_min_new_sd,
+                                    &raw_min_new_nb_sd,
+                                    (enum AVPacketSideDataType)INT_MIN,
+                                    1, 0);
+    printf("packet:array-new-raw-min-singleton-type-ret|%d\n",
+           entry != NULL);
+    fail_if(!entry, "av_packet_side_data_new singleton INT_MIN raw type failed");
+    entry->data[0] = 0xe2;
+    print_side_data_array_summary(
+        "packet:array-new-raw-min-singleton-type",
+        raw_min_new_sd,
+        raw_min_new_nb_sd);
+    print_side_data_array_lookup(
+        "packet:array-get-new-raw-min-singleton-type",
+        raw_min_new_sd,
+        raw_min_new_nb_sd,
+        (enum AVPacketSideDataType)INT_MIN);
+    print_side_data_array_padding(
+        "packet:array-new-raw-min-singleton-type-padding",
+        raw_min_new_sd,
+        raw_min_new_nb_sd,
+        (enum AVPacketSideDataType)INT_MIN);
+    av_packet_side_data_remove(raw_min_new_sd,
+                               &raw_min_new_nb_sd,
+                               (enum AVPacketSideDataType)INT_MIN);
+    print_side_data_array_summary(
+        "packet:array-remove-new-raw-min-singleton-type",
+        raw_min_new_sd,
+        raw_min_new_nb_sd);
+    print_side_data_array_lookup(
+        "packet:array-get-new-raw-min-singleton-type-removed",
+        raw_min_new_sd,
+        raw_min_new_nb_sd,
+        (enum AVPacketSideDataType)INT_MIN);
+    av_packet_side_data_free(&raw_min_new_sd,
+                             &raw_min_new_nb_sd);
+    print_side_data_array_summary(
+        "packet:array-free-new-raw-min-singleton-type",
+        raw_min_new_sd,
+        raw_min_new_nb_sd);
 
     entry = av_packet_side_data_new(&sd, &nb_sd,
                                     (enum AVPacketSideDataType)INT_MIN,

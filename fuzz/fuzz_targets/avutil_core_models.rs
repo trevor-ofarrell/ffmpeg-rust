@@ -14783,6 +14783,32 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .is_none());
     raw_negative_new_array_list.clear();
     assert!(raw_negative_new_array_list.is_empty());
+    let mut raw_min_new_array_list = PacketSideDataList::new();
+    raw_min_new_array_list
+        .new_side_data(raw_min_array_kind.clone(), 1)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0xe2]);
+    let raw_min_new_array_side = raw_min_new_array_list.get(&raw_min_array_kind).unwrap();
+    assert_eq!(raw_min_new_array_side.data(), &[0xe2]);
+    assert_eq!(
+        raw_min_new_array_side.padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(raw_min_new_array_side
+        .padding_slice()
+        .iter()
+        .take(AV_INPUT_BUFFER_PADDING_SIZE)
+        .all(|byte| *byte == 0));
+    let removed_raw_min_new_array_side = raw_min_new_array_list
+        .remove_kind(&raw_min_array_kind)
+        .unwrap();
+    assert_eq!(removed_raw_min_new_array_side.data(), &[0xe2]);
+    assert!(raw_min_new_array_list
+        .get(&raw_min_array_kind)
+        .is_none());
+    raw_min_new_array_list.clear();
+    assert!(raw_min_new_array_list.is_empty());
     raw_array_list
         .new_side_data(raw_min_array_kind.clone(), 1)
         .unwrap()

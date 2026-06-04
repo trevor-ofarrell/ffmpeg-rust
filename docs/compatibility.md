@@ -9,6 +9,23 @@
 
 ## Compatible Today
 
+- Latest main-thread packet standalone raw `INT_MIN` singleton removal/free
+  evidence: pinned libavcodec rows
+  `packet:array-new-raw-min-singleton-type-ret`,
+  `packet:array-new-raw-min-singleton-type`,
+  `packet:array-get-new-raw-min-singleton-type`,
+  `packet:array-new-raw-min-singleton-type-padding`,
+  `packet:array-remove-new-raw-min-singleton-type`,
+  `packet:array-get-new-raw-min-singleton-type-removed`, and
+  `packet:array-free-new-raw-min-singleton-type` now prove standalone
+  `av_packet_side_data_new()` accepts a raw `INT_MIN` singleton entry,
+  allocates zeroed input padding, removes it, misses lookup afterward, and
+  leaves `av_packet_side_data_free()` with an empty state after removal. Rust
+  mirrors this through `PacketSideDataList::new_side_data`, `remove_kind`, and
+  `clear`, with focused unit, ignored oracle, mapped differential/FATE,
+  upstream `fate-avpacket`, clippy, and WSL `avutil_core_models` sanitizer
+  smoke coverage. `avutil-packet` remains `fate_pass`; strict completion
+  remains 11/96.
 - Latest main-thread packet standalone raw negative add-path removal/free
   evidence: pinned libavcodec rows
   `packet:array-get-raw-negative-type-after-min-remove`,
