@@ -9,6 +9,17 @@
 
 ## Compatible Today
 
+- Latest main-thread packet duplicate new-side-data padding evidence: pinned
+  libavcodec rows `packet:side-new-duplicate-replace-padding` and
+  `packet:array-new-duplicate-replace-padding` now prove packet-owned
+  `av_packet_new_side_data()` and standalone `av_packet_side_data_new()`
+  allocate zeroed input padding when replacing the first matching duplicate
+  entry while preserving later duplicates. Rust mirrors this through
+  `Packet::new_side_data` and `PacketSideDataList::new_side_data`, with
+  focused unit, ignored oracle, mapped differential/FATE, upstream
+  `fate-avpacket`, clippy, and WSL `avutil_core_models` sanitizer smoke
+  coverage. `avutil-packet` remains `fate_pass`; strict completion remains
+  11/96.
 - Latest main-thread packet raw `AV_PKT_DATA_NB` side-data shrink hidden-tail
   evidence: pinned libavcodec row `packet:side-shrink-raw-nb-type-padding`
   now proves `av_packet_shrink_side_data()` preserves the truncated
@@ -150,12 +161,12 @@
   `fate-avpacket`, clippy, and WSL `avutil_core_models` sanitizer smoke
   coverage. `avutil-packet` remains `fate_pass`; strict completion remains
   11/96.
-- Latest main-thread packet duplicate side-data add padding evidence: pinned
-  libavcodec rows now prove packet-owned `av_packet_add_side_data()` and
-  standalone `av_packet_side_data_add()` preserve caller-owned positive side
-  data with `AV_INPUT_BUFFER_PADDING_SIZE` zero padding when replacing the first
+- Latest main-thread packet duplicate side-data new/add padding evidence:
+  pinned libavcodec rows now prove packet-owned and standalone new/add helpers
+  allocate or preserve positive side-data padding when replacing the first
   matching entry in duplicate-kind side-data arrays. Rust mirrors this through
-  direct `SideData` ownership transfer in `try_add_side_data_owned` and
+  `Packet::new_side_data`, `PacketSideDataList::new_side_data`, direct
+  `SideData` ownership transfer in `try_add_side_data_owned`, and
   `PacketSideDataList::try_add_side_data_with_flags`, with focused unit,
   ignored oracle, mapped differential/FATE, upstream `fate-avpacket`, clippy,
   and WSL `avutil_core_models` sanitizer smoke coverage. `avutil-packet`

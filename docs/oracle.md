@@ -230,13 +230,14 @@ kinds, standalone raw `AV_PKT_DATA_NB`/`-1`/`INT_MIN` append, and standalone
 `av_packet_side_data_add()` with nonzero flags preserve caller-owned zeroed
 input padding after direct ownership transfer.
 
-The latest packet duplicate side-data add padding fixture adds
-`packet:side-add-duplicate-replace-padding` and
-`packet:array-add-duplicate-replace-padding` rows. These prove packet-owned
-`av_packet_add_side_data()` and standalone `av_packet_side_data_add()` preserve
-caller-owned positive side data with its zeroed `AV_INPUT_BUFFER_PADDING_SIZE`
-padding window when replacing the first matching entry in duplicate-kind
-side-data arrays.
+The latest packet duplicate side-data new/add padding fixture adds
+`packet:side-new-duplicate-replace-padding`,
+`packet:array-new-duplicate-replace-padding`,
+`packet:side-add-duplicate-replace-padding`, and
+`packet:array-add-duplicate-replace-padding` rows. These prove packet-owned and
+standalone new/add helpers allocate or preserve positive side data with a
+zeroed `AV_INPUT_BUFFER_PADDING_SIZE` padding window when replacing the first
+matching entry in duplicate-kind side-data arrays.
 
 The latest packet side-data shrink hidden-tail padding fixture adds
 `packet:side-shrink-raw-nb-type-padding`,
@@ -1172,11 +1173,11 @@ The harness also includes `packet:array-new-flags-nonzero-*` and `packet:array-a
 
 The harness also includes `packet:array-empty-*` rows, proving standalone `AVPacketSideData` empty/null-array behavior: `av_packet_side_data_get(NULL, 0, type)` returns missing, `av_packet_side_data_remove(NULL, &count, type)` leaves the count at zero, and `av_packet_side_data_free(&ptr, &count)` leaves pointer and count empty.
 
-The harness also includes `packet:side-duplicate-*` rows, proving packet-owned duplicate-type side-data behavior: `av_packet_get_side_data()` returns the first matching duplicate entry, `av_packet_new_side_data()` replaces the first matching duplicate entry, `av_packet_add_side_data()` replaces the first matching duplicate entry, `av_packet_shrink_side_data()` shrinks the first matching duplicate entry while leaving later duplicates in place, and `av_packet_free_side_data()` clears all duplicate-rich side data so subsequent lookup returns missing.
+The harness also includes `packet:side-duplicate-*` rows, proving packet-owned duplicate-type side-data behavior: `av_packet_get_side_data()` returns the first matching duplicate entry, `av_packet_new_side_data()` replaces the first matching duplicate entry with zeroed input padding after caller initialization, `av_packet_add_side_data()` replaces the first matching duplicate entry, `av_packet_shrink_side_data()` shrinks the first matching duplicate entry while leaving later duplicates in place, and `av_packet_free_side_data()` clears all duplicate-rich side data so subsequent lookup returns missing.
 
 The harness also includes `packet:side-get-*-size-null` rows, proving `av_packet_get_side_data()` may be called with a NULL size pointer for present and missing packet-owned side data.
 
-The harness also includes `packet:array-new-duplicate-*` rows, proving standalone `av_packet_side_data_new()` duplicate-type behavior: the helper replaces the first matching duplicate entry while leaving later duplicates in place. The positive-size duplicate-new rows write deterministic bytes before comparison because FFmpeg allocator contents are not a stable oracle value until the caller initializes the returned buffer.
+The harness also includes `packet:array-new-duplicate-*` rows, proving standalone `av_packet_side_data_new()` duplicate-type behavior: the helper replaces the first matching duplicate entry with zeroed input padding while leaving later duplicates in place. The positive-size duplicate-new rows write deterministic bytes before comparison because FFmpeg allocator contents are not a stable oracle value until the caller initializes the returned buffer.
 
 The harness also includes `packet:array-free-duplicate-*` rows, proving standalone `av_packet_side_data_free()` resets a duplicate-rich side-data array to an empty/null state.
 

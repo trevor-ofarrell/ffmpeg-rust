@@ -243,7 +243,10 @@ Packet copy-props, ref, and clone helpers also reallocate copied side data with
 the same zeroed input-padding window, matching the current
 `packet:*side-padding` oracle rows. Move-ref preserves packet-owned side-data
 storage directly, including that zeroed padding window, while clearing the
-source packet side-data list. Packet-owned `try_add_side_data_owned` and
+source packet side-data list. Packet-owned `new_side_data` and standalone
+`PacketSideDataList::new_side_data` allocate replacement entries with zeroed
+input padding when replacing the first matching duplicate-kind entry, matching
+the current duplicate new-padding rows. Packet-owned `try_add_side_data_owned` and
 standalone `PacketSideDataList::try_add_side_data_with_flags` transfer
 caller-owned `SideData` directly, so caller-provided padded storage remains
 padded after first-match replacement or append, matching the current
@@ -261,6 +264,8 @@ while retaining the padding allocation shape, matching the current
 `packet:side-shrink-padding` row for ordinary positive shrink,
 `packet:side-shrink-duplicate-padding` row for shrinking the first duplicate
 caller-owned entry to zero, and
+`packet:side-shrink-raw-nb-type-padding` row for exact raw `AV_PKT_DATA_NB`
+side data,
 `packet:side-shrink-raw-negative-type-padding` row for raw `-1` side data, and
 `packet:side-shrink-raw-min-type-padding` row for raw `INT_MIN` side data.
 
@@ -774,7 +779,7 @@ The packet oracle now also includes a `packet:payload-layout-dynamic-hdr10-plus`
 
 `PacketSideDataKind` now has a bounded value lookup surface for the pinned FFmpeg 8.1.1 packet side-data enum. `from_ffmpeg_value()` maps public `AV_PKT_DATA_*` values before `AV_PKT_DATA_NB` back to Rust known kinds, while `ffmpeg_side_data_name_for_value()` mirrors the modeled `av_packet_side_data_name()` name surface and returns `None` for invalid values and the sentinel.
 
-`PacketSideDataList` mirrors the current standalone `AVPacketSideData` array semantics for duplicate types and empty arrays: empty lookup/remove/free are no-ops, `get` returns the first matching entry, `add_side_data` replaces the first matching entry, `remove_kind` scans from the end, removes the last matching entry, and swap-fills with the previous tail, and `clear` mirrors `av_packet_side_data_free()` by resetting duplicate-rich arrays to empty state.
+`PacketSideDataList` mirrors the current standalone `AVPacketSideData` array semantics for duplicate types and empty arrays: empty lookup/remove/free are no-ops, `get` returns the first matching entry, `new_side_data` allocates a padded replacement for the first matching entry, `add_side_data` replaces the first matching entry, `remove_kind` scans from the end, removes the last matching entry, and swap-fills with the previous tail, and `clear` mirrors `av_packet_side_data_free()` by resetting duplicate-rich arrays to empty state.
 
 `PacketSideDataList::add_from_frame_side_data_with_flags` models the bounded `av_packet_side_data_from_frame()` bridge surface. The pinned oracle proves `AV_FRAME_SIDE_DATA_FLAG_REPLACE` and `AV_FRAME_SIDE_DATA_FLAG_UNIQUE` both replace only the first matching packet side-data entry and leave later duplicates intact, so the Rust packet-side bridge keeps that non-deduplicating behavior separate from frame-owned side-data insertion semantics. `AV_FRAME_SIDE_DATA_FLAG_NEW_REF` is also covered for this raw side-data conversion path and produces the same copied mapped payload shape as ordinary insertion.
 

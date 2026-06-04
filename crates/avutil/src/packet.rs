@@ -12271,11 +12271,19 @@ mod tests {
         duplicate_packet.push_side_data(
             SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x33]).unwrap(),
         );
-        duplicate_packet
-            .new_side_data(PacketSideDataKind::Palette, 2)
-            .unwrap()
-            .data_mut()
-            .copy_from_slice(&[0x66, 0x77]);
+        {
+            let new_duplicate = duplicate_packet
+                .new_side_data(PacketSideDataKind::Palette, 2)
+                .unwrap();
+            new_duplicate.data_mut().copy_from_slice(&[0x66, 0x77]);
+        }
+        assert_padded_side_data(
+            duplicate_packet
+                .side_data_by_kind_id(&PacketSideDataKind::Palette)
+                .unwrap(),
+            &[0x66, 0x77],
+        );
+        assert_eq!(duplicate_packet.side_data()[2].data(), &[0x33]);
         let mut duplicate_replacement =
             Some(padded_side_data(PacketSideDataKind::Palette, &[0x55]));
         let replaced = duplicate_packet
@@ -12312,11 +12320,17 @@ mod tests {
             SideData::new_with_kind(PacketSideDataKind::NewExtradata, vec![0x22]).unwrap(),
             SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x33]).unwrap(),
         ]);
-        duplicate_list
-            .new_side_data(PacketSideDataKind::Palette, 2)
-            .unwrap()
-            .data_mut()
-            .copy_from_slice(&[0x66, 0x77]);
+        {
+            let new_duplicate = duplicate_list
+                .new_side_data(PacketSideDataKind::Palette, 2)
+                .unwrap();
+            new_duplicate.data_mut().copy_from_slice(&[0x66, 0x77]);
+        }
+        assert_padded_side_data(
+            duplicate_list.get(&PacketSideDataKind::Palette).unwrap(),
+            &[0x66, 0x77],
+        );
+        assert_eq!(duplicate_list.entries()[2].data(), &[0x33]);
         let mut duplicate_list_replacement =
             Some(padded_side_data(PacketSideDataKind::Palette, &[0x55]));
         let replaced = duplicate_list

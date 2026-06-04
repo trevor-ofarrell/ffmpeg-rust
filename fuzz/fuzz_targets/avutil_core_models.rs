@@ -17429,11 +17429,19 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     );
     duplicate_add_owned_packet
         .push_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x33]).unwrap());
-    duplicate_add_owned_packet
-        .new_side_data(PacketSideDataKind::Palette, 2)
-        .unwrap()
-        .data_mut()
-        .copy_from_slice(&[0x66, 0x77]);
+    {
+        let duplicate_new = duplicate_add_owned_packet
+            .new_side_data(PacketSideDataKind::Palette, 2)
+            .unwrap();
+        duplicate_new.data_mut().copy_from_slice(&[0x66, 0x77]);
+    }
+    assert_padded_side_data(
+        duplicate_add_owned_packet
+            .side_data_by_kind_id(&PacketSideDataKind::Palette)
+            .unwrap(),
+        &[0x66, 0x77],
+    );
+    assert_eq!(duplicate_add_owned_packet.side_data()[2].data(), &[0x33]);
     let mut duplicate_packet_replacement =
         Some(padded_side_data(PacketSideDataKind::Palette, &[0x55]));
     let replaced = duplicate_add_owned_packet
@@ -17471,11 +17479,19 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         SideData::new_with_kind(PacketSideDataKind::NewExtradata, vec![0x22]).unwrap(),
         SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x33]).unwrap(),
     ]);
-    duplicate_add_owned_list
-        .new_side_data(PacketSideDataKind::Palette, 2)
-        .unwrap()
-        .data_mut()
-        .copy_from_slice(&[0x66, 0x77]);
+    {
+        let duplicate_new = duplicate_add_owned_list
+            .new_side_data(PacketSideDataKind::Palette, 2)
+            .unwrap();
+        duplicate_new.data_mut().copy_from_slice(&[0x66, 0x77]);
+    }
+    assert_padded_side_data(
+        duplicate_add_owned_list
+            .get(&PacketSideDataKind::Palette)
+            .unwrap(),
+        &[0x66, 0x77],
+    );
+    assert_eq!(duplicate_add_owned_list.entries()[2].data(), &[0x33]);
     let mut duplicate_list_replacement =
         Some(padded_side_data(PacketSideDataKind::Palette, &[0x55]));
     let replaced = duplicate_add_owned_list

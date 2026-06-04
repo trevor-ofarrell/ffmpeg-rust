@@ -5132,6 +5132,12 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         side_data_summary_fields(&duplicate_packet),
     );
     rows.insert(
+        "packet:side-new-duplicate-replace-padding".to_string(),
+        side_data_padding_fields(
+            duplicate_packet.side_data_by_kind_id(&PacketSideDataKind::Palette),
+        ),
+    );
+    rows.insert(
         "packet:side-get-duplicate-palette-new".to_string(),
         side_data_lookup_fields(
             duplicate_packet.side_data_by_kind_id(&PacketSideDataKind::Palette),
@@ -5860,6 +5866,10 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:array-new-duplicate-replace".to_string(),
         side_data_list_summary_fields(&duplicate_list),
+    );
+    rows.insert(
+        "packet:array-new-duplicate-replace-padding".to_string(),
+        side_data_padding_fields(duplicate_list.get(&PacketSideDataKind::Palette)),
     );
     rows.insert(
         "packet:array-get-duplicate-palette-new".to_string(),
@@ -9398,6 +9408,8 @@ static void exercise_side_data_api(void) {
     sd[0] = 0x66;
     sd[1] = 0x77;
     print_side_data_summary("packet:side-new-duplicate-replace", pkt);
+    print_packet_side_data_padding("packet:side-new-duplicate-replace-padding",
+                                   pkt, AV_PKT_DATA_PALETTE);
     print_side_data_lookup("packet:side-get-duplicate-palette-new", pkt,
                            AV_PKT_DATA_PALETTE);
     owned = av_mallocz(1 + AV_INPUT_BUFFER_PADDING_SIZE);
@@ -9835,6 +9847,9 @@ static void exercise_side_data_array_api(void) {
     duplicate_entry->data[1] = 0x77;
     print_side_data_array_summary("packet:array-new-duplicate-replace",
                                   duplicate_sd, duplicate_nb_sd);
+    print_side_data_array_padding("packet:array-new-duplicate-replace-padding",
+                                  duplicate_sd, duplicate_nb_sd,
+                                  AV_PKT_DATA_PALETTE);
     print_side_data_array_lookup("packet:array-get-duplicate-palette-new",
                                  duplicate_sd, duplicate_nb_sd,
                                  AV_PKT_DATA_PALETTE);
