@@ -5134,9 +5134,7 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         ),
     );
     let replaced = duplicate_packet
-        .try_add_side_data(
-            SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x55]).unwrap(),
-        )
+        .try_add_side_data(padded_side_data(PacketSideDataKind::Palette, &[0x55]))
         .expect("duplicate packet side-data replacement should not hit capacity")
         .expect("first palette packet side data should be replaced");
     assert_eq!(replaced.data(), &[0x66, 0x77]);
@@ -5147,6 +5145,12 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:side-add-duplicate-replace".to_string(),
         side_data_summary_fields(&duplicate_packet),
+    );
+    rows.insert(
+        "packet:side-add-duplicate-replace-padding".to_string(),
+        side_data_padding_fields(
+            duplicate_packet.side_data_by_kind_id(&PacketSideDataKind::Palette),
+        ),
     );
     duplicate_packet
         .shrink_side_data_by_kind_id(&PacketSideDataKind::Palette, 0)
@@ -5729,7 +5733,7 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         side_data_lookup_fields(duplicate_list.get(&PacketSideDataKind::Palette)),
     );
     let replaced = duplicate_list
-        .add_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x55]).unwrap())
+        .add_side_data(padded_side_data(PacketSideDataKind::Palette, &[0x55]))
         .expect("first palette side data should be replaced");
     assert_eq!(replaced.data(), &[0x66, 0x77]);
     rows.insert(
@@ -5739,6 +5743,10 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:array-add-duplicate-replace".to_string(),
         side_data_list_summary_fields(&duplicate_list),
+    );
+    rows.insert(
+        "packet:array-add-duplicate-replace-padding".to_string(),
+        side_data_padding_fields(duplicate_list.get(&PacketSideDataKind::Palette)),
     );
     let removed = duplicate_list
         .remove_kind(&PacketSideDataKind::Palette)
@@ -9167,6 +9175,8 @@ static void exercise_side_data_api(void) {
     printf("packet:side-add-duplicate-replace-ret|%d\n", ret);
     fail_if(ret < 0, "av_packet_add_side_data duplicate replace failed");
     print_side_data_summary("packet:side-add-duplicate-replace", pkt);
+    print_packet_side_data_padding("packet:side-add-duplicate-replace-padding",
+                                   pkt, AV_PKT_DATA_PALETTE);
     ret = av_packet_shrink_side_data(pkt, AV_PKT_DATA_PALETTE, 0);
     printf("packet:side-shrink-duplicate-ret|%d\n", ret);
     fail_if(ret < 0, "av_packet_shrink_side_data duplicate shrink failed");
@@ -9527,6 +9537,9 @@ static void exercise_side_data_array_api(void) {
            duplicate_entry != NULL);
     print_side_data_array_summary("packet:array-add-duplicate-replace",
                                   duplicate_sd, duplicate_nb_sd);
+    print_side_data_array_padding("packet:array-add-duplicate-replace-padding",
+                                  duplicate_sd, duplicate_nb_sd,
+                                  AV_PKT_DATA_PALETTE);
     av_packet_side_data_remove(duplicate_sd, &duplicate_nb_sd,
                                AV_PKT_DATA_PALETTE);
     print_side_data_array_summary("packet:array-remove-duplicate-last",

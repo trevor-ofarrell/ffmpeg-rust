@@ -12115,6 +12115,61 @@ mod tests {
         assert!(flags_replacement.is_none());
         assert_padded_side_data(&replaced, &[0xc2, 0x58]);
         assert_padded_side_data(list.get(&PacketSideDataKind::SkipSamples).unwrap(), &[0x5a]);
+
+        let mut duplicate_packet = Packet::default();
+        duplicate_packet.push_side_data(
+            SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x11]).unwrap(),
+        );
+        duplicate_packet.push_side_data(
+            SideData::new_with_kind(PacketSideDataKind::NewExtradata, vec![0x22]).unwrap(),
+        );
+        duplicate_packet.push_side_data(
+            SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x33]).unwrap(),
+        );
+        duplicate_packet
+            .new_side_data(PacketSideDataKind::Palette, 2)
+            .unwrap()
+            .data_mut()
+            .copy_from_slice(&[0x66, 0x77]);
+        let mut duplicate_replacement =
+            Some(padded_side_data(PacketSideDataKind::Palette, &[0x55]));
+        let replaced = duplicate_packet
+            .try_add_side_data_owned(&mut duplicate_replacement)
+            .unwrap()
+            .unwrap();
+        assert!(duplicate_replacement.is_none());
+        assert_padded_side_data(&replaced, &[0x66, 0x77]);
+        assert_padded_side_data(
+            duplicate_packet
+                .side_data_by_kind_id(&PacketSideDataKind::Palette)
+                .unwrap(),
+            &[0x55],
+        );
+        assert_eq!(duplicate_packet.side_data()[2].data(), &[0x33]);
+
+        let mut duplicate_list = PacketSideDataList::from_entries(vec![
+            SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x11]).unwrap(),
+            SideData::new_with_kind(PacketSideDataKind::NewExtradata, vec![0x22]).unwrap(),
+            SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x33]).unwrap(),
+        ]);
+        duplicate_list
+            .new_side_data(PacketSideDataKind::Palette, 2)
+            .unwrap()
+            .data_mut()
+            .copy_from_slice(&[0x66, 0x77]);
+        let mut duplicate_list_replacement =
+            Some(padded_side_data(PacketSideDataKind::Palette, &[0x55]));
+        let replaced = duplicate_list
+            .try_add_side_data_with_flags(&mut duplicate_list_replacement, 0)
+            .unwrap()
+            .unwrap();
+        assert!(duplicate_list_replacement.is_none());
+        assert_padded_side_data(&replaced, &[0x66, 0x77]);
+        assert_padded_side_data(
+            duplicate_list.get(&PacketSideDataKind::Palette).unwrap(),
+            &[0x55],
+        );
+        assert_eq!(duplicate_list.entries()[2].data(), &[0x33]);
     }
 
     #[test]

@@ -17281,6 +17281,61 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         &[0x5a],
     );
 
+    let mut duplicate_add_owned_packet = Packet::default();
+    duplicate_add_owned_packet
+        .push_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x11]).unwrap());
+    duplicate_add_owned_packet.push_side_data(
+        SideData::new_with_kind(PacketSideDataKind::NewExtradata, vec![0x22]).unwrap(),
+    );
+    duplicate_add_owned_packet
+        .push_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x33]).unwrap());
+    duplicate_add_owned_packet
+        .new_side_data(PacketSideDataKind::Palette, 2)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0x66, 0x77]);
+    let mut duplicate_packet_replacement =
+        Some(padded_side_data(PacketSideDataKind::Palette, &[0x55]));
+    let replaced = duplicate_add_owned_packet
+        .try_add_side_data_owned(&mut duplicate_packet_replacement)
+        .unwrap()
+        .unwrap();
+    assert!(duplicate_packet_replacement.is_none());
+    assert_padded_side_data(&replaced, &[0x66, 0x77]);
+    assert_padded_side_data(
+        duplicate_add_owned_packet
+            .side_data_by_kind_id(&PacketSideDataKind::Palette)
+            .unwrap(),
+        &[0x55],
+    );
+    assert_eq!(duplicate_add_owned_packet.side_data()[2].data(), &[0x33]);
+
+    let mut duplicate_add_owned_list = PacketSideDataList::from_entries(vec![
+        SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x11]).unwrap(),
+        SideData::new_with_kind(PacketSideDataKind::NewExtradata, vec![0x22]).unwrap(),
+        SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x33]).unwrap(),
+    ]);
+    duplicate_add_owned_list
+        .new_side_data(PacketSideDataKind::Palette, 2)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0x66, 0x77]);
+    let mut duplicate_list_replacement =
+        Some(padded_side_data(PacketSideDataKind::Palette, &[0x55]));
+    let replaced = duplicate_add_owned_list
+        .try_add_side_data_with_flags(&mut duplicate_list_replacement, 0)
+        .unwrap()
+        .unwrap();
+    assert!(duplicate_list_replacement.is_none());
+    assert_padded_side_data(&replaced, &[0x66, 0x77]);
+    assert_padded_side_data(
+        duplicate_add_owned_list
+            .get(&PacketSideDataKind::Palette)
+            .unwrap(),
+        &[0x55],
+    );
+    assert_eq!(duplicate_add_owned_list.entries()[2].data(), &[0x33]);
+
     assert!(!packet.shrink_side_data("missing_side_data", 0).unwrap());
     packet.push_side_data(SideData::new("other_side_data", vec![0xaa]).unwrap());
     let taken = packet.take_side_data("fuzz_side_data").unwrap();

@@ -225,6 +225,14 @@ positive-size side-data adds under raw `AV_PKT_DATA_NB` and `-1` kinds, plus
 standalone `av_packet_side_data_add()` with nonzero flags, preserve
 caller-owned zeroed input padding after direct ownership transfer.
 
+The latest packet duplicate side-data add padding fixture adds
+`packet:side-add-duplicate-replace-padding` and
+`packet:array-add-duplicate-replace-padding` rows. These prove packet-owned
+`av_packet_add_side_data()` and standalone `av_packet_side_data_add()` preserve
+caller-owned positive side data with its zeroed `AV_INPUT_BUFFER_PADDING_SIZE`
+padding window when replacing the first matching entry in duplicate-kind
+side-data arrays.
+
 The latest packet capacity side-data add padding fixture adds
 `packet:side-add-capacity-replace-padding` and
 `packet:side-add-capacity-overflow-owned-padding` rows. These prove
