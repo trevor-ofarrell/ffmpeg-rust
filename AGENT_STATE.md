@@ -3,6 +3,52 @@
 ## Current Status
 
 Current authoritative turn status: main-thread WSL evidence slice strengthened
+`avutil-options` fuzz smoke coverage after rechecking the highest-priority
+packet blocker. Required startup checks passed from a clean tree at
+`master...origin/master [ahead 62]`: `CARGO_TARGET_DIR=target-orch-fate cargo
+run -p fate-runner -- status --next 15` reported 11/96 strict-complete
+components (11.5%), and `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask
+-- oracle-doctor` validated the pinned FFmpeg 8.1.1 oracle and ABI versions.
+The main thread inspected the `avutil-packet` shared refcounted
+`av_shrink_packet()` blocker and confirmed the existing ignored unit test
+`packet::tests::packet_shrink_shared_refcounted_matches_ffmpeg_tail_zeroing`
+still fails at the destination pointer-preservation assertion: current
+`BufferRef::resize_with_padding` detaches shared storage, while pinned FFmpeg
+preserves the shared `pkt->data` pointer and zeroes truncated tail bytes
+through storage visible to the source packet. That remains a broader
+`BufferRef` shared-storage/interior-mutability design blocker; no worker writes
+were delegated.
+
+Current main-thread slice: a warmed WSL `avutil_metadata_options` sanitizer
+smoke ran 4096 inputs with `CARGO_TARGET_DIR=target-wsl-fuzz` and
+`ASAN_OPTIONS=detect_leaks=0` against a temporary copy of the five tracked seed
+files at `/tmp/ffmpegrust-avutil-options-fuzz.mHqsw5`. libFuzzer reached
+`DONE`, reported final corpus `377/13052b`, and found no crash. The scratch
+directory was about 1.6 MiB and was removed after the run, while the repository
+corpus stayed at the five tracked seed files. This strengthens the current
+AVOption deterministic invariants for definitions, parsing, typed get/set,
+ranges, recursive child search, dictionary-backed application,
+set-from-string, serialization, copy, and nullable string/binary/dictionary
+fixtures. `avutil-options` remains `fate_pass`, not complete; strict
+completion remains 11/96 because full AVOption API parity, broader recursive
+child-object semantics, expression/SI/raw-pointer edges, broader parser
+coverage, CLI option ordering, zero-known-limitation review, and sustained
+fuzz campaign evidence remain pending.
+
+Latest validation command for this options fuzz evidence passed:
+`CARGO_TARGET_DIR=target-wsl-fuzz ASAN_OPTIONS=detect_leaks=0 cargo fuzz run
+avutil_metadata_options /tmp/ffmpegrust-avutil-options-fuzz.mHqsw5 -- -runs=4096`.
+The scratch corpus was removed with `rm -rf
+/tmp/ffmpegrust-avutil-options-fuzz.mHqsw5`.
+Final documentation/ledger guards also passed:
+`CARGO_TARGET_DIR=target-orch-fate cargo test -p fate-runner current_ledger`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- guard-runtime`;
+`cargo fmt --all -- --check`; `git diff --check` with CRLF conversion
+warnings only; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner --
+status --next 15`; and `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask
+-- oracle-doctor`.
+
+Current authoritative turn status: main-thread WSL evidence slice strengthened
 `avutil-frame` fuzz smoke coverage. Required startup checks passed from a clean
 tree at `master...origin/master [ahead 61]`:
 `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next

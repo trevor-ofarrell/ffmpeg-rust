@@ -108,6 +108,13 @@ avutil_metadata_options -- -runs=64` smoke passed locally after correcting the
 fixture to the oracle-proven recursive order. The generated corpus entries and
 assertion-only crash artifact from the initial calibration runs were removed.
 
+A later warmed WSL `avutil_metadata_options` smoke ran 4096 inputs with
+`CARGO_TARGET_DIR=target-wsl-fuzz` and `ASAN_OPTIONS=detect_leaks=0` against a
+temporary copy of the five tracked seed files. It reached `DONE`, libFuzzer
+reported final corpus `377/13052b`, found no crash, and the tracked corpus
+stayed at five files after the scratch corpus was removed. This strengthens
+current AVOption smoke evidence, but it is still not a sustained fuzz campaign.
+
 The latest `avutil_core_models` saved-crash replay covers pixel-format storage
 lane padding for RGB X/zero-byte formats. The ignored artifact
 `fuzz/artifacts/avutil_core_models/crash-a41196e9ee31e7c3d4e23857a5a7805c4136ab98`

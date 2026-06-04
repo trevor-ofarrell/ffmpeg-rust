@@ -9,6 +9,13 @@
 
 ## Compatible Today
 
+- Latest main-thread options fuzz evidence: a warmed WSL
+  `avutil_metadata_options` 4096-run sanitizer smoke completed against a
+  temporary copy of the tracked seed corpus without a crash. libFuzzer
+  reported final corpus `377/13052b`, the scratch corpus was removed, and the
+  repository corpus stayed at five seed files. This strengthens current
+  AVOption deterministic invariants for `avutil-options`; strict completion
+  remains 11/96 and the row remains `fate_pass`.
 - Latest main-thread frame fuzz evidence: a warmed WSL `avutil_core_models`
   4096-run sanitizer smoke completed against a temporary copy of the tracked
   seed corpus without a crash. libFuzzer reported final corpus `346/23Kb`, the
@@ -23,7 +30,7 @@
   files. This strengthens current packet deterministic invariants for
   `avutil-packet`; strict completion remains 11/96 and the row remains
   `fate_pass`.
-- Latest main-thread options evidence: pinned libavutil rows now prove
+- Recent main-thread options evidence: pinned libavutil rows now prove
   recursive `AV_OPT_SEARCH_CHILDREN` behavior for nested AVClass children.
   A nested leaf option wins over the direct child and root for duplicate
   `threads` lookup, and a grandchild-only option is found only with child

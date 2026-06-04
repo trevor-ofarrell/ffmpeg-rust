@@ -2,6 +2,19 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest main-thread options fuzz evidence: a warmed WSL
+# `avutil_metadata_options` sanitizer smoke ran 4096 inputs with leak detection
+# disabled against a temporary copy of the five tracked seed files. libFuzzer
+# reported final corpus `377/13052b`, reached `DONE`, and found no crash; the
+# scratch corpus was removed and the tracked corpus stayed unchanged. This
+# strengthens current AVOption deterministic invariants only; no status was
+# promoted.
+# Latest main-thread packet blocker check: the ignored
+# packet::tests::packet_shrink_shared_refcounted_matches_ffmpeg_tail_zeroing
+# test still fails at the destination pointer-preservation assertion. Current
+# BufferRef shared resize detaches, while the pinned FFmpeg av_shrink_packet()
+# edge preserves shared storage and zeroes truncated tail bytes visible through
+# the source packet. avutil-packet remains fate_pass, not complete.
 # Latest main-thread packet fuzz evidence: a warmed WSL `avutil_core_models`
 # sanitizer smoke ran 4096 inputs with leak detection disabled against a
 # temporary copy of the four tracked seed files. libFuzzer reported final
@@ -3904,6 +3917,18 @@ fate_tests = [
   "options_oracle::upstream_fate_opt_passes",
 ]
 fuzz_targets = ["avutil_metadata_options"]
+# Latest options fuzz execution: a warmed WSL avutil_metadata_options
+# sanitizer smoke ran 4096 inputs against a temporary copy of the five tracked
+# seed files with CARGO_TARGET_DIR=target-wsl-fuzz and
+# ASAN_OPTIONS=detect_leaks=0. libFuzzer reached DONE, reported final corpus
+# 377/13052b, found no crash, and the scratch corpus was removed while the
+# tracked corpus stayed at five seeds. This strengthens AVOption definition,
+# parsing, typed get/set, range, recursive child-search, dictionary-backed
+# application, set-from-string, serialization, copy, and nullable value
+# deterministic invariants, but avutil-options remains fate_pass, not
+# complete, pending full API parity, broader recursive child-object semantics,
+# expression/SI/raw-pointer edges, broader parser coverage, CLI option
+# ordering, zero-known-limitation review, and sustained fuzz closure.
 # Latest orchestrated update: pinned libavutil recursive child rows now prove
 # AV_OPT_SEARCH_CHILDREN searches a child object's own children before that
 # direct child and before root fallback. The bounded rows cover
