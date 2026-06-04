@@ -233,6 +233,14 @@ caller-owned positive side data with its zeroed `AV_INPUT_BUFFER_PADDING_SIZE`
 padding window when replacing the first matching entry in duplicate-kind
 side-data arrays.
 
+The latest packet side-data shrink hidden-tail padding fixture adds
+`packet:side-shrink-duplicate-padding`. This proves
+`av_packet_shrink_side_data()` preserves truncated caller-owned side-data bytes
+in the hidden input-padding window when shrinking the first matching
+duplicate-kind packet-owned entry to zero. The deterministic
+`avutil_core_models` fixture mirrors the same hidden-tail padding shape through
+`SideData::shrink()`.
+
 The latest packet capacity side-data add padding fixture adds
 `packet:side-add-capacity-replace-padding` and
 `packet:side-add-capacity-overflow-owned-padding` rows. These prove

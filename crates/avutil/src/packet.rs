@@ -5177,7 +5177,6 @@ impl SideData {
             self.data.truncate(len);
         } else {
             self.data.resize(len + padding, 0);
-            self.data[len..].fill(0);
         }
         self.visible_len = len;
         Ok(())
@@ -11592,7 +11591,10 @@ mod tests {
             1 + AV_INPUT_BUFFER_PADDING_SIZE
         );
         assert_eq!(entry.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
-        assert!(entry.padding_slice().iter().all(|byte| *byte == 0));
+        assert_eq!(&entry.padding_slice()[..2], &[0xbb, 0xcc]);
+        assert!(entry.padding_slice()[2..AV_INPUT_BUFFER_PADDING_SIZE]
+            .iter()
+            .all(|byte| *byte == 0));
 
         let mut list = PacketSideDataList::new();
         let entry = list
@@ -12144,6 +12146,21 @@ mod tests {
                 .side_data_by_kind_id(&PacketSideDataKind::Palette)
                 .unwrap(),
             &[0x55],
+        );
+        assert_eq!(duplicate_packet.side_data()[2].data(), &[0x33]);
+        duplicate_packet
+            .shrink_side_data_by_kind_id(&PacketSideDataKind::Palette, 0)
+            .unwrap();
+        let shrunk_duplicate = duplicate_packet
+            .side_data_by_kind_id(&PacketSideDataKind::Palette)
+            .unwrap();
+        assert_eq!(shrunk_duplicate.data(), &[]);
+        assert_eq!(shrunk_duplicate.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+        assert_eq!(shrunk_duplicate.padding_slice()[0], 0x55);
+        assert!(
+            shrunk_duplicate.padding_slice()[1..AV_INPUT_BUFFER_PADDING_SIZE]
+                .iter()
+                .all(|byte| *byte == 0)
         );
         assert_eq!(duplicate_packet.side_data()[2].data(), &[0x33]);
 

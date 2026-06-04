@@ -246,7 +246,11 @@ first-match replacement, packet-owned raw side-data kinds such as
 by the current duplicate and raw/flagged add-padding rows. At the packet-owned
 capacity limit, `try_add_side_data_owned` checks capacity before taking
 ownership, so same-kind replacement still consumes padded caller storage while
-new-kind ERANGE failure leaves the caller-owned padded entry intact.
+new-kind ERANGE failure leaves the caller-owned padded entry intact. Packet-owned
+side-data shrink preserves truncated visible bytes in the hidden padding area
+while retaining the padding allocation shape, matching the current
+`packet:side-shrink-duplicate-padding` row for shrinking the first duplicate
+caller-owned entry to zero.
 
 `PacketFlags` stores raw `AVPacket.flags` bits instead of truncating to the
 known public mask. Known-bit helpers still drive ergonomic checks for

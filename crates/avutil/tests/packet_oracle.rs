@@ -5164,6 +5164,12 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         side_data_summary_fields(&duplicate_packet),
     );
     rows.insert(
+        "packet:side-shrink-duplicate-padding".to_string(),
+        side_data_padding_fields(
+            duplicate_packet.side_data_by_kind_id(&PacketSideDataKind::Palette),
+        ),
+    );
+    rows.insert(
         "packet:side-get-duplicate-palette-shrunk".to_string(),
         side_data_lookup_fields(
             duplicate_packet.side_data_by_kind_id(&PacketSideDataKind::Palette),
@@ -9181,6 +9187,8 @@ static void exercise_side_data_api(void) {
     printf("packet:side-shrink-duplicate-ret|%d\n", ret);
     fail_if(ret < 0, "av_packet_shrink_side_data duplicate shrink failed");
     print_side_data_summary("packet:side-shrink-duplicate", pkt);
+    print_packet_side_data_padding("packet:side-shrink-duplicate-padding",
+                                   pkt, AV_PKT_DATA_PALETTE);
     print_side_data_lookup("packet:side-get-duplicate-palette-shrunk", pkt,
                            AV_PKT_DATA_PALETTE);
     av_packet_free_side_data(pkt);

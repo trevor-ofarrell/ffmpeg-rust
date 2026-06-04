@@ -14000,8 +14000,12 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .side_data_by_kind_id(&typed_side_data_kind)
         .unwrap();
     assert_eq!(shrunk_side_data.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
-    assert!(shrunk_side_data
-        .padding_slice()
+    let hidden_tail = &new_side_data_replacement[strict_shrink_len..];
+    assert_eq!(
+        &shrunk_side_data.padding_slice()[..hidden_tail.len()],
+        hidden_tail
+    );
+    assert!(shrunk_side_data.padding_slice()[hidden_tail.len()..AV_INPUT_BUFFER_PADDING_SIZE]
         .iter()
         .all(|byte| *byte == 0));
 
@@ -17308,6 +17312,22 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             .unwrap(),
         &[0x55],
     );
+    assert_eq!(duplicate_add_owned_packet.side_data()[2].data(), &[0x33]);
+    duplicate_add_owned_packet
+        .shrink_side_data_by_kind_id(&PacketSideDataKind::Palette, 0)
+        .unwrap();
+    let shrunk_duplicate = duplicate_add_owned_packet
+        .side_data_by_kind_id(&PacketSideDataKind::Palette)
+        .unwrap();
+    assert_eq!(shrunk_duplicate.data(), &[]);
+    assert_eq!(
+        shrunk_duplicate.padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert_eq!(shrunk_duplicate.padding_slice()[0], 0x55);
+    assert!(shrunk_duplicate.padding_slice()[1..AV_INPUT_BUFFER_PADDING_SIZE]
+        .iter()
+        .all(|byte| *byte == 0));
     assert_eq!(duplicate_add_owned_packet.side_data()[2].data(), &[0x33]);
 
     let mut duplicate_add_owned_list = PacketSideDataList::from_entries(vec![
