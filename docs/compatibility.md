@@ -9,6 +9,15 @@
 
 ## Compatible Today
 
+- Latest main-thread packet standalone raw `INT_MIN` new-side-data padding
+  evidence: pinned libavcodec row
+  `packet:array-new-raw-min-type-padding` now proves raw `INT_MIN` standalone
+  `av_packet_side_data_new()` allocations get zeroed input padding. Rust
+  mirrors this through `PacketSideDataList::new_side_data` while preserving the
+  raw minimum kind and padded allocation shape, with focused unit, ignored
+  oracle, mapped differential/FATE, upstream `fate-avpacket`, clippy, and WSL
+  `avutil_core_models` sanitizer smoke coverage. `avutil-packet` remains
+  `fate_pass`; strict completion remains 11/96.
 - Latest main-thread packet standalone raw negative add padding evidence:
   pinned libavcodec row `packet:array-add-raw-negative-type-padding` now proves
   raw `-1` standalone `av_packet_side_data_add()` preserves caller-owned

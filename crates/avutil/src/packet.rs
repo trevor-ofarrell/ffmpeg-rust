@@ -12752,6 +12752,13 @@ mod tests {
             .copy_from_slice(&[0xe0]);
         assert_eq!(list.entries().len(), 2);
         assert_eq!(list.get(&raw_min_kind).unwrap().data(), &[0xe0]);
+        let raw_min_side = list.get(&raw_min_kind).unwrap();
+        assert_eq!(raw_min_side.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+        assert!(raw_min_side
+            .padding_slice()
+            .iter()
+            .take(AV_INPUT_BUFFER_PADDING_SIZE)
+            .all(|byte| *byte == 0));
 
         let removed = list.remove_kind(&raw_min_kind).unwrap();
         assert_eq!(removed.data(), &[0xe0]);

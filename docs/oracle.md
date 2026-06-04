@@ -249,11 +249,13 @@ The latest packet raw side-data allocation/no-mutation padding fixture adds
 `packet:side-new-raw-type-padding`,
 `packet:side-new-raw-negative-type-padding`,
 `packet:side-new-raw-min-type-padding`, and
-`packet:side-shrink-raw-min-oversize-padding` rows. These prove raw
+`packet:array-new-raw-min-type-padding` rows, plus
+`packet:side-shrink-raw-min-oversize-padding`. These prove raw
 `AV_PKT_DATA_NB + 1`, `-1`, and `INT_MIN` packet-owned
-`av_packet_new_side_data()` allocations include zeroed input padding, and an
-oversize shrink failure for the raw `INT_MIN` entry leaves both visible payload
-and padding unchanged.
+`av_packet_new_side_data()` allocations include zeroed input padding, raw
+`INT_MIN` standalone `av_packet_side_data_new()` allocation includes the same
+zeroed padding, and an oversize shrink failure for the raw `INT_MIN` entry
+leaves both visible payload and padding unchanged.
 
 The latest packet capacity side-data add padding fixture adds
 `packet:side-add-capacity-replace-padding` and
@@ -1157,7 +1159,7 @@ The harness also includes `packet:dict-pack-multikey`, `packet:dict-unpack-multi
 
 The harness also includes `packet:side-add-capacity-*`, `packet:side-add-capacity-overflow-owned`, and `packet:side-new-capacity-overflow` rows, proving packet-owned side-data capacity behavior at `AV_PKT_DATA_NB`: replacement remains valid at capacity, append fails with `ERANGE` without changing the entry count, failed `av_packet_add_side_data()` append preserves the caller-owned data pointer for the caller to free, and `av_packet_new_side_data()` returns NULL at capacity. The packet-owned raw lookup rows prove `av_packet_get_side_data()` finds raw inserted side-data kinds at `AV_PKT_DATA_NB`, `AV_PKT_DATA_NB + 1`, `-1`, and `INT_MIN` after the corresponding `av_packet_add_side_data()` or `av_packet_new_side_data()` calls.
 
-The harness also includes `packet:array-add-capacity-*` and `packet:array-new-capacity-overflow` rows, proving the standalone `AVPacketSideData` array helpers do not apply the same packet-owned `AV_PKT_DATA_NB` ceiling: `av_packet_side_data_add()` accepts an out-of-range raw type and grows the array from 41 to 42 entries, and `av_packet_side_data_new()` for that same raw type replaces the entry while keeping the count at 42. The newest standalone raw-type rows add `packet:array-add-raw-negative-type-*`, `packet:array-add-raw-negative-type-padding`, `packet:array-new-raw-negative-type-padding`, and `packet:array-new/get/remove-raw-min-type`, proving the same standalone array API accepts negative raw values `-1` and `INT_MIN`, lookup finds them, raw `-1` add/new-side-data paths preserve or allocate zeroed input padding, and removing the `INT_MIN` entry preserves the `-1` entry.
+The harness also includes `packet:array-add-capacity-*` and `packet:array-new-capacity-overflow` rows, proving the standalone `AVPacketSideData` array helpers do not apply the same packet-owned `AV_PKT_DATA_NB` ceiling: `av_packet_side_data_add()` accepts an out-of-range raw type and grows the array from 41 to 42 entries, and `av_packet_side_data_new()` for that same raw type replaces the entry while keeping the count at 42. The newest standalone raw-type rows add `packet:array-add-raw-negative-type-*`, `packet:array-add-raw-negative-type-padding`, `packet:array-new-raw-negative-type-padding`, `packet:array-new-raw-min-type-padding`, and `packet:array-new/get/remove-raw-min-type`, proving the same standalone array API accepts negative raw values `-1` and `INT_MIN`, lookup finds them, raw `-1` add/new-side-data and raw `INT_MIN` new-side-data paths preserve or allocate zeroed input padding, and removing the `INT_MIN` entry preserves the `-1` entry.
 
 The harness also includes `packet:array-new-flags-nonzero-*` and `packet:array-add-flags-nonzero-*` rows, proving pinned FFmpeg 8.1.1 currently ignores nonzero flags for standalone `av_packet_side_data_new()` and `av_packet_side_data_add()`. The `new` row initializes the returned bytes before comparison because positive-size FFmpeg allocation contents are not stable before caller writes, and the `add` row proves first-match replacement plus caller-buffer ownership transfer.
 

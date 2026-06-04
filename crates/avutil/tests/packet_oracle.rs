@@ -6041,6 +6041,10 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:array-get-raw-min-type".to_string(),
         side_data_lookup_fields(raw_list.get(&raw_min_kind)),
     );
+    rows.insert(
+        "packet:array-new-raw-min-type-padding".to_string(),
+        side_data_padding_fields(raw_list.get(&raw_min_kind)),
+    );
     let removed = raw_list
         .remove_kind(&raw_min_kind)
         .expect("raw INT_MIN array side data should be removable");
@@ -9808,6 +9812,9 @@ static void exercise_side_data_array_api(void) {
     print_side_data_array_lookup("packet:array-get-raw-min-type",
                                  sd, nb_sd,
                                  (enum AVPacketSideDataType)INT_MIN);
+    print_side_data_array_padding("packet:array-new-raw-min-type-padding",
+                                  sd, nb_sd,
+                                  (enum AVPacketSideDataType)INT_MIN);
     av_packet_side_data_remove(sd, &nb_sd,
                                (enum AVPacketSideDataType)INT_MIN);
     print_side_data_array_summary("packet:array-remove-raw-min-type",

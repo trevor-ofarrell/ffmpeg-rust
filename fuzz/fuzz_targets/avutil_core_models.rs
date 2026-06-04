@@ -14656,6 +14656,16 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         raw_array_list.get(&raw_min_array_kind).unwrap().data(),
         &[0xe0]
     );
+    let raw_min_array_side = raw_array_list.get(&raw_min_array_kind).unwrap();
+    assert_eq!(
+        raw_min_array_side.padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(raw_min_array_side
+        .padding_slice()
+        .iter()
+        .take(AV_INPUT_BUFFER_PADDING_SIZE)
+        .all(|byte| *byte == 0));
     let removed_raw_min = raw_array_list.remove_kind(&raw_min_array_kind).unwrap();
     assert_eq!(removed_raw_min.data(), &[0xe0]);
     assert!(raw_array_list.get(&raw_min_array_kind).is_none());
