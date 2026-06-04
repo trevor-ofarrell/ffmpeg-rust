@@ -246,9 +246,10 @@ caller-owned `SideData` directly, so caller-provided padded storage remains
 padded after first-match replacement or append, matching the current
 `packet:*add-*-padding` oracle rows. The same transfer covers duplicate-kind
 first-match replacement, packet-owned raw side-data kinds such as
-`AV_PKT_DATA_NB`, `-1`, and `INT_MIN`, standalone raw `-1`/`INT_MIN` append,
-and standalone nonzero-flag replacement, as pinned by the current duplicate and
-raw/flagged add-padding rows. At the packet-owned capacity limit,
+`AV_PKT_DATA_NB`, `-1`, and `INT_MIN`, standalone raw `AV_PKT_DATA_NB`, `-1`,
+and `INT_MIN` append, and standalone nonzero-flag replacement, as pinned by
+the current duplicate and raw/flagged add-padding rows. At the packet-owned
+capacity limit,
 `try_add_side_data_owned` checks capacity before taking
 ownership, so same-kind replacement still consumes padded caller storage while
 new-kind ERANGE failure leaves the caller-owned padded entry intact. Packet-owned
@@ -808,7 +809,7 @@ input-padding window intact and the source side-data list reset.
 
 The packet oracle now includes `packet:side-add-capacity-*`, `packet:side-add-capacity-overflow-owned`, and `packet:side-new-capacity-overflow` rows proving the packet-owned side-data capacity edge: FFmpeg permits replacing an existing side-data kind after the packet has `AV_PKT_DATA_NB` entries, rejects appending another entry with `ERANGE` without changing the count, preserves the caller-owned buffer for failed `av_packet_add_side_data()` append attempts, and returns NULL from `av_packet_new_side_data()` at that capacity. It also includes packet-owned raw lookup rows proving `av_packet_get_side_data()` finds raw values inserted at `AV_PKT_DATA_NB`, `AV_PKT_DATA_NB + 1`, `-1`, and `INT_MIN`. The Rust `Packet::try_add_side_data`, `Packet::try_add_side_data_owned`, `Packet::new_side_data`, and `side_data_by_kind_id` model the same bounded surface with typed errors and explicit ownership transfer.
 
-The standalone packet side-data array rows intentionally diverge from the packet-owned capacity rule: pinned FFmpeg 8.1.1 accepts `av_packet_side_data_add()` with an out-of-range raw type after the array already has `AV_PKT_DATA_NB` entries, growing the count to 42, and a later `av_packet_side_data_new()` for that same raw type replaces rather than appends. Newer rows also prove the standalone helpers accept negative raw types: `av_packet_side_data_add()` can append type `-1`, `av_packet_side_data_new()` can append type `INT_MIN`, lookup finds both, and removal of the `INT_MIN` entry preserves the `-1` entry. `PacketSideDataList` models that standalone behavior separately from `Packet`.
+The standalone packet side-data array rows intentionally diverge from the packet-owned capacity rule: pinned FFmpeg 8.1.1 accepts `av_packet_side_data_add()` with an out-of-range raw type after the array already has `AV_PKT_DATA_NB` entries, growing the count to 42, and a later `av_packet_side_data_new()` for that same raw type replaces rather than appends. Newer rows also prove standalone `av_packet_side_data_add()` preserves caller-owned padding for raw `AV_PKT_DATA_NB`, accepts negative raw types such as `-1` and `INT_MIN`, lookup finds those raw entries, and removal of the `INT_MIN` entry preserves the `-1` entry. `PacketSideDataList` models that standalone behavior separately from `Packet`.
 
 The standalone packet side-data array flag rows prove another compatibility edge: pinned FFmpeg 8.1.1 ignores nonzero flags for both `av_packet_side_data_new()` and `av_packet_side_data_add()`. The Rust `PacketSideDataList::new_side_data_with_flags` and `try_add_side_data_with_flags` APIs therefore accept those flags while preserving allocation, first-match replacement, and caller-ownership transfer semantics.
 

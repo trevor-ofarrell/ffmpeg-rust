@@ -12190,6 +12190,14 @@ mod tests {
         assert!(list_appended.is_none());
         assert_padded_side_data(list.get(&PacketSideDataKind::Palette).unwrap(), &[0x99]);
 
+        let mut raw_list_add = Some(padded_side_data(raw_kind.clone(), &[0x7e]));
+        assert!(list
+            .try_add_side_data_with_flags(&mut raw_list_add, 0)
+            .unwrap()
+            .is_none());
+        assert!(raw_list_add.is_none());
+        assert_padded_side_data(list.get(&raw_kind).unwrap(), &[0x7e]);
+
         let mut raw_negative_list_add = Some(padded_side_data(raw_negative_kind.clone(), &[0xf1]));
         assert!(list
             .try_add_side_data_with_flags(&mut raw_negative_list_add, 0)

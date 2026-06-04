@@ -9,6 +9,15 @@
 
 ## Compatible Today
 
+- Latest main-thread packet standalone raw side-data add padding evidence:
+  pinned libavcodec row `packet:array-add-raw-type-padding` now proves raw
+  `AV_PKT_DATA_NB` standalone `av_packet_side_data_add()` preserves
+  caller-owned positive side data with `AV_INPUT_BUFFER_PADDING_SIZE` zero
+  padding after direct ownership transfer. Rust mirrors this through
+  `PacketSideDataList::try_add_side_data_with_flags`, with focused unit,
+  ignored oracle, mapped differential/FATE, upstream `fate-avpacket`, clippy,
+  and WSL `avutil_core_models` sanitizer smoke coverage. `avutil-packet`
+  remains `fate_pass`; strict completion remains 11/96.
 - Latest main-thread packet raw `INT_MIN` side-data shrink hidden-tail padding
   evidence: pinned libavcodec row
   `packet:side-shrink-raw-min-type-padding` now proves
@@ -130,10 +139,11 @@
   11/96.
 - Latest main-thread packet raw/flagged side-data add padding evidence: pinned
   libavcodec rows now prove packet-owned positive-size side-data adds under raw
-  `AV_PKT_DATA_NB` and `-1` kinds, plus standalone
-  `av_packet_side_data_add()` with nonzero flags, preserve caller-owned
-  positive side data with `AV_INPUT_BUFFER_PADDING_SIZE` zero padding. Rust
-  mirrors this through direct `SideData` ownership transfer in
+  `AV_PKT_DATA_NB`, `-1`, and `INT_MIN` kinds, plus standalone raw
+  `AV_PKT_DATA_NB`, `-1`, and `INT_MIN` append and
+  `av_packet_side_data_add()` with nonzero flags, preserve caller-owned positive
+  side data with `AV_INPUT_BUFFER_PADDING_SIZE` zero padding. Rust mirrors this
+  through direct `SideData` ownership transfer in
   `try_add_side_data_owned` and
   `PacketSideDataList::try_add_side_data_with_flags`, with focused unit,
   ignored oracle, mapped differential/FATE, upstream `fate-avpacket`, clippy,

@@ -6018,6 +6018,30 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         side_data_lookup_fields(list.get(&PacketSideDataKind::NewExtradata)),
     );
 
+    let mut raw_type_list = PacketSideDataList::new();
+    let raw_type_kind =
+        PacketSideDataKind::from_ffmpeg_raw_value(PacketSideDataKind::KNOWN.len() as i32);
+    let raw_type_added = raw_type_list
+        .try_add_side_data(padded_side_data(raw_type_kind.clone(), &[0x7e]))
+        .unwrap();
+    assert!(raw_type_added.is_none());
+    rows.insert(
+        "packet:array-add-raw-type-ret".to_string(),
+        vec!["1".to_string()],
+    );
+    rows.insert(
+        "packet:array-add-raw-type".to_string(),
+        side_data_list_summary_fields(&raw_type_list),
+    );
+    rows.insert(
+        "packet:array-get-raw-type-added".to_string(),
+        side_data_lookup_fields(raw_type_list.get(&raw_type_kind)),
+    );
+    rows.insert(
+        "packet:array-add-raw-type-padding".to_string(),
+        side_data_padding_fields(raw_type_list.get(&raw_type_kind)),
+    );
+
     let mut raw_list = PacketSideDataList::new();
     let raw_negative_kind = PacketSideDataKind::from_ffmpeg_raw_value(-1);
     let raw_negative_added = raw_list
@@ -9842,6 +9866,26 @@ static void exercise_side_data_array_api(void) {
                                   sd, nb_sd);
     print_side_data_array_lookup("packet:array-get-null-nonzero-replace",
                                  sd, nb_sd, AV_PKT_DATA_NEW_EXTRADATA);
+    av_packet_side_data_free(&sd, &nb_sd);
+
+    owned = av_mallocz(1 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!owned, "av_mallocz array raw type failed");
+    owned[0] = 0x7e;
+    entry = av_packet_side_data_add(&sd, &nb_sd,
+                                    (enum AVPacketSideDataType)AV_PKT_DATA_NB,
+                                    owned, 1, 0);
+    printf("packet:array-add-raw-type-ret|%d\n", entry != NULL);
+    if (!entry)
+        av_free(owned);
+    fail_if(!entry, "av_packet_side_data_add raw type failed");
+    print_side_data_array_summary("packet:array-add-raw-type",
+                                  sd, nb_sd);
+    print_side_data_array_lookup("packet:array-get-raw-type-added",
+                                 sd, nb_sd,
+                                 (enum AVPacketSideDataType)AV_PKT_DATA_NB);
+    print_side_data_array_padding("packet:array-add-raw-type-padding",
+                                  sd, nb_sd,
+                                  (enum AVPacketSideDataType)AV_PKT_DATA_NB);
     av_packet_side_data_free(&sd, &nb_sd);
 
     owned = av_mallocz(1 + AV_INPUT_BUFFER_PADDING_SIZE);
