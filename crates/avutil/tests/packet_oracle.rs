@@ -2690,6 +2690,22 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         packet_fields(&from_data_invalid),
     );
 
+    let mut from_data_custom_padding = Packet::default();
+    let mut from_data_custom_padding_storage = vec![0x5a; 2 + AV_INPUT_BUFFER_PADDING_SIZE];
+    from_data_custom_padding_storage[0] = 0x10;
+    from_data_custom_padding_storage[1] = 0x20;
+    from_data_custom_padding
+        .replace_data_from_vec_with_len(from_data_custom_padding_storage, 2)
+        .unwrap();
+    rows.insert(
+        "packet:payload-from-data-custom-padding-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-from-data-custom-padding".to_string(),
+        payload_fields(&from_data_custom_padding),
+    );
+
     let raw_ref_src = Packet::new(vec![0xaa, 0xbb], 0);
     let mut raw_ref_dst = Packet::default();
     raw_ref_dst.ref_from(&raw_ref_src);
@@ -9476,6 +9492,20 @@ static void exercise_payload_api(void) {
                               INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE);
     printf("packet:payload-from-data-invalid-ret|%d\n", ret);
     print_packet("packet:payload-from-data-invalid-preserve", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    uint8_t *custom_padding_owned =
+        av_malloc(2 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!custom_padding_owned,
+            "av_malloc payload from-data custom padding failed");
+    memset(custom_padding_owned, 0x5a, 2 + AV_INPUT_BUFFER_PADDING_SIZE);
+    custom_padding_owned[0] = 0x10;
+    custom_padding_owned[1] = 0x20;
+    ret = av_packet_from_data(pkt, custom_padding_owned, 2);
+    printf("packet:payload-from-data-custom-padding-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_from_data custom padding payload failed");
+    print_payload("packet:payload-from-data-custom-padding", pkt);
     av_packet_free(&pkt);
 
     pkt = new_packet();

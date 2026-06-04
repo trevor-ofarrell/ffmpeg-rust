@@ -323,6 +323,21 @@ impl BufferRef {
         }
     }
 
+    pub fn from_vec_with_len(data: Vec<u8>, len: usize) -> AvResult<Self> {
+        if len > data.len() {
+            return Err(AvError::invalid_argument(format!(
+                "visible buffer length {len} exceeds {} allocated bytes",
+                data.len()
+            )));
+        }
+        Ok(Self {
+            data: Arc::new(BufferStorage::new(data)),
+            offset: 0,
+            len,
+            data_ptr_null: false,
+        })
+    }
+
     pub fn from_vec_readonly(data: Vec<u8>) -> Self {
         let len = data.len();
         Self {

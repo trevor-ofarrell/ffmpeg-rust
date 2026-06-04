@@ -10757,6 +10757,23 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         preserved_packet.opaque_ref().unwrap().as_slice(),
         &[0xde, 0xad, 0xbe]
     );
+
+    let mut custom_from_data = Packet::default();
+    let mut signed_visible_storage = vec![0x31, 0x32, 0x5a, 0x5a];
+    signed_visible_storage.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0);
+    custom_from_data
+        .replace_data_from_vec_with_len(signed_visible_storage, 2)
+        .unwrap();
+    assert_eq!(custom_from_data.data(), &[0x31, 0x32]);
+    assert_eq!(
+        custom_from_data.data_buffer().allocated_len(),
+        2 + AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert_eq!(
+        &custom_from_data.data_buffer().padding_slice()[..2],
+        &[0x5a, 0x5a]
+    );
+
     let mut preserved_ref = Packet::default();
     preserved_ref.ref_from(&preserved_packet);
     assert!(preserved_ref

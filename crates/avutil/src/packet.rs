@@ -5425,9 +5425,16 @@ impl Packet {
     }
 
     pub fn replace_data_from_vec(&mut self, data: Vec<u8>) -> AvResult<()> {
-        validate_packet_payload_size(data.len())?;
-        let mut buffer = BufferRef::from_vec(data);
-        buffer.resize_with_padding(buffer.len(), AV_INPUT_BUFFER_PADDING_SIZE)?;
+        let len = data.len();
+        self.replace_data_from_vec_with_len(data, len)
+    }
+
+    pub fn replace_data_from_vec_with_len(&mut self, data: Vec<u8>, len: usize) -> AvResult<()> {
+        validate_packet_payload_size(len)?;
+        let mut buffer = BufferRef::from_vec_with_len(data, len)?;
+        if buffer.padding_len() < AV_INPUT_BUFFER_PADDING_SIZE {
+            buffer.resize_with_padding(buffer.len(), AV_INPUT_BUFFER_PADDING_SIZE)?;
+        }
         self.data = buffer;
         self.data_ownership = PacketPayloadOwnership::RefCountedBuffer;
         self.data_ptr_null = false;
@@ -13418,6 +13425,23 @@ mod tests {
         assert_eq!(referenced.pts(), Some(90_000));
         assert_eq!(referenced.duration(), 180_000);
         assert!(referenced.flags().contains(PacketFlags::KEY));
+
+        let mut padded = Packet::default();
+        let mut padded_storage = vec![0x10, 0x20, 0x5a, 0x5a];
+        padded_storage.resize(2 + AV_INPUT_BUFFER_PADDING_SIZE, 0);
+        padded
+            .replace_data_from_vec_with_len(padded_storage, 2)
+            .unwrap();
+        assert_eq!(padded.data(), &[0x10, 0x20]);
+        assert_eq!(
+            padded.data_buffer().allocated_len(),
+            2 + AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert_eq!(
+            padded.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert_eq!(&padded.data_buffer().padding_slice()[..2], &[0x5a, 0x5a]);
     }
 
     #[test]

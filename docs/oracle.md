@@ -845,6 +845,12 @@ ENOMEM return without mutating an empty packet.
 
 The harness also includes `packet:payload-from-data-invalid-*` rows. These prove `av_packet_from_data()` returns `AVERROR(EINVAL)` before mutation when `size >= INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE`; the Rust packet constructors and replacement helper use `Packet::validate_payload_len` to reject the same boundary before allocation.
 
+The harness also includes `packet:payload-from-data-custom-padding*` rows.
+These prove `av_packet_from_data()` preserves caller-provided input-padding
+bytes, including nonzero padding, when adopting positive-size payload storage.
+The Rust model mirrors that visible-size/allocation split through
+`Packet::replace_data_from_vec_with_len` and `BufferRef::from_vec_with_len`.
+
 The harness also includes `packet:payload-from-data-ref-*`, `packet:payload-from-data-clone*`, and `packet:payload-from-data-make-writable-*` rows. These prove `av_packet_from_data()` installs refcounted payload ownership: `av_packet_ref()` and `av_packet_clone()` share the adopted data pointer and report non-writable shared buffers, while `av_packet_make_writable()` detaches the destination before caller mutation and leaves the source payload unchanged.
 
 The harness also includes direct `av_init_packet()` rows. `Packet::init_legacy()` matches the deterministic reset shape by preserving payload data/size while clearing `AVPacket.buf`/refcounted ownership, resetting unknown timestamps and position, zero duration, stream index 0, empty flags, cleared side data, cleared opaque metadata, cleared `opaque_ref`, and `time_base` `0/1`. A follow-on `av_packet_make_refcounted()` row proves FFmpeg copies that preserved raw payload into fresh padded storage with a different data pointer; `Packet::make_refcounted()` now mirrors that post-init helper shape. The safe Rust model releases owned metadata when clearing it; it does not model C leak behavior caused by calling `av_init_packet()` on an already-owned packet.
