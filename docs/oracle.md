@@ -225,6 +225,13 @@ positive-size side-data adds under raw `AV_PKT_DATA_NB` and `-1` kinds, plus
 standalone `av_packet_side_data_add()` with nonzero flags, preserve
 caller-owned zeroed input padding after direct ownership transfer.
 
+The latest packet capacity side-data add padding fixture adds
+`packet:side-add-capacity-replace-padding` and
+`packet:side-add-capacity-overflow-owned-padding` rows. These prove
+packet-owned `av_packet_add_side_data()` at the `AV_PKT_DATA_NB` entry limit
+preserves the padded caller allocation when same-kind replacement succeeds and
+when a new-kind append fails with ERANGE before ownership transfer.
+
 A later warmed WSL `avutil_core_models` smoke ran 4096 inputs with
 `CARGO_TARGET_DIR=target-wsl-fuzz` and `ASAN_OPTIONS=detect_leaks=0` against a
 temporary copy of the four tracked seed files. It reached `DONE`, libFuzzer

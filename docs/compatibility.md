@@ -9,6 +9,16 @@
 
 ## Compatible Today
 
+- Latest main-thread packet capacity side-data add padding evidence: pinned
+  libavcodec rows now prove packet-owned `av_packet_add_side_data()` at the
+  `AV_PKT_DATA_NB` capacity limit preserves caller-owned padding when a
+  same-kind replacement succeeds, and leaves the padded caller allocation
+  intact when a new-kind append fails with ERANGE. Rust mirrors this by
+  checking capacity before taking ownership in `try_add_side_data_owned`, with
+  focused unit, ignored oracle, mapped differential/FATE, upstream
+  `fate-avpacket`, clippy, and WSL `avutil_core_models` sanitizer smoke
+  coverage. `avutil-packet` remains `fate_pass`; strict completion remains
+  11/96.
 - Latest main-thread packet raw/flagged side-data add padding evidence: pinned
   libavcodec rows now prove packet-owned positive-size side-data adds under raw
   `AV_PKT_DATA_NB` and `-1` kinds, plus standalone

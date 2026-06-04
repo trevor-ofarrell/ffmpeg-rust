@@ -5483,9 +5483,7 @@ fn insert_side_data_capacity_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     );
 
     packet
-        .try_add_side_data(
-            SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xaa]).unwrap(),
-        )
+        .try_add_side_data(padded_side_data(PacketSideDataKind::Palette, &[0xaa]))
         .unwrap();
     rows.insert(
         "packet:side-add-capacity-replace-ret".to_string(),
@@ -5499,9 +5497,13 @@ fn insert_side_data_capacity_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:side-add-capacity-replace-palette".to_string(),
         side_data_lookup_fields(packet.side_data_by_kind_id(&PacketSideDataKind::Palette)),
     );
+    rows.insert(
+        "packet:side-add-capacity-replace-padding".to_string(),
+        side_data_padding_fields(packet.side_data_by_kind_id(&PacketSideDataKind::Palette)),
+    );
 
-    let mut extra_owned =
-        Some(SideData::new("vendor.private.extra_packet_data", vec![0xee]).unwrap());
+    let extra_kind = PacketSideDataKind::Unknown("vendor.private.extra_packet_data".to_string());
+    let mut extra_owned = Some(padded_side_data(extra_kind, &[0xee]));
     let err = packet
         .try_add_side_data_owned(&mut extra_owned)
         .unwrap_err();
@@ -5520,6 +5522,10 @@ fn insert_side_data_capacity_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:side-add-capacity-overflow-owned".to_string(),
         side_data_lookup_fields(extra_owned.as_ref()),
+    );
+    rows.insert(
+        "packet:side-add-capacity-overflow-owned-padding".to_string(),
+        side_data_padding_fields(extra_owned.as_ref()),
     );
 
     let new_side_data_ok = packet
@@ -7616,6 +7622,19 @@ static void print_owned_side_data_byte(const char *name, const uint8_t *data) {
     printf("\n");
 }
 
+static void print_owned_side_data_padding(const char *name, const uint8_t *data,
+                                          size_t size) {
+    if (!data) {
+        printf("%s|0|0|-|0|-\n", name);
+        return;
+    }
+    printf("%s|1|%zu|", name, size);
+    print_hex_or_dash(data, (int)size);
+    printf("|%d|", AV_INPUT_BUFFER_PADDING_SIZE);
+    print_hex_or_dash(data + size, AV_INPUT_BUFFER_PADDING_SIZE);
+    printf("\n");
+}
+
 static AVPacketSideData make_stack_side_data(enum AVPacketSideDataType type,
                                              uint8_t value) {
     AVPacketSideData sd = { 0 };
@@ -9345,6 +9364,8 @@ static void exercise_side_data_capacity_api(void) {
            pkt->side_data_elems);
     print_side_data_lookup("packet:side-add-capacity-replace-palette", pkt,
                            AV_PKT_DATA_PALETTE);
+    print_packet_side_data_padding("packet:side-add-capacity-replace-padding",
+                                   pkt, AV_PKT_DATA_PALETTE);
 
     uint8_t *extra = alloc_owned_side_data_byte(0xee);
     ret = av_packet_add_side_data(pkt, (enum AVPacketSideDataType)AV_PKT_DATA_NB,
@@ -9352,6 +9373,8 @@ static void exercise_side_data_capacity_api(void) {
     printf("packet:side-add-capacity-overflow-ret|%d\n", ret);
     print_owned_side_data_byte("packet:side-add-capacity-overflow-owned",
                                ret < 0 ? extra : NULL);
+    print_owned_side_data_padding("packet:side-add-capacity-overflow-owned-padding",
+                                  ret < 0 ? extra : NULL, 1);
     if (ret < 0)
         av_free(extra);
     printf("packet:side-add-capacity-overflow-count|%d\n",

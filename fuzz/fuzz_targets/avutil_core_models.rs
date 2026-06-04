@@ -14452,8 +14452,17 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         capacity_packet.side_data().len(),
         PacketSideDataKind::MAX_FFMPEG_PACKET_SIDE_DATA_ELEMS
     );
-    let mut replacement =
-        Some(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xaa]).unwrap());
+    let mut replacement = Some({
+        let mut owner = Packet::default();
+        owner
+            .new_side_data(PacketSideDataKind::Palette, 1)
+            .unwrap()
+            .data_mut()
+            .copy_from_slice(&[0xaa]);
+        owner
+            .take_side_data_kind(&PacketSideDataKind::Palette)
+            .unwrap()
+    });
     let replaced = capacity_packet
         .try_add_side_data_owned(&mut replacement)
         .unwrap()
@@ -14467,8 +14476,23 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             .data(),
         &[0xaa]
     );
-    let mut extra_owned =
-        Some(SideData::new("vendor.private.extra_packet_data", vec![0xee]).unwrap());
+    assert_eq!(
+        capacity_packet
+            .side_data_by_kind_id(&PacketSideDataKind::Palette)
+            .unwrap()
+            .padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    let mut extra_owned = Some({
+        let mut owner = Packet::default();
+        let kind = PacketSideDataKind::Unknown("vendor.private.extra_packet_data".to_string());
+        owner
+            .new_side_data(kind.clone(), 1)
+            .unwrap()
+            .data_mut()
+            .copy_from_slice(&[0xee]);
+        owner.take_side_data_kind(&kind).unwrap()
+    });
     let capacity_err = capacity_packet
         .try_add_side_data_owned(&mut extra_owned)
         .unwrap_err();
@@ -14477,6 +14501,12 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     let extra_owned = extra_owned.as_ref().unwrap();
     assert_eq!(extra_owned.kind(), "vendor.private.extra_packet_data");
     assert_eq!(extra_owned.data(), &[0xee]);
+    assert_eq!(extra_owned.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+    assert!(extra_owned
+        .padding_slice()
+        .iter()
+        .take(AV_INPUT_BUFFER_PADDING_SIZE)
+        .all(|byte| *byte == 0));
     assert_eq!(
         capacity_packet.side_data().len(),
         PacketSideDataKind::MAX_FFMPEG_PACKET_SIDE_DATA_ELEMS

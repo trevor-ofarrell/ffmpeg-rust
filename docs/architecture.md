@@ -242,7 +242,10 @@ caller-owned `SideData` directly, so caller-provided padded storage remains
 padded after first-match replacement or append, matching the current
 `packet:*add-*-padding` oracle rows. The same transfer covers packet-owned raw
 side-data kinds such as `AV_PKT_DATA_NB` and `-1`, and standalone nonzero-flag
-replacement, as pinned by the current raw/flagged add-padding rows.
+replacement, as pinned by the current raw/flagged add-padding rows. At the
+packet-owned capacity limit, `try_add_side_data_owned` checks capacity before
+taking ownership, so same-kind replacement still consumes padded caller storage
+while new-kind ERANGE failure leaves the caller-owned padded entry intact.
 
 `PacketFlags` stores raw `AVPacket.flags` bits instead of truncating to the
 known public mask. Known-bit helpers still drive ergonomic checks for
