@@ -14621,6 +14621,25 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         )
         .unwrap()
         .is_none());
+    let mut raw_negative_new_array_list = PacketSideDataList::new();
+    raw_negative_new_array_list
+        .new_side_data(raw_negative_array_kind.clone(), 2)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0xd1, 0xd2]);
+    let raw_negative_new_array_side = raw_negative_new_array_list
+        .get(&raw_negative_array_kind)
+        .unwrap();
+    assert_eq!(raw_negative_new_array_side.data(), &[0xd1, 0xd2]);
+    assert_eq!(
+        raw_negative_new_array_side.padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(raw_negative_new_array_side
+        .padding_slice()
+        .iter()
+        .take(AV_INPUT_BUFFER_PADDING_SIZE)
+        .all(|byte| *byte == 0));
     raw_array_list
         .new_side_data(raw_min_array_kind.clone(), 1)
         .unwrap()

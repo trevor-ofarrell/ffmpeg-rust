@@ -2,6 +2,14 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest main-thread packet standalone raw negative new-side-data padding slice:
+# pinned libavcodec row `packet:array-new-raw-negative-type-padding` now
+# proves raw `-1` standalone `av_packet_side_data_new()` allocations get
+# zeroed input padding. Rust `PacketSideDataList::new_side_data` already
+# preserves the raw negative kind and padded allocation shape; focused unit,
+# ignored oracle row, mapped differential/FATE, upstream fate-avpacket, clippy,
+# and `avutil_core_models` sanitizer smoke cover the bounded shape.
+# avutil-packet remains fate_pass, not complete.
 # Latest main-thread packet raw negative new-side-data padding slice:
 # pinned libavcodec row `packet:side-new-raw-negative-type-padding` now proves
 # raw `-1` packet-owned `av_packet_new_side_data()` allocations get zeroed
@@ -1606,7 +1614,8 @@ fuzz_targets = ["avutil_core_models"]
 # matching `Packet::side_data_by_kind_id` lookups.
 # Latest standalone AVPacketSideData raw-type update: pinned libavcodec rows
 # now prove standalone `av_packet_side_data_add()` accepts raw type `-1`,
-# `av_packet_side_data_new()` accepts raw type `INT_MIN`, lookup finds both,
+# `av_packet_side_data_new()` accepts raw types `-1` and `INT_MIN`, lookup
+# finds both, raw `-1` new-side-data allocation includes zeroed input padding,
 # and remove can delete the `INT_MIN` entry while preserving the `-1` entry.
 # Rust `PacketSideDataList` unit, oracle, and `avutil_core_models`
 # deterministic fuzz fixtures cover the bounded behavior.
