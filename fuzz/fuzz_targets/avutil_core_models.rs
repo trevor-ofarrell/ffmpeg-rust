@@ -11132,6 +11132,38 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .all(|byte| *byte == 0));
     assert!(null_zero_packet.is_data_writable());
 
+    let null_nonzero_packet = Packet::from_null_data_with_len(3).unwrap();
+    assert_eq!(null_nonzero_packet.len(), 3);
+    assert_eq!(null_nonzero_packet.data(), &[0, 0, 0]);
+    assert!(null_nonzero_packet.is_data_ptr_null());
+    assert!(null_nonzero_packet.is_data_buffer_ptr_null());
+    assert!(null_nonzero_packet.has_refcounted_data_buffer());
+    assert_eq!(
+        null_nonzero_packet.data_buffer().allocated_len(),
+        3 + AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert_eq!(
+        null_nonzero_packet.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(null_nonzero_packet
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    assert!(null_nonzero_packet.is_data_writable());
+
+    let mut null_nonzero_ref = Packet::default();
+    null_nonzero_ref.ref_from(&null_nonzero_packet);
+    assert_eq!(null_nonzero_ref.len(), 3);
+    assert!(null_nonzero_ref.is_data_ptr_null());
+    assert!(null_nonzero_ref.is_data_buffer_ptr_null());
+    assert!(null_nonzero_ref
+        .data_buffer()
+        .shares_storage(null_nonzero_packet.data_buffer()));
+    assert!(!null_nonzero_packet.is_data_writable());
+    assert!(!null_nonzero_ref.is_data_writable());
+
     let mut null_zero_unique_writable = Packet::from_null_data_zero().unwrap();
     let null_zero_unique_writable_ptr = null_zero_unique_writable
         .data_buffer()

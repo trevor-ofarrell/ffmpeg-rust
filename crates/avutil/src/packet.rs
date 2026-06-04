@@ -5414,6 +5414,16 @@ impl Packet {
         Ok(packet)
     }
 
+    pub fn from_null_data_with_len(size: usize) -> AvResult<Self> {
+        validate_packet_payload_size(size)?;
+        let mut packet = Self::with_buffer(
+            BufferRef::from_null_data_with_len_and_padding(size, AV_INPUT_BUFFER_PADDING_SIZE)?,
+            0,
+        );
+        packet.data_ptr_null = true;
+        Ok(packet)
+    }
+
     pub fn replace_data_from_vec(&mut self, data: Vec<u8>) -> AvResult<()> {
         validate_packet_payload_size(data.len())?;
         let mut buffer = BufferRef::from_vec(data);
@@ -13493,6 +13503,86 @@ mod tests {
             .iter()
             .all(|byte| *byte == 0));
         assert!(packet.is_data_writable());
+    }
+
+    #[test]
+    fn packet_from_null_data_nonzero_preserves_nullable_refcounted_shape() {
+        let mut src = Packet::from_null_data_with_len(3).unwrap();
+        assert_eq!(src.len(), 3);
+        assert_eq!(src.data(), &[0, 0, 0]);
+        assert!(src.is_data_ptr_null());
+        assert!(src.is_data_buffer_ptr_null());
+        assert!(src.has_refcounted_data_buffer());
+        assert!(src.data_buffer().as_ptr().is_null());
+        assert!(src.data_buffer().as_padded_ptr().is_null());
+        assert_eq!(
+            src.data_buffer().allocated_len(),
+            3 + AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert_eq!(
+            src.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(src
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+        assert!(src.is_data_writable());
+
+        src.make_refcounted().unwrap();
+        assert!(src.is_data_ptr_null());
+        assert!(src.is_data_buffer_ptr_null());
+        assert!(src.is_data_writable());
+
+        let mut unique_writable = Packet::from_null_data_with_len(3).unwrap();
+        let unique_ptr = unique_writable.data_buffer().as_padded_ptr();
+        unique_writable.make_writable().unwrap();
+        assert_eq!(unique_writable.len(), 3);
+        assert_eq!(unique_writable.data(), &[0, 0, 0]);
+        assert!(unique_writable.is_data_ptr_null());
+        assert!(unique_writable.is_data_buffer_ptr_null());
+        assert_eq!(unique_writable.data_buffer().as_padded_ptr(), unique_ptr);
+        assert!(unique_writable.is_data_writable());
+
+        let mut referenced = Packet::default();
+        referenced.ref_from(&src);
+        assert_eq!(referenced.len(), 3);
+        assert!(src.is_data_ptr_null());
+        assert!(referenced.is_data_ptr_null());
+        assert!(referenced.is_data_buffer_ptr_null());
+        assert!(referenced.data_buffer().shares_storage(src.data_buffer()));
+        assert_eq!(referenced.data(), &[0, 0, 0]);
+        assert!(!src.is_data_writable());
+        assert!(!referenced.is_data_writable());
+
+        let cloned = src.clone();
+        assert!(cloned.is_data_ptr_null());
+        assert!(cloned.is_data_buffer_ptr_null());
+        assert!(cloned.data_buffer().shares_storage(src.data_buffer()));
+        assert_eq!(cloned.data(), &[0, 0, 0]);
+        assert!(!cloned.is_data_writable());
+
+        let mut move_src = Packet::from_null_data_with_len(3).unwrap();
+        let mut move_dst = Packet::default();
+        move_dst.move_ref_from(&mut move_src);
+        assert_eq!(move_dst.len(), 3);
+        assert!(move_dst.is_data_ptr_null());
+        assert!(move_dst.is_data_buffer_ptr_null());
+        assert_eq!(
+            move_dst.data_buffer().allocated_len(),
+            3 + AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(move_dst.is_data_writable());
+        assert!(move_src.is_empty());
+        assert!(!move_src.is_data_ptr_null());
+        assert!(!move_src.has_refcounted_data_buffer());
+
+        let mut unref = Packet::from_null_data_with_len(3).unwrap();
+        unref.unref();
+        assert!(unref.is_empty());
+        assert!(!unref.is_data_ptr_null());
+        assert!(!unref.has_refcounted_data_buffer());
     }
 
     #[test]

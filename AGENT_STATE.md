@@ -2,6 +2,57 @@
 
 ## Current Status
 
+Current authoritative turn status: main-thread WSL parity slice advanced
+`avutil-packet` nullable positive-size `av_packet_from_data()` evidence.
+Required startup checks passed from a clean tree at `master...origin/master
+[ahead 70]`: `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner --
+status --next 15` reported 11/96 strict-complete components (11.5%), and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validated the pinned FFmpeg 8.1.1 oracle and ABI versions.
+
+Current main-thread slice: `Packet::from_null_data_with_len` now models the
+bounded `av_packet_from_data(pkt, NULL, 3)` shape using a padding-aware
+nullable `BufferRef`. The public packet and buffer data pointers stay NULL,
+the refcounted buffer has `size + AV_INPUT_BUFFER_PADDING_SIZE` backing
+storage for safe Rust byte access and invariant checks, and ref/clone,
+make-refcounted, unique make-writable, move-ref, and unref preserve the pinned
+nullable lifecycle without exercising upstream paths that would copy from or
+grow a NULL data pointer. The ignored libavcodec packet oracle now emits
+`packet:payload-from-data-null-nonzero*` rows for that bounded lifecycle, and
+`avutil_core_models` covers the deterministic invariant.
+
+Validation passed for this slice with `cargo fmt --all`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --lib
+packet_from_null_data_nonzero_preserves_nullable_refcounted_shape --
+--nocapture`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
+packet_oracle libavcodec_packet_core_lifecycle_matches_packet_model --
+--ignored --nocapture`; `cargo fmt --all -- --check`;
+`CARGO_TARGET_DIR=target-orch-fate cargo test -p fate-runner current_ledger --
+--nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner --
+run --component avutil-packet`; `CARGO_TARGET_DIR=target-orch-fate cargo run
+-p fate-runner -- run --mappings tests/differential/mappings.txt --component
+avutil-packet --target oracle-libavcodec-packet-core`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil --all-targets
+--all-features -- -D warnings`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy
+--manifest-path fuzz/Cargo.toml --all-targets -- -D warnings`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run --mappings
+tests/fate/upstream-mappings.txt --component avutil-packet --target
+fate-avpacket` after rerunning outside the sandbox to allow the pinned FFmpeg
+cache result write; `CARGO_TARGET_DIR=target-wsl-fuzz
+ASAN_OPTIONS=detect_leaks=0 cargo fuzz run avutil_core_models -- -runs=1`,
+which rebuilt the sanitizer binary, loaded the four tracked seeds, reached
+`DONE` after 5 runs, and found no crash; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p xtask -- guard-runtime`; `git diff --check` with CRLF conversion
+warnings only; final `CARGO_TARGET_DIR=target-orch-fate cargo run -p
+fate-runner -- status --next 15`; and final `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p xtask -- oracle-doctor`. The first sandboxed upstream
+`fate-avpacket` attempt failed only because FFmpeg could not create
+`/home/trevo/.cache/ffmpegrust/.../tests/data/fate/avpacket` inside the
+read-only sandbox; the elevated rerun passed. `avutil-packet` remains
+`fate_pass`, not complete; strict completion remains 11/96 because the shared
+`av_shrink_packet()` alias tail-zeroing blocker and broader media integration
+closure remain pending.
+
 Current authoritative turn status: main-thread WSL parity slice promoted the
 `avutil-buffer` null/nonzero public data-pointer shape from blocker evidence
 into the safe Rust model and mapped libavutil oracle row. Required startup

@@ -78,15 +78,17 @@ The empty zero-grow row covers the default no-buffer packet boundary:
 writable refcounted storage with zero visible bytes and zeroed input padding.
 `Packet::grow_data(0)` mirrors that behavior for `Packet::default()`.
 
-`Packet::from_null_data_zero` models the bounded nullable
-`av_packet_from_data(pkt, NULL, 0)` C shape. The safe Rust packet keeps
-zero-length padded storage for invariants while carrying a logical-null data
-pointer flag. Ref/clone, make-refcounted, and unique make-writable preserve that
-flag for refcounted nullable packets; make-writable on a shared nullable packet
-detaches to ordinary writable padded storage and clears the flag. The pinned
-source path for `av_grow_packet()` would dereference NULL on this exact
-nullable-zero state, so that upstream edge is documented rather than wired into
-the crashing oracle harness.
+`Packet::from_null_data_zero` and `Packet::from_null_data_with_len` model the
+bounded nullable `av_packet_from_data(pkt, NULL, size)` C shape for zero and
+positive sizes. The safe Rust packet keeps padded zeroed backing bytes for
+invariants while carrying a logical-null data pointer flag, so public pointer
+queries preserve the NULL shape without exposing a dereferenceable pointer.
+Ref/clone, make-refcounted, unique make-writable, move-ref, and unref preserve
+the bounded nullable lifecycle. Make-writable on a shared nullable zero-size
+packet detaches to ordinary writable padded storage and clears the flag. The
+pinned source path for grow or shared-copy operations would dereference NULL on
+nullable payload storage, so those upstream edges are documented rather than
+wired into the crashing oracle harness.
 
 `Packet::alloc_new_packet_payload_i32` and `Packet::grow_data_i32` expose the current FFmpeg-C-shaped signed `int` payload-size boundary. Negative `av_new_packet` sizes return EINVAL without mutation, while negative `av_grow_packet` requests hit FFmpeg's unsigned grow guard and return ENOMEM without mutating packet fields or payload for both nonempty and empty packets.
 

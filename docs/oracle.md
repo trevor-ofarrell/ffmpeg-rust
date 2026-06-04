@@ -909,6 +909,15 @@ shape through `Packet::from_null_data_zero`. Source inspection shows the pinned
 `av_grow_packet()` path would dereference NULL for this exact nullable-zero
 state, so the harness does not add a crashing grow row.
 
+The harness also includes `packet:payload-from-data-null-nonzero*` rows,
+proving `av_packet_from_data(pkt, NULL, 3)` creates a nullable positive-size
+refcounted payload with `pkt->data == NULL`, `pkt->buf != NULL`,
+`pkt->buf->data == NULL`, a `3 + AV_INPUT_BUFFER_PADDING_SIZE` backing size,
+and writable storage. Ref/clone, make-refcounted, unique make-writable,
+move-ref, and unref preserve the bounded pointer and lifecycle shape. The Rust
+model exposes this safe subset through `Packet::from_null_data_with_len` while
+avoiding upstream helper paths that would copy from or grow a NULL data pointer.
+
 The harness also includes already-refcounted payload no-op rows for `packet:payload-make-writable-unique*`, `packet:payload-make-refcounted-unique*`, and `packet:payload-make-refcounted-shared*`. These prove unique refcounted packets keep their visible data pointer and writable padded storage, while shared refcounted packets keep shared storage and remain non-writable after `av_packet_make_refcounted()`.
 
 The harness also includes `packet:payload-make-refcounted-readonly-*` and `packet:payload-make-writable-readonly-*` rows. These prove an existing read-only `AVBufferRef` is considered refcounted and left attached/non-writable by `av_packet_make_refcounted()`, then detached to writable padded storage by `av_packet_make_writable()`.

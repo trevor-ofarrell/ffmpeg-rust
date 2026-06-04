@@ -2400,6 +2400,92 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_nullable_fields(&null_zero_data),
     );
 
+    let null_nonzero_data = Packet::from_null_data_with_len(3).unwrap();
+    rows.insert(
+        "packet:payload-from-data-null-nonzero-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-from-data-null-nonzero".to_string(),
+        payload_nullable_fields(&null_nonzero_data),
+    );
+
+    let null_nonzero_ref_src = Packet::from_null_data_with_len(3).unwrap();
+    let mut null_nonzero_ref_dst = Packet::default();
+    null_nonzero_ref_dst.ref_from(&null_nonzero_ref_src);
+    rows.insert(
+        "packet:payload-from-data-null-nonzero-ref-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-from-data-null-nonzero-ref-src".to_string(),
+        payload_nullable_fields(&null_nonzero_ref_src),
+    );
+    rows.insert(
+        "packet:payload-from-data-null-nonzero-ref-dst".to_string(),
+        payload_nullable_fields(&null_nonzero_ref_dst),
+    );
+
+    let null_nonzero_clone_src = Packet::from_null_data_with_len(3).unwrap();
+    let null_nonzero_cloned = null_nonzero_clone_src.clone();
+    rows.insert(
+        "packet:payload-from-data-null-nonzero-clone-src".to_string(),
+        payload_nullable_fields(&null_nonzero_clone_src),
+    );
+    rows.insert(
+        "packet:payload-from-data-null-nonzero-clone".to_string(),
+        payload_nullable_fields(&null_nonzero_cloned),
+    );
+
+    let mut null_nonzero_refcounted = Packet::from_null_data_with_len(3).unwrap();
+    null_nonzero_refcounted.make_refcounted().unwrap();
+    rows.insert(
+        "packet:payload-from-data-null-nonzero-make-refcounted-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-from-data-null-nonzero-make-refcounted".to_string(),
+        payload_nullable_fields(&null_nonzero_refcounted),
+    );
+
+    let mut null_nonzero_unique_writable = Packet::from_null_data_with_len(3).unwrap();
+    null_nonzero_unique_writable.make_writable().unwrap();
+    rows.insert(
+        "packet:payload-from-data-null-nonzero-unique-make-writable-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-from-data-null-nonzero-unique-make-writable".to_string(),
+        payload_nullable_fields(&null_nonzero_unique_writable),
+    );
+
+    let mut null_nonzero_move_src = Packet::from_null_data_with_len(3).unwrap();
+    let mut null_nonzero_move_dst = Packet::default();
+    null_nonzero_move_dst.move_ref_from(&mut null_nonzero_move_src);
+    rows.insert(
+        "packet:payload-from-data-null-nonzero-move-dst".to_string(),
+        payload_nullable_fields(&null_nonzero_move_dst),
+    );
+    rows.insert(
+        "packet:payload-from-data-null-nonzero-move-src".to_string(),
+        packet_fields(&null_nonzero_move_src),
+    );
+    rows.insert(
+        "packet:payload-from-data-null-nonzero-move-src-payload".to_string(),
+        payload_visible_fields(&null_nonzero_move_src),
+    );
+
+    let mut null_nonzero_unref = Packet::from_null_data_with_len(3).unwrap();
+    null_nonzero_unref.unref();
+    rows.insert(
+        "packet:payload-from-data-null-nonzero-unref".to_string(),
+        packet_fields(&null_nonzero_unref),
+    );
+    rows.insert(
+        "packet:payload-from-data-null-nonzero-unref-payload".to_string(),
+        payload_visible_fields(&null_nonzero_unref),
+    );
+
     let null_zero_ref_src = Packet::from_null_data_zero().unwrap();
     let mut null_zero_ref_dst = Packet::default();
     null_zero_ref_dst.ref_from(&null_zero_ref_src);
@@ -9135,6 +9221,85 @@ static void exercise_payload_api(void) {
     printf("packet:payload-from-data-null-zero-ret|%d\n", ret);
     fail_if(ret < 0, "av_packet_from_data NULL zero-size payload failed");
     print_payload_nullable("packet:payload-from-data-null-zero", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    ret = av_packet_from_data(pkt, NULL, 3);
+    printf("packet:payload-from-data-null-nonzero-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_from_data NULL nonzero payload failed");
+    print_payload_nullable("packet:payload-from-data-null-nonzero", pkt);
+    av_packet_free(&pkt);
+
+    AVPacket *null_nonzero_ref_src = new_packet();
+    ret = av_packet_from_data(null_nonzero_ref_src, NULL, 3);
+    fail_if(ret < 0, "av_packet_from_data NULL nonzero ref source failed");
+    AVPacket *null_nonzero_ref_dst = new_packet();
+    ret = av_packet_ref(null_nonzero_ref_dst, null_nonzero_ref_src);
+    printf("packet:payload-from-data-null-nonzero-ref-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_ref NULL nonzero payload failed");
+    print_payload_nullable("packet:payload-from-data-null-nonzero-ref-src",
+                           null_nonzero_ref_src);
+    print_payload_nullable("packet:payload-from-data-null-nonzero-ref-dst",
+                           null_nonzero_ref_dst);
+    av_packet_free(&null_nonzero_ref_dst);
+    av_packet_free(&null_nonzero_ref_src);
+
+    AVPacket *null_nonzero_clone_src = new_packet();
+    ret = av_packet_from_data(null_nonzero_clone_src, NULL, 3);
+    fail_if(ret < 0, "av_packet_from_data NULL nonzero clone source failed");
+    AVPacket *null_nonzero_cloned = av_packet_clone(null_nonzero_clone_src);
+    fail_if(!null_nonzero_cloned, "av_packet_clone NULL nonzero payload failed");
+    print_payload_nullable("packet:payload-from-data-null-nonzero-clone-src",
+                           null_nonzero_clone_src);
+    print_payload_nullable("packet:payload-from-data-null-nonzero-clone",
+                           null_nonzero_cloned);
+    av_packet_free(&null_nonzero_cloned);
+    av_packet_free(&null_nonzero_clone_src);
+
+    pkt = new_packet();
+    ret = av_packet_from_data(pkt, NULL, 3);
+    fail_if(ret < 0, "av_packet_from_data NULL nonzero make_refcounted failed");
+    ret = av_packet_make_refcounted(pkt);
+    printf("packet:payload-from-data-null-nonzero-make-refcounted-ret|%d\n",
+           ret);
+    fail_if(ret < 0, "av_packet_make_refcounted NULL nonzero payload failed");
+    print_payload_nullable("packet:payload-from-data-null-nonzero-make-refcounted",
+                           pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    ret = av_packet_from_data(pkt, NULL, 3);
+    fail_if(ret < 0, "av_packet_from_data NULL nonzero unique writable failed");
+    ret = av_packet_make_writable(pkt);
+    printf("packet:payload-from-data-null-nonzero-unique-make-writable-ret|%d\n",
+           ret);
+    fail_if(ret < 0, "av_packet_make_writable unique NULL nonzero payload failed");
+    print_payload_nullable(
+        "packet:payload-from-data-null-nonzero-unique-make-writable",
+        pkt);
+    av_packet_free(&pkt);
+
+    AVPacket *null_nonzero_move_src = new_packet();
+    ret = av_packet_from_data(null_nonzero_move_src, NULL, 3);
+    fail_if(ret < 0, "av_packet_from_data NULL nonzero move source failed");
+    AVPacket *null_nonzero_move_dst = new_packet();
+    av_packet_move_ref(null_nonzero_move_dst, null_nonzero_move_src);
+    print_payload_nullable("packet:payload-from-data-null-nonzero-move-dst",
+                           null_nonzero_move_dst);
+    print_packet("packet:payload-from-data-null-nonzero-move-src",
+                 null_nonzero_move_src);
+    print_payload_visible("packet:payload-from-data-null-nonzero-move-src-payload",
+                          null_nonzero_move_src);
+    av_packet_free(&null_nonzero_move_dst);
+    av_packet_free(&null_nonzero_move_src);
+
+    pkt = new_packet();
+    ret = av_packet_from_data(pkt, NULL, 3);
+    fail_if(ret < 0, "av_packet_from_data NULL nonzero unref failed");
+    av_packet_unref(pkt);
+    print_packet("packet:payload-from-data-null-nonzero-unref", pkt);
+    print_payload_visible("packet:payload-from-data-null-nonzero-unref-payload",
+                          pkt);
     av_packet_free(&pkt);
 
     AVPacket *null_zero_ref_src = new_packet();

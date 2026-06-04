@@ -597,6 +597,16 @@ impl BufferRef {
         })
     }
 
+    pub fn from_null_data_with_len_and_padding(len: usize, padding: usize) -> AvResult<Self> {
+        let data = allocate_zeroed_storage(len, padding)?;
+        Ok(Self {
+            data: Arc::new(BufferStorage::new(data)),
+            offset: 0,
+            len,
+            data_ptr_null: true,
+        })
+    }
+
     pub fn from_null_data_zero_with_opaque_release_callback<T, F>(opaque: T, on_release: F) -> Self
     where
         T: Any + Send + Sync + 'static,

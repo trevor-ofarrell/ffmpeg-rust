@@ -2,6 +2,16 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest main-thread packet nullable/nonzero from-data slice: pinned
+# libavcodec rows now prove `av_packet_from_data(pkt, NULL, 3)` creates a
+# nullable positive-size refcounted packet with `pkt->data == NULL`,
+# `pkt->buf != NULL`, `pkt->buf->data == NULL`, buffer size
+# `3 + AV_INPUT_BUFFER_PADDING_SIZE`, and writable storage. Ref/clone,
+# make-refcounted, unique make-writable, move-ref, and unref preserve the
+# bounded pointer/lifecycle shape without invoking the upstream paths that
+# would copy from or grow a NULL data pointer. Rust mirrors this with
+# `Packet::from_null_data_with_len` backed by a padding-aware nullable
+# `BufferRef`; avutil-packet remains fate_pass, not complete.
 # Latest main-thread packet shared-shrink diagnostic: a separate ignored
 # FFmpeg-only oracle test now pins `av_shrink_packet()` on one reference of a
 # shared refcounted packet. The row proves source size 4, destination size 2,
@@ -529,6 +539,16 @@ default_profile = "ffmpeg-8.1.1-default-native"
 # nullable data-pointer flag. Source inspection shows `av_grow_packet()` on this
 # exact nullable-zero state would dereference the NULL `pkt->data`, so the oracle
 # harness deliberately avoids adding a crashing grow row for that upstream edge.
+# Latest avutil-packet evidence: `packet:payload-from-data-null-nonzero*` rows
+# now prove pinned FFmpeg 8.1.1 accepts `av_packet_from_data(pkt, NULL, 3)` as a
+# nullable positive-size refcounted payload: `pkt->data == NULL`,
+# `pkt->buf != NULL`, `pkt->buf->data == NULL`, buffer size equals
+# `3 + AV_INPUT_BUFFER_PADDING_SIZE`, and the storage is writable. Ref/clone,
+# make-refcounted, unique make-writable, move-ref, and unref preserve the
+# bounded shape. Rust mirrors this with `Packet::from_null_data_with_len` and a
+# padding-aware nullable `BufferRef`. Shared make-writable/grow/shrink paths
+# that would copy from or grow NULL storage remain deliberately outside the
+# mapped row set.
 # Latest avutil-packet evidence: `packet:payload-from-data-replace-*` rows now
 # prove pinned FFmpeg 8.1.1 replacement-style `av_packet_from_data()` installs
 # refcounted payload ownership while preserving packet properties. Follow-on
@@ -900,6 +920,7 @@ unit_tests = [
   "packet::tests::packet_replace_data_from_vec_installs_refcounted_storage",
   "packet::tests::packet_from_null_data_zero_preserves_nullable_refcounted_shape",
   "packet::tests::packet_from_null_data_zero_unique_make_writable_preserves_nullable_shape",
+  "packet::tests::packet_from_null_data_nonzero_preserves_nullable_refcounted_shape",
   "packet::tests::packet_from_null_data_zero_moves_and_unrefs_to_default_payload_shape",
   "packet::tests::packet_alloc_new_packet_payload_resets_metadata_and_checks_size",
   "packet::tests::packet_alloc_new_packet_payload_zero_resets_metadata",
@@ -1135,6 +1156,12 @@ fuzz_targets = ["avutil_core_models"]
 # to ordinary writable padded zero-length storage. Focused unit coverage and
 # avutil_core_models invariants mirror the bounded behavior through
 # `Packet::from_null_data_zero`.
+# Latest update: pinned libavcodec AVPacket payload oracle coverage now proves
+# `av_packet_from_data(pkt, NULL, 3)` installs a nullable refcounted
+# positive-size payload. Ref/clone, make-refcounted, unique make-writable,
+# move-ref, and unref preserve the bounded nullable pointer shape without
+# copying from NULL storage. Focused unit coverage and avutil_core_models
+# invariants mirror the behavior through `Packet::from_null_data_with_len`.
 # Latest update: pinned libavcodec AVPacket payload oracle coverage now proves
 # `av_grow_packet(pkt, 0)` on a default empty packet succeeds by allocating
 # writable refcounted padded storage with zero visible bytes and zeroed input
