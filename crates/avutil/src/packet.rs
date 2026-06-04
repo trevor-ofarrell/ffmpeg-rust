@@ -5568,7 +5568,9 @@ impl Packet {
         }
 
         self.data
-            .resize_with_padding(size, AV_INPUT_BUFFER_PADDING_SIZE)
+            .resize_with_padding(size, AV_INPUT_BUFFER_PADDING_SIZE)?;
+        self.data_ptr_null = false;
+        Ok(())
     }
 
     /// FFmpeg-shaped `av_shrink_packet()` helper for shared refcounted payloads.
@@ -5580,7 +5582,9 @@ impl Packet {
     /// behavior only for owned refcounted payload storage, including
     /// callback-owned, default-free opaque-owner, pool-owned, and
     /// readonly-flagged owned buffers; NULL-data and non-owned shapes fall back
-    /// to the safe shrink path.
+    /// to the safe shrink path. Actual NULL-data shrink fallback materializes
+    /// ordinary padded storage instead of reproducing FFmpeg's NULL dereference
+    /// crash boundary.
     ///
     /// # Safety
     ///
@@ -13979,6 +13983,69 @@ mod tests {
         assert!(unref.is_empty());
         assert!(!unref.is_data_ptr_null());
         assert!(!unref.has_refcounted_data_buffer());
+    }
+
+    #[test]
+    fn packet_shrink_null_data_materializes_safe_storage() {
+        let src = Packet::from_null_data_with_len(4).unwrap();
+        let mut dst = Packet::default();
+        dst.ref_from(&src);
+
+        assert!(src.is_data_ptr_null());
+        assert!(dst.is_data_ptr_null());
+        assert!(dst.data_buffer().shares_storage(src.data_buffer()));
+        assert!(!src.is_data_writable());
+        assert!(!dst.is_data_writable());
+
+        // SAFETY: The helper must reject NULL-data aliasing mutation and fall
+        // back to the safe materializing shrink path without dereferencing a
+        // NULL packet data pointer.
+        unsafe {
+            dst.shrink_data_ffmpeg_aliasing(2).unwrap();
+        }
+
+        assert_eq!(dst.len(), 2);
+        assert_eq!(dst.data(), &[0, 0]);
+        assert!(!dst.is_data_ptr_null());
+        assert!(!dst.is_data_buffer_ptr_null());
+        assert!(!dst.data_buffer().as_padded_ptr().is_null());
+        assert_eq!(dst.data_buffer().offset(), 0);
+        assert_eq!(
+            dst.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(dst
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+        assert!(dst.is_data_writable());
+        assert!(!dst.data_buffer().shares_storage(src.data_buffer()));
+
+        assert_eq!(src.len(), 4);
+        assert_eq!(src.data(), &[0, 0, 0, 0]);
+        assert!(src.is_data_ptr_null());
+        assert!(src.is_data_buffer_ptr_null());
+        assert!(src.data_buffer().as_padded_ptr().is_null());
+        assert!(src.is_data_writable());
+
+        let mut unique = Packet::from_null_data_with_len(3).unwrap();
+        unique.shrink_data(1).unwrap();
+        assert_eq!(unique.len(), 1);
+        assert_eq!(unique.data(), &[0]);
+        assert!(!unique.is_data_ptr_null());
+        assert!(!unique.is_data_buffer_ptr_null());
+        assert!(!unique.data_buffer().as_padded_ptr().is_null());
+        assert_eq!(
+            unique.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(unique
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+        assert!(unique.is_data_writable());
     }
 
     #[test]

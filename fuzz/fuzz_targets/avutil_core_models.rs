@@ -11403,6 +11403,57 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert!(!null_nonzero_packet.is_data_writable());
     assert!(!null_nonzero_ref.is_data_writable());
 
+    let null_shrink_src = Packet::from_null_data_with_len(4).unwrap();
+    let mut null_shrink_dst = Packet::default();
+    null_shrink_dst.ref_from(&null_shrink_src);
+    // SAFETY: The deterministic fixture holds no packet payload slices across
+    // the call. The helper must reject NULL-data aliasing mutation and fall
+    // back to a safe materializing shrink.
+    unsafe {
+        null_shrink_dst.shrink_data_ffmpeg_aliasing(2).unwrap();
+    }
+    assert_eq!(null_shrink_dst.len(), 2);
+    assert_eq!(null_shrink_dst.data(), &[0, 0]);
+    assert!(!null_shrink_dst.is_data_ptr_null());
+    assert!(!null_shrink_dst.is_data_buffer_ptr_null());
+    assert!(!null_shrink_dst.data_buffer().as_padded_ptr().is_null());
+    assert!(!null_shrink_dst
+        .data_buffer()
+        .shares_storage(null_shrink_src.data_buffer()));
+    assert_eq!(
+        null_shrink_dst.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(null_shrink_dst
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    assert!(null_shrink_dst.is_data_writable());
+    assert_eq!(null_shrink_src.len(), 4);
+    assert!(null_shrink_src.is_data_ptr_null());
+    assert!(null_shrink_src.is_data_buffer_ptr_null());
+    assert!(null_shrink_src.data_buffer().as_padded_ptr().is_null());
+    assert!(null_shrink_src.is_data_writable());
+
+    let mut unique_null_shrink = Packet::from_null_data_with_len(3).unwrap();
+    unique_null_shrink.shrink_data(1).unwrap();
+    assert_eq!(unique_null_shrink.len(), 1);
+    assert_eq!(unique_null_shrink.data(), &[0]);
+    assert!(!unique_null_shrink.is_data_ptr_null());
+    assert!(!unique_null_shrink.is_data_buffer_ptr_null());
+    assert!(!unique_null_shrink.data_buffer().as_padded_ptr().is_null());
+    assert_eq!(
+        unique_null_shrink.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(unique_null_shrink
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    assert!(unique_null_shrink.is_data_writable());
+
     let mut null_zero_unique_writable = Packet::from_null_data_zero().unwrap();
     let null_zero_unique_writable_ptr = null_zero_unique_writable
         .data_buffer()

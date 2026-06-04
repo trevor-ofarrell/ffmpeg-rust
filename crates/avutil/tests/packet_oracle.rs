@@ -377,6 +377,72 @@ fn libavcodec_packet_shared_shrink_oracle_documents_aliasing() {
 }
 
 #[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 libavcodec/libavutil oracle under third_party/ffmpeg-oracle/wsl; intentionally runs a child process that exits unsuccessfully"]
+fn libavcodec_packet_null_shared_shrink_oracle_documents_crash_boundary() {
+    let repo_root = repo_root();
+    let oracle_root = oracle_root(&repo_root);
+    let include_dir = oracle_root.join("wsl/include");
+    let libavcodec = oracle_root.join("wsl/lib/libavcodec.a");
+    let libswresample = oracle_root.join("wsl/lib/libswresample.a");
+    let libavutil = oracle_root.join("wsl/lib/libavutil.a");
+
+    assert!(
+        include_dir.join("libavcodec/packet.h").is_file(),
+        "missing pinned FFmpeg libavcodec packet headers under `{}`",
+        include_dir.display()
+    );
+    assert!(
+        libavcodec.is_file(),
+        "missing pinned FFmpeg libavcodec static library `{}`",
+        libavcodec.display()
+    );
+    assert!(
+        libavutil.is_file(),
+        "missing pinned FFmpeg libavutil static library `{}`",
+        libavutil.display()
+    );
+    assert!(
+        libswresample.is_file(),
+        "missing pinned FFmpeg libswresample static library `{}`",
+        libswresample.display()
+    );
+
+    let target_dir = env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .map(|path| {
+            if path.is_absolute() {
+                path
+            } else {
+                repo_root.join(path)
+            }
+        })
+        .unwrap_or_else(|| repo_root.join("target"));
+    let work_dir = target_dir.join("oracle/avutil-packet");
+    fs::create_dir_all(&work_dir).expect("create avutil-packet oracle work dir");
+    let source = work_dir.join("packet_null_shared_shrink_crash_oracle.c");
+    let executable = work_dir.join("packet_null_shared_shrink_crash_oracle");
+    fs::write(&source, null_shared_shrink_crash_oracle_c_source())
+        .expect("write avutil-packet NULL shared-shrink crash oracle C source");
+
+    let stdout = compile_and_run_oracle_expecting_failure(
+        &include_dir,
+        &libavcodec,
+        &libswresample,
+        &libavutil,
+        &source,
+        &executable,
+    );
+    assert!(
+        stdout.contains("before-null-shrink"),
+        "NULL shrink oracle did not reach av_shrink_packet call; stdout:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("after-null-shrink"),
+        "NULL shrink oracle unexpectedly returned after av_shrink_packet; stdout:\n{stdout}"
+    );
+}
+
+#[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 source/build cache; set FFMPEG_FATE_BUILD_DIR or run scripts/bootstrap_ffmpeg_oracle_wsl.sh"]
 fn upstream_fate_avpacket_passes() {
     let output = if cfg!(windows) {
@@ -6725,6 +6791,116 @@ fn compile_and_run_oracle(
     );
 
     String::from_utf8(output.stdout).expect("oracle stdout should be UTF-8")
+}
+
+fn compile_and_run_oracle_expecting_failure(
+    include_dir: &Path,
+    libavcodec: &Path,
+    libswresample: &Path,
+    libavutil: &Path,
+    source: &Path,
+    executable: &Path,
+) -> String {
+    let compile_status = if cfg!(windows) {
+        let script = format!(
+            "gcc -I {} {} {} {} {} -lz -lm -pthread -ldl -o {}",
+            shell_quote(&to_wsl_path(include_dir)),
+            shell_quote(&to_wsl_path(source)),
+            shell_quote(&to_wsl_path(libavcodec)),
+            shell_quote(&to_wsl_path(libswresample)),
+            shell_quote(&to_wsl_path(libavutil)),
+            shell_quote(&to_wsl_path(executable))
+        );
+        Command::new("wsl")
+            .args(["-d", "Ubuntu", "--exec", "bash", "-lc", &script])
+            .output()
+            .expect("compile WSL libavcodec packet oracle")
+    } else {
+        Command::new("sh")
+            .arg("-c")
+            .arg(format!(
+                "gcc -I {} {} {} {} {} -lz -lm -pthread -ldl -o {}",
+                shell_quote(&include_dir.display().to_string()),
+                shell_quote(&source.display().to_string()),
+                shell_quote(&libavcodec.display().to_string()),
+                shell_quote(&libswresample.display().to_string()),
+                shell_quote(&libavutil.display().to_string()),
+                shell_quote(&executable.display().to_string())
+            ))
+            .output()
+            .expect("compile libavcodec packet oracle")
+    };
+
+    assert!(
+        compile_status.status.success(),
+        "libavcodec packet crash-boundary oracle compile failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        compile_status.status.code(),
+        String::from_utf8_lossy(&compile_status.stdout),
+        String::from_utf8_lossy(&compile_status.stderr)
+    );
+
+    let output = if cfg!(windows) {
+        let script = format!("ulimit -c 0 && {}", shell_quote(&to_wsl_path(executable)));
+        Command::new("wsl")
+            .args(["-d", "Ubuntu", "--exec", "bash", "-lc", &script])
+            .output()
+            .expect("run WSL libavcodec packet crash-boundary oracle")
+    } else {
+        Command::new("sh")
+            .arg("-c")
+            .arg(format!(
+                "ulimit -c 0 && {}",
+                shell_quote(&executable.display().to_string())
+            ))
+            .output()
+            .expect("run libavcodec packet crash-boundary oracle")
+    };
+
+    assert!(
+        !output.status.success(),
+        "libavcodec packet crash-boundary oracle unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    String::from_utf8(output.stdout).expect("oracle stdout should be UTF-8")
+}
+
+fn null_shared_shrink_crash_oracle_c_source() -> &'static str {
+    r#"#include <stdio.h>
+#include <stdlib.h>
+#include "libavcodec/packet.h"
+
+static void fail_if(int condition, const char *message)
+{
+    if (condition) {
+        fprintf(stderr, "%s\n", message);
+        exit(1);
+    }
+}
+
+int main(void)
+{
+    AVPacket *src = av_packet_alloc();
+    AVPacket *dst = av_packet_alloc();
+    fail_if(!src || !dst, "av_packet_alloc failed");
+
+    int ret = av_packet_from_data(src, NULL, 4);
+    fail_if(ret < 0, "av_packet_from_data(NULL, 4) failed");
+    ret = av_packet_ref(dst, src);
+    fail_if(ret < 0, "av_packet_ref failed");
+
+    printf("before-null-shrink\n");
+    fflush(stdout);
+    av_shrink_packet(dst, 2);
+    printf("after-null-shrink\n");
+    fflush(stdout);
+
+    av_packet_free(&dst);
+    av_packet_free(&src);
+    return 0;
+}
+"#
 }
 
 fn shared_shrink_oracle_c_source() -> &'static str {

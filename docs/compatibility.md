@@ -9,6 +9,16 @@
 
 ## Compatible Today
 
+- Latest main-thread packet NULL-data shrink-boundary evidence: pinned
+  libavcodec source plus an ignored child-process oracle diagnostic document
+  that positive-size shared NULL-data `av_shrink_packet()` reaches the shrink
+  call and exits unsuccessfully because FFmpeg writes through `pkt->data +
+  size` without a NULL guard. Rust fences that crash boundary: `unsafe
+  Packet::shrink_data_ffmpeg_aliasing()` rejects nullable alias mutation, falls
+  back to safe shrink materialization, clears the packet NULL-data flag, and
+  installs ordinary padded zero storage. Unit and deterministic
+  `avutil_core_models` coverage pin the Rust behavior. `avutil-packet` remains
+  `fate_pass`; strict completion remains 11/96.
 - Latest main-thread packet offset shared-shrink evidence: pinned libavcodec
   rows now prove `av_shrink_packet()` on one reference of a shared refcounted
   packet whose `AVPacket.data` starts inside its `AVBufferRef` preserves the

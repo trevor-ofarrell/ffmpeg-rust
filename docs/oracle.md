@@ -1007,6 +1007,17 @@ opaque-owner, and pool-owned shared-shrink units plus `avutil_core_models`
 invariants cover the explicit `unsafe Packet::shrink_data_ffmpeg_aliasing()`
 helper for the corresponding Rust payload storage.
 
+The separate ignored
+`packet_oracle::libavcodec_packet_null_shared_shrink_oracle_documents_crash_boundary`
+diagnostic compiles a tiny pinned-FFmpeg child process for the positive-size
+NULL-data shared packet shape. The helper prints a marker immediately before
+calling `av_shrink_packet(dst, 2)` and the test asserts that the child exits
+unsuccessfully before printing the after-call marker. This documents the
+FFmpeg 8.1.1 crash boundary from the source implementation's unguarded
+`memset(pkt->data + size, ...)` write; it is not part of the mapped ordinary
+parity row set. Rust keeps the explicit unsafe helper from mutating nullable
+storage and falls back to safe materialization for actual shrink.
+
 The harness also includes `packet:payload-grow-unrefcounted*`,
 `packet:payload-grow-unrefcounted-offset*`, and
 `packet:payload-make-writable-unrefcounted*` rows, proving raw
