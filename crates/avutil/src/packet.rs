@@ -14978,7 +14978,14 @@ mod tests {
         assert_eq!(dst.pos(), Some(42));
         assert_eq!(dst.time_base(), Rational::new(1, 90_000).unwrap());
         assert!(dst.flags().contains(PacketFlags::KEY));
-        assert_eq!(dst.side_data_by_kind("palette").unwrap().data(), &[5, 6]);
+        let dst_side_data = dst.side_data_by_kind("palette").unwrap();
+        assert_eq!(dst_side_data.data(), &[5, 6]);
+        assert_eq!(dst_side_data.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+        assert!(dst_side_data
+            .padding_slice()
+            .iter()
+            .take(AV_INPUT_BUFFER_PADDING_SIZE)
+            .all(|byte| *byte == 0));
         assert_eq!(dst.opaque_address(), Some(0xfeed_cafe));
         assert_eq!(dst.opaque_ref().unwrap().as_slice(), &[0xde, 0xad]);
         assert!(dst
@@ -15233,7 +15240,14 @@ mod tests {
         assert_eq!(cloned.pos(), Some(42));
         assert_eq!(cloned.time_base(), Rational::new(1, 90_000).unwrap());
         assert!(cloned.flags().contains(PacketFlags::KEY));
-        assert_eq!(cloned.side_data_by_kind("palette").unwrap().data(), &[5, 6]);
+        let cloned_side_data = cloned.side_data_by_kind("palette").unwrap();
+        assert_eq!(cloned_side_data.data(), &[5, 6]);
+        assert_eq!(cloned_side_data.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+        assert!(cloned_side_data
+            .padding_slice()
+            .iter()
+            .take(AV_INPUT_BUFFER_PADDING_SIZE)
+            .all(|byte| *byte == 0));
         assert_eq!(cloned.opaque_address(), Some(0xfeed_cafe));
         assert_eq!(cloned.opaque_ref().unwrap().as_slice(), &[0xde, 0xad]);
         assert!(cloned
@@ -16238,6 +16252,13 @@ mod tests {
 
         let mut dst = Packet::new(vec![9], 1);
         dst.copy_props_from(&src);
+        let copied_side_data = dst.side_data_by_kind("palette").unwrap();
+        assert_eq!(copied_side_data.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+        assert!(copied_side_data
+            .padding_slice()
+            .iter()
+            .take(AV_INPUT_BUFFER_PADDING_SIZE)
+            .all(|byte| *byte == 0));
         dst.shrink_side_data("palette", 1).unwrap();
 
         assert_eq!(dst.side_data_by_kind("palette").unwrap().data(), &[5]);

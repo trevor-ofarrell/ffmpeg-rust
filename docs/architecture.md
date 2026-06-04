@@ -232,6 +232,9 @@ bounded `av_packet_new_side_data()` and `av_packet_side_data_new()` allocation
 evidence. Those helpers reject visible sizes that would overflow the padded
 allocation before mutating packet-owned side data or standalone side-data lists,
 matching the pinned `SIZE_MAX` oracle rows with typed ENOMEM errors.
+Packet copy-props, ref, and clone helpers also reallocate copied side data with
+the same zeroed input-padding window, matching the current
+`packet:*side-padding` oracle rows.
 
 `PacketFlags` stores raw `AVPacket.flags` bits instead of truncating to the
 known public mask. Known-bit helpers still drive ergonomic checks for
@@ -770,6 +773,11 @@ The packet oracle now includes `packet:ref-replace*` rows for `av_packet_ref()` 
 The packet oracle now includes `packet:move-replace*` rows for `av_packet_move_ref()` on a destination that already owns payload, side data, opaque pointer metadata, and `opaque_ref`. FFmpeg unreferences the destination first, transfers the complete source state into the destination, and resets the source to packet defaults; `Packet::move_ref_from` mirrors that by dropping old destination storage and moving the source packet value.
 
 The packet oracle now includes `packet:copy-props-replace*` rows for `av_packet_copy_props()` on a destination that already owns payload, side data, opaque pointer metadata, and `opaque_ref`. FFmpeg preserves the destination payload bytes but replaces side data, opaque metadata, timestamps, flags, stream index, `time_base`, and `opaque_ref` from the source; `Packet::copy_props_from` mirrors that bounded safe-Rust behavior.
+The `packet:copy-props-replace-side-padding`,
+`packet:ref-duplicate-side-padding`, and
+`packet:clone-duplicate-side-padding` rows further pin that copied/ref/cloned
+positive-size side data receives a fresh zeroed
+`AV_INPUT_BUFFER_PADDING_SIZE` padding window after the visible payload.
 
 The packet oracle now includes `packet:side-add-capacity-*`, `packet:side-add-capacity-overflow-owned`, and `packet:side-new-capacity-overflow` rows proving the packet-owned side-data capacity edge: FFmpeg permits replacing an existing side-data kind after the packet has `AV_PKT_DATA_NB` entries, rejects appending another entry with `ERANGE` without changing the count, preserves the caller-owned buffer for failed `av_packet_add_side_data()` append attempts, and returns NULL from `av_packet_new_side_data()` at that capacity. It also includes packet-owned raw lookup rows proving `av_packet_get_side_data()` finds raw values inserted at `AV_PKT_DATA_NB`, `AV_PKT_DATA_NB + 1`, `-1`, and `INT_MIN`. The Rust `Packet::try_add_side_data`, `Packet::try_add_side_data_owned`, `Packet::new_side_data`, and `side_data_by_kind_id` model the same bounded surface with typed errors and explicit ownership transfer.
 

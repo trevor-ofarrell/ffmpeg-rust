@@ -9,6 +9,14 @@
 
 ## Compatible Today
 
+- Latest main-thread packet side-data lifecycle padding evidence: pinned
+  libavcodec rows now prove positive-size packet side data copied by
+  `av_packet_copy_props()`, `av_packet_ref()`, and `av_packet_clone()` is
+  reallocated with `AV_INPUT_BUFFER_PADDING_SIZE` zero padding. Rust mirrors
+  this through packet lifecycle helpers, with focused unit, ignored oracle,
+  mapped differential/FATE, upstream `fate-avpacket`, clippy, and WSL
+  `avutil_core_models` sanitizer smoke coverage. `avutil-packet` remains
+  `fate_pass`; strict completion remains 11/96.
 - Latest main-thread packet side-data no-op shrink evidence: pinned libavcodec
   rows now prove `av_packet_shrink_side_data()` returns success and preserves
   lookup, payload bytes, and zero-size entries when asked to shrink

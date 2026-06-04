@@ -1006,6 +1006,12 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         side_data_summary_fields(&copy_replace_dst),
     );
     rows.insert(
+        "packet:copy-props-replace-side-padding".to_string(),
+        side_data_padding_fields(
+            copy_replace_dst.side_data_by_kind_id(&PacketSideDataKind::NewExtradata),
+        ),
+    );
+    rows.insert(
         "packet:copy-props-replace-payload".to_string(),
         payload_visible_fields(&copy_replace_dst),
     );
@@ -1026,11 +1032,23 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         "packet:ref-duplicate-side".to_string(),
         side_data_summary_fields(&ref_duplicate_dst),
     );
+    rows.insert(
+        "packet:ref-duplicate-side-padding".to_string(),
+        side_data_padding_fields(
+            ref_duplicate_dst.side_data_by_kind_id(&PacketSideDataKind::Palette),
+        ),
+    );
 
     let cloned_duplicate = duplicate_src.clone();
     rows.insert(
         "packet:clone-duplicate-side".to_string(),
         side_data_summary_fields(&cloned_duplicate),
+    );
+    rows.insert(
+        "packet:clone-duplicate-side-padding".to_string(),
+        side_data_padding_fields(
+            cloned_duplicate.side_data_by_kind_id(&PacketSideDataKind::Palette),
+        ),
     );
 
     let mut move_duplicate_src = packet_with_duplicate_side_data();
@@ -11975,6 +11993,9 @@ int main(void) {
     print_packet("packet:copy-props-replace", copy_replace_dst);
     print_side_data_summary("packet:copy-props-replace-side",
                             copy_replace_dst);
+    print_packet_side_data_padding("packet:copy-props-replace-side-padding",
+                                   copy_replace_dst,
+                                   AV_PKT_DATA_NEW_EXTRADATA);
     print_payload_visible("packet:copy-props-replace-payload",
                           copy_replace_dst);
     av_packet_free(&copy_replace_dst);
@@ -11995,10 +12016,14 @@ int main(void) {
     fail_if(av_packet_ref(duplicate_ref_dst, duplicate_src) < 0,
             "av_packet_ref duplicate side data failed");
     print_side_data_summary("packet:ref-duplicate-side", duplicate_ref_dst);
+    print_packet_side_data_padding("packet:ref-duplicate-side-padding",
+                                   duplicate_ref_dst, AV_PKT_DATA_PALETTE);
 
     AVPacket *duplicate_cloned = av_packet_clone(duplicate_src);
     fail_if(!duplicate_cloned, "av_packet_clone duplicate side data failed");
     print_side_data_summary("packet:clone-duplicate-side", duplicate_cloned);
+    print_packet_side_data_padding("packet:clone-duplicate-side-padding",
+                                   duplicate_cloned, AV_PKT_DATA_PALETTE);
 
     av_packet_free(&duplicate_copy_dst);
     av_packet_free(&duplicate_ref_dst);

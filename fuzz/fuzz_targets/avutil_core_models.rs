@@ -17253,13 +17253,17 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     );
     assert!(packet_ref.is_data_writable());
     assert!(packet_ref.data_mut().is_some());
+    let packet_ref_side_data = packet_ref.side_data_by_kind("ref_side_data").unwrap();
+    assert_eq!(packet_ref_side_data.data(), &[0xbb, 0xcc]);
     assert_eq!(
-        packet_ref
-            .side_data_by_kind("ref_side_data")
-            .unwrap()
-            .data(),
-        &[0xbb, 0xcc]
+        packet_ref_side_data.padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
     );
+    assert!(packet_ref_side_data
+        .padding_slice()
+        .iter()
+        .take(AV_INPUT_BUFFER_PADDING_SIZE)
+        .all(|byte| *byte == 0));
     assert_eq!(
         packet_ref.opaque_ref().unwrap().as_slice(),
         opaque_payload.as_slice()
@@ -17285,13 +17289,17 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         AV_INPUT_BUFFER_PADDING_SIZE
     );
     assert!(cloned_packet.is_data_writable());
+    let cloned_packet_side_data = cloned_packet.side_data_by_kind("ref_side_data").unwrap();
+    assert_eq!(cloned_packet_side_data.data(), &[0xbb, 0xcc]);
     assert_eq!(
-        cloned_packet
-            .side_data_by_kind("ref_side_data")
-            .unwrap()
-            .data(),
-        &[0xbb, 0xcc]
+        cloned_packet_side_data.padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
     );
+    assert!(cloned_packet_side_data
+        .padding_slice()
+        .iter()
+        .take(AV_INPUT_BUFFER_PADDING_SIZE)
+        .all(|byte| *byte == 0));
     assert_eq!(
         cloned_packet.opaque_ref().unwrap().as_slice(),
         opaque_payload.as_slice()
@@ -17497,13 +17505,17 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(props_packet.flags(), packet.flags());
     assert_eq!(props_packet.time_base(), packet.time_base());
     assert_eq!(props_packet.opaque(), packet.opaque());
+    let props_packet_side_data = props_packet.side_data_by_kind("ref_side_data").unwrap();
+    assert_eq!(props_packet_side_data.data(), &[0xbb, 0xcc]);
     assert_eq!(
-        props_packet
-            .side_data_by_kind("ref_side_data")
-            .unwrap()
-            .data(),
-        &[0xbb, 0xcc]
+        props_packet_side_data.padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
     );
+    assert!(props_packet_side_data
+        .padding_slice()
+        .iter()
+        .take(AV_INPUT_BUFFER_PADDING_SIZE)
+        .all(|byte| *byte == 0));
     assert_eq!(
         props_packet.opaque_ref().unwrap().as_slice(),
         opaque_payload.as_slice()

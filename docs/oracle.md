@@ -189,6 +189,16 @@ The pinned libavcodec packet oracle emits `packet:side-shrink-same*` and
 payload state when asked to shrink packet-owned `AV_PKT_DATA_NEW_EXTRADATA` to
 its current size.
 
+The latest packet side-data lifecycle padding fixture extends the packet oracle
+with `packet:copy-props-replace-side-padding`,
+`packet:ref-duplicate-side-padding`, and
+`packet:clone-duplicate-side-padding` rows. Those rows prove positive-size
+side data copied by `av_packet_copy_props()`, `av_packet_ref()`, and
+`av_packet_clone()` is backed by a fresh allocation with
+`AV_INPUT_BUFFER_PADDING_SIZE` zero padding after the visible payload. The
+deterministic `avutil_core_models` fixture asserts the same zero-padding
+windows for Rust copy-props/ref/clone lifecycles.
+
 A later warmed WSL `avutil_core_models` smoke ran 4096 inputs with
 `CARGO_TARGET_DIR=target-wsl-fuzz` and `ASAN_OPTIONS=detect_leaks=0` against a
 temporary copy of the four tracked seed files. It reached `DONE`, libFuzzer
