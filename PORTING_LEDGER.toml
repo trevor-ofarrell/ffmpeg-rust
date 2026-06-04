@@ -2,6 +2,16 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest main-thread packet evidence: pinned libavcodec rows now prove
+# packet-owned and standalone `av_packet*_side_data_add(..., NULL, 1, ...)`
+# accept a NULL data pointer with nonzero visible size. Packet-owned lookup
+# returns a NULL data pointer while preserving size output, standalone array
+# lookup returns the entry with size one, and replacement rows prove existing
+# `AV_PKT_DATA_NEW_EXTRADATA` entries are replaced by the NULL/nonzero shape.
+# Rust now represents nullable side data with an explicit visible length,
+# materializes zeroed backing storage for safe mutation, and mirrors append,
+# replace, and shrink-to-zero behavior. This is evidence-strengthening only;
+# no status was promoted.
 # Latest main-thread packet evidence: a warmed WSL `avutil_core_models`
 # sanitizer smoke ran 1024 inputs with leak detection disabled against a
 # temporary copy of the four tracked seed files. libFuzzer expanded the
@@ -990,6 +1000,17 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: pinned libavcodec rows now validate NULL/nonzero side-data
+# ownership transfer for both packet-owned and standalone array helpers.
+# `av_packet_add_side_data(pkt, type, NULL, 1)` stores a size-one entry whose
+# packet-owned lookup returns a NULL data pointer while preserving the size
+# output, and `av_packet_side_data_add(&sd, &nb_sd, type, NULL, 1, flags=0)`
+# stores a size-one standalone entry that array lookup returns. Replacement
+# rows prove existing `AV_PKT_DATA_NEW_EXTRADATA` records are replaced by the
+# NULL/nonzero shape. Rust `SideData` now separates nullable pointer state from
+# visible length, materializes zeroed backing storage for safe mutation, and
+# focused unit plus avutil_core_models invariants mirror append, replace,
+# shrink-to-zero, and mutation materialization behavior.
 # Latest update: pinned libavcodec nullable-zero side-data lifecycle rows now
 # prove `av_packet_copy_props()`, `av_packet_ref()`, and `av_packet_clone()`
 # convert a packet-owned NULL/0 side-data entry into an allocated zero-size

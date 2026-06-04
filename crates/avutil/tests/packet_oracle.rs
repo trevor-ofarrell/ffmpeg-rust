@@ -4710,6 +4710,29 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     );
 
     let mut packet = Packet::default();
+    let appended = packet
+        .try_add_null_side_data_with_size(PacketSideDataKind::NewExtradata, 1)
+        .unwrap();
+    assert!(
+        appended.is_none(),
+        "nullable nonzero-size new_extradata should append to an empty packet"
+    );
+    rows.insert(
+        "packet:side-add-null-nonzero-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:side-add-null-nonzero".to_string(),
+        side_data_summary_fields(&packet),
+    );
+    rows.insert(
+        "packet:side-get-null-nonzero".to_string(),
+        packet_side_data_get_nullable_fields(
+            packet.side_data_by_kind_id(&PacketSideDataKind::NewExtradata),
+        ),
+    );
+
+    let mut packet = Packet::default();
     packet
         .new_side_data(PacketSideDataKind::NewExtradata, 2)
         .unwrap()
@@ -4754,6 +4777,32 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:side-get-null-zero-replace".to_string(),
         packet_side_data_get_fields(packet.side_data_by_kind_id(&PacketSideDataKind::NewExtradata)),
+    );
+
+    let mut packet = Packet::default();
+    packet
+        .new_side_data(PacketSideDataKind::NewExtradata, 2)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0x31, 0x32]);
+    let replaced = packet
+        .try_add_null_side_data_with_size(PacketSideDataKind::NewExtradata, 1)
+        .unwrap()
+        .expect("nullable nonzero-size packet side data should replace existing new_extradata");
+    assert_eq!(replaced.data(), &[0x31, 0x32]);
+    rows.insert(
+        "packet:side-add-null-nonzero-replace-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:side-add-null-nonzero-replace".to_string(),
+        side_data_summary_fields(&packet),
+    );
+    rows.insert(
+        "packet:side-get-null-nonzero-replace".to_string(),
+        packet_side_data_get_nullable_fields(
+            packet.side_data_by_kind_id(&PacketSideDataKind::NewExtradata),
+        ),
     );
 
     let mut raw_packet = Packet::default();
@@ -5188,6 +5237,27 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     );
 
     let mut list = PacketSideDataList::new();
+    let appended = list
+        .try_add_null_side_data_with_size_and_flags(PacketSideDataKind::NewExtradata, 1, 0)
+        .unwrap();
+    assert!(
+        appended.is_none(),
+        "nullable nonzero-size new_extradata should append to an empty standalone list"
+    );
+    rows.insert(
+        "packet:array-add-null-nonzero-ret".to_string(),
+        vec!["1".to_string()],
+    );
+    rows.insert(
+        "packet:array-add-null-nonzero".to_string(),
+        side_data_list_summary_fields(&list),
+    );
+    rows.insert(
+        "packet:array-get-null-nonzero".to_string(),
+        side_data_lookup_fields(list.get(&PacketSideDataKind::NewExtradata)),
+    );
+
+    let mut list = PacketSideDataList::new();
     list.new_side_data(PacketSideDataKind::NewExtradata, 2)
         .unwrap()
         .data_mut()
@@ -5229,6 +5299,29 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     );
     rows.insert(
         "packet:array-get-null-zero-replace".to_string(),
+        side_data_lookup_fields(list.get(&PacketSideDataKind::NewExtradata)),
+    );
+
+    let mut list = PacketSideDataList::new();
+    list.new_side_data(PacketSideDataKind::NewExtradata, 2)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0x31, 0x32]);
+    let replaced = list
+        .try_add_null_side_data_with_size_and_flags(PacketSideDataKind::NewExtradata, 1, 0)
+        .unwrap()
+        .expect("nullable nonzero-size standalone side data should replace existing new_extradata");
+    assert_eq!(replaced.data(), &[0x31, 0x32]);
+    rows.insert(
+        "packet:array-add-null-nonzero-replace-ret".to_string(),
+        vec!["1".to_string()],
+    );
+    rows.insert(
+        "packet:array-add-null-nonzero-replace".to_string(),
+        side_data_list_summary_fields(&list),
+    );
+    rows.insert(
+        "packet:array-get-null-nonzero-replace".to_string(),
         side_data_lookup_fields(list.get(&PacketSideDataKind::NewExtradata)),
     );
 
@@ -5796,6 +5889,17 @@ fn packet_side_data_get_fields(side_data: Option<&SideData>) -> Vec<String> {
             hex_or_dash(side_data.data()),
         ],
         _ => vec!["0".to_string(), "0".to_string(), "-".to_string()],
+    }
+}
+
+fn packet_side_data_get_nullable_fields(side_data: Option<&SideData>) -> Vec<String> {
+    match side_data {
+        Some(side_data) => vec![
+            u8::from(!side_data.is_data_ptr_null()).to_string(),
+            side_data.len().to_string(),
+            hex_or_dash(side_data.data()),
+        ],
+        None => vec!["0".to_string(), "0".to_string(), "-".to_string()],
     }
 }
 
@@ -7949,6 +8053,14 @@ static void exercise_side_data_api(void) {
     av_packet_free(&pkt);
 
     pkt = new_packet();
+    ret = av_packet_add_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, NULL, 1);
+    printf("packet:side-add-null-nonzero-ret|%d\n", ret);
+    print_side_data_summary("packet:side-add-null-nonzero", pkt);
+    print_side_data_lookup("packet:side-get-null-nonzero", pkt,
+                           AV_PKT_DATA_NEW_EXTRADATA);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
     sd = av_packet_new_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, 2);
     fail_if(!sd, "av_packet_new_side_data zero replace seed failed");
     sd[0] = 0x31;
@@ -7975,6 +8087,18 @@ static void exercise_side_data_api(void) {
     fail_if(ret < 0, "av_packet_add_side_data NULL zero replacement failed");
     print_side_data_summary("packet:side-add-null-zero-replace", pkt);
     print_side_data_lookup("packet:side-get-null-zero-replace", pkt,
+                           AV_PKT_DATA_NEW_EXTRADATA);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    sd = av_packet_new_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, 2);
+    fail_if(!sd, "av_packet_new_side_data NULL nonzero replace seed failed");
+    sd[0] = 0x31;
+    sd[1] = 0x32;
+    ret = av_packet_add_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, NULL, 1);
+    printf("packet:side-add-null-nonzero-replace-ret|%d\n", ret);
+    print_side_data_summary("packet:side-add-null-nonzero-replace", pkt);
+    print_side_data_lookup("packet:side-get-null-nonzero-replace", pkt,
                            AV_PKT_DATA_NEW_EXTRADATA);
     av_packet_free(&pkt);
 
@@ -8257,6 +8381,14 @@ static void exercise_side_data_array_api(void) {
                                  AV_PKT_DATA_NEW_EXTRADATA);
     av_packet_side_data_free(&sd, &nb_sd);
 
+    entry = av_packet_side_data_add(&sd, &nb_sd, AV_PKT_DATA_NEW_EXTRADATA,
+                                    NULL, 1, 0);
+    printf("packet:array-add-null-nonzero-ret|%d\n", entry != NULL);
+    print_side_data_array_summary("packet:array-add-null-nonzero", sd, nb_sd);
+    print_side_data_array_lookup("packet:array-get-null-nonzero", sd, nb_sd,
+                                 AV_PKT_DATA_NEW_EXTRADATA);
+    av_packet_side_data_free(&sd, &nb_sd);
+
     entry = av_packet_side_data_new(&sd, &nb_sd, AV_PKT_DATA_NEW_EXTRADATA,
                                     2, 0);
     fail_if(!entry, "av_packet_side_data_new zero replace seed failed");
@@ -8287,6 +8419,20 @@ static void exercise_side_data_array_api(void) {
     print_side_data_array_summary("packet:array-add-null-zero-replace",
                                   sd, nb_sd);
     print_side_data_array_lookup("packet:array-get-null-zero-replace",
+                                 sd, nb_sd, AV_PKT_DATA_NEW_EXTRADATA);
+    av_packet_side_data_free(&sd, &nb_sd);
+
+    entry = av_packet_side_data_new(&sd, &nb_sd, AV_PKT_DATA_NEW_EXTRADATA,
+                                    2, 0);
+    fail_if(!entry, "av_packet_side_data_new NULL nonzero replace seed failed");
+    entry->data[0] = 0x31;
+    entry->data[1] = 0x32;
+    entry = av_packet_side_data_add(&sd, &nb_sd, AV_PKT_DATA_NEW_EXTRADATA,
+                                    NULL, 1, 0);
+    printf("packet:array-add-null-nonzero-replace-ret|%d\n", entry != NULL);
+    print_side_data_array_summary("packet:array-add-null-nonzero-replace",
+                                  sd, nb_sd);
+    print_side_data_array_lookup("packet:array-get-null-nonzero-replace",
                                  sd, nb_sd, AV_PKT_DATA_NEW_EXTRADATA);
     av_packet_side_data_free(&sd, &nb_sd);
 

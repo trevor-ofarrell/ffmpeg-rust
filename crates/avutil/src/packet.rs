@@ -4695,11 +4695,18 @@ impl SideData {
     }
 
     pub fn new_null_data_with_kind(kind: PacketSideDataKind) -> AvResult<Self> {
+        Self::new_null_data_with_kind_and_len(kind, 0)
+    }
+
+    pub fn new_null_data_with_kind_and_len(
+        kind: PacketSideDataKind,
+        visible_len: usize,
+    ) -> AvResult<Self> {
         Self::validate_kind(&kind)?;
         Ok(Self {
             kind,
             data: Vec::new(),
-            visible_len: 0,
+            visible_len,
             data_ptr_null: true,
         })
     }
@@ -4784,10 +4791,16 @@ impl SideData {
     }
 
     pub fn data(&self) -> &[u8] {
+        if self.data_ptr_null {
+            return &[];
+        }
         &self.data[..self.visible_len]
     }
 
     pub fn data_mut(&mut self) -> &mut [u8] {
+        if self.data_ptr_null && self.data.len() < self.visible_len {
+            self.data.resize(self.visible_len, 0);
+        }
         self.data_ptr_null = false;
         &mut self.data[..self.visible_len]
     }
@@ -4801,10 +4814,16 @@ impl SideData {
     }
 
     pub fn padding_len(&self) -> usize {
+        if self.data_ptr_null {
+            return 0;
+        }
         self.data.len() - self.visible_len
     }
 
     pub fn padding_slice(&self) -> &[u8] {
+        if self.data_ptr_null {
+            return &[];
+        }
         &self.data[self.visible_len..]
     }
 
@@ -4813,7 +4832,7 @@ impl SideData {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.data.is_empty()
+        self.visible_len == 0
     }
 
     pub fn palette(&self) -> AvResult<Option<PacketPalette<'_>>> {
@@ -5246,7 +5265,16 @@ impl PacketSideDataList {
         kind: PacketSideDataKind,
         _flags: i32,
     ) -> AvResult<Option<SideData>> {
-        self.try_add_side_data(SideData::new_null_data_with_kind(kind)?)
+        self.try_add_null_side_data_with_size_and_flags(kind, 0, _flags)
+    }
+
+    pub fn try_add_null_side_data_with_size_and_flags(
+        &mut self,
+        kind: PacketSideDataKind,
+        size: usize,
+        _flags: i32,
+    ) -> AvResult<Option<SideData>> {
+        self.try_add_side_data(SideData::new_null_data_with_kind_and_len(kind, size)?)
     }
 
     pub fn add_side_data(&mut self, side_data: SideData) -> Option<SideData> {
@@ -5687,8 +5715,16 @@ impl Packet {
         &mut self,
         kind: PacketSideDataKind,
     ) -> AvResult<Option<SideData>> {
+        self.try_add_null_side_data_with_size(kind, 0)
+    }
+
+    pub fn try_add_null_side_data_with_size(
+        &mut self,
+        kind: PacketSideDataKind,
+        size: usize,
+    ) -> AvResult<Option<SideData>> {
         self.ensure_side_data_capacity_for(&kind)?;
-        let side_data = SideData::new_null_data_with_kind(kind)?;
+        let side_data = SideData::new_null_data_with_kind_and_len(kind, size)?;
         Ok(self.add_or_replace_side_data(side_data).0)
     }
 
@@ -11895,6 +11931,60 @@ mod tests {
         assert_eq!(side_data.len(), 0);
         assert!(side_data.data().is_empty());
 
+        let mut nonzero_packet = Packet::default();
+        assert!(nonzero_packet
+            .try_add_null_side_data_with_size(PacketSideDataKind::NewExtradata, 1)
+            .unwrap()
+            .is_none());
+        let side_data = nonzero_packet
+            .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+            .unwrap();
+        assert!(side_data.is_data_ptr_null());
+        assert_eq!(side_data.len(), 1);
+        assert!(side_data.data().is_empty());
+        assert!(!side_data.is_empty());
+        nonzero_packet
+            .shrink_side_data_by_kind_id(&PacketSideDataKind::NewExtradata, 0)
+            .unwrap();
+        let side_data = nonzero_packet
+            .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+            .unwrap();
+        assert!(side_data.is_data_ptr_null());
+        assert_eq!(side_data.len(), 0);
+
+        let mut materialized_packet = Packet::default();
+        materialized_packet
+            .try_add_null_side_data_with_size(PacketSideDataKind::NewExtradata, 1)
+            .unwrap();
+        materialized_packet
+            .side_data_mut_by_kind_id(&PacketSideDataKind::NewExtradata)
+            .unwrap()
+            .data_mut()
+            .copy_from_slice(&[0x21]);
+        let side_data = materialized_packet
+            .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+            .unwrap();
+        assert!(!side_data.is_data_ptr_null());
+        assert_eq!(side_data.len(), 1);
+        assert_eq!(side_data.data(), &[0x21]);
+
+        let mut nonzero_replace_packet = Packet::default();
+        nonzero_replace_packet
+            .new_side_data(PacketSideDataKind::NewExtradata, 2)
+            .unwrap()
+            .data_mut()
+            .copy_from_slice(&[0x31, 0x32]);
+        let replaced = nonzero_replace_packet
+            .try_add_null_side_data_with_size(PacketSideDataKind::NewExtradata, 1)
+            .unwrap()
+            .unwrap();
+        assert_eq!(replaced.data(), &[0x31, 0x32]);
+        let side_data = nonzero_replace_packet
+            .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+            .unwrap();
+        assert!(side_data.is_data_ptr_null());
+        assert_eq!(side_data.len(), 1);
+
         let mut list = PacketSideDataList::new();
         assert!(list
             .try_add_null_side_data_with_flags(PacketSideDataKind::NewExtradata, 1)
@@ -11921,6 +12011,35 @@ mod tests {
             .get(&PacketSideDataKind::NewExtradata)
             .unwrap()
             .is_data_ptr_null());
+
+        let mut nonzero_list = PacketSideDataList::new();
+        assert!(nonzero_list
+            .try_add_null_side_data_with_size_and_flags(PacketSideDataKind::NewExtradata, 1, 1)
+            .unwrap()
+            .is_none());
+        let side_data = nonzero_list.get(&PacketSideDataKind::NewExtradata).unwrap();
+        assert!(side_data.is_data_ptr_null());
+        assert_eq!(side_data.len(), 1);
+        assert!(side_data.data().is_empty());
+        assert!(!side_data.is_empty());
+
+        nonzero_list
+            .new_side_data(PacketSideDataKind::NewExtradata, 2)
+            .unwrap()
+            .data_mut()
+            .copy_from_slice(&[0x51, 0x52]);
+        assert!(!nonzero_list
+            .get(&PacketSideDataKind::NewExtradata)
+            .unwrap()
+            .is_data_ptr_null());
+        let replaced = nonzero_list
+            .try_add_null_side_data_with_size_and_flags(PacketSideDataKind::NewExtradata, 1, 0)
+            .unwrap()
+            .unwrap();
+        assert_eq!(replaced.data(), &[0x51, 0x52]);
+        let side_data = nonzero_list.get(&PacketSideDataKind::NewExtradata).unwrap();
+        assert!(side_data.is_data_ptr_null());
+        assert_eq!(side_data.len(), 1);
     }
 
     #[test]

@@ -9,6 +9,16 @@
 
 ## Compatible Today
 
+- Latest main-thread packet evidence: pinned libavcodec rows now prove
+  packet-owned and standalone `av_packet*_side_data_add(..., NULL, 1, ...)`
+  accept a NULL data pointer with nonzero visible size. Packet-owned lookup
+  reports a NULL data pointer while preserving the size output, standalone
+  array lookup returns the size-one entry, and replacement rows prove existing
+  `AV_PKT_DATA_NEW_EXTRADATA` records are replaced by this NULL/nonzero shape.
+  Rust mirrors the boundary with explicit nullable side-data length, zeroed
+  materialization for safe mutation, plus unit, oracle, and deterministic
+  `avutil_core_models` coverage. `avutil-packet` remains `fate_pass`; strict
+  completion remains 11/96.
 - Latest main-thread pixel-format fuzz evidence: the saved
   `avutil_core_models` crash seed selected `PixelFormat::ZeroRgb`, proving the
   harness invariant had missed RGB padding-byte formats where FFmpeg reports 24

@@ -2,6 +2,61 @@
 
 ## Current Status
 
+Current authoritative turn status: main-thread WSL slice finished
+`avutil-packet` NULL/nonzero side-data ownership evidence that was already
+dirty at resume. Required startup checks passed from
+`master...origin/master [ahead 55]` with the packet slice dirty:
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15` reported 11/96 strict-complete components (11.5%), and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validated the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
+kept the documented shared refcounted `av_shrink_packet()` blocker unchanged,
+fixed the nullable/nonzero safe mutation path before validation, and advanced
+this bounded unblocked packet side-data edge; no worker writes were delegated.
+
+Current main-thread slice: pinned libavcodec rows now prove
+`av_packet_add_side_data(pkt, type, NULL, 1)` and standalone
+`av_packet_side_data_add(&sd, &nb_sd, type, NULL, 1, flags=0)` succeed. The
+entry records size one with a NULL data pointer; packet-owned
+`av_packet_get_side_data()` reports a NULL data pointer while preserving the
+size output, and standalone array lookup returns the entry with size one and
+NULL data. Replacement rows prove existing `AV_PKT_DATA_NEW_EXTRADATA` entries
+are replaced by the NULL/nonzero shape. Rust now represents nullable side data
+with an explicit visible length, exposes packet/list NULL-with-size helpers,
+materializes zeroed backing storage when safe Rust `data_mut()` is requested,
+and covers append, replace, shrink-to-zero, and mutation materialization in
+focused unit and `avutil_core_models` deterministic invariants.
+`avutil-packet` remains `fate_pass`, not complete; strict completion remains
+11/96 because the shared-shrink blocker, remaining ABI/media-integration
+vectors, broader packet integration, and sustained fuzz campaign remain
+pending.
+
+Latest validation commands for this packet NULL/nonzero side-data slice passed:
+`cargo fmt --all`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil
+packet_null_zero_side_data_add_preserves_entry_and_null_lookup_shape --
+--nocapture` after an initial local test-sequencing failure was corrected;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
+packet_oracle libavcodec_packet_core_lifecycle_matches_packet_model --
+--ignored --nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p
+fate-runner -- run --mappings tests/differential/mappings.txt --component
+avutil-packet --target oracle-libavcodec-packet-core --oracle-ffmpeg
+./third_party/ffmpeg-oracle/build/bin/ffmpeg`; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- run --component avutil-packet`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run --mappings
+tests/fate/upstream-mappings.txt --component avutil-packet --target
+fate-avpacket` after escalation allowed the pinned FFmpeg build cache to write
+its result file; `CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil
+--all-targets --all-features -- -D warnings`; `CARGO_TARGET_DIR=target-wsl-fuzz
+cargo check --manifest-path fuzz/Cargo.toml --bin avutil_core_models`;
+`CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy --manifest-path fuzz/Cargo.toml
+--bin avutil_core_models -- -D warnings`; `cargo fmt --all -- --check`; and
+`git diff --check` with CRLF conversion warnings only. Final guards also
+passed: `CARGO_TARGET_DIR=target-orch-fate cargo test -p fate-runner
+current_ledger`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask --
+guard-runtime`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner --
+status --next 15`; and `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask
+-- oracle-doctor`.
+
 Current authoritative turn status: main-thread WSL slice fixed the recorded
 `avutil_core_models` pixel-format descriptor invariant crash. Required startup
 checks passed from a clean tree at `master...origin/master [ahead 54]`:

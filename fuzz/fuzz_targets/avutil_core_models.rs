@@ -16160,6 +16160,85 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .unwrap()
         .data()
         .is_empty());
+    let mut null_nonzero_packet = Packet::default();
+    null_nonzero_packet
+        .try_add_null_side_data_with_size(PacketSideDataKind::NewExtradata, 1)
+        .unwrap();
+    let null_nonzero_entry = null_nonzero_packet
+        .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+        .unwrap();
+    assert!(null_nonzero_entry.is_data_ptr_null());
+    assert_eq!(null_nonzero_entry.len(), 1);
+    assert!(null_nonzero_entry.data().is_empty());
+    assert!(!null_nonzero_entry.is_empty());
+    null_nonzero_packet
+        .shrink_side_data_by_kind_id(&PacketSideDataKind::NewExtradata, 0)
+        .unwrap();
+    let null_nonzero_entry = null_nonzero_packet
+        .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+        .unwrap();
+    assert!(null_nonzero_entry.is_data_ptr_null());
+    assert_eq!(null_nonzero_entry.len(), 0);
+    assert!(null_nonzero_entry.is_empty());
+
+    let mut materialized_null_nonzero_packet = Packet::default();
+    materialized_null_nonzero_packet
+        .try_add_null_side_data_with_size(PacketSideDataKind::NewExtradata, 1)
+        .unwrap();
+    materialized_null_nonzero_packet
+        .side_data_mut_by_kind_id(&PacketSideDataKind::NewExtradata)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0x21]);
+    let null_nonzero_entry = materialized_null_nonzero_packet
+        .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+        .unwrap();
+    assert!(!null_nonzero_entry.is_data_ptr_null());
+    assert_eq!(null_nonzero_entry.len(), 1);
+    assert_eq!(null_nonzero_entry.data(), &[0x21]);
+    null_nonzero_packet
+        .new_side_data(PacketSideDataKind::NewExtradata, 2)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0x41, 0x42]);
+    let replaced = null_nonzero_packet
+        .try_add_null_side_data_with_size(PacketSideDataKind::NewExtradata, 1)
+        .unwrap()
+        .unwrap();
+    assert_eq!(replaced.data(), &[0x41, 0x42]);
+    let null_nonzero_entry = null_nonzero_packet
+        .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+        .unwrap();
+    assert!(null_nonzero_entry.is_data_ptr_null());
+    assert_eq!(null_nonzero_entry.len(), 1);
+    assert!(null_nonzero_entry.data().is_empty());
+
+    let mut null_nonzero_list = PacketSideDataList::new();
+    null_nonzero_list
+        .try_add_null_side_data_with_size_and_flags(PacketSideDataKind::NewExtradata, 1, 1)
+        .unwrap();
+    let null_nonzero_entry = null_nonzero_list
+        .get(&PacketSideDataKind::NewExtradata)
+        .unwrap();
+    assert!(null_nonzero_entry.is_data_ptr_null());
+    assert_eq!(null_nonzero_entry.len(), 1);
+    assert!(null_nonzero_entry.data().is_empty());
+    null_nonzero_list
+        .new_side_data(PacketSideDataKind::NewExtradata, 2)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0x51, 0x52]);
+    let replaced = null_nonzero_list
+        .try_add_null_side_data_with_size_and_flags(PacketSideDataKind::NewExtradata, 1, 0)
+        .unwrap()
+        .unwrap();
+    assert_eq!(replaced.data(), &[0x51, 0x52]);
+    let null_nonzero_entry = null_nonzero_list
+        .get(&PacketSideDataKind::NewExtradata)
+        .unwrap();
+    assert!(null_nonzero_entry.is_data_ptr_null());
+    assert_eq!(null_nonzero_entry.len(), 1);
+    assert!(null_nonzero_entry.data().is_empty());
     assert!(!packet.shrink_side_data("missing_side_data", 0).unwrap());
     packet.push_side_data(SideData::new("other_side_data", vec![0xaa]).unwrap());
     let taken = packet.take_side_data("fuzz_side_data").unwrap();

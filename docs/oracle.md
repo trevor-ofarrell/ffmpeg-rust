@@ -433,6 +433,16 @@ NULL caller data at size zero. It mirrors pinned rows where packet-owned
 `av_packet_side_data_add(..., NULL, 0, flags)` stores an entry that
 `av_packet_side_data_get()` still returns.
 
+The latest packet nullable nonzero side-data fixture extends
+`avutil_core_models` with packet-owned and standalone
+`av_packet*_side_data_add(..., NULL, 1, ...)` behavior. The pinned libavcodec
+packet oracle emits `packet:side-add-null-nonzero*` and
+`packet:array-add-null-nonzero*` rows, proving FFmpeg accepts NULL data
+pointers with nonzero recorded side-data size. Packet-owned lookup returns a
+NULL data pointer while preserving the size output, and standalone array lookup
+returns the entry with size one. This is bounded deterministic coverage, not a
+sustained fuzz campaign.
+
 The latest packet nullable-zero side-data lifecycle fixture extends
 `avutil_core_models` with the copy/ref/clone reallocation split for packet-owned
 NULL/0 side data. It mirrors pinned rows where `av_packet_copy_props()`,
@@ -640,6 +650,13 @@ The newest nullable-zero side-data rows prove packet-owned
 `av_packet_get_side_data()` returns NULL, and standalone
 `av_packet_side_data_add(..., NULL, 0, flags)` stores a zero-size entry while
 `av_packet_side_data_get()` still returns that entry pointer.
+
+The newest nullable nonzero side-data rows prove packet-owned and standalone
+`av_packet*_side_data_add(..., NULL, 1, ...)` accept NULL data pointers with a
+recorded size of one. Packet-owned lookup reports a NULL data pointer while
+preserving the size output, standalone array lookup returns the entry with
+size one, and replacement rows prove existing `AV_PKT_DATA_NEW_EXTRADATA`
+entries are replaced by the NULL/nonzero shape.
 
 The newest nullable dictionary unpack rows prove
 `av_packet_unpack_dictionary(NULL, nonzero_size, &dict)` and
