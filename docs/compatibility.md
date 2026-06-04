@@ -9,6 +9,14 @@
 
 ## Compatible Today
 
+- Latest main-thread packet standalone side-data flag-replacement evidence:
+  pinned libavcodec rows now prove `av_packet_side_data_new()` ignores nonzero
+  flags when replacing an existing standalone `AVPacketSideData` entry. Rust
+  `PacketSideDataList::new_side_data_with_flags` keeps first-match replacement
+  semantics for that shape, with focused unit, ignored oracle, mapped
+  differential/FATE, upstream `fate-avpacket`, clippy, and WSL
+  `avutil_core_models` sanitizer smoke coverage. `avutil-packet` remains
+  `fate_pass`; strict completion remains 11/96.
 - Latest main-thread packet fuzz evidence: a warmed WSL `avutil_core_models`
   sanitizer run completed 65,536 inputs against a temporary copy of the four
   tracked seeds with `CARGO_TARGET_DIR=target-wsl-fuzz` and

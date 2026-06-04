@@ -5535,6 +5535,27 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         side_data_list_summary_fields(&list),
     );
 
+    let mut new_flags_replace_list = PacketSideDataList::new();
+    new_flags_replace_list
+        .new_side_data(PacketSideDataKind::SkipSamples, 2)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0xc2, 0x58]);
+    let new_flags_replacement = new_flags_replace_list
+        .new_side_data_with_flags(PacketSideDataKind::SkipSamples, 3, i32::MAX)
+        .unwrap();
+    new_flags_replacement
+        .data_mut()
+        .copy_from_slice(&[0xd1, 0xd2, 0xd3]);
+    rows.insert(
+        "packet:array-new-flags-replace-ret".to_string(),
+        vec!["1".to_string()],
+    );
+    rows.insert(
+        "packet:array-new-flags-replace".to_string(),
+        side_data_list_summary_fields(&new_flags_replace_list),
+    );
+
     let mut caller_owned =
         Some(SideData::new_with_kind(PacketSideDataKind::SkipSamples, vec![0x5a]).unwrap());
     let add_flags_replaced = list
@@ -9268,6 +9289,28 @@ static void exercise_side_data_array_api(void) {
     entry->data[1] = 0x58;
     print_side_data_array_summary("packet:array-new-flags-nonzero",
                                   sd, nb_sd);
+
+    AVPacketSideData *new_flags_replace_sd = NULL;
+    int new_flags_replace_nb_sd = 0;
+    entry = av_packet_side_data_new(&new_flags_replace_sd,
+                                    &new_flags_replace_nb_sd,
+                                    AV_PKT_DATA_SKIP_SAMPLES, 2, 0);
+    fail_if(!entry, "av_packet_side_data_new flags replace seed failed");
+    entry->data[0] = 0xc2;
+    entry->data[1] = 0x58;
+    entry = av_packet_side_data_new(&new_flags_replace_sd,
+                                    &new_flags_replace_nb_sd,
+                                    AV_PKT_DATA_SKIP_SAMPLES, 3, INT_MAX);
+    printf("packet:array-new-flags-replace-ret|%d\n", entry != NULL);
+    fail_if(!entry, "av_packet_side_data_new flags replace failed");
+    entry->data[0] = 0xd1;
+    entry->data[1] = 0xd2;
+    entry->data[2] = 0xd3;
+    print_side_data_array_summary("packet:array-new-flags-replace",
+                                  new_flags_replace_sd,
+                                  new_flags_replace_nb_sd);
+    av_packet_side_data_free(&new_flags_replace_sd,
+                             &new_flags_replace_nb_sd);
 
     uint8_t *flags_owned = alloc_owned_side_data_byte(0x5a);
     entry = av_packet_side_data_add(&sd, &nb_sd, AV_PKT_DATA_SKIP_SAMPLES,

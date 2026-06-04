@@ -12256,12 +12256,24 @@ mod tests {
         );
         assert_eq!(list.entries()[2].data(), &[0xc2, 0x58]);
 
+        let replacement_with_flags = list
+            .new_side_data_with_flags(PacketSideDataKind::SkipSamples, 3, i32::MAX)
+            .unwrap();
+        replacement_with_flags
+            .data_mut()
+            .copy_from_slice(&[0xd1, 0xd2, 0xd3]);
+        assert_eq!(list.entries().len(), 3);
+        assert_eq!(
+            list.get(&PacketSideDataKind::SkipSamples).unwrap().data(),
+            &[0xd1, 0xd2, 0xd3]
+        );
+
         let mut caller_owned =
             Some(SideData::new_with_kind(PacketSideDataKind::SkipSamples, vec![0x5a]).unwrap());
         let replaced = list
             .try_add_side_data_with_flags(&mut caller_owned, 1)
             .unwrap();
-        assert_eq!(replaced.unwrap().data(), &[0xc2, 0x58]);
+        assert_eq!(replaced.unwrap().data(), &[0xd1, 0xd2, 0xd3]);
         assert!(caller_owned.is_none());
         assert_eq!(list.entries().len(), 3);
         assert_eq!(

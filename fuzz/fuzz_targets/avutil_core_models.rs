@@ -14318,12 +14318,35 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     flags_entry.data_mut().copy_from_slice(&[0xc2, 0x58]);
     assert!(flags_entry.padding_slice().iter().all(|byte| *byte == 0));
     assert_eq!(side_data_list.len(), 3);
+    let replacement_flags_entry = side_data_list
+        .new_side_data_with_flags(flags_kind.clone(), 3, i32::MAX)
+        .unwrap();
+    assert_eq!(
+        replacement_flags_entry.padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(replacement_flags_entry
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    replacement_flags_entry
+        .data_mut()
+        .copy_from_slice(&[0xd1, 0xd2, 0xd3]);
+    assert!(replacement_flags_entry
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    assert_eq!(side_data_list.len(), 3);
+    assert_eq!(
+        side_data_list.get(&flags_kind).unwrap().data(),
+        &[0xd1, 0xd2, 0xd3]
+    );
     let mut caller_owned = Some(SideData::new_with_kind(flags_kind.clone(), vec![0x5a]).unwrap());
     let replaced_flags = side_data_list
         .try_add_side_data_with_flags(&mut caller_owned, 1)
         .unwrap()
         .unwrap();
-    assert_eq!(replaced_flags.data(), &[0xc2, 0x58]);
+    assert_eq!(replaced_flags.data(), &[0xd1, 0xd2, 0xd3]);
     assert!(caller_owned.is_none());
     assert_eq!(side_data_list.len(), 3);
     assert_eq!(side_data_list.get(&flags_kind).unwrap().data(), &[0x5a]);

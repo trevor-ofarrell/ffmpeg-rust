@@ -170,6 +170,17 @@ corpus was removed while the tracked corpus stayed at four files. This
 strengthens packet/core-model fuzz evidence, but it is still not a sustained
 fuzz campaign.
 
+The latest packet standalone side-data flag-replacement fixture extends
+`avutil_core_models` with `PacketSideDataList::new_side_data_with_flags()` over
+an existing kind. The pinned libavcodec packet oracle emits
+`packet:array-new-flags-replace*` rows, proving
+`av_packet_side_data_new()` ignores nonzero flags while preserving first-match
+replacement semantics for standalone arrays. A warmed WSL
+`CARGO_TARGET_DIR=target-wsl-fuzz ASAN_OPTIONS=detect_leaks=0 cargo fuzz run
+avutil_core_models /tmp/ffmpegrust-avutil-core-models.l82cui -- -runs=1`
+smoke loaded a temporary copy of the four tracked seeds, completed 5 runs
+without a crash, and the scratch corpus was removed.
+
 A later warmed WSL `avutil_core_models` smoke ran 4096 inputs with
 `CARGO_TARGET_DIR=target-wsl-fuzz` and `ASAN_OPTIONS=detect_leaks=0` against a
 temporary copy of the four tracked seed files. It reached `DONE`, libFuzzer

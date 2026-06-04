@@ -3,6 +3,47 @@
 ## Current Status
 
 Current authoritative turn status: main-thread WSL advanced the top incomplete
+`avutil-packet` row with standalone `AVPacketSideData` nonzero flag replacement
+evidence. Required startup checks passed from a clean tree at
+`master...origin/master [ahead 84]`: `CARGO_TARGET_DIR=target-orch-fate cargo
+run -p fate-runner -- status --next 15` reported 11/96 strict-complete
+components (11.5%) with `avutil-packet` as the first incomplete row, and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validated the pinned FFmpeg 8.1.1 oracle and ABI versions.
+
+Current main-thread slice: pinned libavcodec rows
+`packet:array-new-flags-replace-ret` and `packet:array-new-flags-replace` now
+prove `av_packet_side_data_new()` ignores nonzero flags while replacing an
+existing standalone `AVPacketSideData` entry by first matching type. Rust
+`PacketSideDataList::new_side_data_with_flags` already matched this behavior;
+the focused unit and deterministic `avutil_core_models` fixture now cover the
+replacement shape explicitly. `avutil-packet` remains `fate_pass`, not complete;
+strict completion remains 11/96 because broader safe API design, ABI/media
+integration vectors, broader packet integration, and longer sustained fuzz
+evidence remain pending.
+
+Validation passed for this slice with `cargo fmt --all`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --lib
+packet_side_data_list_matches_standalone_array_lifecycle -- --nocapture`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test packet_oracle
+libavcodec_packet_core_lifecycle_matches_packet_model -- --ignored
+--nocapture`; `CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil
+--all-targets --all-features -- -D warnings`; `CARGO_TARGET_DIR=target-wsl-fuzz
+cargo clippy --manifest-path fuzz/Cargo.toml --all-targets -- -D warnings`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run --component
+avutil-packet`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner --
+run --mappings tests/differential/mappings.txt --component avutil-packet
+--target oracle-libavcodec-packet-core`; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- run --mappings tests/fate/upstream-mappings.txt
+--component avutil-packet --target fate-avpacket` after the first sandboxed
+attempt failed with FFmpeg's `tests/data/fate/avpacket` cache path read-only and
+the approved rerun outside the sandbox passed; and
+`CARGO_TARGET_DIR=target-wsl-fuzz ASAN_OPTIONS=detect_leaks=0 cargo fuzz run
+avutil_core_models /tmp/ffmpegrust-avutil-core-models.l82cui -- -runs=1`,
+which loaded the four copied seed files, reached `DONE` after 5 runs, and found
+no crash. The temporary scratch corpus was removed after the run.
+
+Current authoritative turn status: main-thread WSL advanced the top incomplete
 `avutil-packet` row with deeper `avutil_core_models` fuzz evidence only.
 Required startup checks passed from a clean tree at
 `master...origin/master [ahead 83]`: `CARGO_TARGET_DIR=target-orch-fate cargo
