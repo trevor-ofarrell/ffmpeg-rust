@@ -170,6 +170,164 @@ fn mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle() {
     }
 }
 
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE/FFPROBE_ORACLE or install third_party/ffmpeg-oracle/build/bin"]
+fn avi_bgr24_ffprobe_packet_fields_match_ffmpeg_oracle() {
+    let ffmpeg = oracle_tool("ffmpeg");
+    let ffprobe = oracle_tool("ffprobe");
+    let temp = TempDir::new("ffmpegrust-ffprobe-avi");
+    let raw_path = temp.path().join("input.bgr");
+    let avi_path = temp.path().join("input.avi");
+    let payload = (0_u8..12).collect::<Vec<_>>();
+
+    fs::write(&raw_path, &payload).expect("raw BGR input should be writable");
+
+    let raw_arg = raw_path.to_string_lossy().into_owned();
+    let avi_arg = avi_path.to_string_lossy().into_owned();
+
+    let generate = Command::new(&ffmpeg)
+        .args([
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "bgr24",
+            "-s",
+            "2x1",
+            "-r",
+            "25",
+            "-i",
+            raw_arg.as_str(),
+            "-c:v",
+            "rawvideo",
+            "-f",
+            "avi",
+            avi_arg.as_str(),
+        ])
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", ffmpeg.display()));
+
+    assert!(
+        generate.status.success(),
+        "oracle AVI generation failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        generate.status.code(),
+        String::from_utf8_lossy(&generate.stdout),
+        String::from_utf8_lossy(&generate.stderr)
+    );
+
+    let args = [
+        "-hide_banner",
+        "-count_packets",
+        "-show_format",
+        "-show_streams",
+        "-show_packets",
+        avi_arg.as_str(),
+    ];
+    let rust = ffprobe_output(&strings(&args))
+        .unwrap_or_else(|err| panic!("Rust ffprobe AVI path should execute: {err}"));
+
+    let oracle = Command::new(&ffprobe)
+        .args([
+            "-v",
+            "error",
+            "-count_packets",
+            "-show_format",
+            "-show_streams",
+            "-show_packets",
+            avi_arg.as_str(),
+        ])
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", ffprobe.display()));
+
+    assert!(
+        oracle.status.success(),
+        "oracle ffprobe failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        oracle.status.code(),
+        String::from_utf8_lossy(&oracle.stdout),
+        String::from_utf8_lossy(&oracle.stderr)
+    );
+
+    let oracle_stdout =
+        String::from_utf8(oracle.stdout).expect("oracle ffprobe output should be UTF-8");
+    let rust_sections = parse_default_sections(&rust);
+    let oracle_sections = parse_default_sections(&oracle_stdout);
+
+    assert_single_section_fields_match(
+        &rust_sections,
+        &oracle_sections,
+        "FORMAT",
+        &[
+            "nb_streams",
+            "nb_programs",
+            "nb_stream_groups",
+            "format_name",
+            "format_long_name",
+            "duration",
+            "size",
+            "probe_score",
+        ],
+    );
+
+    assert_single_section_fields_match(
+        &rust_sections,
+        &oracle_sections,
+        "STREAM",
+        &[
+            "index",
+            "codec_name",
+            "codec_long_name",
+            "codec_type",
+            "codec_tag_string",
+            "codec_tag",
+            "width",
+            "height",
+            "coded_width",
+            "coded_height",
+            "r_frame_rate",
+            "avg_frame_rate",
+            "time_base",
+            "start_pts",
+            "start_time",
+            "duration_ts",
+            "duration",
+            "nb_frames",
+            "nb_read_packets",
+        ],
+    );
+
+    let rust_packets = sections_named(&rust_sections, "PACKET");
+    let oracle_packets = sections_named(&oracle_sections, "PACKET");
+    assert_eq!(rust_packets.len(), 2, "Rust should report two AVI packets");
+    assert_eq!(
+        rust_packets.len(),
+        oracle_packets.len(),
+        "Rust and oracle AVI packet counts should match"
+    );
+    for (index, (rust_packet, oracle_packet)) in
+        rust_packets.iter().zip(oracle_packets.iter()).enumerate()
+    {
+        assert_fields_match(
+            rust_packet,
+            oracle_packet,
+            &[
+                "stream_index",
+                "pts",
+                "pts_time",
+                "dts",
+                "dts_time",
+                "duration",
+                "duration_time",
+                "size",
+                "flags",
+            ],
+            &format!("PACKET[{index}]"),
+        );
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Section {
     name: String,

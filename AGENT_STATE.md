@@ -3,6 +3,52 @@
 ## Current Status
 
 Current authoritative turn status: main-thread WSL advanced the top incomplete
+`avutil-packet` row with pinned `ffprobe` AVI packet-section
+media-integration evidence. Required startup checks passed from a clean tree at
+`master...origin/master [ahead 116]`: `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- status --next 15` reported 11/96 strict-complete
+components (11.5%) with `avutil-packet` as the first incomplete row, and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validated the pinned FFmpeg 8.1.1 oracle and ABI versions.
+
+Current main-thread slice: `crates/fftools/tests/ffprobe_mov_oracle.rs` now
+adds ignored oracle test
+`avi_bgr24_ffprobe_packet_fields_match_ffmpeg_oracle`, which generates a
+two-packet BGR24 AVI with pinned FFmpeg 8.1.1 and compares Rust `ffprobe-rs`
+default `-count_packets -show_format -show_streams -show_packets` output
+against oracle `ffprobe` for selected format, stream, and packet fields. The
+new `oracle-ffprobe-avi-packet-fields` differential target is mapped to
+`avutil-packet`, `avformat-avi-demuxer`, and
+`fftools-ffprobe-avi-show-format-streams-packets`, proving the bounded AVI
+demuxer -> Packet -> ffprobe packet-section path for packet count, timing,
+padded payload size, and key flags. `fftools-ffprobe-avi-show-format-streams-packets`
+advanced from `implemented` to `differential_pass`; `avformat-avi-demuxer`
+remains `differential_pass`; `avutil-packet` remains `fate_pass`, not complete.
+Strict completion remains 11/96 because broader safe API design, broader
+packet integration, ABI/media-integration breadth, and sustained fuzz evidence
+remain pending.
+
+Validation for this slice: `cargo fmt --all`; `CARGO_TARGET_DIR=target-orch-fate
+cargo test -p fftools --test ffprobe_mov_oracle
+avi_bgr24_ffprobe_packet_fields_match_ffmpeg_oracle -- --ignored --nocapture`;
+the first mapped run without an explicit oracle path failed because
+`{oracle_ffmpeg}` resolved to the Windows `.cmd` wrapper under WSL and the
+kernel returned `Exec format error`; the rerun with
+`--oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg` passed for all
+three mapped components through `CARGO_TARGET_DIR=target-orch-fate cargo run -p
+fate-runner -- run --mappings tests/differential/mappings.txt --component
+avutil-packet --component avformat-avi-demuxer --component
+fftools-ffprobe-avi-show-format-streams-packets --target
+oracle-ffprobe-avi-packet-fields --oracle-ffmpeg
+./third_party/ffmpeg-oracle/build/bin/ffmpeg`; `CARGO_TARGET_DIR=target-orch-fate
+cargo clippy -p fftools --all-targets --all-features -- -D warnings`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- guard-runtime`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`;
+`cargo fmt --all -- --check`; `git diff --check` with only existing Git
+line-ending warnings; and `test ! -d target`.
+
+Current authoritative turn status: main-thread WSL advanced the top incomplete
 `avutil-packet` row with standalone raw `INT_MIN` singleton add-path
 removal/free evidence.
 Required startup checks passed from a clean tree at

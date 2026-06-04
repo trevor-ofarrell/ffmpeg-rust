@@ -18,6 +18,9 @@ fftools-ffmpeg-avi-framecrc-null|oracle-avi-framecrc-records|.|cargo|env:FFMPEG_
 avformat-avi-demuxer|oracle-avi-framecrc-records|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|rawvideo_oracle|avi_rgb24_framecrc_records_match_ffmpeg_oracle|--|--ignored
 avformat-framecrc-muxer|oracle-avi-framecrc-records|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|rawvideo_oracle|avi_rgb24_framecrc_records_match_ffmpeg_oracle|--|--ignored
 avutil-packet|oracle-avi-framecrc-records|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|rawvideo_oracle|avi_rgb24_framecrc_records_match_ffmpeg_oracle|--|--ignored
+fftools-ffprobe-avi-show-format-streams-packets|oracle-ffprobe-avi-packet-fields|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|ffprobe_mov_oracle|avi_bgr24_ffprobe_packet_fields_match_ffmpeg_oracle|--|--ignored
+avformat-avi-demuxer|oracle-ffprobe-avi-packet-fields|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|ffprobe_mov_oracle|avi_bgr24_ffprobe_packet_fields_match_ffmpeg_oracle|--|--ignored
+avutil-packet|oracle-ffprobe-avi-packet-fields|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|ffprobe_mov_oracle|avi_bgr24_ffprobe_packet_fields_match_ffmpeg_oracle|--|--ignored
 fftools-ffmpeg-mov-framecrc-null|oracle-mov-framecrc-records|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|mov_oracle|mov_rgb24_framecrc_records_match_ffmpeg_oracle|--|--ignored
 avformat-mov-demuxer|oracle-mov-framecrc-records|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|mov_oracle|mov_rgb24_framecrc_records_match_ffmpeg_oracle|--|--ignored
 avformat-framecrc-muxer|oracle-mov-framecrc-records|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|mov_oracle|mov_rgb24_framecrc_records_match_ffmpeg_oracle|--|--ignored

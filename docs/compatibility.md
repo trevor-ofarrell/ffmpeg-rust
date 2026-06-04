@@ -9,6 +9,16 @@
 
 ## Compatible Today
 
+- Latest main-thread packet media-integration evidence: pinned `ffprobe`
+  coverage now includes `oracle-ffprobe-avi-packet-fields`, which generates a
+  two-packet BGR24 AVI with FFmpeg 8.1.1 and compares Rust default-output
+  `-count_packets -show_format -show_streams -show_packets` format, stream,
+  and packet fields against oracle `ffprobe`. This proves the bounded AVI
+  demuxer -> Packet -> ffprobe packet-section path for packet count, timing,
+  padded payload size, and key flags. `fftools-ffprobe-avi-show-format-streams-packets`
+  advances to `differential_pass`; `avformat-avi-demuxer` remains
+  `differential_pass`; `avutil-packet` remains `fate_pass`; strict completion
+  remains 11/96.
 - Latest main-thread packet standalone raw `INT_MIN` singleton add-path
   removal/free evidence: pinned libavcodec rows
   `packet:array-add-raw-min-singleton-type-ret`,
