@@ -3,6 +3,37 @@
 ## Current Status
 
 Current authoritative turn status: main-thread WSL evidence slice strengthened
+`avutil-buffer` fuzz smoke coverage. Required startup checks passed from a
+clean tree at `master...origin/master [ahead 60]`:
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15` reported 11/96 strict-complete components (11.5%), and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validated the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
+kept the documented `avutil-packet` shared refcounted `av_shrink_packet()`
+blocker unchanged and advanced the next unblocked priority-1 buffer fuzz
+evidence lane; no worker writes were delegated.
+
+Current main-thread slice: a warmed WSL `avutil_core_models` sanitizer smoke
+ran 8192 inputs with `CARGO_TARGET_DIR=target-wsl-fuzz` and
+`ASAN_OPTIONS=detect_leaks=0` against a temporary copy of the four tracked seed
+files at `/tmp/ffmpegrust-avutil-buffer-fuzz.Xk1Ilo`. libFuzzer reached
+`DONE`, reported final corpus `449/33Kb`, and found no crash. The scratch
+directory was about 1.9 MiB and was removed after the run, while the repository
+corpus stayed at the four tracked seed files. This strengthens current
+BufferRef/BufferPool deterministic invariants, including construction,
+readonly/copy-on-write, nullable-zero, realloc, pool allocation/reuse/release,
+and failure-path fixtures. `avutil-buffer` remains `fate_pass`, not complete;
+strict completion remains 11/96 because broader ABI/lifetime closure, hardware
+device/frame ownership integration, zero-known-limitation review, and sustained
+fuzz campaign evidence remain pending.
+
+Latest validation command for this buffer fuzz evidence passed:
+`CARGO_TARGET_DIR=target-wsl-fuzz ASAN_OPTIONS=detect_leaks=0 cargo fuzz run
+avutil_core_models /tmp/ffmpegrust-avutil-buffer-fuzz.Xk1Ilo -- -runs=8192`.
+The scratch corpus was removed with `rm -rf
+/tmp/ffmpegrust-avutil-buffer-fuzz.Xk1Ilo`.
+
+Current authoritative turn status: main-thread WSL evidence slice strengthened
 `avutil-packet` fuzz smoke coverage. Required startup checks passed from a
 clean tree at `master...origin/master [ahead 59]`:
 `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next

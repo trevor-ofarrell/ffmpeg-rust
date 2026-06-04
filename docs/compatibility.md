@@ -32,12 +32,12 @@
   shared logging deterministic invariants for `avutil-logging`; strict
   completion remains 11/96 and the row remains `fate_pass`.
 - Latest main-thread buffer fuzz evidence: a warmed WSL `avutil_core_models`
-  4096-run sanitizer smoke completed against a temporary copy of the tracked
-  seed corpus without a crash. libFuzzer reported final corpus `323/22Kb`, the
-  temporary directory held 326 files, and the repository corpus stayed at four
-  seed files. This strengthens the shared BufferRef/BufferPool deterministic
-  invariants for `avutil-buffer`; strict completion remains 11/96 and the row
-  remains `fate_pass`.
+  8192-run sanitizer smoke completed against a temporary copy of the tracked
+  seed corpus without a crash. libFuzzer reported final corpus `449/33Kb`, the
+  temporary directory was removed after cleanup, and the repository corpus
+  stayed at four seed files. This strengthens the shared BufferRef/BufferPool
+  deterministic invariants for `avutil-buffer`; strict completion remains
+  11/96 and the row remains `fate_pass`.
 - Latest main-thread packet evidence: pinned libavcodec rows now prove
   packet-owned and standalone `av_packet*_side_data_add(..., NULL, 1, ...)`
   accept a NULL data pointer with nonzero visible size. Packet-owned lookup
