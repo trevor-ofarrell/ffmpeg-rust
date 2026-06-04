@@ -3789,6 +3789,7 @@ unit_tests = [
   "options::tests::set_avoption_from_str_parses_bounded_ffmpeg_numeric_expressions",
   "options::tests::get_avoption_string_formats_values_like_bounded_ffmpeg_surface",
   "options::tests::query_avoption_ranges_matches_bounded_ffmpeg_default_shape",
+  "options::tests::query_avoption_ranges_with_search_flags_use_child_target_before_root",
   "options::tests::duration_options_parse_format_and_query_like_bounded_ffmpeg_shape",
   "options::tests::image_size_options_parse_format_and_query_like_bounded_ffmpeg_shape",
   "options::tests::avoption_pixel_format_enum_table_names_are_modeled_for_identity",
@@ -3835,6 +3836,12 @@ fate_tests = [
   "options_oracle::upstream_fate_opt_passes",
 ]
 fuzz_targets = ["avutil_metadata_options"]
+# Latest orchestrated update: pinned libavutil `av_opt_query_ranges()` rows now
+# prove AV_OPT_SEARCH_CHILDREN selects direct child ranges before root ranges,
+# child-only names remain ENOMEM without child search, and AV_OPT_SEARCH_FAKE_OBJ
+# still returns the root `threads` range. Unit, oracle, FATE, and WSL
+# avutil_metadata_options fuzz-smoke evidence cover the bounded shape.
+# avutil-options remains fate_pass, not complete.
 # Latest orchestrated update: pinned libavutil `av_opt_set_from_string()` rows
 # now prove a repeated pair separator in `threads=7::quality=0.25` returns
 # EINVAL after applying `threads=7`, while leaving the later `quality` option at

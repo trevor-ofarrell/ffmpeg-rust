@@ -1155,31 +1155,17 @@ impl OptionSet {
     }
 
     pub fn query_avoption_ranges(&self, name: &str) -> AvResult<AvOptionRanges> {
-        let index = self.avoption_query_ranges_index(name)?;
-        if matches!(self.definitions[index].kind(), OptionKind::ChannelLayout) {
-            return Err(AvError::with_code(
-                AvErrorKind::Unsupported,
-                AvErrorCode::ENOSYS,
-                format!(
-                    "AVOption `{}` does not expose query ranges",
-                    self.definitions[index].name()
-                ),
-            ));
-        }
-        if matches!(
-            self.definitions[index].kind(),
-            OptionKind::Binary | OptionKind::Dictionary | OptionKind::Array(_)
-        ) {
-            return Err(AvError::with_code(
-                AvErrorKind::Unsupported,
-                AvErrorCode::ENOSYS,
-                format!(
-                    "AVOption `{}` does not expose query ranges",
-                    self.definitions[index].name()
-                ),
-            ));
-        }
-        Ok(avoption_ranges_for_kind(self.definitions[index].kind()))
+        self.query_avoption_ranges_with_flags(name, OptionSearchFlags::empty())
+    }
+
+    pub fn query_avoption_ranges_with_flags(
+        &self,
+        name: &str,
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<AvOptionRanges> {
+        let search_flags = OptionSearchFlags::from_bits_truncate(search_flags.bits());
+        let definition = self.avoption_query_ranges_definition(name, search_flags)?;
+        avoption_ranges_for_definition(definition)
     }
 
     pub fn child_range(
@@ -2894,13 +2880,25 @@ impl OptionSet {
     }
 
     fn avoption_query_ranges_index(&self, name: &str) -> AvResult<usize> {
-        self.find_exact_index(name).ok_or_else(|| {
-            AvError::with_code(
-                AvErrorKind::NotFound,
-                AvErrorCode::ENOMEM,
-                format!("unknown AVOption range `{name}`"),
-            )
-        })
+        self.find_exact_index(name)
+            .ok_or_else(|| avoption_query_ranges_not_found_error(name))
+    }
+
+    fn avoption_query_ranges_definition(
+        &self,
+        name: &str,
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<&OptionDefinition> {
+        if search_flags.contains(OptionSearchFlags::CHILDREN) {
+            for child in &self.children {
+                if let Some(index) = child.options.find_exact_index(name) {
+                    return Ok(&child.options.definitions[index]);
+                }
+            }
+        }
+
+        let index = self.avoption_query_ranges_index(name)?;
+        Ok(&self.definitions[index])
     }
 
     fn child_by_name(&self, name: &str) -> AvResult<&OptionChild> {
@@ -3034,6 +3032,14 @@ fn avoption_not_found_error(name: &str) -> AvError {
         AvErrorKind::NotFound,
         AvErrorCode::OPTION_NOT_FOUND,
         format!("unknown AVOption `{name}`"),
+    )
+}
+
+fn avoption_query_ranges_not_found_error(name: &str) -> AvError {
+    AvError::with_code(
+        AvErrorKind::NotFound,
+        AvErrorCode::ENOMEM,
+        format!("unknown AVOption range `{name}`"),
     )
 }
 
@@ -4206,6 +4212,27 @@ fn avoption_ranges_for_kind(kind: &OptionKind) -> AvOptionRanges {
     }
 
     AvOptionRanges::one(range)
+}
+
+fn avoption_ranges_for_definition(definition: &OptionDefinition) -> AvResult<AvOptionRanges> {
+    if matches!(
+        definition.kind(),
+        OptionKind::ChannelLayout
+            | OptionKind::Binary
+            | OptionKind::Dictionary
+            | OptionKind::Array(_)
+    ) {
+        return Err(AvError::with_code(
+            AvErrorKind::Unsupported,
+            AvErrorCode::ENOSYS,
+            format!(
+                "AVOption `{}` does not expose query ranges",
+                definition.name()
+            ),
+        ));
+    }
+
+    Ok(avoption_ranges_for_kind(definition.kind()))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -7853,6 +7880,50 @@ mod tests {
     }
 
     #[test]
+    fn query_avoption_ranges_with_search_flags_use_child_target_before_root() {
+        let options = sample_flagged_options_with_child_size();
+
+        let root_threads = options.query_avoption_ranges("threads").unwrap();
+        assert_eq!(root_threads.ranges()[0].value_min(), 1.0);
+        assert_eq!(root_threads.ranges()[0].value_max(), 64.0);
+
+        let child_threads = options
+            .query_avoption_ranges_with_flags("threads", OptionSearchFlags::CHILDREN)
+            .unwrap();
+        assert_eq!(child_threads.nb_ranges(), 1);
+        assert_eq!(child_threads.nb_components(), 1);
+        assert_eq!(child_threads.ranges()[0].value_min(), 1.0);
+        assert_eq!(child_threads.ranges()[0].value_max(), 16.0);
+
+        let child_only = options
+            .query_avoption_ranges_with_flags("child_only", OptionSearchFlags::CHILDREN)
+            .unwrap();
+        assert_eq!(child_only.ranges()[0].value_min(), 0.0);
+        assert_eq!(child_only.ranges()[0].value_max(), 10.0);
+
+        let child_size = options
+            .query_avoption_ranges_with_flags("child_size", OptionSearchFlags::CHILDREN)
+            .unwrap();
+        assert_eq!(child_size.ranges()[0].value_min(), 0.0);
+        assert_eq!(child_size.ranges()[0].value_max(), (i32::MAX / 8) as f64);
+        assert_eq!(child_size.ranges()[0].component_min(), 0.0);
+        assert_eq!(
+            child_size.ranges()[0].component_max(),
+            (i32::MAX / 128 / 8) as f64
+        );
+
+        let child_only_missing = options.query_avoption_ranges("child_only").unwrap_err();
+        assert_eq!(child_only_missing.kind(), AvErrorKind::NotFound);
+        assert_eq!(child_only_missing.code(), Some(AvErrorCode::ENOMEM));
+
+        let fake_obj = options
+            .query_avoption_ranges_with_flags("threads", OptionSearchFlags::FAKE_OBJ)
+            .unwrap();
+        assert_eq!(fake_obj.ranges()[0].value_min(), 1.0);
+        assert_eq!(fake_obj.ranges()[0].value_max(), 64.0);
+    }
+
+    #[test]
     fn rejects_unknown_options_type_mismatches_and_out_of_range_values() {
         let mut options = sample_options();
 
@@ -8740,64 +8811,7 @@ mod tests {
 
     #[test]
     fn avoption_get_set_with_search_flags_use_child_target_before_root() {
-        let mut options = sample_options();
-        let mut child_options = OptionSet::new();
-        child_options
-            .define(
-                OptionDefinition::new_with_flags(
-                    "threads",
-                    OptionKind::Int { min: 1, max: 16 },
-                    OptionValue::Int(2),
-                    "child worker count",
-                    OptionFlags::DECODING_PARAM,
-                )
-                .unwrap(),
-            )
-            .unwrap();
-        child_options
-            .define(
-                OptionDefinition::new_with_flags(
-                    "child_only",
-                    OptionKind::Int { min: 0, max: 10 },
-                    OptionValue::Int(5),
-                    "child-only value",
-                    OptionFlags::DECODING_PARAM,
-                )
-                .unwrap(),
-            )
-            .unwrap();
-        child_options
-            .define(
-                OptionDefinition::new_with_flags(
-                    "child_readonly",
-                    OptionKind::Int { min: 0, max: 10 },
-                    OptionValue::Int(0),
-                    "child read-only value",
-                    OptionFlags::from_bits_truncate(
-                        OptionFlags::DECODING_PARAM.bits() | OptionFlags::READONLY.bits(),
-                    ),
-                )
-                .unwrap(),
-            )
-            .unwrap();
-        child_options
-            .define(
-                OptionDefinition::new_with_flags(
-                    "child_size",
-                    OptionKind::ImageSize,
-                    OptionValue::ImageSize {
-                        width: 320,
-                        height: 240,
-                    },
-                    "child image size",
-                    OptionFlags::DECODING_PARAM,
-                )
-                .unwrap(),
-            )
-            .unwrap();
-        options
-            .define_child(OptionChild::new("decoder", child_options, "").unwrap())
-            .unwrap();
+        let mut options = sample_flagged_options_with_child_size();
 
         assert_eq!(
             options
@@ -9785,6 +9799,29 @@ mod tests {
             .unwrap();
         options
             .define_child(OptionChild::new("decoder", child_options, "decoder options").unwrap())
+            .unwrap();
+        options
+    }
+
+    fn sample_flagged_options_with_child_size() -> OptionSet {
+        let mut options = sample_flagged_options_with_child();
+        options
+            .child_mut("decoder")
+            .unwrap()
+            .options_mut()
+            .define(
+                OptionDefinition::new_with_flags(
+                    "child_size",
+                    OptionKind::ImageSize,
+                    OptionValue::ImageSize {
+                        width: 320,
+                        height: 240,
+                    },
+                    "child image size",
+                    OptionFlags::DECODING_PARAM,
+                )
+                .unwrap(),
+            )
             .unwrap();
         options
     }

@@ -285,8 +285,12 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
             }
             12 => {
                 let name = option_name_from(cursor);
+                let flags = option_search_flags_from(cursor.next());
                 let before = options.clone();
                 if let Ok(ranges) = options.query_avoption_ranges(&name) {
+                    assert_avoption_ranges_are_valid(&ranges);
+                }
+                if let Ok(ranges) = options.query_avoption_ranges_with_flags(&name, flags) {
                     assert_avoption_ranges_are_valid(&ranges);
                 }
                 assert_eq!(options, before);
@@ -2078,6 +2082,27 @@ fn exercise_fixtures() {
             .unwrap(),
         (320, 240)
     );
+    let child_threads_ranges = options
+        .query_avoption_ranges_with_flags("threads", OptionSearchFlags::CHILDREN)
+        .unwrap();
+    assert_eq!(child_threads_ranges.ranges()[0].value_min(), 1.0);
+    assert_eq!(child_threads_ranges.ranges()[0].value_max(), 16.0);
+    let child_size_ranges = options
+        .query_avoption_ranges_with_flags("child_size", OptionSearchFlags::CHILDREN)
+        .unwrap();
+    assert_avoption_ranges_are_valid(&child_size_ranges);
+    assert_eq!(
+        options
+            .query_avoption_ranges("child_size")
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::ENOMEM)
+    );
+    let fake_threads_ranges = options
+        .query_avoption_ranges_with_flags("threads", OptionSearchFlags::FAKE_OBJ)
+        .unwrap();
+    assert_eq!(fake_threads_ranges.ranges()[0].value_min(), 1.0);
+    assert_eq!(fake_threads_ranges.ranges()[0].value_max(), 64.0);
     options
         .set_avoption_image_size_with_flags("child_size", 800, 600, OptionSearchFlags::CHILDREN)
         .unwrap();

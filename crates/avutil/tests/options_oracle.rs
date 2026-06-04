@@ -287,6 +287,25 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     let mut options_with_child = sample_options_with_child();
     insert_row(
         &mut rows,
+        "query-ranges:children",
+        [
+            ret_ranges(
+                options_with_child
+                    .query_avoption_ranges_with_flags("threads", OptionSearchFlags::CHILDREN),
+            ),
+            ret_ranges(
+                options_with_child
+                    .query_avoption_ranges_with_flags("child_only", OptionSearchFlags::CHILDREN),
+            ),
+            ret_ranges(options_with_child.query_avoption_ranges("child_only")),
+            ret_ranges(
+                options_with_child
+                    .query_avoption_ranges_with_flags("threads", OptionSearchFlags::FAKE_OBJ),
+            ),
+        ],
+    );
+    insert_row(
+        &mut rows,
         "find:children",
         [
             entry_target_name(options_with_child.find_avoption(
@@ -4615,9 +4634,9 @@ static void print_get_children_row(const TestOptions *ctx) {
     printf("\n");
 }
 
-static void print_query_range_value(const void *ctx, const char *name) {
+static void print_query_range_value_flags(const void *ctx, const char *name, int flags) {
     AVOptionRanges *ranges = NULL;
-    int ret = av_opt_query_ranges(&ranges, (void *)ctx, name, 0);
+    int ret = av_opt_query_ranges(&ranges, (void *)ctx, name, flags);
     if (ret < 0 || !ranges || !ranges->range ||
         ranges->nb_ranges <= 0 || ranges->nb_components <= 0 ||
         !ranges->range[0]) {
@@ -4637,6 +4656,10 @@ static void print_query_range_value(const void *ctx, const char *name) {
     av_opt_freep_ranges(&ranges);
 }
 
+static void print_query_range_value(const void *ctx, const char *name) {
+    print_query_range_value_flags(ctx, name, 0);
+}
+
 static void print_query_ranges_row(const TestOptions *ctx) {
     printf("query-ranges:root");
     print_query_range_value(ctx, "threads");
@@ -4648,6 +4671,15 @@ static void print_query_ranges_row(const TestOptions *ctx) {
     print_query_range_value(ctx, "exported");
     print_query_range_value(ctx, "THREADS");
     print_query_range_value(ctx, "fast");
+    printf("\n");
+}
+
+static void print_query_ranges_children_row(const TestOptions *ctx) {
+    printf("query-ranges:children");
+    print_query_range_value_flags(ctx, "threads", AV_OPT_SEARCH_CHILDREN);
+    print_query_range_value_flags(ctx, "child_only", AV_OPT_SEARCH_CHILDREN);
+    print_query_range_value_flags(ctx, "child_only", 0);
+    print_query_range_value_flags(ctx, "threads", AV_OPT_SEARCH_FAKE_OBJ);
     printf("\n");
 }
 
@@ -6246,6 +6278,7 @@ int main(void) {
     print_get_errors(&ctx);
     print_get_allow_null_row(&ctx);
     print_query_ranges_row(&ctx);
+    print_query_ranges_children_row(&ctx);
     print_find_children_row(&ctx);
     print_get_children_row(&ctx);
     print_set_children_row(&ctx);

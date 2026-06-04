@@ -2,6 +2,66 @@
 
 ## Current Status
 
+Current authoritative turn status: main-thread WSL slice added
+`avutil-options` `av_opt_query_ranges()` search-flag evidence. Required
+startup checks passed from a dirty tree at `master...origin/master [ahead 53]`:
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15` reported 11/96 strict-complete components (11.5%), and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validated the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
+finished the existing dirty `avutil-options` slice rather than starting a new
+worker lane; no worker writes were delegated.
+
+Current main-thread slice: Rust now exposes
+`OptionSet::query_avoption_ranges_with_flags` for bounded
+`av_opt_query_ranges()` search behavior. Pinned libavutil rows prove
+`AV_OPT_SEARCH_CHILDREN` selects direct child ranges before root ranges,
+child-only names remain `ENOMEM` without child search, and
+`AV_OPT_SEARCH_FAKE_OBJ` still returns the root `threads` range rather than the
+get/set not-found behavior. Focused unit coverage, the ignored options oracle,
+the differential/FATE mappings, and a bounded WSL `avutil_metadata_options`
+64-run fuzz smoke cover the same shape. `avutil-options` remains `fate_pass`,
+not complete; strict completion remains 11/96 because full AVOption API parity,
+broader recursive child semantics, broader expression/SI and raw-pointer edges,
+CLI option ordering, and zero-known-limitation review remain pending.
+
+Latest validation commands for this options range-query search-flag slice
+passed: `cargo fmt --all`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p
+avutil query_avoption_ranges_with_search_flags -- --nocapture`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
+options_oracle libavutil_option_helpers_match_current_model -- --ignored
+--nocapture` after an initial oracle-guided correction for
+`AV_OPT_SEARCH_FAKE_OBJ`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p
+fate-runner -- run --mappings tests/differential/mappings.txt --component
+avutil-options --target oracle-libavutil-options --oracle-ffmpeg
+./third_party/ffmpeg-oracle/build/bin/ffmpeg` after escalation allowed the
+pinned FFmpeg `fate-opt` build-cache write; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- run --component avutil-options`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run --mappings
+tests/fate/upstream-mappings.txt --component avutil-options --target fate-opt`
+after escalation allowed the same build-cache write;
+`CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil --all-targets
+--all-features -- -D warnings`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo check
+--manifest-path fuzz/Cargo.toml --bin avutil_metadata_options`;
+`CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy --manifest-path fuzz/Cargo.toml
+--bin avutil_metadata_options -- -D warnings`; `CARGO_TARGET_DIR=target-wsl-fuzz
+ASAN_OPTIONS=detect_leaks=0 cargo fuzz run avutil_metadata_options -- -runs=64`;
+`cargo fmt --all -- --check`; and `git diff --check` with CRLF conversion
+warnings only. Final guards also passed: `CARGO_TARGET_DIR=target-orch-fate
+cargo test -p fate-runner current_ledger`; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p xtask -- guard-runtime`; `CARGO_TARGET_DIR=target-orch-fate cargo
+run -p fate-runner -- status --next 15`; and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`.
+
+Incidental fuzz finding from this turn: the earlier optional
+`avutil_core_models` 4096-run smoke against a temporary corpus failed after
+2048+ generated inputs with an assertion at
+`fuzz_targets/avutil_core_models.rs:6850` and wrote an ignored reproducer under
+`fuzz/artifacts/avutil_core_models/crash-a41196e9ee31e7c3d4e23857a5a7805c4136ab98`.
+This is not part of the options slice and was not committed, but the next
+priority-1 turn should triage whether the descriptor bits-per-pixel invariant
+or the modeled descriptor data is wrong.
+
 Current authoritative turn status: main-thread WSL evidence slice added
 stronger `avutil_core_models` fuzz smoke coverage for `avutil-packet`.
 Required startup checks passed from a clean tree at
