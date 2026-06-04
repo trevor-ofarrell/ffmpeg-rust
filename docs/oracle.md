@@ -231,6 +231,21 @@ kinds, standalone raw `AV_PKT_DATA_NB`/`AV_PKT_DATA_NB + 1`/`-1`/`INT_MIN`
 append, and standalone `av_packet_side_data_add()` with nonzero flags preserve
 caller-owned zeroed input padding after direct ownership transfer.
 
+The latest packet standalone raw `INT_MIN` add singleton fixture adds
+`packet:array-add-raw-min-singleton-type-ret`,
+`packet:array-add-raw-min-singleton-type`,
+`packet:array-get-raw-min-singleton-type`,
+`packet:array-add-raw-min-singleton-type-padding`,
+`packet:array-remove-raw-min-singleton-type`,
+`packet:array-get-raw-min-singleton-type-removed`, and
+`packet:array-free-raw-min-singleton-type` rows. These prove standalone
+`av_packet_side_data_add()` accepts a caller-owned padded raw `INT_MIN`
+singleton entry, preserves its zeroed input padding, removes it, misses lookup
+afterward, and leaves `av_packet_side_data_free()` with an empty state. The
+deterministic `avutil_core_models` fixture mirrors the same add-path
+singleton lifecycle through `PacketSideDataList::try_add_side_data()`,
+`remove_kind()`, and `clear()`.
+
 The latest packet standalone raw `INT_MIN` singleton fixture adds
 `packet:array-new-raw-min-singleton-type-ret`,
 `packet:array-new-raw-min-singleton-type`,

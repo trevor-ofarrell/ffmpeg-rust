@@ -249,8 +249,8 @@ source packet side-data list. Packet-owned `new_side_data` and standalone
 input padding when replacing the first matching duplicate-kind entry, matching
 the current duplicate new-padding rows. Standalone `PacketSideDataList`
 removal and clear behavior also matches the pinned empty-state rows for
-transferred raw `-1` entries and newly allocated raw `AV_PKT_DATA_NB`,
-`AV_PKT_DATA_NB + 1`, `-1`, and singleton `INT_MIN` entries.
+transferred raw `-1` and singleton `INT_MIN` entries and newly allocated raw
+`AV_PKT_DATA_NB`, `AV_PKT_DATA_NB + 1`, `-1`, and singleton `INT_MIN` entries.
 Packet-owned `try_add_side_data_owned` and
 standalone `PacketSideDataList::try_add_side_data_with_flags` transfer
 caller-owned `SideData` directly, so caller-provided padded storage remains

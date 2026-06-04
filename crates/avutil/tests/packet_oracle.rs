@@ -6297,6 +6297,45 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         side_data_padding_fields(raw_list.get(&raw_min_kind)),
     );
 
+    let mut raw_min_add_list = PacketSideDataList::new();
+    let raw_min_singleton_added = raw_min_add_list
+        .try_add_side_data(padded_side_data(raw_min_kind.clone(), &[0xe3]))
+        .unwrap();
+    assert!(raw_min_singleton_added.is_none());
+    rows.insert(
+        "packet:array-add-raw-min-singleton-type-ret".to_string(),
+        vec!["1".to_string()],
+    );
+    rows.insert(
+        "packet:array-add-raw-min-singleton-type".to_string(),
+        side_data_list_summary_fields(&raw_min_add_list),
+    );
+    rows.insert(
+        "packet:array-get-raw-min-singleton-type".to_string(),
+        side_data_lookup_fields(raw_min_add_list.get(&raw_min_kind)),
+    );
+    rows.insert(
+        "packet:array-add-raw-min-singleton-type-padding".to_string(),
+        side_data_padding_fields(raw_min_add_list.get(&raw_min_kind)),
+    );
+    let removed = raw_min_add_list
+        .remove_kind(&raw_min_kind)
+        .expect("raw INT_MIN standalone add side data should be removable");
+    assert_eq!(removed.data(), &[0xe3]);
+    rows.insert(
+        "packet:array-remove-raw-min-singleton-type".to_string(),
+        side_data_list_summary_fields(&raw_min_add_list),
+    );
+    rows.insert(
+        "packet:array-get-raw-min-singleton-type-removed".to_string(),
+        side_data_lookup_fields(raw_min_add_list.get(&raw_min_kind)),
+    );
+    raw_min_add_list.clear();
+    rows.insert(
+        "packet:array-free-raw-min-singleton-type".to_string(),
+        side_data_list_summary_fields(&raw_min_add_list),
+    );
+
     let mut raw_negative_new_list = PacketSideDataList::new();
     raw_negative_new_list
         .new_side_data(raw_negative_kind.clone(), 2)
@@ -10260,6 +10299,53 @@ static void exercise_side_data_array_api(void) {
     print_side_data_array_padding("packet:array-add-raw-min-type-padding",
                                   sd, nb_sd,
                                   (enum AVPacketSideDataType)INT_MIN);
+
+    AVPacketSideData *raw_min_add_sd = NULL;
+    int raw_min_add_nb_sd = 0;
+    owned = av_mallocz(1 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!owned, "av_mallocz singleton INT_MIN raw type failed");
+    owned[0] = 0xe3;
+    entry = av_packet_side_data_add(&raw_min_add_sd,
+                                    &raw_min_add_nb_sd,
+                                    (enum AVPacketSideDataType)INT_MIN,
+                                    owned, 1, 0);
+    printf("packet:array-add-raw-min-singleton-type-ret|%d\n",
+           entry != NULL);
+    if (!entry)
+        av_free(owned);
+    fail_if(!entry, "av_packet_side_data_add singleton INT_MIN raw type failed");
+    print_side_data_array_summary(
+        "packet:array-add-raw-min-singleton-type",
+        raw_min_add_sd,
+        raw_min_add_nb_sd);
+    print_side_data_array_lookup(
+        "packet:array-get-raw-min-singleton-type",
+        raw_min_add_sd,
+        raw_min_add_nb_sd,
+        (enum AVPacketSideDataType)INT_MIN);
+    print_side_data_array_padding(
+        "packet:array-add-raw-min-singleton-type-padding",
+        raw_min_add_sd,
+        raw_min_add_nb_sd,
+        (enum AVPacketSideDataType)INT_MIN);
+    av_packet_side_data_remove(raw_min_add_sd,
+                               &raw_min_add_nb_sd,
+                               (enum AVPacketSideDataType)INT_MIN);
+    print_side_data_array_summary(
+        "packet:array-remove-raw-min-singleton-type",
+        raw_min_add_sd,
+        raw_min_add_nb_sd);
+    print_side_data_array_lookup(
+        "packet:array-get-raw-min-singleton-type-removed",
+        raw_min_add_sd,
+        raw_min_add_nb_sd,
+        (enum AVPacketSideDataType)INT_MIN);
+    av_packet_side_data_free(&raw_min_add_sd,
+                             &raw_min_add_nb_sd);
+    print_side_data_array_summary(
+        "packet:array-free-raw-min-singleton-type",
+        raw_min_add_sd,
+        raw_min_add_nb_sd);
 
     AVPacketSideData *raw_type_new_sd = NULL;
     int raw_type_new_nb_sd = 0;

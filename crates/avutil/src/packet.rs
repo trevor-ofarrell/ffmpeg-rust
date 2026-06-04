@@ -12907,6 +12907,38 @@ mod tests {
             .is_none());
         assert_eq!(list.get(&raw_negative_kind).unwrap().data(), &[0xf1]);
 
+        let raw_min_kind = PacketSideDataKind::from_ffmpeg_raw_value(i32::MIN);
+        let mut raw_min_add_owner = Packet::default();
+        raw_min_add_owner
+            .new_side_data(raw_min_kind.clone(), 1)
+            .unwrap()
+            .data_mut()
+            .copy_from_slice(&[0xe3]);
+        let mut raw_min_add_list = PacketSideDataList::new();
+        let raw_min_added = raw_min_add_owner
+            .take_side_data_kind(&raw_min_kind)
+            .unwrap();
+        assert!(raw_min_add_list
+            .try_add_side_data(raw_min_added)
+            .unwrap()
+            .is_none());
+        let raw_min_added_side = raw_min_add_list.get(&raw_min_kind).unwrap();
+        assert_eq!(raw_min_added_side.data(), &[0xe3]);
+        assert_eq!(
+            raw_min_added_side.padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(raw_min_added_side
+            .padding_slice()
+            .iter()
+            .take(AV_INPUT_BUFFER_PADDING_SIZE)
+            .all(|byte| *byte == 0));
+        let removed = raw_min_add_list.remove_kind(&raw_min_kind).unwrap();
+        assert_eq!(removed.data(), &[0xe3]);
+        assert!(raw_min_add_list.get(&raw_min_kind).is_none());
+        raw_min_add_list.clear();
+        assert!(raw_min_add_list.is_empty());
+
         let mut raw_negative_new_list = PacketSideDataList::new();
         raw_negative_new_list
             .new_side_data(raw_negative_kind.clone(), 2)
@@ -12932,7 +12964,6 @@ mod tests {
         raw_negative_new_list.clear();
         assert!(raw_negative_new_list.is_empty());
 
-        let raw_min_kind = PacketSideDataKind::from_ffmpeg_raw_value(i32::MIN);
         let mut raw_min_new_list = PacketSideDataList::new();
         raw_min_new_list
             .new_side_data(raw_min_kind.clone(), 1)
