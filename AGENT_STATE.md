@@ -2,6 +2,36 @@
 
 ## Current Status
 
+Current authoritative turn status: main-thread WSL evidence slice strengthened
+`avutil-packet` fuzz smoke coverage. Required startup checks passed from a
+clean tree at `master...origin/master [ahead 59]`:
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15` reported 11/96 strict-complete components (11.5%), and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validated the pinned FFmpeg 8.1.1 oracle and ABI versions. The main thread
+kept the documented shared refcounted `av_shrink_packet()` blocker unchanged
+and advanced bounded packet fuzz evidence; no worker writes were delegated.
+
+Current main-thread slice: a warmed WSL `avutil_core_models` sanitizer smoke
+ran 4096 inputs with `CARGO_TARGET_DIR=target-wsl-fuzz` and
+`ASAN_OPTIONS=detect_leaks=0` against a temporary copy of the four tracked seed
+files at `/tmp/ffmpegrust-avutil-packet-fuzz.UU9jug`. libFuzzer reached
+`DONE`, reported final corpus `283/20Kb`, and found no crash. The scratch
+directory was about 1.2 MiB and was removed after the run, while the repository
+corpus stayed at the four tracked seed files. This strengthens the current
+packet deterministic invariants, including nullable side-data, dictionary,
+payload, side-data list, FIFO, timestamp, and lifecycle fixtures.
+`avutil-packet` remains `fate_pass`, not complete; strict completion remains
+11/96 because the shared-shrink blocker, remaining ABI/media-integration
+vectors, broader packet integration, and sustained fuzz campaign remain
+pending.
+
+Latest validation command for this packet fuzz evidence passed:
+`CARGO_TARGET_DIR=target-wsl-fuzz ASAN_OPTIONS=detect_leaks=0 cargo fuzz run
+avutil_core_models /tmp/ffmpegrust-avutil-packet-fuzz.UU9jug -- -runs=4096`.
+The scratch corpus was removed with `rm -rf
+/tmp/ffmpegrust-avutil-packet-fuzz.UU9jug`.
+
 Current authoritative turn status: main-thread WSL slice advanced
 `avutil-options` recursive `AV_OPT_SEARCH_CHILDREN` parity. Required startup
 checks passed from a dirty tree at `master...origin/master [ahead 58]`:

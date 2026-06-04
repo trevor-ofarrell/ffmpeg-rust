@@ -9,6 +9,13 @@
 
 ## Compatible Today
 
+- Latest main-thread packet fuzz evidence: a warmed WSL `avutil_core_models`
+  4096-run sanitizer smoke completed against a temporary copy of the tracked
+  seed corpus without a crash. libFuzzer reported final corpus `283/20Kb`,
+  the scratch corpus was removed, and the repository corpus stayed at four seed
+  files. This strengthens current packet deterministic invariants for
+  `avutil-packet`; strict completion remains 11/96 and the row remains
+  `fate_pass`.
 - Latest main-thread options evidence: pinned libavutil rows now prove
   recursive `AV_OPT_SEARCH_CHILDREN` behavior for nested AVClass children.
   A nested leaf option wins over the direct child and root for duplicate
