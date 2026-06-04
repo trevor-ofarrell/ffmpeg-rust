@@ -9,6 +9,15 @@
 
 ## Compatible Today
 
+- Latest main-thread packet raw `AV_PKT_DATA_NB` new-side-data padding
+  evidence: pinned libavcodec row `packet:side-new-raw-nb-type-padding` now
+  proves exact raw `AV_PKT_DATA_NB` packet-owned
+  `av_packet_new_side_data()` allocations get zeroed input padding. Rust
+  mirrors this through `Packet::new_side_data` while preserving the raw
+  sentinel kind and padded allocation shape, with focused unit, ignored
+  oracle, mapped differential/FATE, upstream `fate-avpacket`, clippy, and WSL
+  `avutil_core_models` sanitizer smoke coverage. `avutil-packet` remains
+  `fate_pass`; strict completion remains 11/96.
 - Latest main-thread packet standalone raw new-side-data padding evidence:
   pinned libavcodec row `packet:array-new-raw-type-padding` now proves raw
   `AV_PKT_DATA_NB` standalone `av_packet_side_data_new()` allocations get
@@ -84,10 +93,11 @@
   `avutil-packet` remains `fate_pass`; strict completion remains 11/96.
 - Latest main-thread packet raw side-data allocation/no-mutation padding
   evidence: pinned libavcodec rows `packet:side-new-raw-type-padding`,
+  `packet:side-new-raw-nb-type-padding`,
   `packet:side-new-raw-min-type-padding`,
   `packet:array-new-raw-type-padding`, and
-  `packet:side-shrink-raw-min-oversize-padding` now prove raw
-  `AV_PKT_DATA_NB + 1` and `INT_MIN` packet-owned
+  `packet:side-shrink-raw-min-oversize-padding` now prove raw exact
+  `AV_PKT_DATA_NB`, `AV_PKT_DATA_NB + 1`, and `INT_MIN` packet-owned
   `av_packet_new_side_data()` allocations get zeroed input padding, raw
   `AV_PKT_DATA_NB` standalone `av_packet_side_data_new()` allocations get the
   same zeroed padding, and an oversize `INT_MIN`

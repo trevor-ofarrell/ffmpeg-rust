@@ -251,12 +251,13 @@ shape through `SideData::shrink()`.
 
 The latest packet raw side-data allocation/no-mutation padding fixture adds
 `packet:side-new-raw-type-padding`,
+`packet:side-new-raw-nb-type-padding`,
 `packet:side-new-raw-negative-type-padding`,
 `packet:side-new-raw-min-type-padding`, and
 `packet:array-new-raw-type-padding` and
 `packet:array-new-raw-min-type-padding` rows, plus
-`packet:side-shrink-raw-min-oversize-padding`. These prove raw
-`AV_PKT_DATA_NB + 1`, `-1`, and `INT_MIN` packet-owned
+`packet:side-shrink-raw-min-oversize-padding`. These prove raw exact
+`AV_PKT_DATA_NB`, `AV_PKT_DATA_NB + 1`, `-1`, and `INT_MIN` packet-owned
 `av_packet_new_side_data()` allocations include zeroed input padding, raw
 `AV_PKT_DATA_NB` and `INT_MIN` standalone `av_packet_side_data_new()`
 allocations include the same zeroed padding, and an oversize shrink failure for
@@ -1162,7 +1163,7 @@ The harness also includes `packet:payload-ref-unrefcounted-*`, `packet:payload-c
 
 The harness also includes `packet:dict-pack-multikey`, `packet:dict-unpack-multikey-ret`, and `packet:dict-unpack-multikey` rows. These pin the `AV_DICT_MULTIKEY` pack shape and the subsequent case-insensitive duplicate-key unpack collapse. The `packet:dict-unpack-empty-ret`, `packet:dict-unpack-missing-final-nul-ret`, `packet:dict-unpack-key-without-value-ret`, `packet:dict-unpack-empty-key-ret`, and `packet:dict-unpack-trailing-empty-key-ret` rows pin `av_packet_unpack_dictionary()` return-code behavior for empty input and malformed string metadata, with the malformed rows returning `AVERROR_INVALIDDATA`.
 
-The harness also includes `packet:side-add-capacity-*`, `packet:side-add-capacity-overflow-owned`, and `packet:side-new-capacity-overflow` rows, proving packet-owned side-data capacity behavior at `AV_PKT_DATA_NB`: replacement remains valid at capacity, append fails with `ERANGE` without changing the entry count, failed `av_packet_add_side_data()` append preserves the caller-owned data pointer for the caller to free, and `av_packet_new_side_data()` returns NULL at capacity. The packet-owned raw lookup rows prove `av_packet_get_side_data()` finds raw inserted side-data kinds at `AV_PKT_DATA_NB`, `AV_PKT_DATA_NB + 1`, `-1`, and `INT_MIN` after the corresponding `av_packet_add_side_data()` or `av_packet_new_side_data()` calls.
+The harness also includes `packet:side-add-capacity-*`, `packet:side-add-capacity-overflow-owned`, and `packet:side-new-capacity-overflow` rows, proving packet-owned side-data capacity behavior at `AV_PKT_DATA_NB`: replacement remains valid at capacity, append fails with `ERANGE` without changing the entry count, failed `av_packet_add_side_data()` append preserves the caller-owned data pointer for the caller to free, and `av_packet_new_side_data()` returns NULL at capacity. The packet-owned raw lookup rows prove `av_packet_get_side_data()` finds raw inserted side-data kinds at `AV_PKT_DATA_NB`, `AV_PKT_DATA_NB + 1`, `-1`, and `INT_MIN` after the corresponding `av_packet_add_side_data()` or `av_packet_new_side_data()` calls, and `packet:side-new-raw-nb-type-padding` pins the exact `AV_PKT_DATA_NB` packet-owned allocation padding shape separately from the existing `AV_PKT_DATA_NB + 1` row.
 
 The harness also includes `packet:array-add-capacity-*` and `packet:array-new-capacity-overflow` rows, proving the standalone `AVPacketSideData` array helpers do not apply the same packet-owned `AV_PKT_DATA_NB` ceiling: `av_packet_side_data_add()` accepts an out-of-range raw type and grows the array from 41 to 42 entries, and `av_packet_side_data_new()` for that same raw type replaces the entry while keeping the count at 42. The newest standalone raw-type rows add `packet:array-add-raw-type-*`, `packet:array-add-raw-type-padding`, `packet:array-new-raw-type-padding`, `packet:array-add-raw-negative-type-*`, `packet:array-add-raw-negative-type-padding`, `packet:array-add-raw-min-type-padding`, `packet:array-new-raw-negative-type-padding`, `packet:array-new-raw-min-type-padding`, and `packet:array-new/get/remove-raw-min-type`, proving the same standalone array API accepts raw `AV_PKT_DATA_NB`, `-1`, and `INT_MIN` values, lookup finds them, raw `AV_PKT_DATA_NB`, `-1`, and `INT_MIN` add/new-side-data paths preserve or allocate zeroed input padding, and removing the `INT_MIN` entry preserves the `-1` entry.
 

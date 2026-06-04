@@ -5390,6 +5390,29 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         side_data_padding_fields(raw_packet.side_data_by_kind_id(&raw_add_kind)),
     );
 
+    let mut raw_nb_new_packet = Packet::default();
+    raw_nb_new_packet
+        .new_side_data(raw_add_kind.clone(), 2)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0x5a, 0x5b]);
+    rows.insert(
+        "packet:side-new-raw-nb-type-ret".to_string(),
+        vec!["1".to_string()],
+    );
+    rows.insert(
+        "packet:side-new-raw-nb-type".to_string(),
+        side_data_summary_fields(&raw_nb_new_packet),
+    );
+    rows.insert(
+        "packet:side-get-new-raw-nb-type".to_string(),
+        side_data_lookup_fields(raw_nb_new_packet.side_data_by_kind_id(&raw_add_kind)),
+    );
+    rows.insert(
+        "packet:side-new-raw-nb-type-padding".to_string(),
+        side_data_padding_fields(raw_nb_new_packet.side_data_by_kind_id(&raw_add_kind)),
+    );
+
     let raw_new_kind =
         PacketSideDataKind::from_ffmpeg_raw_value(PacketSideDataKind::KNOWN.len() as i32 + 1);
     raw_packet
@@ -9484,6 +9507,22 @@ static void exercise_side_data_api(void) {
                            (enum AVPacketSideDataType)AV_PKT_DATA_NB);
     print_packet_side_data_padding("packet:side-add-raw-type-padding", pkt,
                                    (enum AVPacketSideDataType)AV_PKT_DATA_NB);
+
+    AVPacket *raw_nb_new_pkt = new_packet();
+    sd = av_packet_new_side_data(raw_nb_new_pkt,
+                                 (enum AVPacketSideDataType)AV_PKT_DATA_NB,
+                                 2);
+    printf("packet:side-new-raw-nb-type-ret|%d\n", sd != NULL);
+    fail_if(!sd, "av_packet_new_side_data AV_PKT_DATA_NB raw type failed");
+    sd[0] = 0x5a;
+    sd[1] = 0x5b;
+    print_side_data_summary("packet:side-new-raw-nb-type", raw_nb_new_pkt);
+    print_side_data_lookup("packet:side-get-new-raw-nb-type", raw_nb_new_pkt,
+                           (enum AVPacketSideDataType)AV_PKT_DATA_NB);
+    print_packet_side_data_padding("packet:side-new-raw-nb-type-padding",
+                                   raw_nb_new_pkt,
+                                   (enum AVPacketSideDataType)AV_PKT_DATA_NB);
+    av_packet_free(&raw_nb_new_pkt);
 
     sd = av_packet_new_side_data(pkt,
                                  (enum AVPacketSideDataType)(AV_PKT_DATA_NB + 1),

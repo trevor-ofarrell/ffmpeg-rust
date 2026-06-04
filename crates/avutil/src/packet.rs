@@ -11817,6 +11817,28 @@ mod tests {
             &[0x7e]
         );
 
+        let mut raw_nb_new_packet = Packet::new(Vec::new(), 0);
+        raw_nb_new_packet
+            .new_side_data(raw_kind.clone(), 2)
+            .unwrap()
+            .data_mut()
+            .copy_from_slice(&[0x5a, 0x5b]);
+        assert_eq!(raw_nb_new_packet.side_data().len(), 1);
+        assert_eq!(
+            raw_nb_new_packet
+                .side_data_by_kind_id(&raw_kind)
+                .unwrap()
+                .data(),
+            &[0x5a, 0x5b]
+        );
+        let raw_nb_new_side = raw_nb_new_packet.side_data_by_kind_id(&raw_kind).unwrap();
+        assert_eq!(raw_nb_new_side.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+        assert!(raw_nb_new_side
+            .padding_slice()
+            .iter()
+            .take(AV_INPUT_BUFFER_PADDING_SIZE)
+            .all(|byte| *byte == 0));
+
         let raw_new_kind =
             PacketSideDataKind::from_ffmpeg_raw_value(PacketSideDataKind::KNOWN.len() as i32 + 1);
         packet
