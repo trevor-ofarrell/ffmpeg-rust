@@ -2,6 +2,49 @@
 
 ## Current Status
 
+Current authoritative turn status: main-thread WSL closed the oracle-runner gap
+that affected the latest top-incomplete `avutil-packet` AVI ffprobe
+differential row. Required startup checks passed from a clean tree at
+`master...origin/master [ahead 117]`: `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- status --next 15` reported 11/96 strict-complete
+components (11.5%) with `avutil-packet` as the first incomplete row, and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validated the pinned FFmpeg 8.1.1 oracle and ABI versions.
+
+Current main-thread slice: `crates/fate-runner/src/main.rs` now uses
+platform-native default oracle candidate ordering for `{oracle_ffmpeg}`:
+non-Windows hosts prefer `third_party/ffmpeg-oracle/build/bin/ffmpeg` before
+`.exe` and `.cmd`, while Windows keeps `.exe`, then `.cmd`, then the Unix
+wrapper. This makes WSL differential rows self-contained instead of resolving
+to `ffmpeg.cmd` and failing with `Exec format error`. Changed-path selection
+for `crates/fftools/tests/ffprobe_mov_oracle.rs` now also selects
+`avutil-packet`, `avformat-avi-demuxer`, and
+`fftools-ffprobe-avi-show-format-streams-packets`, matching the new
+`oracle-ffprobe-avi-packet-fields` ownership. `avutil-packet` remains
+`fate_pass`, not complete; strict completion remains 11/96 because broader
+safe API design, broader packet integration, ABI/media-integration breadth,
+and sustained fuzz evidence remain pending.
+
+Validation for this slice: `cargo fmt --all`; the initial two-filter focused
+`cargo test` command failed because Cargo accepts only one test-name filter;
+reruns passed with `CARGO_TARGET_DIR=target-orch-fate cargo test -p
+fate-runner standard_oracle_fallback_prefers_platform_native_wrapper --
+--nocapture` and `CARGO_TARGET_DIR=target-orch-fate cargo test -p fate-runner
+changed_selection_maps_ffprobe_mov_oracle_test_to_covered_components --
+--nocapture`; the full `CARGO_TARGET_DIR=target-orch-fate cargo test -p
+fate-runner -- --nocapture` suite passed all 65 tests; `cargo fmt --all --
+--check`; `CARGO_TARGET_DIR=target-orch-fate cargo clippy -p fate-runner
+--all-targets --all-features -- -D warnings`; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt
+--component avutil-packet --target oracle-ffprobe-avi-packet-fields`, which
+resolved
+`FFMPEG_ORACLE=/home/trevo/code/ffmpegrust/third_party/ffmpeg-oracle/build/bin/ffmpeg`
+without an explicit `--oracle-ffmpeg`; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- status --next 15`; `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p xtask -- guard-runtime`; `CARGO_TARGET_DIR=target-orch-fate cargo
+run -p xtask -- oracle-doctor`; `git diff --check` with only existing Git
+line-ending warnings; and `test ! -d target`.
+
 Current authoritative turn status: main-thread WSL advanced the top incomplete
 `avutil-packet` row with pinned `ffprobe` AVI packet-section
 media-integration evidence. Required startup checks passed from a clean tree at

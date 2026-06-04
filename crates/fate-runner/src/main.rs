@@ -14,10 +14,17 @@ const DEFAULT_SAMPLES_ROOT_CANDIDATES: &[&str] = &[
     "fate-suite",
 ];
 const ORACLE_FFMPEG_ENV_VARS: &[&str] = &["FFMPEG_ORACLE"];
+#[cfg(windows)]
 const DEFAULT_ORACLE_FFMPEG_CANDIDATES: &[&str] = &[
     "third_party/ffmpeg-oracle/build/bin/ffmpeg.exe",
     "third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd",
     "third_party/ffmpeg-oracle/build/bin/ffmpeg",
+];
+#[cfg(not(windows))]
+const DEFAULT_ORACLE_FFMPEG_CANDIDATES: &[&str] = &[
+    "third_party/ffmpeg-oracle/build/bin/ffmpeg",
+    "third_party/ffmpeg-oracle/build/bin/ffmpeg.exe",
+    "third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd",
 ];
 const SUPPORTED_PLACEHOLDERS: &[&str] = &["samples", "oracle_ffmpeg"];
 
@@ -528,6 +535,9 @@ const PATH_RULES: &[PathRule] = &[
     PathRule {
         path: "crates/fftools/tests/ffprobe_mov_oracle.rs",
         exact_ids: &[
+            "avutil-packet",
+            "avformat-avi-demuxer",
+            "fftools-ffprobe-avi-show-format-streams-packets",
             "fftools-ffprobe-mov-show-format",
             "fftools-ffprobe-format-size",
             "fftools-ffprobe-format-program-counts",
@@ -2229,6 +2239,9 @@ priority = 2
     #[test]
     fn changed_selection_maps_ffprobe_mov_oracle_test_to_covered_components() {
         let component_ids = component_ids_from_ledger(&ledger(&[
+            "avutil-packet",
+            "avformat-avi-demuxer",
+            "fftools-ffprobe-avi-show-format-streams-packets",
             "fftools-ffprobe-mov-show-format",
             "fftools-ffprobe-format-size",
             "fftools-ffprobe-format-program-counts",
@@ -2249,6 +2262,9 @@ priority = 2
         assert_eq!(
             changed_components(&component_ids, &paths),
             vec![
+                "avutil-packet".to_string(),
+                "avformat-avi-demuxer".to_string(),
+                "fftools-ffprobe-avi-show-format-streams-packets".to_string(),
                 "fftools-ffprobe-mov-show-format".to_string(),
                 "fftools-ffprobe-format-size".to_string(),
                 "fftools-ffprobe-format-program-counts".to_string(),
@@ -3459,6 +3475,53 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
                 workdir: expected_samples,
                 program: expected_ffmpeg,
                 env: vec![],
+                args: vec!["-version".to_string()],
+            }
+        );
+    }
+
+    #[test]
+    fn standard_oracle_fallback_prefers_platform_native_wrapper() {
+        let mapping = FateMapping {
+            component_id: "avutil-packet".to_string(),
+            target: "oracle-packet".to_string(),
+            workdir: ".".to_string(),
+            program: "{oracle_ffmpeg}".to_string(),
+            env: vec![("FFMPEG_ORACLE".to_string(), "{oracle_ffmpeg}".to_string())],
+            args: vec!["-version".to_string()],
+        };
+        let env_var = |_name: &str| None;
+        let is_dir = |_path: &str| false;
+        let is_file = |path: &str| {
+            matches!(
+                path,
+                "third_party/ffmpeg-oracle/build/bin/ffmpeg"
+                    | "third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd"
+                    | "third_party/ffmpeg-oracle/build/bin/ffmpeg.exe"
+            )
+        };
+        let expected_path = if cfg!(windows) {
+            "third_party/ffmpeg-oracle/build/bin/ffmpeg.exe"
+        } else {
+            "third_party/ffmpeg-oracle/build/bin/ffmpeg"
+        };
+        let expected_ffmpeg = abs_path(expected_path);
+
+        assert_eq!(
+            resolve_fate_mapping_with(
+                &mapping,
+                &FateContext::default(),
+                &env_var,
+                &is_dir,
+                &is_file
+            )
+            .unwrap(),
+            FateMapping {
+                component_id: "avutil-packet".to_string(),
+                target: "oracle-packet".to_string(),
+                workdir: ".".to_string(),
+                program: expected_ffmpeg.clone(),
+                env: vec![("FFMPEG_ORACLE".to_string(), expected_ffmpeg)],
                 args: vec!["-version".to_string()],
             }
         );

@@ -25,6 +25,12 @@ The script clones tag `n8.1.1`, configures FFmpeg with `--disable-gpl --disable-
 
 The generated Windows `.cmd` wrappers propagate the WSL FFmpeg process exit code. If an older local wrapper returns success for failing oracle invocations, rerun the bootstrap script to refresh it.
 
+`fate-runner` follows the same platform preference when expanding
+`{oracle_ffmpeg}` without an explicit `--oracle-ffmpeg`: Unix-like hosts prefer
+`third_party/ffmpeg-oracle/build/bin/ffmpeg`, then `.exe`, then `.cmd`, while
+Windows hosts prefer `.exe`, then `.cmd`, then the Unix-style wrapper. This
+keeps WSL oracle rows from accidentally executing the Windows command wrapper.
+
 Verify the installed oracle before relying on strict completion evidence:
 
 ```sh

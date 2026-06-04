@@ -9,6 +9,14 @@
 
 ## Compatible Today
 
+- Latest main-thread FATE/oracle runner evidence: `{oracle_ffmpeg}` default
+  resolution now prefers the Unix `ffmpeg` wrapper on WSL/Linux and the native
+  `.exe` wrapper on Windows. The new unit coverage prevents the prior WSL
+  failure where the AVI ffprobe `avutil-packet` oracle row discovered
+  `ffmpeg.cmd` and hit `Exec format error` unless `--oracle-ffmpeg` was passed
+  explicitly. Changed-path selection for the combined ffprobe MOV/AVI oracle
+  harness now includes `avutil-packet`, `avformat-avi-demuxer`, and
+  `fftools-ffprobe-avi-show-format-streams-packets`.
 - Latest main-thread packet media-integration evidence: pinned `ffprobe`
   coverage now includes `oracle-ffprobe-avi-packet-fields`, which generates a
   two-packet BGR24 AVI with FFmpeg 8.1.1 and compares Rust default-output
