@@ -845,11 +845,13 @@ ENOMEM return without mutating an empty packet.
 
 The harness also includes `packet:payload-from-data-invalid-*` rows. These prove `av_packet_from_data()` returns `AVERROR(EINVAL)` before mutation when `size >= INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE`; the Rust packet constructors and replacement helper use `Packet::validate_payload_len` to reject the same boundary before allocation.
 
-The harness also includes `packet:payload-from-data-custom-padding*` rows.
-These prove `av_packet_from_data()` preserves caller-provided input-padding
-bytes, including nonzero padding, when adopting positive-size payload storage.
-The Rust model mirrors that visible-size/allocation split through
-`Packet::replace_data_from_vec_with_len` and `BufferRef::from_vec_with_len`.
+The harness also includes `packet:payload-from-data-custom-padding*` and
+`packet:payload-from-data-zero-custom-padding*` rows. These prove
+`av_packet_from_data()` preserves caller-provided input-padding bytes, including
+nonzero padding, when adopting non-NULL payload storage with either positive or
+zero FFmpeg-visible size. The Rust model mirrors that visible-size/allocation
+split through `Packet::replace_data_from_vec_with_len` and
+`BufferRef::from_vec_with_len`.
 
 The harness also includes `packet:payload-from-data-ref-*`, `packet:payload-from-data-clone*`, and `packet:payload-from-data-make-writable-*` rows. These prove `av_packet_from_data()` installs refcounted payload ownership: `av_packet_ref()` and `av_packet_clone()` share the adopted data pointer and report non-writable shared buffers, while `av_packet_make_writable()` detaches the destination before caller mutation and leaves the source payload unchanged.
 

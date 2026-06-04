@@ -2,14 +2,17 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
-# Latest main-thread packet from-data custom-padding slice: pinned libavcodec
-# rows now prove `av_packet_from_data()` preserves caller-provided
-# nonzero `AV_INPUT_BUFFER_PADDING_SIZE` padding bytes when adopting a
-# positive-size payload. Rust mirrors this with `BufferRef::from_vec_with_len`
-# and `Packet::replace_data_from_vec_with_len`, keeping visible size separate
-# from allocation length instead of normalizing the adopted storage. The
-# focused unit, mapped packet oracle, and `avutil_core_models` invariant cover
-# the bounded shape; avutil-packet remains fate_pass, not complete.
+# Latest main-thread packet from-data zero-visible custom-padding slice: pinned
+# libavcodec rows now prove `av_packet_from_data()` preserves caller-provided
+# nonzero `AV_INPUT_BUFFER_PADDING_SIZE` padding bytes even when the adopted
+# non-NULL allocation has zero FFmpeg-visible payload bytes. Rust mirrors this
+# with `BufferRef::from_vec_with_len` and
+# `Packet::replace_data_from_vec_with_len`, keeping visible size separate from
+# allocation length instead of normalizing the adopted storage. The focused
+# unit, mapped packet oracle, and `avutil_core_models` invariant cover the
+# bounded shape; avutil-packet remains fate_pass, not complete.
+# Previous main-thread packet from-data custom-padding slice: pinned libavcodec
+# rows prove the same dirty-padding preservation for positive-size payloads.
 # Latest main-thread packet nullable/nonzero from-data slice: pinned
 # libavcodec rows now prove `av_packet_from_data(pkt, NULL, 3)` creates a
 # nullable positive-size refcounted packet with `pkt->data == NULL`,
@@ -557,12 +560,15 @@ default_profile = "ffmpeg-8.1.1-default-native"
 # padding-aware nullable `BufferRef`. Shared make-writable/grow/shrink paths
 # that would copy from or grow NULL storage remain deliberately outside the
 # mapped row set.
-# Latest avutil-packet evidence: `packet:payload-from-data-custom-padding*`
-# rows now prove pinned FFmpeg 8.1.1 preserves dirty caller-provided input
-# padding when `av_packet_from_data()` adopts positive-size payload storage.
-# Rust uses `Packet::replace_data_from_vec_with_len` over
-# `BufferRef::from_vec_with_len` to retain allocation length and padding bytes
-# while exposing the FFmpeg-visible payload size.
+# Latest avutil-packet evidence:
+# `packet:payload-from-data-zero-custom-padding*` rows now prove pinned FFmpeg
+# 8.1.1 preserves dirty caller-provided input padding when
+# `av_packet_from_data()` adopts non-NULL zero-visible payload storage. The
+# earlier `packet:payload-from-data-custom-padding*` rows prove the same
+# preservation for positive-size payloads. Rust uses
+# `Packet::replace_data_from_vec_with_len` over `BufferRef::from_vec_with_len`
+# to retain allocation length and padding bytes while exposing the
+# FFmpeg-visible payload size.
 # Latest avutil-packet evidence: `packet:payload-from-data-replace-*` rows now
 # prove pinned FFmpeg 8.1.1 replacement-style `av_packet_from_data()` installs
 # refcounted payload ownership while preserving packet properties. Follow-on

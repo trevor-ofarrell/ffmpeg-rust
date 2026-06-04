@@ -10774,6 +10774,20 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         &[0x5a, 0x5a]
     );
 
+    let mut zero_custom_from_data = Packet::default();
+    zero_custom_from_data
+        .replace_data_from_vec_with_len(vec![0x5a; AV_INPUT_BUFFER_PADDING_SIZE], 0)
+        .unwrap();
+    assert!(zero_custom_from_data.data().is_empty());
+    assert_eq!(
+        zero_custom_from_data.data_buffer().allocated_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert_eq!(
+        &zero_custom_from_data.data_buffer().padding_slice()[..2],
+        &[0x5a, 0x5a]
+    );
+
     let mut preserved_ref = Packet::default();
     preserved_ref.ref_from(&preserved_packet);
     assert!(preserved_ref

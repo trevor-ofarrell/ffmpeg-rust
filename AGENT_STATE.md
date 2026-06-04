@@ -3,6 +3,60 @@
 ## Current Status
 
 Current authoritative turn status: main-thread WSL parity slice advanced
+`avutil-packet` zero-visible non-NULL `av_packet_from_data()` custom-padding
+evidence. Required startup checks passed from a clean tree at
+`master...origin/master [ahead 72]`: `CARGO_TARGET_DIR=target-orch-fate cargo
+run -p fate-runner -- status --next 15` reported 11/96 strict-complete
+components (11.5%), and `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask
+-- oracle-doctor` validated the pinned FFmpeg 8.1.1 oracle and ABI versions.
+
+Current main-thread slice: pinned libavcodec rows now prove
+`av_packet_from_data()` preserves caller-provided nonzero
+`AV_INPUT_BUFFER_PADDING_SIZE` padding bytes even when the adopted non-NULL
+allocation has zero FFmpeg-visible payload bytes. The existing
+`BufferRef::from_vec_with_len` and `Packet::replace_data_from_vec_with_len`
+model covers this visible-size/allocation split without normalizing dirty
+padding. Focused unit coverage, the mapped packet oracle, local packet FATE,
+upstream `fate-avpacket`, and the `avutil_core_models` deterministic invariant
+cover the bounded shape. The ignored
+`packet::tests::packet_shrink_shared_refcounted_matches_ffmpeg_tail_zeroing`
+regression was rerun and still fails at destination pointer preservation,
+confirming the shared `av_shrink_packet()` alias-tail-zeroing edge remains
+pending a broader alias-safe BufferRef storage design. `avutil-packet` remains
+`fate_pass`, not complete; strict completion remains 11/96.
+
+Validation passed for this slice with `CARGO_TARGET_DIR=target-orch-avutil
+cargo test -p avutil --lib
+packet_replace_data_from_vec_installs_refcounted_storage -- --nocapture`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
+packet_oracle libavcodec_packet_core_lifecycle_matches_packet_model --
+--ignored --nocapture`; `cargo fmt --all -- --check`;
+`CARGO_TARGET_DIR=target-orch-fate cargo test -p fate-runner current_ledger --
+--nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner --
+run --component avutil-packet`; `CARGO_TARGET_DIR=target-orch-fate cargo run
+-p fate-runner -- run --mappings tests/differential/mappings.txt --component
+avutil-packet --target oracle-libavcodec-packet-core`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run --mappings
+tests/fate/upstream-mappings.txt --component avutil-packet --target
+fate-avpacket` after rerunning outside the sandbox to allow the pinned FFmpeg
+cache result write; `CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p
+avutil --all-targets --all-features -- -D warnings`;
+`CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy --manifest-path fuzz/Cargo.toml
+--all-targets -- -D warnings`; and `CARGO_TARGET_DIR=target-wsl-fuzz
+ASAN_OPTIONS=detect_leaks=0 cargo fuzz run avutil_core_models -- -runs=1`,
+which rebuilt the sanitizer binary, loaded the four tracked seeds, reached
+`DONE` after 5 runs, and found no crash. The first sandboxed upstream
+`fate-avpacket` attempt failed only because FFmpeg could not create
+`/home/trevo/.cache/ffmpegrust/.../tests/data/fate/avpacket` inside the
+read-only sandbox; the elevated rerun passed. Final `git diff --check` passed
+with CRLF conversion warnings only; `CARGO_TARGET_DIR=target-orch-fate cargo
+run -p xtask -- guard-runtime` passed; final `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- status --next 15` still reported 11/96
+strict-complete components with `avutil-packet` as the top incomplete row; and
+final `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+passed.
+
+Current authoritative turn status: main-thread WSL parity slice advanced
 `avutil-packet` `av_packet_from_data()` custom-padding evidence. Required
 startup checks passed from a clean tree at `master...origin/master [ahead 71]`:
 `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next

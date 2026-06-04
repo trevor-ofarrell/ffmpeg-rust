@@ -13442,6 +13442,25 @@ mod tests {
             AV_INPUT_BUFFER_PADDING_SIZE
         );
         assert_eq!(&padded.data_buffer().padding_slice()[..2], &[0x5a, 0x5a]);
+
+        let mut empty_padded = Packet::default();
+        let empty_storage = vec![0x5a; AV_INPUT_BUFFER_PADDING_SIZE];
+        empty_padded
+            .replace_data_from_vec_with_len(empty_storage, 0)
+            .unwrap();
+        assert!(empty_padded.data().is_empty());
+        assert_eq!(
+            empty_padded.data_buffer().allocated_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert_eq!(
+            empty_padded.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert_eq!(
+            &empty_padded.data_buffer().padding_slice()[..2],
+            &[0x5a, 0x5a]
+        );
     }
 
     #[test]

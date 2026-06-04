@@ -90,10 +90,11 @@ pinned source path for grow or shared-copy operations would dereference NULL on
 nullable payload storage, so those upstream edges are documented rather than
 wired into the crashing oracle harness.
 
-`Packet::replace_data_from_vec_with_len` models the positive-size
+`Packet::replace_data_from_vec_with_len` models the non-NULL
 `av_packet_from_data()` path where the caller-owned allocation length can exceed
-the FFmpeg-visible packet size. This preserves caller-provided input-padding
-bytes, including nonzero padding, through `BufferRef::from_vec_with_len`.
+the FFmpeg-visible packet size, including zero visible bytes. This preserves
+caller-provided input-padding bytes, including nonzero padding, through
+`BufferRef::from_vec_with_len`.
 
 `Packet::alloc_new_packet_payload_i32` and `Packet::grow_data_i32` expose the current FFmpeg-C-shaped signed `int` payload-size boundary. Negative `av_new_packet` sizes return EINVAL without mutation, while negative `av_grow_packet` requests hit FFmpeg's unsigned grow guard and return ENOMEM without mutating packet fields or payload for both nonempty and empty packets.
 
