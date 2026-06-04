@@ -2,6 +2,12 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest main-thread packet evidence: a warmed WSL `avutil_core_models`
+# sanitizer smoke ran 1024 inputs with leak detection disabled against a
+# temporary copy of the four tracked seed files. libFuzzer expanded the
+# temporary corpus to 152 entries, reached `DONE`, and found no crash. The
+# tracked corpus stayed unchanged. This strengthens the current packet
+# deterministic invariants only; no status was promoted.
 # Latest main-thread packet evidence: pinned libavcodec rows now prove
 # nullable-zero packet-owned side data has a split lifecycle. `av_packet_copy_props()`,
 # `av_packet_ref()`, and `av_packet_clone()` reallocate a NULL/0 side-data entry
@@ -1581,6 +1587,13 @@ fuzz_targets = ["avutil_core_models"]
 # Latest fuzz-evidence addition: the `avutil_core_models` corpus now includes
 # `packet_rescale_sentinel`, and a bounded WSL 64-run sanitizer smoke passed
 # with local leak detection disabled against a temporary copy of the corpus.
+# Latest temp-corpus fuzz-evidence addition: a warmed WSL
+# `cargo fuzz run avutil_core_models /tmp/ffmpegrust-avutil-core-models.cELZN5
+# -- -runs=1024` smoke passed with `CARGO_TARGET_DIR=target-wsl-fuzz` and
+# `ASAN_OPTIONS=detect_leaks=0`. It loaded the four tracked seed files, expanded
+# only the temporary corpus to 152 entries, reached `DONE`, and found no crash.
+# This strengthens `avutil-packet` fuzz evidence but is still bounded smoke
+# evidence, not strict-completion promotion.
 # Latest rescale-duration-only addition: `packet:rescale-duration-only` now
 # proves `av_packet_rescale_ts()` rescales a positive duration even when both
 # PTS and DTS are `AV_NOPTS_VALUE`, while preserving payload, position, flags,

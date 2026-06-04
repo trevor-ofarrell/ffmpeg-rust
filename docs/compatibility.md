@@ -9,6 +9,12 @@
 
 ## Compatible Today
 
+- Latest main-thread packet fuzz evidence: a warmed WSL `avutil_core_models`
+  1024-run sanitizer smoke completed against a temporary copy of the tracked
+  seed corpus without a crash. libFuzzer expanded only the temporary corpus to
+  152 entries, leaving the repository corpus unchanged. This strengthens
+  `avutil-packet`; strict completion remains 11/96 and the row remains
+  `fate_pass`.
 - Latest main-thread buffer fuzz evidence: a warmed WSL `avutil_core_models`
   64-run sanitizer smoke completed against the tracked seed corpus without a
   crash after rebuilding in `target-wsl-fuzz`. This strengthens the shared

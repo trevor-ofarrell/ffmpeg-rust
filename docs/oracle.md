@@ -105,10 +105,12 @@ The latest packet display-rotation boundary fixture extends
 `PacketDisplayMatrix::from_clockwise_rotation_degrees` cases. The pinned
 libavutil packet oracle emits the matching `packet:display-rotation-boundaries`
 row, proving fixed-point matrix construction and rounded counterclockwise
-rotation extraction for the selected boundary angles. A bounded one-input WSL
-cargo-fuzz smoke for this slice timed out before libFuzzer completion output,
-so the deterministic fixture is recorded with build/clippy coverage until a
-later warmed smoke can pass.
+rotation extraction for the selected boundary angles. A follow-up warmed WSL
+`avutil_core_models` smoke ran 1024 inputs with `CARGO_TARGET_DIR=target-wsl-fuzz`
+and `ASAN_OPTIONS=detect_leaks=0` against a temporary copy of the four tracked
+seed files. It expanded only that temporary corpus to 152 entries, reached
+`DONE`, and found no crash. This is bounded smoke evidence, not a sustained fuzz
+campaign.
 
 The latest packet empty zero-growth fixture extends `avutil_core_models` with
 `Packet::default().grow_data(0)`. The pinned libavcodec packet oracle emits the

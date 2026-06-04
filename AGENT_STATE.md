@@ -2,6 +2,35 @@
 
 ## Current Status
 
+Current authoritative turn status: main-thread WSL evidence slice added
+stronger `avutil_core_models` fuzz smoke coverage for `avutil-packet`.
+Required startup checks passed from a clean tree at
+`master...origin/master [ahead 52]`: `CARGO_TARGET_DIR=target-orch-fate cargo
+run -p fate-runner -- status --next 15` reported 11/96 strict-complete
+components (11.5%), and `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask
+-- oracle-doctor` validated the pinned FFmpeg 8.1.1 oracle and ABI versions.
+The main thread re-audited the top-priority shared refcounted
+`av_shrink_packet()` blocker and left it unchanged because closing it still
+requires a broader alias-safe `BufferRef` storage design rather than a local
+packet-only patch.
+
+Current main-thread slice: a warmed WSL `avutil_core_models` fuzz run used a
+temporary copy of the four tracked seeds from `fuzz/corpus/avutil_core_models`
+so libFuzzer could grow coverage without modifying the repository corpus. The
+run used `CARGO_TARGET_DIR=target-wsl-fuzz` and
+`ASAN_OPTIONS=detect_leaks=0`, expanded the temporary corpus to 152 entries,
+reached `#1024 DONE`, and exited without a crash. This replaces the older
+display-rotation cargo-fuzz timeout note with actual bounded smoke evidence
+covering the current packet deterministic invariants. `avutil-packet` remains
+`fate_pass`, not complete; strict completion remains 11/96 because the
+shared-shrink blocker, remaining ABI/media-integration vectors, broader packet
+integration, and sustained fuzz campaign remain pending.
+
+Latest validation command for this packet fuzz evidence passed:
+`CARGO_TARGET_DIR=target-wsl-fuzz ASAN_OPTIONS=detect_leaks=0 cargo fuzz run
+avutil_core_models /tmp/ffmpegrust-avutil-core-models.cELZN5 -- -runs=1024`.
+The tracked corpus stayed at the four committed seed files.
+
 Current authoritative turn status: main-thread WSL evidence slice added actual
 `avutil_core_models` fuzz smoke coverage for `avutil-buffer`. Required startup
 checks passed from a clean tree at `master...origin/master [ahead 51]`:
