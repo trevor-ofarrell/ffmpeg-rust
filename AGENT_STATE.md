@@ -2,6 +2,39 @@
 
 ## Current Status
 
+Current authoritative turn status: main-thread WSL blocker-evidence slice
+finished and validated the `avutil-packet` shared `av_shrink_packet()` oracle
+diagnostic. Required startup checks passed from the dirty in-progress tree at
+`master...origin/master [ahead 67]`: `CARGO_TARGET_DIR=target-orch-fate cargo
+run -p fate-runner -- status --next 15` reported 11/96 strict-complete
+components (11.5%), and `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask
+-- oracle-doctor` validated the pinned FFmpeg 8.1.1 oracle and ABI versions.
+The separate ignored
+`packet_oracle::libavcodec_packet_shared_shrink_oracle_documents_aliasing`
+FFmpeg-only test now compiles a small C helper under
+`CARGO_TARGET_DIR/oracle/avutil-packet` and pins shrinking one reference of a
+shared refcounted packet: source size 4, destination size 2, destination
+data-pointer preservation, shared buffer identity, refcount 2 on both packet
+buffers, both refs non-writable, source visible bytes `aabb0000`, destination
+visible bytes `aabb`, and an eight-byte zeroed shrink window from destination
+data+size.
+
+Final validation for this slice passed with `cargo fmt --all`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test packet_oracle
+libavcodec_packet_shared_shrink_oracle_documents_aliasing -- --ignored
+--nocapture`; `cargo fmt --all -- --check`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil --test
+packet_oracle --all-features -- -D warnings`; `git diff --check` with CRLF
+warnings only; `CARGO_TARGET_DIR=target-orch-fate cargo test -p fate-runner
+current_ledger`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask --
+guard-runtime`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner --
+run --component avutil-packet`; final `CARGO_TARGET_DIR=target-orch-fate cargo
+run -p fate-runner -- status --next 15`; and final
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`. This
+is blocker evidence only; `avutil-packet` remains `fate_pass`, not complete,
+until the Rust buffer model can represent alias-safe shared-tail zeroing
+without unsafe shortcuts.
+
 Current authoritative turn status: main-thread WSL evidence-harness slice
 strengthened `avutil-packet` oracle execution hygiene after rechecking the
 required startup gates. Required startup checks passed from a clean tree at

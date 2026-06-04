@@ -103,6 +103,106 @@ fn libavcodec_packet_core_lifecycle_matches_packet_model() {
 }
 
 #[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 libavcodec/libavutil oracle under third_party/ffmpeg-oracle/wsl"]
+fn libavcodec_packet_shared_shrink_oracle_documents_aliasing() {
+    let repo_root = repo_root();
+    let oracle_root = oracle_root(&repo_root);
+    let include_dir = oracle_root.join("wsl/include");
+    let libavcodec = oracle_root.join("wsl/lib/libavcodec.a");
+    let libswresample = oracle_root.join("wsl/lib/libswresample.a");
+    let libavutil = oracle_root.join("wsl/lib/libavutil.a");
+
+    assert!(
+        include_dir.join("libavcodec/packet.h").is_file(),
+        "missing pinned FFmpeg libavcodec packet headers under `{}`",
+        include_dir.display()
+    );
+    assert!(
+        libavcodec.is_file(),
+        "missing pinned FFmpeg libavcodec static library `{}`",
+        libavcodec.display()
+    );
+    assert!(
+        libavutil.is_file(),
+        "missing pinned FFmpeg libavutil static library `{}`",
+        libavutil.display()
+    );
+    assert!(
+        libswresample.is_file(),
+        "missing pinned FFmpeg libswresample static library `{}`",
+        libswresample.display()
+    );
+
+    let target_dir = env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .map(|path| {
+            if path.is_absolute() {
+                path
+            } else {
+                repo_root.join(path)
+            }
+        })
+        .unwrap_or_else(|| repo_root.join("target"));
+    let work_dir = target_dir.join("oracle/avutil-packet");
+    fs::create_dir_all(&work_dir).expect("create avutil-packet oracle work dir");
+    let source = work_dir.join("packet_shared_shrink_oracle.c");
+    let executable = work_dir.join("packet_shared_shrink_oracle");
+    fs::write(&source, shared_shrink_oracle_c_source())
+        .expect("write avutil-packet shared-shrink oracle C source");
+
+    let stdout = compile_and_run_oracle(
+        &include_dir,
+        &libavcodec,
+        &libswresample,
+        &libavutil,
+        &source,
+        &executable,
+    );
+    let oracle = parse_oracle_output(&stdout);
+    let expected = BTreeMap::from([
+        (
+            "packet:shared-shrink-state".to_string(),
+            vec![
+                "4".to_string(),
+                "2".to_string(),
+                "1".to_string(),
+                "1".to_string(),
+                "2".to_string(),
+                "2".to_string(),
+                "0".to_string(),
+                "0".to_string(),
+            ],
+        ),
+        (
+            "packet:shared-shrink-src".to_string(),
+            vec!["aabb0000".to_string()],
+        ),
+        (
+            "packet:shared-shrink-dst".to_string(),
+            vec!["aabb".to_string()],
+        ),
+        (
+            "packet:shared-shrink-zero-window".to_string(),
+            vec!["0000000000000000".to_string()],
+        ),
+    ]);
+
+    assert_eq!(
+        oracle.keys().collect::<Vec<_>>(),
+        expected.keys().collect::<Vec<_>>(),
+        "shared-shrink oracle row set diverged"
+    );
+
+    for (name, expected_fields) in expected {
+        assert_eq!(
+            row_fields(&oracle, &name),
+            expected_fields.as_slice(),
+            "{name} diverged"
+        );
+    }
+}
+
+#[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 source/build cache; set FFMPEG_FATE_BUILD_DIR or run scripts/bootstrap_ffmpeg_oracle_wsl.sh"]
 fn upstream_fate_avpacket_passes() {
     let output = if cfg!(windows) {
@@ -6336,6 +6436,76 @@ fn compile_and_run_oracle(
     );
 
     String::from_utf8(output.stdout).expect("oracle stdout should be UTF-8")
+}
+
+fn shared_shrink_oracle_c_source() -> &'static str {
+    r#"#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "libavcodec/defs.h"
+#include "libavcodec/packet.h"
+#include "libavutil/avutil.h"
+#include "libavutil/buffer.h"
+
+static void fail_if(int condition, const char *message)
+{
+    if (condition) {
+        fprintf(stderr, "%s\n", message);
+        exit(1);
+    }
+}
+
+static void print_hex(const uint8_t *data, size_t size)
+{
+    for (size_t i = 0; i < size; i++)
+        printf("%02x", data[i]);
+}
+
+int main(void)
+{
+    AVPacket *src = av_packet_alloc();
+    AVPacket *dst = av_packet_alloc();
+    fail_if(!src || !dst, "av_packet_alloc failed");
+
+    int ret = av_new_packet(src, 4);
+    fail_if(ret < 0, "av_new_packet failed");
+    src->data[0] = 0xaa;
+    src->data[1] = 0xbb;
+    src->data[2] = 0xcc;
+    src->data[3] = 0xdd;
+    memset(src->data + src->size, 0x5a, AV_INPUT_BUFFER_PADDING_SIZE);
+
+    ret = av_packet_ref(dst, src);
+    fail_if(ret < 0, "av_packet_ref failed");
+    uint8_t *dst_before = dst->data;
+
+    av_shrink_packet(dst, 2);
+
+    printf("packet:shared-shrink-state|%d|%d|%d|%d|%d|%d|%d|%d\n",
+           src->size,
+           dst->size,
+           dst->data == dst_before,
+           src->buf && dst->buf && src->buf->buffer == dst->buf->buffer,
+           src->buf ? av_buffer_get_ref_count(src->buf) : 0,
+           dst->buf ? av_buffer_get_ref_count(dst->buf) : 0,
+           src->buf ? av_buffer_is_writable(src->buf) : 0,
+           dst->buf ? av_buffer_is_writable(dst->buf) : 0);
+    printf("packet:shared-shrink-src|");
+    print_hex(src->data, src->size);
+    printf("\n");
+    printf("packet:shared-shrink-dst|");
+    print_hex(dst->data, dst->size);
+    printf("\n");
+    printf("packet:shared-shrink-zero-window|");
+    print_hex(dst->data + dst->size, 8);
+    printf("\n");
+
+    av_packet_free(&dst);
+    av_packet_free(&src);
+    return 0;
+}
+"#
 }
 
 fn oracle_c_source() -> &'static str {
