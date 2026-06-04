@@ -12022,6 +12022,28 @@ mod tests {
             &[0x77],
         );
 
+        let raw_kind =
+            PacketSideDataKind::from_ffmpeg_raw_value(PacketSideDataKind::KNOWN.len() as i32);
+        let mut raw_add = Some(padded_side_data(raw_kind.clone(), &[0x7e]));
+        assert!(packet
+            .try_add_side_data_owned(&mut raw_add)
+            .unwrap()
+            .is_none());
+        assert!(raw_add.is_none());
+        assert_padded_side_data(packet.side_data_by_kind_id(&raw_kind).unwrap(), &[0x7e]);
+
+        let raw_negative_kind = PacketSideDataKind::from_ffmpeg_raw_value(-1);
+        let mut raw_negative_add = Some(padded_side_data(raw_negative_kind.clone(), &[0xf1]));
+        assert!(packet
+            .try_add_side_data_owned(&mut raw_negative_add)
+            .unwrap()
+            .is_none());
+        assert!(raw_negative_add.is_none());
+        assert_padded_side_data(
+            packet.side_data_by_kind_id(&raw_negative_kind).unwrap(),
+            &[0xf1],
+        );
+
         let mut list = PacketSideDataList::new();
         list.new_side_data(PacketSideDataKind::NewExtradata, 2)
             .unwrap()
@@ -12049,6 +12071,20 @@ mod tests {
             .is_none());
         assert!(list_appended.is_none());
         assert_padded_side_data(list.get(&PacketSideDataKind::Palette).unwrap(), &[0x99]);
+
+        list.new_side_data_with_flags(PacketSideDataKind::SkipSamples, 2, 1)
+            .unwrap()
+            .data_mut()
+            .copy_from_slice(&[0xc2, 0x58]);
+        let mut flags_replacement =
+            Some(padded_side_data(PacketSideDataKind::SkipSamples, &[0x5a]));
+        let replaced = list
+            .try_add_side_data_with_flags(&mut flags_replacement, 1)
+            .unwrap()
+            .unwrap();
+        assert!(flags_replacement.is_none());
+        assert_padded_side_data(&replaced, &[0xc2, 0x58]);
+        assert_padded_side_data(list.get(&PacketSideDataKind::SkipSamples).unwrap(), &[0x5a]);
     }
 
     #[test]

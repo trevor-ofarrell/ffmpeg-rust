@@ -5356,7 +5356,7 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     let raw_add_kind =
         PacketSideDataKind::from_ffmpeg_raw_value(PacketSideDataKind::KNOWN.len() as i32);
     let raw_added = raw_packet
-        .try_add_side_data(SideData::new_with_kind(raw_add_kind.clone(), vec![0x7e]).unwrap())
+        .try_add_side_data(padded_side_data(raw_add_kind.clone(), &[0x7e]))
         .unwrap();
     assert!(raw_added.is_none());
     rows.insert(
@@ -5370,6 +5370,10 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:side-get-raw-type".to_string(),
         side_data_lookup_fields(raw_packet.side_data_by_kind_id(&raw_add_kind)),
+    );
+    rows.insert(
+        "packet:side-add-raw-type-padding".to_string(),
+        side_data_padding_fields(raw_packet.side_data_by_kind_id(&raw_add_kind)),
     );
 
     let raw_new_kind =
@@ -5394,7 +5398,7 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
 
     let raw_negative_kind = PacketSideDataKind::from_ffmpeg_raw_value(-1);
     let raw_negative_added = raw_packet
-        .try_add_side_data(SideData::new_with_kind(raw_negative_kind.clone(), vec![0xf1]).unwrap())
+        .try_add_side_data(padded_side_data(raw_negative_kind.clone(), &[0xf1]))
         .unwrap();
     assert!(raw_negative_added.is_none());
     rows.insert(
@@ -5408,6 +5412,10 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:side-get-raw-negative-type".to_string(),
         side_data_lookup_fields(raw_packet.side_data_by_kind_id(&raw_negative_kind)),
+    );
+    rows.insert(
+        "packet:side-add-raw-negative-type-padding".to_string(),
+        side_data_padding_fields(raw_packet.side_data_by_kind_id(&raw_negative_kind)),
     );
 
     let raw_min_kind = PacketSideDataKind::from_ffmpeg_raw_value(i32::MIN);
@@ -5648,8 +5656,7 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         side_data_list_summary_fields(&new_flags_replace_list),
     );
 
-    let mut caller_owned =
-        Some(SideData::new_with_kind(PacketSideDataKind::SkipSamples, vec![0x5a]).unwrap());
+    let mut caller_owned = Some(padded_side_data(PacketSideDataKind::SkipSamples, &[0x5a]));
     let add_flags_replaced = list
         .try_add_side_data_with_flags(&mut caller_owned, 1)
         .unwrap();
@@ -5662,6 +5669,10 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:array-add-flags-nonzero".to_string(),
         side_data_list_summary_fields(&list),
+    );
+    rows.insert(
+        "packet:array-add-flags-nonzero-padding".to_string(),
+        side_data_padding_fields(list.get(&PacketSideDataKind::SkipSamples)),
     );
     rows.insert(
         "packet:array-add-flags-nonzero-owned".to_string(),
@@ -9249,6 +9260,8 @@ static void exercise_side_data_api(void) {
     print_side_data_summary("packet:side-add-raw-type", pkt);
     print_side_data_lookup("packet:side-get-raw-type", pkt,
                            (enum AVPacketSideDataType)AV_PKT_DATA_NB);
+    print_packet_side_data_padding("packet:side-add-raw-type-padding", pkt,
+                                   (enum AVPacketSideDataType)AV_PKT_DATA_NB);
 
     sd = av_packet_new_side_data(pkt,
                                  (enum AVPacketSideDataType)(AV_PKT_DATA_NB + 1),
@@ -9273,6 +9286,8 @@ static void exercise_side_data_api(void) {
     print_side_data_summary("packet:side-add-raw-negative-type", pkt);
     print_side_data_lookup("packet:side-get-raw-negative-type", pkt,
                            (enum AVPacketSideDataType)-1);
+    print_packet_side_data_padding("packet:side-add-raw-negative-type-padding",
+                                   pkt, (enum AVPacketSideDataType)-1);
 
     sd = av_packet_new_side_data(pkt,
                                  (enum AVPacketSideDataType)INT_MIN,
@@ -9443,6 +9458,8 @@ static void exercise_side_data_array_api(void) {
     printf("packet:array-add-flags-nonzero-ret|%d\n", entry != NULL);
     print_side_data_array_summary("packet:array-add-flags-nonzero",
                                   sd, nb_sd);
+    print_side_data_array_padding("packet:array-add-flags-nonzero-padding",
+                                  sd, nb_sd, AV_PKT_DATA_SKIP_SAMPLES);
     print_owned_side_data_byte("packet:array-add-flags-nonzero-owned",
                                entry ? NULL : flags_owned);
     if (!entry)

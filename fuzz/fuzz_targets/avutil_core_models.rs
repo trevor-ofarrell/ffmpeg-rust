@@ -17172,6 +17172,33 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             .unwrap(),
         &[0x77],
     );
+    let raw_add_kind =
+        PacketSideDataKind::from_ffmpeg_raw_value(PacketSideDataKind::KNOWN.len() as i32);
+    let mut raw_add = Some(padded_side_data(raw_add_kind.clone(), &[0x7e]));
+    assert!(add_owned_packet
+        .try_add_side_data_owned(&mut raw_add)
+        .unwrap()
+        .is_none());
+    assert!(raw_add.is_none());
+    assert_padded_side_data(
+        add_owned_packet
+            .side_data_by_kind_id(&raw_add_kind)
+            .unwrap(),
+        &[0x7e],
+    );
+    let raw_negative_kind = PacketSideDataKind::from_ffmpeg_raw_value(-1);
+    let mut raw_negative_add = Some(padded_side_data(raw_negative_kind.clone(), &[0xf1]));
+    assert!(add_owned_packet
+        .try_add_side_data_owned(&mut raw_negative_add)
+        .unwrap()
+        .is_none());
+    assert!(raw_negative_add.is_none());
+    assert_padded_side_data(
+        add_owned_packet
+            .side_data_by_kind_id(&raw_negative_kind)
+            .unwrap(),
+        &[0xf1],
+    );
     let mut add_owned_list = PacketSideDataList::new();
     add_owned_list
         .new_side_data(PacketSideDataKind::NewExtradata, 2)
@@ -17203,6 +17230,25 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_padded_side_data(
         add_owned_list.get(&PacketSideDataKind::Palette).unwrap(),
         &[0x99],
+    );
+    add_owned_list
+        .new_side_data_with_flags(PacketSideDataKind::SkipSamples, 2, 1)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0xc2, 0x58]);
+    let mut list_flags_replacement =
+        Some(padded_side_data(PacketSideDataKind::SkipSamples, &[0x5a]));
+    let replaced = add_owned_list
+        .try_add_side_data_with_flags(&mut list_flags_replacement, 1)
+        .unwrap()
+        .unwrap();
+    assert!(list_flags_replacement.is_none());
+    assert_padded_side_data(&replaced, &[0xc2, 0x58]);
+    assert_padded_side_data(
+        add_owned_list
+            .get(&PacketSideDataKind::SkipSamples)
+            .unwrap(),
+        &[0x5a],
     );
 
     assert!(!packet.shrink_side_data("missing_side_data", 0).unwrap());

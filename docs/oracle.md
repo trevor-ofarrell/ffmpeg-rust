@@ -217,6 +217,14 @@ replacement and append. The deterministic `avutil_core_models` fixture mirrors
 the same direct `SideData` ownership transfer through
 `try_add_side_data_owned()` and `PacketSideDataList::try_add_side_data_with_flags()`.
 
+The latest packet raw/flagged side-data add padding fixture adds
+`packet:side-add-raw-type-padding`,
+`packet:side-add-raw-negative-type-padding`, and
+`packet:array-add-flags-nonzero-padding` rows. These prove packet-owned
+positive-size side-data adds under raw `AV_PKT_DATA_NB` and `-1` kinds, plus
+standalone `av_packet_side_data_add()` with nonzero flags, preserve
+caller-owned zeroed input padding after direct ownership transfer.
+
 A later warmed WSL `avutil_core_models` smoke ran 4096 inputs with
 `CARGO_TARGET_DIR=target-wsl-fuzz` and `ASAN_OPTIONS=detect_leaks=0` against a
 temporary copy of the four tracked seed files. It reached `DONE`, libFuzzer

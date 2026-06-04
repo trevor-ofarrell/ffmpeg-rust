@@ -240,7 +240,9 @@ source packet side-data list. Packet-owned `try_add_side_data_owned` and
 standalone `PacketSideDataList::try_add_side_data_with_flags` transfer
 caller-owned `SideData` directly, so caller-provided padded storage remains
 padded after first-match replacement or append, matching the current
-`packet:*add-*-padding` oracle rows.
+`packet:*add-*-padding` oracle rows. The same transfer covers packet-owned raw
+side-data kinds such as `AV_PKT_DATA_NB` and `-1`, and standalone nonzero-flag
+replacement, as pinned by the current raw/flagged add-padding rows.
 
 `PacketFlags` stores raw `AVPacket.flags` bits instead of truncating to the
 known public mask. Known-bit helpers still drive ergonomic checks for
