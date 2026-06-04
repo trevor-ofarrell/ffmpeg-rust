@@ -60,7 +60,17 @@ fn libavcodec_packet_core_lifecycle_matches_packet_model() {
         libswresample.display()
     );
 
-    let work_dir = repo_root.join("target/oracle/avutil-packet");
+    let target_dir = env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .map(|path| {
+            if path.is_absolute() {
+                path
+            } else {
+                repo_root.join(path)
+            }
+        })
+        .unwrap_or_else(|| repo_root.join("target"));
+    let work_dir = target_dir.join("oracle/avutil-packet");
     fs::create_dir_all(&work_dir).expect("create avutil-packet oracle work dir");
     let source = work_dir.join("packet_oracle.c");
     let executable = work_dir.join("packet_oracle");

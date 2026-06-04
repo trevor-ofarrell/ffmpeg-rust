@@ -9,6 +9,15 @@
 
 ## Compatible Today
 
+- Latest main-thread packet oracle-harness evidence: the ignored pinned
+  libavcodec/libavutil packet oracle now honors `CARGO_TARGET_DIR` for its
+  scratch C helper directory. A focused ignored run passed with
+  `CARGO_TARGET_DIR=target-orch-avutil` and generated the helper under
+  `target-orch-avutil/oracle/avutil-packet`, the mapped differential row passed
+  under `target-orch-fate/oracle/avutil-packet`, and upstream `fate-avpacket`
+  passed after rerunning outside the sandbox so FFmpeg's cached FATE output
+  could be written. `avutil-packet` remains `fate_pass`; strict completion
+  remains 11/96.
 - Latest main-thread buffer oracle-harness evidence: the ignored pinned
   libavutil buffer oracle now honors `CARGO_TARGET_DIR` for its scratch C
   helper directory. A focused ignored run passed with
