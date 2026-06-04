@@ -9,6 +9,14 @@
 
 ## Compatible Today
 
+- Latest main-thread packet side-data move padding evidence: pinned libavcodec
+  rows now prove positive-size packet-owned side data transferred by
+  `av_packet_move_ref()` preserves the moved allocation with
+  `AV_INPUT_BUFFER_PADDING_SIZE` zero padding and clears source side data. Rust
+  mirrors this through `Packet::move_ref_from`, with focused unit, ignored
+  oracle, mapped differential/FATE, upstream `fate-avpacket`, clippy, and WSL
+  `avutil_core_models` sanitizer smoke coverage. `avutil-packet` remains
+  `fate_pass`; strict completion remains 11/96.
 - Latest main-thread packet side-data lifecycle padding evidence: pinned
   libavcodec rows now prove positive-size packet side data copied by
   `av_packet_copy_props()`, `av_packet_ref()`, and `av_packet_clone()` is

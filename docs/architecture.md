@@ -234,7 +234,9 @@ allocation before mutating packet-owned side data or standalone side-data lists,
 matching the pinned `SIZE_MAX` oracle rows with typed ENOMEM errors.
 Packet copy-props, ref, and clone helpers also reallocate copied side data with
 the same zeroed input-padding window, matching the current
-`packet:*side-padding` oracle rows.
+`packet:*side-padding` oracle rows. Move-ref preserves packet-owned side-data
+storage directly, including that zeroed padding window, while clearing the
+source packet side-data list.
 
 `PacketFlags` stores raw `AVPacket.flags` bits instead of truncating to the
 known public mask. Known-bit helpers still drive ergonomic checks for
@@ -778,6 +780,9 @@ The `packet:copy-props-replace-side-padding`,
 `packet:clone-duplicate-side-padding` rows further pin that copied/ref/cloned
 positive-size side data receives a fresh zeroed
 `AV_INPUT_BUFFER_PADDING_SIZE` padding window after the visible payload.
+The `packet:move-padded-side*` rows pin the corresponding move-ref shape:
+positive-size packet-owned side data is transferred with its existing zeroed
+input-padding window intact and the source side-data list reset.
 
 The packet oracle now includes `packet:side-add-capacity-*`, `packet:side-add-capacity-overflow-owned`, and `packet:side-new-capacity-overflow` rows proving the packet-owned side-data capacity edge: FFmpeg permits replacing an existing side-data kind after the packet has `AV_PKT_DATA_NB` entries, rejects appending another entry with `ERANGE` without changing the count, preserves the caller-owned buffer for failed `av_packet_add_side_data()` append attempts, and returns NULL from `av_packet_new_side_data()` at that capacity. It also includes packet-owned raw lookup rows proving `av_packet_get_side_data()` finds raw values inserted at `AV_PKT_DATA_NB`, `AV_PKT_DATA_NB + 1`, `-1`, and `INT_MIN`. The Rust `Packet::try_add_side_data`, `Packet::try_add_side_data_owned`, `Packet::new_side_data`, and `side_data_by_kind_id` model the same bounded surface with typed errors and explicit ownership transfer.
 

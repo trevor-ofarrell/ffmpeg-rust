@@ -199,6 +199,14 @@ side data copied by `av_packet_copy_props()`, `av_packet_ref()`, and
 deterministic `avutil_core_models` fixture asserts the same zero-padding
 windows for Rust copy-props/ref/clone lifecycles.
 
+The latest packet move-ref side-data padding fixture adds
+`packet:move-padded-side`, `packet:move-padded-side-padding`, and
+`packet:move-padded-src-side` rows. These prove `av_packet_move_ref()` transfers
+positive-size packet-owned side data with its zeroed
+`AV_INPUT_BUFFER_PADDING_SIZE` padding window intact and resets the source
+side-data list. The deterministic `avutil_core_models` fixture mirrors the
+same ownership transfer with `Packet::move_ref_from()`.
+
 A later warmed WSL `avutil_core_models` smoke ran 4096 inputs with
 `CARGO_TARGET_DIR=target-wsl-fuzz` and `ASAN_OPTIONS=detect_leaks=0` against a
 temporary copy of the four tracked seed files. It reached `DONE`, libFuzzer

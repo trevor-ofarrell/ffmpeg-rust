@@ -1065,6 +1065,29 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         side_data_summary_fields(&move_duplicate_src),
     );
 
+    let mut move_padded_src = Packet::default();
+    move_padded_src
+        .new_side_data(PacketSideDataKind::NewExtradata, 3)
+        .expect("padded move source side data")
+        .data_mut()
+        .copy_from_slice(&[0x61, 0x62, 0x63]);
+    let mut move_padded_dst = Packet::new(vec![0x55], 1);
+    move_padded_dst.move_ref_from(&mut move_padded_src);
+    rows.insert(
+        "packet:move-padded-side".to_string(),
+        side_data_summary_fields(&move_padded_dst),
+    );
+    rows.insert(
+        "packet:move-padded-side-padding".to_string(),
+        side_data_padding_fields(
+            move_padded_dst.side_data_by_kind_id(&PacketSideDataKind::NewExtradata),
+        ),
+    );
+    rows.insert(
+        "packet:move-padded-src-side".to_string(),
+        side_data_summary_fields(&move_padded_src),
+    );
+
     let mut zero_side_src = Packet::default();
     zero_side_src
         .new_side_data(PacketSideDataKind::NewExtradata, 0)
@@ -12043,6 +12066,26 @@ int main(void) {
                             duplicate_move_src);
     av_packet_free(&duplicate_move_dst);
     av_packet_free(&duplicate_move_src);
+
+    AVPacket *move_padded_src = new_packet();
+    uint8_t *move_padded_side = av_packet_new_side_data(
+        move_padded_src, AV_PKT_DATA_NEW_EXTRADATA, 3);
+    fail_if(!move_padded_side, "move padded source side data failed");
+    move_padded_side[0] = 0x61;
+    move_padded_side[1] = 0x62;
+    move_padded_side[2] = 0x63;
+    AVPacket *move_padded_dst = new_packet();
+    fail_if(av_new_packet(move_padded_dst, 1) < 0,
+            "av_new_packet move padded dst failed");
+    move_padded_dst->data[0] = 0x55;
+    av_packet_move_ref(move_padded_dst, move_padded_src);
+    print_side_data_summary("packet:move-padded-side", move_padded_dst);
+    print_packet_side_data_padding("packet:move-padded-side-padding",
+                                   move_padded_dst,
+                                   AV_PKT_DATA_NEW_EXTRADATA);
+    print_side_data_summary("packet:move-padded-src-side", move_padded_src);
+    av_packet_free(&move_padded_dst);
+    av_packet_free(&move_padded_src);
 
     AVPacket *zero_side_src = new_packet();
     uint8_t *zero_side = av_packet_new_side_data(

@@ -15484,6 +15484,30 @@ mod tests {
     }
 
     #[test]
+    fn packet_move_ref_preserves_owned_side_data_padding() {
+        let mut src = Packet::default();
+        src.new_side_data(PacketSideDataKind::NewExtradata, 3)
+            .unwrap()
+            .data_mut()
+            .copy_from_slice(&[0x61, 0x62, 0x63]);
+
+        let mut dst = Packet::new(vec![0x55], 1);
+        dst.move_ref_from(&mut src);
+
+        assert!(src.side_data().is_empty());
+        let moved_side_data = dst
+            .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+            .unwrap();
+        assert_eq!(moved_side_data.data(), &[0x61, 0x62, 0x63]);
+        assert_eq!(moved_side_data.padding_len(), AV_INPUT_BUFFER_PADDING_SIZE);
+        assert!(moved_side_data
+            .padding_slice()
+            .iter()
+            .take(AV_INPUT_BUFFER_PADDING_SIZE)
+            .all(|byte| *byte == 0));
+    }
+
+    #[test]
     fn packet_drop_and_option_take_match_av_packet_free_lifecycle() {
         let mut none_packet: Option<Packet> = None;
         drop(none_packet.take());

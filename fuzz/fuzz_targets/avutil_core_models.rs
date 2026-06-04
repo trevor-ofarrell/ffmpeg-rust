@@ -17400,6 +17400,29 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     moved_packet.unref();
     assert!(moved_packet.is_empty());
 
+    let mut move_owned_side_src = Packet::default();
+    move_owned_side_src
+        .new_side_data(PacketSideDataKind::NewExtradata, 3)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0x61, 0x62, 0x63]);
+    let mut move_owned_side_dst = Packet::new(vec![0x55], 1);
+    move_owned_side_dst.move_ref_from(&mut move_owned_side_src);
+    assert!(move_owned_side_src.side_data().is_empty());
+    let move_owned_side_data = move_owned_side_dst
+        .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+        .unwrap();
+    assert_eq!(move_owned_side_data.data(), &[0x61, 0x62, 0x63]);
+    assert_eq!(
+        move_owned_side_data.padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(move_owned_side_data
+        .padding_slice()
+        .iter()
+        .take(AV_INPUT_BUFFER_PADDING_SIZE)
+        .all(|byte| *byte == 0));
+
     let mut unref_empty_packet = Packet::default();
     unref_empty_packet.unref();
     assert!(unref_empty_packet.is_empty());
