@@ -177,6 +177,29 @@ flags=___
 }
 
 #[test]
+fn parse_xml_packet_sections_reads_packet_elements() {
+    let output = r#"<?xml version="1.0" encoding="UTF-8"?>
+<ffprobe>
+    <packets>
+        <packet codec_type="video" stream_index="0" pts="0" pts_time="0.000000" dts="0" dts_time="0.000000" duration="1" duration_time="0.040000" size="6" pos="36" flags="K__"/>
+        <packet codec_type="video" stream_index="0" pts="1" pts_time="0.040000" dts="1" dts_time="0.040000" duration="1" duration_time="0.040000" size="6" pos="42" flags="___"/>
+    </packets>
+</ffprobe>
+"#;
+
+    let packets = parse_xml_packet_sections(output);
+
+    assert_eq!(packets.len(), 2);
+    assert_eq!(packets[0].field("codec_type"), Some("video"));
+    assert_eq!(packets[0].field("stream_index"), Some("0"));
+    assert_eq!(packets[0].field("pos"), Some("36"));
+    assert_eq!(packets[0].field("flags"), Some("K__"));
+    assert_eq!(packets[1].field("pts"), Some("1"));
+    assert_eq!(packets[1].field("pos"), Some("42"));
+    assert_eq!(packets[1].field("flags"), Some("___"));
+}
+
+#[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE/FFPROBE_ORACLE or install third_party/ffmpeg-oracle/build/bin"]
 fn mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle() {
     let ffmpeg = oracle_tool("ffmpeg");
@@ -333,6 +356,7 @@ fn mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle() {
     assert_csv_packet_fields_match(&ffprobe, mov_arg.as_str(), "MOV");
     assert_flat_packet_fields_match(&ffprobe, mov_arg.as_str(), "MOV");
     assert_ini_packet_fields_match(&ffprobe, mov_arg.as_str(), "MOV");
+    assert_xml_packet_fields_match(&ffprobe, mov_arg.as_str(), "MOV");
 }
 
 #[test]
@@ -487,6 +511,7 @@ fn avi_bgr24_ffprobe_packet_fields_match_ffmpeg_oracle() {
     assert_csv_packet_fields_match(&ffprobe, avi_arg.as_str(), "AVI");
     assert_flat_packet_fields_match(&ffprobe, avi_arg.as_str(), "AVI");
     assert_ini_packet_fields_match(&ffprobe, avi_arg.as_str(), "AVI");
+    assert_xml_packet_fields_match(&ffprobe, avi_arg.as_str(), "AVI");
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -794,6 +819,51 @@ fn assert_ini_packet_fields_match(ffprobe: &Path, input: &str, label: &str) {
     }
 }
 
+fn assert_xml_packet_fields_match(ffprobe: &Path, input: &str, label: &str) {
+    let rust_xml = ffprobe_output(&strings(&[
+        "-hide_banner",
+        "-show_packets",
+        "-of",
+        "xml",
+        input,
+    ]))
+    .unwrap_or_else(|err| panic!("Rust ffprobe {label} XML packet path should execute: {err}"));
+
+    let oracle = Command::new(ffprobe)
+        .args(["-v", "error", "-show_packets", "-of", "xml", input])
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", ffprobe.display()));
+
+    assert!(
+        oracle.status.success(),
+        "oracle ffprobe XML failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        oracle.status.code(),
+        String::from_utf8_lossy(&oracle.stdout),
+        String::from_utf8_lossy(&oracle.stderr)
+    );
+
+    let oracle_xml =
+        String::from_utf8(oracle.stdout).expect("oracle ffprobe XML output should be UTF-8");
+    let rust_packets = parse_xml_packet_sections(&rust_xml);
+    let oracle_packets = parse_xml_packet_sections(&oracle_xml);
+    assert_eq!(
+        rust_packets.len(),
+        oracle_packets.len(),
+        "{label} XML packet counts should match"
+    );
+
+    for (index, (rust_packet, oracle_packet)) in
+        rust_packets.iter().zip(oracle_packets.iter()).enumerate()
+    {
+        assert_fields_match(
+            rust_packet,
+            oracle_packet,
+            PACKET_FIELDS,
+            &format!("{label} XML PACKET[{index}]"),
+        );
+    }
+}
+
 fn parse_compact_packet_sections(output: &str) -> Vec<Section> {
     output
         .lines()
@@ -947,6 +1017,45 @@ fn parse_ini_packet_sections(output: &str) -> Vec<Section> {
     }
 
     sections.into_values().collect()
+}
+
+fn parse_xml_packet_sections(output: &str) -> Vec<Section> {
+    output
+        .lines()
+        .filter_map(|raw_line| {
+            let line = raw_line.trim();
+            let rest = line.strip_prefix("<packet ")?;
+            let attributes = rest
+                .strip_suffix("/>")
+                .or_else(|| rest.strip_suffix('>'))
+                .unwrap_or(rest)
+                .trim();
+            Some(Section {
+                name: "PACKET".to_owned(),
+                fields: parse_xml_attributes(attributes),
+            })
+        })
+        .collect()
+}
+
+fn parse_xml_attributes(attributes: &str) -> BTreeMap<String, String> {
+    let mut fields = BTreeMap::new();
+    let mut rest = attributes.trim();
+    while !rest.is_empty() {
+        let (key, after_key) = rest
+            .split_once('=')
+            .unwrap_or_else(|| panic!("XML packet attribute should be key=value in `{rest}`"));
+        let after_key = after_key.trim_start();
+        let value_rest = after_key
+            .strip_prefix('"')
+            .unwrap_or_else(|| panic!("XML packet attribute `{key}` should start with quote"));
+        let end = value_rest
+            .find('"')
+            .unwrap_or_else(|| panic!("XML packet attribute `{key}` should end with quote"));
+        fields.insert(key.trim().to_owned(), value_rest[..end].to_owned());
+        rest = value_rest[end + 1..].trim_start();
+    }
+    fields
 }
 
 fn unescape_compact_value(value: &str) -> String {

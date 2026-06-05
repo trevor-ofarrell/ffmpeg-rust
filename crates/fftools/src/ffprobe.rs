@@ -22,6 +22,7 @@ enum WriterFormat {
     Csv,
     Flat,
     Ini,
+    Xml,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -764,6 +765,7 @@ fn parse_writer_format(value: &str) -> Result<WriterFormat, FfprobeError> {
         "csv" => Ok(WriterFormat::Csv),
         "flat" => Ok(WriterFormat::Flat),
         "ini" => Ok(WriterFormat::Ini),
+        "xml" => Ok(WriterFormat::Xml),
         _ => Err(FfprobeError::unsupported(format!(
             "unsupported writer format `{value}`"
         ))),
@@ -1451,6 +1453,7 @@ fn render_report(command: &FfprobeCommand, report: &FfprobeReport) -> String {
         WriterFormat::Csv => render_csv(command, report),
         WriterFormat::Flat => render_flat(command, report),
         WriterFormat::Ini => render_ini(command, report),
+        WriterFormat::Xml => render_xml(command, report),
     }
 }
 
@@ -1700,6 +1703,29 @@ fn render_ini(command: &FfprobeCommand, report: &FfprobeReport) -> String {
     if command.show_format {
         push_ini_section(&mut out, "format", format_scalar_fields(report));
     }
+    out
+}
+
+fn render_xml(command: &FfprobeCommand, report: &FfprobeReport) -> String {
+    let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ffprobe>\n");
+    if command.show_packets {
+        out.push_str("    <packets>\n");
+        for packet in &report.packets {
+            push_xml_empty_element(&mut out, 8, "packet", packet_scalar_fields(packet));
+        }
+        out.push_str("    </packets>\n");
+    }
+    if command.show_streams {
+        out.push_str("    <streams>\n");
+        for stream in &report.streams {
+            push_xml_empty_element(&mut out, 8, "stream", stream_scalar_fields(stream));
+        }
+        out.push_str("    </streams>\n");
+    }
+    if command.show_format {
+        push_xml_empty_element(&mut out, 4, "format", format_scalar_fields(report));
+    }
+    out.push_str("</ffprobe>\n");
     out
 }
 
@@ -2101,6 +2127,25 @@ fn push_ini_section(out: &mut String, section: &str, fields: Vec<(String, String
     out.push('\n');
 }
 
+fn push_xml_empty_element(
+    out: &mut String,
+    indent: usize,
+    name: &str,
+    fields: Vec<(String, String)>,
+) {
+    out.push_str(&" ".repeat(indent));
+    out.push('<');
+    out.push_str(name);
+    for (key, value) in fields {
+        out.push(' ');
+        out.push_str(&key);
+        out.push_str("=\"");
+        out.push_str(&escape_xml_attribute(&value));
+        out.push('"');
+    }
+    out.push_str("/>\n");
+}
+
 fn escape_compact_value(value: &str) -> String {
     let mut escaped = String::new();
     for ch in value.chars() {
@@ -2124,6 +2169,23 @@ fn escape_ini_value(value: &str) -> String {
             '\\' => escaped.push_str("\\\\"),
             '\n' => escaped.push_str("\\n"),
             '\r' => escaped.push_str("\\r"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
+}
+
+fn escape_xml_attribute(value: &str) -> String {
+    let mut escaped = String::new();
+    for ch in value.chars() {
+        match ch {
+            '&' => escaped.push_str("&amp;"),
+            '"' => escaped.push_str("&quot;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '\'' => escaped.push_str("&apos;"),
+            '\n' => escaped.push_str("&#10;"),
+            '\r' => escaped.push_str("&#13;"),
             _ => escaped.push(ch),
         }
     }
@@ -2532,6 +2594,14 @@ mod tests {
     }
 
     #[test]
+    fn parses_ffprobe_xml_writer_format() {
+        let command =
+            parse_ffprobe_args(&strings(&["-show_packets", "-of", "xml", "clip.mp4"])).unwrap();
+
+        assert_eq!(command.writer_format, WriterFormat::Xml);
+    }
+
+    #[test]
     fn parses_and_rejects_ffprobe_loglevel_values() {
         let command =
             parse_ffprobe_args(&strings(&["-v", "-8", "-show_format", "clip.mp4"])).unwrap();
@@ -2777,6 +2847,27 @@ mod tests {
         assert!(rendered.contains("size=3\n"));
         assert!(rendered.contains("pos=123\n"));
         assert!(rendered.contains("flags=K__\n"));
+        assert!(!rendered.contains("[PACKET]"));
+        assert!(!rendered.contains("packet,"));
+        assert!(!rendered.contains("packet|"));
+        assert!(!rendered.contains("packets.packet.0.codec_type"));
+    }
+
+    #[test]
+    fn renders_xml_packet_sections() {
+        let command =
+            parse_ffprobe_args(&strings(&["-show_packets", "-of", "xml", "clip.mp4"])).unwrap();
+        let report = sample_report();
+
+        let rendered = render_report(&command, &report);
+
+        assert!(rendered.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ffprobe>\n"));
+        assert!(rendered.contains("    <packets>\n"));
+        assert!(rendered.contains("        <packet codec_type=\"video\" stream_index=\"0\""));
+        assert!(rendered.contains(" pts=\"0\" pts_time=\"0.000000\""));
+        assert!(rendered.contains(" duration=\"1000\" duration_time=\"0.011111\""));
+        assert!(rendered.contains(" size=\"3\" pos=\"123\" flags=\"K__\"/>\n"));
+        assert!(rendered.ends_with("    </packets>\n</ffprobe>\n"));
         assert!(!rendered.contains("[PACKET]"));
         assert!(!rendered.contains("packet,"));
         assert!(!rendered.contains("packet|"));
