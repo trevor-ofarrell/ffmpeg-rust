@@ -9,6 +9,14 @@
 
 ## Compatible Today
 
+- Latest main-thread packet show-entries media evidence: `ffprobe-rs` now
+  accepts bounded packet-only `-show_entries`, supports implicit packet output
+  through `packet=...`, ignores unknown packet field names, merges repeated
+  packet sections, rejects unsupported sections, and renders selected packet
+  fields in FFmpeg field order across default, JSON, compact, CSV, flat, INI,
+  and XML packet writers. The pinned MOV and AVI ffprobe oracle rows compare
+  selected `pts_time`, `size`, and `flags` packet fields against FFmpeg 8.1.1.
+  `avutil-packet` remains `fate_pass`; strict completion remains 11/96.
 - Latest main-thread packet data-dump media evidence: `ffprobe-rs` now accepts
   bounded `-show_data` for packet output, renders FFmpeg-shaped hex/ASCII
   payload dumps across default, JSON, compact, CSV, flat, INI, and XML packet

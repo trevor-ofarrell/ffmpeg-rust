@@ -67,6 +67,8 @@ const PACKET_DATA_HASH_FIELDS: &[&str] = &[
     "data_hash",
 ];
 
+const PACKET_SELECTED_FIELDS: &[&str] = &["pts_time", "size", "flags"];
+
 #[test]
 fn parse_default_sections_reads_multiline_packet_data() {
     let output = "\
@@ -486,6 +488,7 @@ fn mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle() {
     assert_packet_data_hash_fields_match(&ffprobe, mov_arg.as_str(), "MOV");
     assert_packet_data_fields_match(&ffprobe, mov_arg.as_str(), "MOV");
     assert_packet_data_and_hash_fields_match(&ffprobe, mov_arg.as_str(), "MOV");
+    assert_packet_selected_fields_match(&ffprobe, mov_arg.as_str(), "MOV");
 }
 
 #[test]
@@ -644,6 +647,7 @@ fn avi_bgr24_ffprobe_packet_fields_match_ffmpeg_oracle() {
     assert_packet_data_hash_fields_match(&ffprobe, avi_arg.as_str(), "AVI");
     assert_packet_data_fields_match(&ffprobe, avi_arg.as_str(), "AVI");
     assert_packet_data_and_hash_fields_match(&ffprobe, avi_arg.as_str(), "AVI");
+    assert_packet_selected_fields_match(&ffprobe, avi_arg.as_str(), "AVI");
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1106,6 +1110,59 @@ fn assert_packet_data_and_hash_fields_match(ffprobe: &Path, input: &str, label: 
     );
 }
 
+fn assert_packet_selected_fields_match(ffprobe: &Path, input: &str, label: &str) {
+    let rust_default = ffprobe_output(&strings(&[
+        "-hide_banner",
+        "-show_entries",
+        "packet=flags,size,pts_time",
+        input,
+    ]))
+    .unwrap_or_else(|err| {
+        panic!("Rust ffprobe {label} implicit selected packet path should execute: {err}")
+    });
+
+    let oracle = Command::new(ffprobe)
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "packet=flags,size,pts_time",
+            input,
+        ])
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", ffprobe.display()));
+    assert!(
+        oracle.status.success(),
+        "oracle ffprobe implicit selected packet failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        oracle.status.code(),
+        String::from_utf8_lossy(&oracle.stdout),
+        String::from_utf8_lossy(&oracle.stderr)
+    );
+    let oracle_default =
+        String::from_utf8(oracle.stdout).expect("oracle ffprobe default output should be UTF-8");
+    assert_packet_sections_match(
+        parse_default_sections(&rust_default)
+            .into_iter()
+            .filter(|section| section.name == "PACKET")
+            .collect::<Vec<_>>(),
+        parse_default_sections(&oracle_default)
+            .into_iter()
+            .filter(|section| section.name == "PACKET")
+            .collect::<Vec<_>>(),
+        PACKET_SELECTED_FIELDS,
+        &format!("{label} implicit selected packet"),
+    );
+
+    assert_packet_extra_fields_match(
+        ffprobe,
+        input,
+        label,
+        &["-show_entries", "packet=flags,size,pts_time"],
+        PACKET_SELECTED_FIELDS,
+        "selected packet",
+    );
+}
+
 fn assert_packet_extra_fields_match(
     ffprobe: &Path,
     input: &str,
@@ -1324,11 +1381,35 @@ fn assert_packet_sections_match(
     for (index, (rust_packet, oracle_packet)) in
         rust_packets.iter().zip(oracle_packets.iter()).enumerate()
     {
+        assert_exact_packet_fields(
+            rust_packet,
+            fields,
+            &format!("{label} Rust PACKET[{index}]"),
+        );
+        assert_exact_packet_fields(
+            oracle_packet,
+            fields,
+            &format!("{label} oracle PACKET[{index}]"),
+        );
         assert_fields_match(
             rust_packet,
             oracle_packet,
             fields,
             &format!("{label} PACKET[{index}]"),
+        );
+    }
+}
+
+fn assert_exact_packet_fields(packet: &Section, fields: &[&str], label: &str) {
+    assert_eq!(
+        packet.fields.len(),
+        fields.len(),
+        "{label} should have exact packet field count"
+    );
+    for key in packet.fields.keys() {
+        assert!(
+            fields.contains(&key.as_str()),
+            "{label} should not contain extra packet field `{key}`"
         );
     }
 }

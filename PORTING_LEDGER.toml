@@ -2,6 +2,15 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest main-thread packet show-entries media-integration slice: ffprobe-rs
+# now accepts bounded packet-only `-show_entries`, lets `packet=...` imply
+# packet output, ignores unknown packet field names, merges repeated packet
+# sections, rejects unsupported sections, and renders selected packet fields in
+# FFmpeg field order across default, JSON, compact, CSV, flat, INI, and XML
+# writers. The pinned MOV/AVI ffprobe oracle rows now compare selected
+# `pts_time`, `size`, and `flags` packet fields against FFmpeg 8.1.1. This
+# strengthens avutil-packet media evidence only; the row remains fate_pass, not
+# complete.
 # Latest main-thread packet data-dump media-integration slice: ffprobe-rs now
 # accepts bounded `-show_data` for packet output, renders FFmpeg-shaped
 # hex/ASCII packet payload dumps across default, JSON, compact, CSV, flat, INI,
@@ -1334,6 +1343,11 @@ blocked_reason = ""
 # `-show_data -show_data_hash md5` ordering across default, JSON, compact, CSV,
 # flat, INI, and XML writers against pinned FFmpeg 8.1.1. This strengthens
 # media-path evidence only; avutil-packet remains fate_pass, not complete.
+# Latest update: MOV/AVI ffprobe media-integration coverage now compares
+# packet-only `-show_entries packet=...` selection across default, JSON,
+# compact, CSV, flat, INI, and XML writers, including FFmpeg field-order
+# rendering and implicit packet output. This strengthens media-path evidence
+# only; avutil-packet remains fate_pass, not complete.
 [[component]]
 id = "avutil-packet"
 kind = "utility"

@@ -30,6 +30,7 @@ struct FfprobeCommand {
     show_format: bool,
     show_streams: bool,
     show_packets: bool,
+    packet_fields: PacketFieldSelection,
     show_data: bool,
     show_data_hash: Option<HashAlgorithm>,
     count_frames: bool,
@@ -41,6 +42,75 @@ struct FfprobeCommand {
     log_flags: LogFlags,
     input_url: String,
 }
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+enum PacketFieldSelection {
+    #[default]
+    All,
+    Only(Vec<PacketField>),
+}
+
+impl PacketFieldSelection {
+    fn includes(&self, field: PacketField) -> bool {
+        match self {
+            Self::All => true,
+            Self::Only(fields) => fields.contains(&field),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PacketField {
+    CodecType,
+    StreamIndex,
+    Pts,
+    PtsTime,
+    Dts,
+    DtsTime,
+    Duration,
+    DurationTime,
+    Size,
+    Pos,
+    Flags,
+    Data,
+    DataHash,
+}
+
+impl PacketField {
+    fn name(self) -> &'static str {
+        match self {
+            Self::CodecType => "codec_type",
+            Self::StreamIndex => "stream_index",
+            Self::Pts => "pts",
+            Self::PtsTime => "pts_time",
+            Self::Dts => "dts",
+            Self::DtsTime => "dts_time",
+            Self::Duration => "duration",
+            Self::DurationTime => "duration_time",
+            Self::Size => "size",
+            Self::Pos => "pos",
+            Self::Flags => "flags",
+            Self::Data => "data",
+            Self::DataHash => "data_hash",
+        }
+    }
+}
+
+const PACKET_FIELD_ORDER: &[PacketField] = &[
+    PacketField::CodecType,
+    PacketField::StreamIndex,
+    PacketField::Pts,
+    PacketField::PtsTime,
+    PacketField::Dts,
+    PacketField::DtsTime,
+    PacketField::Duration,
+    PacketField::DurationTime,
+    PacketField::Size,
+    PacketField::Pos,
+    PacketField::Flags,
+    PacketField::Data,
+    PacketField::DataHash,
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ForcedInputFormat {
@@ -555,6 +625,11 @@ fn validate_ffprobe_prefix(args: &[String]) -> Result<(), FfprobeError> {
         match arg.as_str() {
             "-hide_banner" | "-show_format" | "-show_streams" | "-show_packets"
             | "-count_frames" | "-count_packets" => index += 1,
+            "-show_entries" => {
+                let value = take_value(args, index, arg)?;
+                parse_show_entries(value)?;
+                index += 2;
+            }
             "-show_data_hash" => {
                 let value = take_value(args, index, arg)?;
                 parse_hash_algorithm(value)?;
@@ -706,6 +781,7 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
     let mut show_format = false;
     let mut show_streams = false;
     let mut show_packets = false;
+    let mut packet_fields = PacketFieldSelection::default();
     let mut show_data = false;
     let mut show_data_hash = None;
     let mut count_frames = false;
@@ -731,6 +807,11 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
             "-show_packets" => {
                 show_packets = true;
                 index += 1;
+            }
+            "-show_entries" => {
+                packet_fields = parse_show_entries(take_value(args, index, arg)?)?;
+                show_packets = true;
+                index += 2;
             }
             "-show_data" => {
                 show_data = true;
@@ -790,6 +871,7 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
         show_format,
         show_streams,
         show_packets,
+        packet_fields,
         show_data,
         show_data_hash,
         count_frames,
@@ -828,6 +910,68 @@ fn parse_writer_format(value: &str) -> Result<WriterFormat, FfprobeError> {
         _ => Err(FfprobeError::unsupported(format!(
             "unsupported writer format `{value}`"
         ))),
+    }
+}
+
+fn parse_show_entries(value: &str) -> Result<PacketFieldSelection, FfprobeError> {
+    let mut selected = Vec::new();
+    let mut saw_packet = false;
+    let mut all_packet_fields = false;
+
+    for section in value.split(':') {
+        if section == "packet" {
+            saw_packet = true;
+            all_packet_fields = true;
+            continue;
+        }
+
+        let Some(field_list) = section.strip_prefix("packet=") else {
+            return Err(FfprobeError::usage(format!(
+                "unsupported show_entries section `{section}`"
+            )));
+        };
+        saw_packet = true;
+        if all_packet_fields {
+            continue;
+        }
+        for field_name in field_list.split(',').filter(|name| !name.is_empty()) {
+            if let Some(field) = parse_packet_field(field_name) {
+                if !selected.contains(&field) {
+                    selected.push(field);
+                }
+            }
+        }
+    }
+
+    if !saw_packet {
+        return Err(FfprobeError::usage(
+            "ffprobe-rs currently supports packet show_entries only",
+        ));
+    }
+
+    if all_packet_fields {
+        Ok(PacketFieldSelection::All)
+    } else {
+        Ok(PacketFieldSelection::Only(selected))
+    }
+}
+
+fn parse_packet_field(value: &str) -> Option<PacketField> {
+    match value {
+        "codec_type" => Some(PacketField::CodecType),
+        "stream_index" => Some(PacketField::StreamIndex),
+        "pts" => Some(PacketField::Pts),
+        "pts_time" => Some(PacketField::PtsTime),
+        "dts" => Some(PacketField::Dts),
+        "dts_time" => Some(PacketField::DtsTime),
+        "duration" => Some(PacketField::Duration),
+        "duration_time" => Some(PacketField::DurationTime),
+        "size" => Some(PacketField::Size),
+        "pos" => Some(PacketField::Pos),
+        "flags" => Some(PacketField::Flags),
+        "data" => Some(PacketField::Data),
+        "data_hash" => Some(PacketField::DataHash),
+        _ => None,
     }
 }
 
@@ -1577,24 +1721,17 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
     if command.show_packets {
         for packet in &report.packets {
             out.push_str("[PACKET]\n");
-            out.push_str(&format!("codec_type={}\n", packet.codec_type));
-            out.push_str(&format!("stream_index={}\n", packet.stream_index));
-            out.push_str(&format!("pts={}\n", optional_i64(packet.pts)));
-            out.push_str(&format!("pts_time={}\n", optional_str(&packet.pts_time)));
-            out.push_str(&format!("dts={}\n", optional_i64(packet.dts)));
-            out.push_str(&format!("dts_time={}\n", optional_str(&packet.dts_time)));
-            out.push_str(&format!("duration={}\n", packet.duration));
-            out.push_str(&format!("duration_time={}\n", packet.duration_time));
-            out.push_str(&format!("size={}\n", packet.size));
-            out.push_str(&format!("pos={}\n", optional_i64(packet.pos)));
-            out.push_str(&format!("flags={}\n", packet.flags));
-            if let Some(data) = &packet.data {
-                out.push_str("data=");
-                out.push_str(data);
-                out.push('\n');
-            }
-            if let Some(data_hash) = &packet.data_hash {
-                out.push_str(&format!("data_hash={data_hash}\n"));
+            for (field, value) in packet_selected_string_fields(packet, &command.packet_fields) {
+                if field == PacketField::Data {
+                    out.push_str("data=");
+                    out.push_str(&value);
+                    out.push('\n');
+                } else {
+                    out.push_str(field.name());
+                    out.push('=');
+                    out.push_str(&value);
+                    out.push('\n');
+                }
             }
             out.push_str("[/PACKET]\n");
         }
@@ -1742,7 +1879,11 @@ fn render_compact(command: &FfprobeCommand, report: &FfprobeReport) -> String {
     let mut out = String::new();
     if command.show_packets {
         for packet in &report.packets {
-            push_compact_line(&mut out, "packet", packet_scalar_fields(packet));
+            push_compact_line(
+                &mut out,
+                "packet",
+                packet_scalar_fields(packet, &command.packet_fields),
+            );
         }
     }
 
@@ -1763,7 +1904,11 @@ fn render_csv(command: &FfprobeCommand, report: &FfprobeReport) -> String {
     let mut out = String::new();
     if command.show_packets {
         for packet in &report.packets {
-            push_csv_line(&mut out, "packet", packet_scalar_fields(packet));
+            push_csv_line(
+                &mut out,
+                "packet",
+                packet_scalar_fields(packet, &command.packet_fields),
+            );
         }
     }
     if command.show_streams {
@@ -1784,7 +1929,7 @@ fn render_flat(command: &FfprobeCommand, report: &FfprobeReport) -> String {
             push_flat_fields(
                 &mut out,
                 &format!("packets.packet.{index}"),
-                packet_flat_fields(packet),
+                packet_flat_fields(packet, &command.packet_fields),
             );
         }
     }
@@ -1810,7 +1955,7 @@ fn render_ini(command: &FfprobeCommand, report: &FfprobeReport) -> String {
             push_ini_section(
                 &mut out,
                 &format!("packets.packet.{index}"),
-                packet_scalar_fields(packet),
+                packet_scalar_fields(packet, &command.packet_fields),
             );
         }
     }
@@ -1834,7 +1979,12 @@ fn render_xml(command: &FfprobeCommand, report: &FfprobeReport) -> String {
     if command.show_packets {
         out.push_str("    <packets>\n");
         for packet in &report.packets {
-            push_xml_empty_element(&mut out, 8, "packet", packet_scalar_fields(packet));
+            push_xml_empty_element(
+                &mut out,
+                8,
+                "packet",
+                packet_scalar_fields(packet, &command.packet_fields),
+            );
         }
         out.push_str("    </packets>\n");
     }
@@ -1852,33 +2002,44 @@ fn render_xml(command: &FfprobeCommand, report: &FfprobeReport) -> String {
     out
 }
 
-fn packet_scalar_fields(packet: &FfprobePacketReport) -> Vec<(String, String)> {
-    let mut fields = vec![
-        ("codec_type".to_owned(), packet.codec_type.clone()),
-        ("stream_index".to_owned(), packet.stream_index.to_string()),
-        ("pts".to_owned(), optional_i64(packet.pts)),
-        (
-            "pts_time".to_owned(),
-            optional_str(&packet.pts_time).to_owned(),
-        ),
-        ("dts".to_owned(), optional_i64(packet.dts)),
-        (
-            "dts_time".to_owned(),
-            optional_str(&packet.dts_time).to_owned(),
-        ),
-        ("duration".to_owned(), packet.duration.to_string()),
-        ("duration_time".to_owned(), packet.duration_time.clone()),
-        ("size".to_owned(), packet.size.to_string()),
-        ("pos".to_owned(), optional_i64(packet.pos)),
-        ("flags".to_owned(), packet.flags.clone()),
-    ];
-    if let Some(data) = &packet.data {
-        fields.push(("data".to_owned(), data.clone()));
+fn packet_scalar_fields(
+    packet: &FfprobePacketReport,
+    selection: &PacketFieldSelection,
+) -> Vec<(String, String)> {
+    packet_selected_string_fields(packet, selection)
+        .into_iter()
+        .map(|(field, value)| (field.name().to_owned(), value))
+        .collect()
+}
+
+fn packet_selected_string_fields(
+    packet: &FfprobePacketReport,
+    selection: &PacketFieldSelection,
+) -> Vec<(PacketField, String)> {
+    PACKET_FIELD_ORDER
+        .iter()
+        .copied()
+        .filter(|field| selection.includes(*field))
+        .filter_map(|field| packet_field_string_value(packet, field).map(|value| (field, value)))
+        .collect()
+}
+
+fn packet_field_string_value(packet: &FfprobePacketReport, field: PacketField) -> Option<String> {
+    match field {
+        PacketField::CodecType => Some(packet.codec_type.clone()),
+        PacketField::StreamIndex => Some(packet.stream_index.to_string()),
+        PacketField::Pts => Some(optional_i64(packet.pts)),
+        PacketField::PtsTime => Some(optional_str(&packet.pts_time).to_owned()),
+        PacketField::Dts => Some(optional_i64(packet.dts)),
+        PacketField::DtsTime => Some(optional_str(&packet.dts_time).to_owned()),
+        PacketField::Duration => Some(packet.duration.to_string()),
+        PacketField::DurationTime => Some(packet.duration_time.clone()),
+        PacketField::Size => Some(packet.size.to_string()),
+        PacketField::Pos => Some(optional_i64(packet.pos)),
+        PacketField::Flags => Some(packet.flags.clone()),
+        PacketField::Data => packet.data.clone(),
+        PacketField::DataHash => packet.data_hash.clone(),
     }
-    if let Some(data_hash) = &packet.data_hash {
-        fields.push(("data_hash".to_owned(), data_hash.clone()));
-    }
-    fields
 }
 
 fn stream_scalar_fields(stream: &FfprobeStreamReport) -> Vec<(String, String)> {
@@ -1973,51 +2134,38 @@ enum FlatValue {
     Quoted(String),
 }
 
-fn packet_flat_fields(packet: &FfprobePacketReport) -> Vec<(String, FlatValue)> {
-    let mut fields = vec![
-        (
-            "codec_type".to_owned(),
-            FlatValue::Quoted(packet.codec_type.clone()),
-        ),
-        (
-            "stream_index".to_owned(),
-            FlatValue::Bare(packet.stream_index.to_string()),
-        ),
-        ("pts".to_owned(), flat_optional_i64(packet.pts)),
-        (
-            "pts_time".to_owned(),
-            FlatValue::Quoted(optional_str(&packet.pts_time).to_owned()),
-        ),
-        ("dts".to_owned(), flat_optional_i64(packet.dts)),
-        (
-            "dts_time".to_owned(),
-            FlatValue::Quoted(optional_str(&packet.dts_time).to_owned()),
-        ),
-        (
-            "duration".to_owned(),
-            FlatValue::Bare(packet.duration.to_string()),
-        ),
-        (
-            "duration_time".to_owned(),
-            FlatValue::Quoted(packet.duration_time.clone()),
-        ),
-        (
-            "size".to_owned(),
-            FlatValue::Quoted(packet.size.to_string()),
-        ),
-        (
-            "pos".to_owned(),
-            FlatValue::Quoted(optional_i64(packet.pos)),
-        ),
-        ("flags".to_owned(), FlatValue::Quoted(packet.flags.clone())),
-    ];
-    if let Some(data) = &packet.data {
-        fields.push(("data".to_owned(), FlatValue::Quoted(data.clone())));
-    }
-    if let Some(data_hash) = &packet.data_hash {
-        fields.push(("data_hash".to_owned(), FlatValue::Quoted(data_hash.clone())));
-    }
-    fields
+fn packet_flat_fields(
+    packet: &FfprobePacketReport,
+    selection: &PacketFieldSelection,
+) -> Vec<(String, FlatValue)> {
+    PACKET_FIELD_ORDER
+        .iter()
+        .copied()
+        .filter(|field| selection.includes(*field))
+        .filter_map(|field| packet_flat_field_value(packet, field))
+        .collect()
+}
+
+fn packet_flat_field_value(
+    packet: &FfprobePacketReport,
+    field: PacketField,
+) -> Option<(String, FlatValue)> {
+    let value = match field {
+        PacketField::CodecType => FlatValue::Quoted(packet.codec_type.clone()),
+        PacketField::StreamIndex => FlatValue::Bare(packet.stream_index.to_string()),
+        PacketField::Pts => flat_optional_i64(packet.pts),
+        PacketField::PtsTime => FlatValue::Quoted(optional_str(&packet.pts_time).to_owned()),
+        PacketField::Dts => flat_optional_i64(packet.dts),
+        PacketField::DtsTime => FlatValue::Quoted(optional_str(&packet.dts_time).to_owned()),
+        PacketField::Duration => FlatValue::Bare(packet.duration.to_string()),
+        PacketField::DurationTime => FlatValue::Quoted(packet.duration_time.clone()),
+        PacketField::Size => FlatValue::Quoted(packet.size.to_string()),
+        PacketField::Pos => FlatValue::Quoted(optional_i64(packet.pos)),
+        PacketField::Flags => FlatValue::Quoted(packet.flags.clone()),
+        PacketField::Data => FlatValue::Quoted(packet.data.clone()?),
+        PacketField::DataHash => FlatValue::Quoted(packet.data_hash.clone()?),
+    };
+    Some((field.name().to_owned(), value))
 }
 
 fn stream_flat_fields(stream: &FfprobeStreamReport) -> Vec<(String, FlatValue)> {
@@ -2352,7 +2500,7 @@ fn render_json(command: &FfprobeCommand, report: &FfprobeReport) -> String {
         let packets = report
             .packets
             .iter()
-            .map(render_packet_json)
+            .map(|packet| render_packet_json(packet, &command.packet_fields))
             .collect::<Vec<_>>()
             .join(",\n    ");
         sections.push(format!("  \"packets\": [\n    {packets}\n  ]"));
@@ -2372,27 +2520,35 @@ fn render_json(command: &FfprobeCommand, report: &FfprobeReport) -> String {
     format!("{{\n{}\n}}\n", sections.join(",\n"))
 }
 
-fn render_packet_json(packet: &FfprobePacketReport) -> String {
-    let mut fields = vec![
-        json_string("codec_type", &packet.codec_type),
-        json_number("stream_index", packet.stream_index),
-        json_optional_number("pts", packet.pts),
-        json_optional_string("pts_time", packet.pts_time.as_deref()),
-        json_optional_number("dts", packet.dts),
-        json_optional_string("dts_time", packet.dts_time.as_deref()),
-        json_number("duration", packet.duration),
-        json_string("duration_time", &packet.duration_time),
-        json_string("size", &packet.size.to_string()),
-        json_optional_display_string("pos", packet.pos),
-        json_string("flags", &packet.flags),
-    ];
-    if let Some(data) = &packet.data {
-        fields.push(json_string("data", data));
-    }
-    if let Some(data_hash) = &packet.data_hash {
-        fields.push(json_string("data_hash", data_hash));
-    }
+fn render_packet_json(packet: &FfprobePacketReport, selection: &PacketFieldSelection) -> String {
+    let fields = PACKET_FIELD_ORDER
+        .iter()
+        .copied()
+        .filter(|field| selection.includes(*field))
+        .filter_map(|field| packet_json_field(packet, field))
+        .collect::<Vec<_>>();
     format!("{{{}}}", fields.join(", "))
+}
+
+fn packet_json_field(packet: &FfprobePacketReport, field: PacketField) -> Option<String> {
+    match field {
+        PacketField::CodecType => Some(json_string("codec_type", &packet.codec_type)),
+        PacketField::StreamIndex => Some(json_number("stream_index", packet.stream_index)),
+        PacketField::Pts => Some(json_optional_number("pts", packet.pts)),
+        PacketField::PtsTime => Some(json_optional_string("pts_time", packet.pts_time.as_deref())),
+        PacketField::Dts => Some(json_optional_number("dts", packet.dts)),
+        PacketField::DtsTime => Some(json_optional_string("dts_time", packet.dts_time.as_deref())),
+        PacketField::Duration => Some(json_number("duration", packet.duration)),
+        PacketField::DurationTime => Some(json_string("duration_time", &packet.duration_time)),
+        PacketField::Size => Some(json_string("size", &packet.size.to_string())),
+        PacketField::Pos => Some(json_optional_display_string("pos", packet.pos)),
+        PacketField::Flags => Some(json_string("flags", &packet.flags)),
+        PacketField::Data => packet.data.as_deref().map(|data| json_string("data", data)),
+        PacketField::DataHash => packet
+            .data_hash
+            .as_deref()
+            .map(|data_hash| json_string("data_hash", data_hash)),
+    }
 }
 
 fn render_stream_json(stream: &FfprobeStreamReport) -> String {
@@ -2708,6 +2864,46 @@ mod tests {
         assert_eq!(command.raw_log_level, LogLevel::Error.as_ffmpeg_value());
         assert_eq!(command.log_flags, LogFlags::SKIP_REPEATED);
         assert_eq!(command.input_url, "clip.mp4");
+    }
+
+    #[test]
+    fn parses_packet_show_entries_and_implies_packets() {
+        let command = parse_ffprobe_args(&strings(&[
+            "-show_entries",
+            "packet=flags,size,pts_time,unknown",
+            "clip.mp4",
+        ]))
+        .unwrap();
+
+        assert!(command.show_packets);
+        assert!(command.packet_fields.includes(PacketField::PtsTime));
+        assert!(command.packet_fields.includes(PacketField::Size));
+        assert!(command.packet_fields.includes(PacketField::Flags));
+        assert!(!command.packet_fields.includes(PacketField::CodecType));
+    }
+
+    #[test]
+    fn parses_repeated_packet_show_entries_as_merged_selection() {
+        let command = parse_ffprobe_args(&strings(&[
+            "-show_entries",
+            "packet=pts_time:packet=size,flags",
+            "clip.mp4",
+        ]))
+        .unwrap();
+
+        assert!(command.packet_fields.includes(PacketField::PtsTime));
+        assert!(command.packet_fields.includes(PacketField::Size));
+        assert!(command.packet_fields.includes(PacketField::Flags));
+        assert!(!command.packet_fields.includes(PacketField::Duration));
+    }
+
+    #[test]
+    fn rejects_non_packet_show_entries_sections() {
+        let error = parse_ffprobe_args(&strings(&["-show_entries", "stream=index", "clip.mp4"]))
+            .unwrap_err();
+
+        assert_eq!(error.kind, FfprobeErrorKind::Usage);
+        assert!(error.message().contains("unsupported show_entries section"));
     }
 
     #[test]
@@ -3159,6 +3355,140 @@ mod tests {
         assert!(json.contains(
             "\"flags\": \"K__\", \"data\": \"\\n00000000: 0001 0200                                ....\\n\", \"data_hash\": \"MD5:0f0c725e025036e905dc2ed035406463\""
         ));
+    }
+
+    #[test]
+    fn renders_selected_packet_fields_in_ffmpeg_field_order() {
+        let report = sample_report();
+
+        let default = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_packets",
+                "-show_entries",
+                "packet=flags,size,pts_time",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+        assert_eq!(
+            default,
+            "[PACKET]\npts_time=0.000000\nsize=3\nflags=K__\n[/PACKET]\n"
+        );
+
+        let compact = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                "packet=flags,size,pts_time",
+                "-of",
+                "compact",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+        assert_eq!(compact, "packet|pts_time=0.000000|size=3|flags=K__\n");
+
+        let csv = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                "packet=flags,size,pts_time",
+                "-of",
+                "csv",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+        assert_eq!(csv, "packet,0.000000,3,K__\n");
+
+        let flat = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                "packet=flags,size,pts_time",
+                "-of",
+                "flat",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+        assert_eq!(
+            flat,
+            "packets.packet.0.pts_time=\"0.000000\"\npackets.packet.0.size=\"3\"\npackets.packet.0.flags=\"K__\"\n"
+        );
+
+        let ini = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                "packet=flags,size,pts_time",
+                "-of",
+                "ini",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+        assert_eq!(
+            ini,
+            "# ffprobe output\n\n[packets.packet.0]\npts_time=0.000000\nsize=3\nflags=K__\n\n"
+        );
+
+        let xml = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                "packet=flags,size,pts_time",
+                "-of",
+                "xml",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+        assert_eq!(
+            xml,
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ffprobe>\n    <packets>\n        <packet pts_time=\"0.000000\" size=\"3\" flags=\"K__\"/>\n    </packets>\n</ffprobe>\n"
+        );
+
+        let json = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                "packet=flags,size,pts_time",
+                "-of",
+                "json",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+        assert_eq!(
+            json,
+            "{\n  \"packets\": [\n    {\"pts_time\": \"0.000000\", \"size\": \"3\", \"flags\": \"K__\"}\n  ]\n}\n"
+        );
+    }
+
+    #[test]
+    fn renders_empty_packet_show_entries_sections() {
+        let report = sample_report();
+
+        let default = render_report(
+            &parse_ffprobe_args(&strings(&["-show_entries", "packet=", "clip.mp4"])).unwrap(),
+            &report,
+        );
+        assert_eq!(default, "[PACKET]\n[/PACKET]\n");
+
+        let compact = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                "packet=unknown",
+                "-of",
+                "compact",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+        assert_eq!(compact, "packet\n");
     }
 
     #[test]

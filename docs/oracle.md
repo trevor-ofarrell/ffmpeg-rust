@@ -1636,6 +1636,11 @@ CSV, flat, INI, and XML output, including FFmpeg-shaped hex/ASCII packet data
 dumps, FFmpeg's canonical `MD5:<hex>` value spelling, `data` before
 `data_hash` field placement, JSON/flat/XML quoting and multiline handling,
 compact/CSV scalar output, and INI colon escaping.
+The same rows also compare packet-only
+`-show_entries packet=flags,size,pts_time` selection, including the implicit
+packet output form without `-show_packets`, exact selected packet field sets,
+and FFmpeg packet field ordering across default, JSON, compact, CSV, flat,
+INI, and XML output.
 These targets are bounded evidence, not full ffprobe field-complete parity:
 
 ```sh
