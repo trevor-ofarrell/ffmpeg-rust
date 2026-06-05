@@ -31,6 +31,8 @@ struct FfprobeCommand {
     show_streams: bool,
     show_packets: bool,
     packet_fields: PacketFieldSelection,
+    stream_fields: NamedFieldSelection,
+    format_fields: NamedFieldSelection,
     show_data: bool,
     show_data_hash: Option<HashAlgorithm>,
     count_frames: bool,
@@ -57,6 +59,33 @@ impl PacketFieldSelection {
             Self::Only(fields) => fields.contains(&field),
         }
     }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+enum NamedFieldSelection {
+    #[default]
+    All,
+    Only(Vec<&'static str>),
+}
+
+impl NamedFieldSelection {
+    fn includes(&self, field: &str) -> bool {
+        match self {
+            Self::All => true,
+            Self::Only(fields) => fields.contains(&field),
+        }
+    }
+
+    fn is_all(&self) -> bool {
+        matches!(self, Self::All)
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct ShowEntrySelection {
+    packet_fields: Option<PacketFieldSelection>,
+    stream_fields: Option<NamedFieldSelection>,
+    format_fields: Option<NamedFieldSelection>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -110,6 +139,60 @@ const PACKET_FIELD_ORDER: &[PacketField] = &[
     PacketField::Flags,
     PacketField::Data,
     PacketField::DataHash,
+];
+
+const STREAM_FIELD_ORDER: &[&str] = &[
+    "index",
+    "id",
+    "codec_name",
+    "codec_long_name",
+    "profile",
+    "codec_type",
+    "codec_tag_string",
+    "codec_tag",
+    "width",
+    "height",
+    "coded_width",
+    "coded_height",
+    "sample_rate",
+    "channels",
+    "bits_per_sample",
+    "bits_per_raw_sample",
+    "extradata_size",
+    "is_avc",
+    "nal_length_size",
+    "sample_aspect_ratio",
+    "display_aspect_ratio",
+    "color_range",
+    "color_space",
+    "color_transfer",
+    "color_primaries",
+    "field_order",
+    "level",
+    "time_base",
+    "start_pts",
+    "start_time",
+    "r_frame_rate",
+    "avg_frame_rate",
+    "duration_ts",
+    "duration",
+    "nb_frames",
+    "nb_read_frames",
+    "nb_read_packets",
+];
+
+const FORMAT_FIELD_ORDER: &[&str] = &[
+    "filename",
+    "nb_streams",
+    "nb_programs",
+    "nb_stream_groups",
+    "format_name",
+    "format_long_name",
+    "time_base",
+    "duration_ts",
+    "duration",
+    "size",
+    "probe_score",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -782,6 +865,8 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
     let mut show_streams = false;
     let mut show_packets = false;
     let mut packet_fields = PacketFieldSelection::default();
+    let mut stream_fields = NamedFieldSelection::default();
+    let mut format_fields = NamedFieldSelection::default();
     let mut show_data = false;
     let mut show_data_hash = None;
     let mut count_frames = false;
@@ -809,8 +894,19 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
                 index += 1;
             }
             "-show_entries" => {
-                packet_fields = parse_show_entries(take_value(args, index, arg)?)?;
-                show_packets = true;
+                let entries = parse_show_entries(take_value(args, index, arg)?)?;
+                if let Some(fields) = entries.packet_fields {
+                    packet_fields = fields;
+                    show_packets = true;
+                }
+                if let Some(fields) = entries.stream_fields {
+                    stream_fields = fields;
+                    show_streams = true;
+                }
+                if let Some(fields) = entries.format_fields {
+                    format_fields = fields;
+                    show_format = true;
+                }
                 index += 2;
             }
             "-show_data" => {
@@ -872,6 +968,8 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
         show_streams,
         show_packets,
         packet_fields,
+        stream_fields,
+        format_fields,
         show_data,
         show_data_hash,
         count_frames,
@@ -913,47 +1011,109 @@ fn parse_writer_format(value: &str) -> Result<WriterFormat, FfprobeError> {
     }
 }
 
-fn parse_show_entries(value: &str) -> Result<PacketFieldSelection, FfprobeError> {
-    let mut selected = Vec::new();
-    let mut saw_packet = false;
-    let mut all_packet_fields = false;
+fn parse_show_entries(value: &str) -> Result<ShowEntrySelection, FfprobeError> {
+    let mut entries = ShowEntrySelection::default();
 
     for section in value.split(':') {
-        if section == "packet" {
-            saw_packet = true;
-            all_packet_fields = true;
-            continue;
-        }
-
-        let Some(field_list) = section.strip_prefix("packet=") else {
-            return Err(FfprobeError::usage(format!(
-                "unsupported show_entries section `{section}`"
-            )));
-        };
-        saw_packet = true;
-        if all_packet_fields {
-            continue;
-        }
-        for field_name in field_list.split(',').filter(|name| !name.is_empty()) {
-            if let Some(field) = parse_packet_field(field_name) {
-                if !selected.contains(&field) {
-                    selected.push(field);
+        match section {
+            "packet" => entries.packet_fields = Some(PacketFieldSelection::All),
+            "stream" => entries.stream_fields = Some(NamedFieldSelection::All),
+            "format" => entries.format_fields = Some(NamedFieldSelection::All),
+            _ => {
+                let Some((section_name, field_list)) = section.split_once('=') else {
+                    return Err(FfprobeError::usage(format!(
+                        "unsupported show_entries section `{section}`"
+                    )));
+                };
+                match section_name {
+                    "packet" => merge_packet_show_entry_fields(&mut entries, field_list),
+                    "stream" => {
+                        merge_named_show_entry_fields(
+                            &mut entries.stream_fields,
+                            field_list,
+                            parse_stream_field,
+                        );
+                    }
+                    "format" => {
+                        merge_named_show_entry_fields(
+                            &mut entries.format_fields,
+                            field_list,
+                            parse_format_field,
+                        );
+                    }
+                    _ => {
+                        return Err(FfprobeError::usage(format!(
+                            "unsupported show_entries section `{section_name}`"
+                        )));
+                    }
                 }
             }
         }
     }
 
-    if !saw_packet {
+    if entries.packet_fields.is_none()
+        && entries.stream_fields.is_none()
+        && entries.format_fields.is_none()
+    {
         return Err(FfprobeError::usage(
-            "ffprobe-rs currently supports packet show_entries only",
+            "ffprobe-rs currently supports packet, stream, and format show_entries only",
         ));
     }
 
-    if all_packet_fields {
-        Ok(PacketFieldSelection::All)
-    } else {
-        Ok(PacketFieldSelection::Only(selected))
+    Ok(entries)
+}
+
+fn merge_packet_show_entry_fields(entries: &mut ShowEntrySelection, field_list: &str) {
+    let Some(selection) = &mut entries.packet_fields else {
+        entries.packet_fields = Some(PacketFieldSelection::Only(
+            packet_show_entry_fields(field_list).collect(),
+        ));
+        return;
+    };
+    if let PacketFieldSelection::Only(selected) = selection {
+        for field in packet_show_entry_fields(field_list) {
+            if !selected.contains(&field) {
+                selected.push(field);
+            }
+        }
     }
+}
+
+fn packet_show_entry_fields(field_list: &str) -> impl Iterator<Item = PacketField> + '_ {
+    field_list
+        .split(',')
+        .filter(|name| !name.is_empty())
+        .filter_map(parse_packet_field)
+}
+
+fn merge_named_show_entry_fields(
+    selection: &mut Option<NamedFieldSelection>,
+    field_list: &str,
+    parse_field: fn(&str) -> Option<&'static str>,
+) {
+    let Some(existing) = selection else {
+        *selection = Some(NamedFieldSelection::Only(
+            named_show_entry_fields(field_list, parse_field).collect(),
+        ));
+        return;
+    };
+    if let NamedFieldSelection::Only(selected) = existing {
+        for field in named_show_entry_fields(field_list, parse_field) {
+            if !selected.contains(&field) {
+                selected.push(field);
+            }
+        }
+    }
+}
+
+fn named_show_entry_fields(
+    field_list: &str,
+    parse_field: fn(&str) -> Option<&'static str>,
+) -> impl Iterator<Item = &'static str> + '_ {
+    field_list
+        .split(',')
+        .filter(|name| !name.is_empty())
+        .filter_map(parse_field)
 }
 
 fn parse_packet_field(value: &str) -> Option<PacketField> {
@@ -973,6 +1133,20 @@ fn parse_packet_field(value: &str) -> Option<PacketField> {
         "data_hash" => Some(PacketField::DataHash),
         _ => None,
     }
+}
+
+fn parse_stream_field(value: &str) -> Option<&'static str> {
+    STREAM_FIELD_ORDER
+        .iter()
+        .copied()
+        .find(|field| *field == value)
+}
+
+fn parse_format_field(value: &str) -> Option<&'static str> {
+    FORMAT_FIELD_ORDER
+        .iter()
+        .copied()
+        .find(|field| *field == value)
 }
 
 fn parse_hash_algorithm(value: &str) -> Result<HashAlgorithm, FfprobeError> {
@@ -1740,109 +1914,11 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
     if command.show_streams {
         for stream in &report.streams {
             out.push_str("[STREAM]\n");
-            out.push_str(&format!("index={}\n", stream.index));
-            out.push_str(&format!("id={}\n", stream.id));
-            if let Some(codec_name) = &stream.codec_name {
-                out.push_str(&format!("codec_name={codec_name}\n"));
-            }
-            if let Some(codec_long_name) = &stream.codec_long_name {
-                out.push_str(&format!("codec_long_name={codec_long_name}\n"));
-            }
-            if let Some(profile) = &stream.profile {
-                out.push_str(&format!("profile={profile}\n"));
-            }
-            out.push_str(&format!("codec_type={}\n", stream.codec_type));
-            if let Some(codec_tag_string) = &stream.codec_tag_string {
-                out.push_str(&format!("codec_tag_string={codec_tag_string}\n"));
-            }
-            if let Some(codec_tag) = &stream.codec_tag {
-                out.push_str(&format!("codec_tag={codec_tag}\n"));
-            }
-            if let Some(width) = stream.width {
-                out.push_str(&format!("width={width}\n"));
-            }
-            if let Some(height) = stream.height {
-                out.push_str(&format!("height={height}\n"));
-            }
-            if let Some(coded_width) = stream.coded_width {
-                out.push_str(&format!("coded_width={coded_width}\n"));
-            }
-            if let Some(coded_height) = stream.coded_height {
-                out.push_str(&format!("coded_height={coded_height}\n"));
-            }
-            if let Some(sample_rate) = stream.sample_rate {
-                out.push_str(&format!("sample_rate={sample_rate}\n"));
-            }
-            if let Some(channels) = stream.channels {
-                out.push_str(&format!("channels={channels}\n"));
-            }
-            if let Some(bits_per_sample) = stream.bits_per_sample {
-                out.push_str(&format!("bits_per_sample={bits_per_sample}\n"));
-            }
-            if let Some(bits_per_raw_sample) = stream.bits_per_raw_sample {
-                out.push_str(&format!("bits_per_raw_sample={bits_per_raw_sample}\n"));
-            }
-            if let Some(extradata_size) = stream.extradata_size {
-                out.push_str(&format!("extradata_size={extradata_size}\n"));
-            }
-            if let Some(is_avc) = stream.is_avc {
-                out.push_str(&format!("is_avc={}\n", bool_string(is_avc)));
-            }
-            if let Some(nal_length_size) = stream.nal_length_size {
-                out.push_str(&format!("nal_length_size={nal_length_size}\n"));
-            }
-            if let Some(sample_aspect_ratio) = &stream.sample_aspect_ratio {
-                out.push_str(&format!("sample_aspect_ratio={sample_aspect_ratio}\n"));
-            }
-            if let Some(display_aspect_ratio) = &stream.display_aspect_ratio {
-                out.push_str(&format!("display_aspect_ratio={display_aspect_ratio}\n"));
-            }
-            if let Some(color_range) = &stream.color_range {
-                out.push_str(&format!("color_range={color_range}\n"));
-            }
-            if let Some(color_space) = &stream.color_space {
-                out.push_str(&format!("color_space={color_space}\n"));
-            }
-            if let Some(color_transfer) = &stream.color_transfer {
-                out.push_str(&format!("color_transfer={color_transfer}\n"));
-            }
-            if let Some(color_primaries) = &stream.color_primaries {
-                out.push_str(&format!("color_primaries={color_primaries}\n"));
-            }
-            if let Some(field_order) = &stream.field_order {
-                out.push_str(&format!("field_order={field_order}\n"));
-            }
-            if let Some(level) = stream.level {
-                out.push_str(&format!("level={level}\n"));
-            }
-            out.push_str(&format!("time_base={}\n", stream.time_base));
-            if let Some(start_pts) = stream.start_pts {
-                out.push_str(&format!("start_pts={start_pts}\n"));
-            }
-            if let Some(start_time) = &stream.start_time {
-                out.push_str(&format!("start_time={start_time}\n"));
-            }
-            if let Some(r_frame_rate) = &stream.r_frame_rate {
-                out.push_str(&format!("r_frame_rate={r_frame_rate}\n"));
-            }
-            if let Some(avg_frame_rate) = &stream.avg_frame_rate {
-                out.push_str(&format!("avg_frame_rate={avg_frame_rate}\n"));
-            }
-            if let Some(duration_ts) = stream.duration_ts {
-                out.push_str(&format!("duration_ts={duration_ts}\n"));
-            }
-            if let Some(duration) = &stream.duration {
-                out.push_str(&format!("duration={duration}\n"));
-            }
-            out.push_str(&format!("nb_frames={}\n", stream.nb_frames));
-            if let Some(nb_read_frames) = stream.nb_read_frames {
-                out.push_str(&format!("nb_read_frames={nb_read_frames}\n"));
-            }
-            if let Some(nb_read_packets) = stream.nb_read_packets {
-                out.push_str(&format!("nb_read_packets={nb_read_packets}\n"));
-            }
-            for (key, value) in &stream.tags {
-                out.push_str(&format!("TAG:{key}={value}\n"));
+            for (key, value) in stream_default_fields(stream, &command.stream_fields) {
+                out.push_str(&key);
+                out.push('=');
+                out.push_str(&value);
+                out.push('\n');
             }
             out.push_str("[/STREAM]\n");
         }
@@ -1850,25 +1926,11 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
 
     if command.show_format {
         out.push_str("[FORMAT]\n");
-        out.push_str(&format!("filename={}\n", report.filename));
-        out.push_str(&format!("nb_streams={}\n", report.nb_streams));
-        out.push_str(&format!("nb_programs={}\n", report.nb_programs));
-        out.push_str(&format!("nb_stream_groups={}\n", report.nb_stream_groups));
-        out.push_str(&format!("format_name={}\n", report.format_name));
-        out.push_str(&format!("format_long_name={}\n", report.format_long_name));
-        out.push_str(&format!("time_base={}\n", report.time_base));
-        if let Some(duration_ts) = report.duration_ts {
-            out.push_str(&format!("duration_ts={duration_ts}\n"));
-        }
-        if let Some(duration) = &report.duration {
-            out.push_str(&format!("duration={duration}\n"));
-        }
-        if let Some(size) = report.size {
-            out.push_str(&format!("size={size}\n"));
-        }
-        out.push_str(&format!("probe_score={}\n", report.probe_score));
-        for (key, value) in &report.tags {
-            out.push_str(&format!("TAG:{key}={value}\n"));
+        for (key, value) in format_default_fields(report, &command.format_fields) {
+            out.push_str(&key);
+            out.push('=');
+            out.push_str(&value);
+            out.push('\n');
         }
         out.push_str("[/FORMAT]\n");
     }
@@ -1889,12 +1951,20 @@ fn render_compact(command: &FfprobeCommand, report: &FfprobeReport) -> String {
 
     if command.show_streams {
         for stream in &report.streams {
-            push_compact_line(&mut out, "stream", stream_scalar_fields(stream));
+            push_compact_line(
+                &mut out,
+                "stream",
+                stream_scalar_fields(stream, &command.stream_fields),
+            );
         }
     }
 
     if command.show_format {
-        push_compact_line(&mut out, "format", format_scalar_fields(report));
+        push_compact_line(
+            &mut out,
+            "format",
+            format_scalar_fields(report, &command.format_fields),
+        );
     }
 
     out
@@ -1913,11 +1983,19 @@ fn render_csv(command: &FfprobeCommand, report: &FfprobeReport) -> String {
     }
     if command.show_streams {
         for stream in &report.streams {
-            push_csv_line(&mut out, "stream", stream_scalar_fields(stream));
+            push_csv_line(
+                &mut out,
+                "stream",
+                stream_scalar_fields(stream, &command.stream_fields),
+            );
         }
     }
     if command.show_format {
-        push_csv_line(&mut out, "format", format_scalar_fields(report));
+        push_csv_line(
+            &mut out,
+            "format",
+            format_scalar_fields(report, &command.format_fields),
+        );
     }
     out
 }
@@ -1938,12 +2016,16 @@ fn render_flat(command: &FfprobeCommand, report: &FfprobeReport) -> String {
             push_flat_fields(
                 &mut out,
                 &format!("streams.stream.{index}"),
-                stream_flat_fields(stream),
+                stream_flat_fields(stream, &command.stream_fields),
             );
         }
     }
     if command.show_format {
-        push_flat_fields(&mut out, "format", format_flat_fields(report));
+        push_flat_fields(
+            &mut out,
+            "format",
+            format_flat_fields(report, &command.format_fields),
+        );
     }
     out
 }
@@ -1964,12 +2046,16 @@ fn render_ini(command: &FfprobeCommand, report: &FfprobeReport) -> String {
             push_ini_section(
                 &mut out,
                 &format!("streams.stream.{index}"),
-                stream_scalar_fields(stream),
+                stream_scalar_fields(stream, &command.stream_fields),
             );
         }
     }
     if command.show_format {
-        push_ini_section(&mut out, "format", format_scalar_fields(report));
+        push_ini_section(
+            &mut out,
+            "format",
+            format_scalar_fields(report, &command.format_fields),
+        );
     }
     out
 }
@@ -1991,12 +2077,22 @@ fn render_xml(command: &FfprobeCommand, report: &FfprobeReport) -> String {
     if command.show_streams {
         out.push_str("    <streams>\n");
         for stream in &report.streams {
-            push_xml_empty_element(&mut out, 8, "stream", stream_scalar_fields(stream));
+            push_xml_empty_element(
+                &mut out,
+                8,
+                "stream",
+                stream_scalar_fields(stream, &command.stream_fields),
+            );
         }
         out.push_str("    </streams>\n");
     }
     if command.show_format {
-        push_xml_empty_element(&mut out, 4, "format", format_scalar_fields(report));
+        push_xml_empty_element(
+            &mut out,
+            4,
+            "format",
+            format_scalar_fields(report, &command.format_fields),
+        );
     }
     out.push_str("</ffprobe>\n");
     out
@@ -2042,90 +2138,142 @@ fn packet_field_string_value(packet: &FfprobePacketReport, field: PacketField) -
     }
 }
 
-fn stream_scalar_fields(stream: &FfprobeStreamReport) -> Vec<(String, String)> {
-    let mut fields = vec![
-        ("index".to_owned(), stream.index.to_string()),
-        ("id".to_owned(), stream.id.to_string()),
-        ("codec_type".to_owned(), stream.codec_type.clone()),
-        ("time_base".to_owned(), stream.time_base.clone()),
-        ("nb_frames".to_owned(), stream.nb_frames.to_string()),
-    ];
-    push_optional_compact_field(&mut fields, "codec_name", &stream.codec_name);
-    push_optional_compact_field(&mut fields, "codec_long_name", &stream.codec_long_name);
-    push_optional_compact_field(&mut fields, "profile", &stream.profile);
-    push_optional_compact_field(&mut fields, "codec_tag_string", &stream.codec_tag_string);
-    push_optional_compact_field(&mut fields, "codec_tag", &stream.codec_tag);
-    push_optional_number_compact_field(&mut fields, "width", stream.width);
-    push_optional_number_compact_field(&mut fields, "height", stream.height);
-    push_optional_number_compact_field(&mut fields, "coded_width", stream.coded_width);
-    push_optional_number_compact_field(&mut fields, "coded_height", stream.coded_height);
-    push_optional_number_compact_field(&mut fields, "sample_rate", stream.sample_rate);
-    push_optional_number_compact_field(&mut fields, "channels", stream.channels);
-    push_optional_number_compact_field(&mut fields, "bits_per_sample", stream.bits_per_sample);
-    push_optional_number_compact_field(
-        &mut fields,
-        "bits_per_raw_sample",
-        stream.bits_per_raw_sample,
-    );
-    push_optional_number_compact_field(&mut fields, "extradata_size", stream.extradata_size);
-    if let Some(is_avc) = stream.is_avc {
-        fields.push(("is_avc".to_owned(), bool_string(is_avc).to_owned()));
-    }
-    push_optional_number_compact_field(&mut fields, "nal_length_size", stream.nal_length_size);
-    push_optional_compact_field(
-        &mut fields,
-        "sample_aspect_ratio",
-        &stream.sample_aspect_ratio,
-    );
-    push_optional_compact_field(
-        &mut fields,
-        "display_aspect_ratio",
-        &stream.display_aspect_ratio,
-    );
-    push_optional_compact_field(&mut fields, "color_range", &stream.color_range);
-    push_optional_compact_field(&mut fields, "color_space", &stream.color_space);
-    push_optional_compact_field(&mut fields, "color_transfer", &stream.color_transfer);
-    push_optional_compact_field(&mut fields, "color_primaries", &stream.color_primaries);
-    push_optional_compact_field(&mut fields, "field_order", &stream.field_order);
-    push_optional_number_compact_field(&mut fields, "level", stream.level);
-    push_optional_number_compact_field(&mut fields, "start_pts", stream.start_pts);
-    push_optional_compact_field(&mut fields, "start_time", &stream.start_time);
-    push_optional_compact_field(&mut fields, "r_frame_rate", &stream.r_frame_rate);
-    push_optional_compact_field(&mut fields, "avg_frame_rate", &stream.avg_frame_rate);
-    push_optional_number_compact_field(&mut fields, "duration_ts", stream.duration_ts);
-    push_optional_compact_field(&mut fields, "duration", &stream.duration);
-    push_optional_number_compact_field(&mut fields, "nb_read_frames", stream.nb_read_frames);
-    push_optional_number_compact_field(&mut fields, "nb_read_packets", stream.nb_read_packets);
-    for (key, value) in &stream.tags {
-        fields.push((format!("tag:{key}"), value.clone()));
+fn stream_default_fields(
+    stream: &FfprobeStreamReport,
+    selection: &NamedFieldSelection,
+) -> Vec<(String, String)> {
+    let mut fields = stream_selected_string_fields(stream, selection);
+    if selection.is_all() {
+        for (key, value) in &stream.tags {
+            fields.push((format!("TAG:{key}"), value.clone()));
+        }
     }
     fields
 }
 
-fn format_scalar_fields(report: &FfprobeReport) -> Vec<(String, String)> {
-    let mut fields = vec![
-        ("filename".to_owned(), report.filename.clone()),
-        ("nb_streams".to_owned(), report.nb_streams.to_string()),
-        ("nb_programs".to_owned(), report.nb_programs.to_string()),
-        (
-            "nb_stream_groups".to_owned(),
-            report.nb_stream_groups.to_string(),
-        ),
-        ("format_name".to_owned(), report.format_name.clone()),
-        (
-            "format_long_name".to_owned(),
-            report.format_long_name.clone(),
-        ),
-        ("time_base".to_owned(), report.time_base.clone()),
-    ];
-    push_optional_number_compact_field(&mut fields, "duration_ts", report.duration_ts);
-    push_optional_compact_field(&mut fields, "duration", &report.duration);
-    push_optional_number_compact_field(&mut fields, "size", report.size);
-    fields.push(("probe_score".to_owned(), report.probe_score.to_string()));
-    for (key, value) in &report.tags {
-        fields.push((format!("tag:{key}"), value.clone()));
+fn stream_scalar_fields(
+    stream: &FfprobeStreamReport,
+    selection: &NamedFieldSelection,
+) -> Vec<(String, String)> {
+    let mut fields = stream_selected_string_fields(stream, selection);
+    if selection.is_all() {
+        for (key, value) in &stream.tags {
+            fields.push((format!("tag:{key}"), value.clone()));
+        }
     }
     fields
+}
+
+fn stream_selected_string_fields(
+    stream: &FfprobeStreamReport,
+    selection: &NamedFieldSelection,
+) -> Vec<(String, String)> {
+    STREAM_FIELD_ORDER
+        .iter()
+        .copied()
+        .filter(|field| selection.includes(field))
+        .filter_map(|field| stream_field_string_value(stream, field).map(|value| (field, value)))
+        .map(|(field, value)| (field.to_owned(), value))
+        .collect()
+}
+
+fn stream_field_string_value(stream: &FfprobeStreamReport, field: &str) -> Option<String> {
+    match field {
+        "index" => Some(stream.index.to_string()),
+        "id" => Some(stream.id.to_string()),
+        "codec_name" => stream.codec_name.clone(),
+        "codec_long_name" => stream.codec_long_name.clone(),
+        "profile" => stream.profile.clone(),
+        "codec_type" => Some(stream.codec_type.clone()),
+        "codec_tag_string" => stream.codec_tag_string.clone(),
+        "codec_tag" => stream.codec_tag.clone(),
+        "width" => stream.width.map(|value| value.to_string()),
+        "height" => stream.height.map(|value| value.to_string()),
+        "coded_width" => stream.coded_width.map(|value| value.to_string()),
+        "coded_height" => stream.coded_height.map(|value| value.to_string()),
+        "sample_rate" => stream.sample_rate.map(|value| value.to_string()),
+        "channels" => stream.channels.map(|value| value.to_string()),
+        "bits_per_sample" => stream.bits_per_sample.map(|value| value.to_string()),
+        "bits_per_raw_sample" => stream.bits_per_raw_sample.map(|value| value.to_string()),
+        "extradata_size" => stream.extradata_size.map(|value| value.to_string()),
+        "is_avc" => stream.is_avc.map(|value| bool_string(value).to_owned()),
+        "nal_length_size" => stream.nal_length_size.map(|value| value.to_string()),
+        "sample_aspect_ratio" => stream.sample_aspect_ratio.clone(),
+        "display_aspect_ratio" => stream.display_aspect_ratio.clone(),
+        "color_range" => stream.color_range.clone(),
+        "color_space" => stream.color_space.clone(),
+        "color_transfer" => stream.color_transfer.clone(),
+        "color_primaries" => stream.color_primaries.clone(),
+        "field_order" => stream.field_order.clone(),
+        "level" => stream.level.map(|value| value.to_string()),
+        "time_base" => Some(stream.time_base.clone()),
+        "start_pts" => stream.start_pts.map(|value| value.to_string()),
+        "start_time" => stream.start_time.clone(),
+        "r_frame_rate" => stream.r_frame_rate.clone(),
+        "avg_frame_rate" => stream.avg_frame_rate.clone(),
+        "duration_ts" => stream.duration_ts.map(|value| value.to_string()),
+        "duration" => stream.duration.clone(),
+        "nb_frames" => Some(stream.nb_frames.to_string()),
+        "nb_read_frames" => stream.nb_read_frames.map(|value| value.to_string()),
+        "nb_read_packets" => stream.nb_read_packets.map(|value| value.to_string()),
+        _ => None,
+    }
+}
+
+fn format_default_fields(
+    report: &FfprobeReport,
+    selection: &NamedFieldSelection,
+) -> Vec<(String, String)> {
+    let mut fields = format_scalar_fields(report, selection);
+    if selection.is_all() {
+        for (key, value) in &report.tags {
+            fields.push((format!("TAG:{key}"), value.clone()));
+        }
+    }
+    fields
+}
+
+fn format_scalar_fields(
+    report: &FfprobeReport,
+    selection: &NamedFieldSelection,
+) -> Vec<(String, String)> {
+    let mut fields = format_selected_string_fields(report, selection);
+    if selection.is_all() {
+        for (key, value) in &report.tags {
+            fields.push((format!("tag:{key}"), value.clone()));
+        }
+    }
+    fields
+}
+
+fn format_selected_string_fields(
+    report: &FfprobeReport,
+    selection: &NamedFieldSelection,
+) -> Vec<(String, String)> {
+    FORMAT_FIELD_ORDER
+        .iter()
+        .copied()
+        .filter(|field| selection.includes(field))
+        .filter_map(|field| format_field_string_value(report, field).map(|value| (field, value)))
+        .map(|(field, value)| (field.to_owned(), value))
+        .collect()
+}
+
+fn format_field_string_value(report: &FfprobeReport, field: &str) -> Option<String> {
+    match field {
+        "filename" => Some(report.filename.clone()),
+        "nb_streams" => Some(report.nb_streams.to_string()),
+        "nb_programs" => Some(report.nb_programs.to_string()),
+        "nb_stream_groups" => Some(report.nb_stream_groups.to_string()),
+        "format_name" => Some(report.format_name.clone()),
+        "format_long_name" => Some(report.format_long_name.clone()),
+        "time_base" => Some(report.time_base.clone()),
+        "duration_ts" => report.duration_ts.map(|value| value.to_string()),
+        "duration" => report.duration.clone(),
+        "size" => report.size.map(|value| value.to_string()),
+        "probe_score" => Some(report.probe_score.to_string()),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2168,147 +2316,105 @@ fn packet_flat_field_value(
     Some((field.name().to_owned(), value))
 }
 
-fn stream_flat_fields(stream: &FfprobeStreamReport) -> Vec<(String, FlatValue)> {
-    let mut fields = vec![
-        (
-            "index".to_owned(),
-            FlatValue::Bare(stream.index.to_string()),
-        ),
-        ("id".to_owned(), FlatValue::Bare(stream.id.to_string())),
-        (
-            "codec_type".to_owned(),
-            FlatValue::Quoted(stream.codec_type.clone()),
-        ),
-        (
-            "time_base".to_owned(),
-            FlatValue::Quoted(stream.time_base.clone()),
-        ),
-        (
-            "nb_frames".to_owned(),
-            FlatValue::Quoted(stream.nb_frames.to_string()),
-        ),
-    ];
-    push_optional_flat_quoted(&mut fields, "codec_name", stream.codec_name.clone());
-    push_optional_flat_quoted(
-        &mut fields,
-        "codec_long_name",
-        stream.codec_long_name.clone(),
-    );
-    push_optional_flat_quoted(&mut fields, "profile", stream.profile.clone());
-    push_optional_flat_quoted(
-        &mut fields,
-        "codec_tag_string",
-        stream.codec_tag_string.clone(),
-    );
-    push_optional_flat_quoted(&mut fields, "codec_tag", stream.codec_tag.clone());
-    push_optional_flat_bare(&mut fields, "width", stream.width);
-    push_optional_flat_bare(&mut fields, "height", stream.height);
-    push_optional_flat_bare(&mut fields, "coded_width", stream.coded_width);
-    push_optional_flat_bare(&mut fields, "coded_height", stream.coded_height);
-    push_optional_flat_bare(&mut fields, "sample_rate", stream.sample_rate);
-    push_optional_flat_bare(&mut fields, "channels", stream.channels);
-    push_optional_flat_bare(&mut fields, "bits_per_sample", stream.bits_per_sample);
-    push_optional_flat_quoted(
-        &mut fields,
-        "bits_per_raw_sample",
-        stream.bits_per_raw_sample.map(|value| value.to_string()),
-    );
-    push_optional_flat_bare(&mut fields, "extradata_size", stream.extradata_size);
-    if let Some(is_avc) = stream.is_avc {
-        fields.push((
-            "is_avc".to_owned(),
-            FlatValue::Bare(bool_string(is_avc).to_owned()),
-        ));
-    }
-    push_optional_flat_bare(&mut fields, "nal_length_size", stream.nal_length_size);
-    push_optional_flat_quoted(
-        &mut fields,
-        "sample_aspect_ratio",
-        stream.sample_aspect_ratio.clone(),
-    );
-    push_optional_flat_quoted(
-        &mut fields,
-        "display_aspect_ratio",
-        stream.display_aspect_ratio.clone(),
-    );
-    push_optional_flat_quoted(&mut fields, "color_range", stream.color_range.clone());
-    push_optional_flat_quoted(&mut fields, "color_space", stream.color_space.clone());
-    push_optional_flat_quoted(&mut fields, "color_transfer", stream.color_transfer.clone());
-    push_optional_flat_quoted(
-        &mut fields,
-        "color_primaries",
-        stream.color_primaries.clone(),
-    );
-    push_optional_flat_quoted(&mut fields, "field_order", stream.field_order.clone());
-    push_optional_flat_bare(&mut fields, "level", stream.level);
-    push_optional_flat_bare(&mut fields, "start_pts", stream.start_pts);
-    push_optional_flat_quoted(&mut fields, "start_time", stream.start_time.clone());
-    push_optional_flat_quoted(&mut fields, "r_frame_rate", stream.r_frame_rate.clone());
-    push_optional_flat_quoted(&mut fields, "avg_frame_rate", stream.avg_frame_rate.clone());
-    push_optional_flat_bare(&mut fields, "duration_ts", stream.duration_ts);
-    push_optional_flat_quoted(&mut fields, "duration", stream.duration.clone());
-    push_optional_flat_quoted(
-        &mut fields,
-        "nb_read_frames",
-        stream.nb_read_frames.map(|value| value.to_string()),
-    );
-    push_optional_flat_quoted(
-        &mut fields,
-        "nb_read_packets",
-        stream.nb_read_packets.map(|value| value.to_string()),
-    );
-    for (key, value) in &stream.tags {
-        fields.push((format!("tags.{key}"), FlatValue::Quoted(value.clone())));
+fn stream_flat_fields(
+    stream: &FfprobeStreamReport,
+    selection: &NamedFieldSelection,
+) -> Vec<(String, FlatValue)> {
+    let mut fields = STREAM_FIELD_ORDER
+        .iter()
+        .copied()
+        .filter(|field| selection.includes(field))
+        .filter_map(|field| stream_flat_field_value(stream, field))
+        .collect::<Vec<_>>();
+    if selection.is_all() {
+        for (key, value) in &stream.tags {
+            fields.push((format!("tags.{key}"), FlatValue::Quoted(value.clone())));
+        }
     }
     fields
 }
 
-fn format_flat_fields(report: &FfprobeReport) -> Vec<(String, FlatValue)> {
-    let mut fields = vec![
-        (
-            "filename".to_owned(),
-            FlatValue::Quoted(report.filename.clone()),
-        ),
-        (
-            "nb_streams".to_owned(),
-            FlatValue::Bare(report.nb_streams.to_string()),
-        ),
-        (
-            "nb_programs".to_owned(),
-            FlatValue::Bare(report.nb_programs.to_string()),
-        ),
-        (
-            "nb_stream_groups".to_owned(),
-            FlatValue::Bare(report.nb_stream_groups.to_string()),
-        ),
-        (
-            "format_name".to_owned(),
-            FlatValue::Quoted(report.format_name.clone()),
-        ),
-        (
-            "format_long_name".to_owned(),
-            FlatValue::Quoted(report.format_long_name.clone()),
-        ),
-        (
-            "time_base".to_owned(),
-            FlatValue::Quoted(report.time_base.clone()),
-        ),
-    ];
-    push_optional_flat_bare(&mut fields, "duration_ts", report.duration_ts);
-    push_optional_flat_quoted(&mut fields, "duration", report.duration.clone());
-    push_optional_flat_quoted(
-        &mut fields,
-        "size",
-        report.size.map(|value| value.to_string()),
-    );
-    fields.push((
-        "probe_score".to_owned(),
-        FlatValue::Bare(report.probe_score.to_string()),
-    ));
-    for (key, value) in &report.tags {
-        fields.push((format!("tags.{key}"), FlatValue::Quoted(value.clone())));
+fn stream_flat_field_value(
+    stream: &FfprobeStreamReport,
+    field: &str,
+) -> Option<(String, FlatValue)> {
+    let value = match field {
+        "index" => FlatValue::Bare(stream.index.to_string()),
+        "id" => FlatValue::Bare(stream.id.to_string()),
+        "codec_name" => FlatValue::Quoted(stream.codec_name.clone()?),
+        "codec_long_name" => FlatValue::Quoted(stream.codec_long_name.clone()?),
+        "profile" => FlatValue::Quoted(stream.profile.clone()?),
+        "codec_type" => FlatValue::Quoted(stream.codec_type.clone()),
+        "codec_tag_string" => FlatValue::Quoted(stream.codec_tag_string.clone()?),
+        "codec_tag" => FlatValue::Quoted(stream.codec_tag.clone()?),
+        "width" => FlatValue::Bare(stream.width?.to_string()),
+        "height" => FlatValue::Bare(stream.height?.to_string()),
+        "coded_width" => FlatValue::Bare(stream.coded_width?.to_string()),
+        "coded_height" => FlatValue::Bare(stream.coded_height?.to_string()),
+        "sample_rate" => FlatValue::Bare(stream.sample_rate?.to_string()),
+        "channels" => FlatValue::Bare(stream.channels?.to_string()),
+        "bits_per_sample" => FlatValue::Bare(stream.bits_per_sample?.to_string()),
+        "bits_per_raw_sample" => FlatValue::Quoted(stream.bits_per_raw_sample?.to_string()),
+        "extradata_size" => FlatValue::Bare(stream.extradata_size?.to_string()),
+        "is_avc" => FlatValue::Bare(bool_string(stream.is_avc?).to_owned()),
+        "nal_length_size" => FlatValue::Bare(stream.nal_length_size?.to_string()),
+        "sample_aspect_ratio" => FlatValue::Quoted(stream.sample_aspect_ratio.clone()?),
+        "display_aspect_ratio" => FlatValue::Quoted(stream.display_aspect_ratio.clone()?),
+        "color_range" => FlatValue::Quoted(stream.color_range.clone()?),
+        "color_space" => FlatValue::Quoted(stream.color_space.clone()?),
+        "color_transfer" => FlatValue::Quoted(stream.color_transfer.clone()?),
+        "color_primaries" => FlatValue::Quoted(stream.color_primaries.clone()?),
+        "field_order" => FlatValue::Quoted(stream.field_order.clone()?),
+        "level" => FlatValue::Bare(stream.level?.to_string()),
+        "time_base" => FlatValue::Quoted(stream.time_base.clone()),
+        "start_pts" => FlatValue::Bare(stream.start_pts?.to_string()),
+        "start_time" => FlatValue::Quoted(stream.start_time.clone()?),
+        "r_frame_rate" => FlatValue::Quoted(stream.r_frame_rate.clone()?),
+        "avg_frame_rate" => FlatValue::Quoted(stream.avg_frame_rate.clone()?),
+        "duration_ts" => FlatValue::Bare(stream.duration_ts?.to_string()),
+        "duration" => FlatValue::Quoted(stream.duration.clone()?),
+        "nb_frames" => FlatValue::Quoted(stream.nb_frames.to_string()),
+        "nb_read_frames" => FlatValue::Quoted(stream.nb_read_frames?.to_string()),
+        "nb_read_packets" => FlatValue::Quoted(stream.nb_read_packets?.to_string()),
+        _ => return None,
+    };
+    Some((field.to_owned(), value))
+}
+
+fn format_flat_fields(
+    report: &FfprobeReport,
+    selection: &NamedFieldSelection,
+) -> Vec<(String, FlatValue)> {
+    let mut fields = FORMAT_FIELD_ORDER
+        .iter()
+        .copied()
+        .filter(|field| selection.includes(field))
+        .filter_map(|field| format_flat_field_value(report, field))
+        .collect::<Vec<_>>();
+    if selection.is_all() {
+        for (key, value) in &report.tags {
+            fields.push((format!("tags.{key}"), FlatValue::Quoted(value.clone())));
+        }
     }
     fields
+}
+
+fn format_flat_field_value(report: &FfprobeReport, field: &str) -> Option<(String, FlatValue)> {
+    let value = match field {
+        "filename" => FlatValue::Quoted(report.filename.clone()),
+        "nb_streams" => FlatValue::Bare(report.nb_streams.to_string()),
+        "nb_programs" => FlatValue::Bare(report.nb_programs.to_string()),
+        "nb_stream_groups" => FlatValue::Bare(report.nb_stream_groups.to_string()),
+        "format_name" => FlatValue::Quoted(report.format_name.clone()),
+        "format_long_name" => FlatValue::Quoted(report.format_long_name.clone()),
+        "time_base" => FlatValue::Quoted(report.time_base.clone()),
+        "duration_ts" => FlatValue::Bare(report.duration_ts?.to_string()),
+        "duration" => FlatValue::Quoted(report.duration.clone()?),
+        "size" => FlatValue::Quoted(report.size?.to_string()),
+        "probe_score" => FlatValue::Bare(report.probe_score.to_string()),
+        _ => return None,
+    };
+    Some((field.to_owned(), value))
 }
 
 fn flat_optional_i64(value: Option<i64>) -> FlatValue {
@@ -2316,45 +2422,6 @@ fn flat_optional_i64(value: Option<i64>) -> FlatValue {
         || FlatValue::Quoted("N/A".to_owned()),
         |value| FlatValue::Bare(value.to_string()),
     )
-}
-
-fn push_optional_compact_field(
-    fields: &mut Vec<(String, String)>,
-    key: &str,
-    value: &Option<String>,
-) {
-    if let Some(value) = value {
-        fields.push((key.to_owned(), value.clone()));
-    }
-}
-
-fn push_optional_number_compact_field<T: fmt::Display>(
-    fields: &mut Vec<(String, String)>,
-    key: &str,
-    value: Option<T>,
-) {
-    if let Some(value) = value {
-        fields.push((key.to_owned(), value.to_string()));
-    }
-}
-
-fn push_optional_flat_quoted<T>(fields: &mut Vec<(String, FlatValue)>, key: &str, value: Option<T>)
-where
-    T: Into<String>,
-{
-    if let Some(value) = value {
-        fields.push((key.to_owned(), FlatValue::Quoted(value.into())));
-    }
-}
-
-fn push_optional_flat_bare<T: fmt::Display>(
-    fields: &mut Vec<(String, FlatValue)>,
-    key: &str,
-    value: Option<T>,
-) {
-    if let Some(value) = value {
-        fields.push((key.to_owned(), FlatValue::Bare(value.to_string())));
-    }
 }
 
 fn push_compact_line(out: &mut String, section: &str, fields: Vec<(String, String)>) {
@@ -2509,13 +2576,16 @@ fn render_json(command: &FfprobeCommand, report: &FfprobeReport) -> String {
         let streams = report
             .streams
             .iter()
-            .map(render_stream_json)
+            .map(|stream| render_stream_json(stream, &command.stream_fields))
             .collect::<Vec<_>>()
             .join(",\n    ");
         sections.push(format!("  \"streams\": [\n    {streams}\n  ]"));
     }
     if command.show_format {
-        sections.push(format!("  \"format\": {}", render_format_json(report)));
+        sections.push(format!(
+            "  \"format\": {}",
+            render_format_json(report, &command.format_fields)
+        ));
     }
     format!("{{\n{}\n}}\n", sections.join(",\n"))
 }
@@ -2551,140 +2621,169 @@ fn packet_json_field(packet: &FfprobePacketReport, field: PacketField) -> Option
     }
 }
 
-fn render_stream_json(stream: &FfprobeStreamReport) -> String {
-    let mut fields = vec![
-        json_number("index", stream.index),
-        json_number("id", stream.id),
-        json_string("codec_type", &stream.codec_type),
-        json_string("time_base", &stream.time_base),
-        json_number("nb_frames", stream.nb_frames),
-    ];
-    if let Some(codec_name) = &stream.codec_name {
-        fields.push(json_string("codec_name", codec_name));
-    }
-    if let Some(codec_long_name) = &stream.codec_long_name {
-        fields.push(json_string("codec_long_name", codec_long_name));
-    }
-    if let Some(profile) = &stream.profile {
-        fields.push(json_string("profile", profile));
-    }
-    if let Some(codec_tag_string) = &stream.codec_tag_string {
-        fields.push(json_string("codec_tag_string", codec_tag_string));
-    }
-    if let Some(codec_tag) = &stream.codec_tag {
-        fields.push(json_string("codec_tag", codec_tag));
-    }
-    if let Some(width) = stream.width {
-        fields.push(json_number("width", width));
-    }
-    if let Some(height) = stream.height {
-        fields.push(json_number("height", height));
-    }
-    if let Some(coded_width) = stream.coded_width {
-        fields.push(json_number("coded_width", coded_width));
-    }
-    if let Some(coded_height) = stream.coded_height {
-        fields.push(json_number("coded_height", coded_height));
-    }
-    if let Some(sample_rate) = stream.sample_rate {
-        fields.push(json_string("sample_rate", &sample_rate.to_string()));
-    }
-    if let Some(channels) = stream.channels {
-        fields.push(json_number("channels", channels));
-    }
-    if let Some(bits_per_sample) = stream.bits_per_sample {
-        fields.push(json_number("bits_per_sample", bits_per_sample));
-    }
-    if let Some(bits_per_raw_sample) = stream.bits_per_raw_sample {
-        fields.push(json_number("bits_per_raw_sample", bits_per_raw_sample));
-    }
-    if let Some(extradata_size) = stream.extradata_size {
-        fields.push(json_number("extradata_size", extradata_size));
-    }
-    if let Some(is_avc) = stream.is_avc {
-        fields.push(json_string("is_avc", bool_string(is_avc)));
-    }
-    if let Some(nal_length_size) = stream.nal_length_size {
-        fields.push(json_string("nal_length_size", &nal_length_size.to_string()));
-    }
-    if let Some(sample_aspect_ratio) = &stream.sample_aspect_ratio {
-        fields.push(json_string("sample_aspect_ratio", sample_aspect_ratio));
-    }
-    if let Some(display_aspect_ratio) = &stream.display_aspect_ratio {
-        fields.push(json_string("display_aspect_ratio", display_aspect_ratio));
-    }
-    if let Some(color_range) = &stream.color_range {
-        fields.push(json_string("color_range", color_range));
-    }
-    if let Some(color_space) = &stream.color_space {
-        fields.push(json_string("color_space", color_space));
-    }
-    if let Some(color_transfer) = &stream.color_transfer {
-        fields.push(json_string("color_transfer", color_transfer));
-    }
-    if let Some(color_primaries) = &stream.color_primaries {
-        fields.push(json_string("color_primaries", color_primaries));
-    }
-    if let Some(field_order) = &stream.field_order {
-        fields.push(json_string("field_order", field_order));
-    }
-    if let Some(level) = stream.level {
-        fields.push(json_number("level", level));
-    }
-    if let Some(start_pts) = stream.start_pts {
-        fields.push(json_number("start_pts", start_pts));
-    }
-    if let Some(start_time) = &stream.start_time {
-        fields.push(json_string("start_time", start_time));
-    }
-    if let Some(r_frame_rate) = &stream.r_frame_rate {
-        fields.push(json_string("r_frame_rate", r_frame_rate));
-    }
-    if let Some(avg_frame_rate) = &stream.avg_frame_rate {
-        fields.push(json_string("avg_frame_rate", avg_frame_rate));
-    }
-    if let Some(duration_ts) = stream.duration_ts {
-        fields.push(json_number("duration_ts", duration_ts));
-    }
-    if let Some(duration) = &stream.duration {
-        fields.push(json_string("duration", duration));
-    }
-    if let Some(nb_read_frames) = stream.nb_read_frames {
-        fields.push(json_string("nb_read_frames", &nb_read_frames.to_string()));
-    }
-    if let Some(nb_read_packets) = stream.nb_read_packets {
-        fields.push(json_string("nb_read_packets", &nb_read_packets.to_string()));
-    }
-    if !stream.tags.is_empty() {
+fn render_stream_json(stream: &FfprobeStreamReport, selection: &NamedFieldSelection) -> String {
+    let mut fields = STREAM_FIELD_ORDER
+        .iter()
+        .copied()
+        .filter(|field| selection.includes(field))
+        .filter_map(|field| stream_json_field(stream, field))
+        .collect::<Vec<_>>();
+    if selection.is_all() && !stream.tags.is_empty() {
         fields.push(json_object("tags", &stream.tags));
     }
     format!("{{{}}}", fields.join(", "))
 }
 
-fn render_format_json(report: &FfprobeReport) -> String {
-    let mut fields = vec![
-        json_string("filename", &report.filename),
-        json_number("nb_streams", report.nb_streams),
-        json_number("nb_programs", report.nb_programs),
-        json_number("nb_stream_groups", report.nb_stream_groups),
-        json_string("format_name", &report.format_name),
-        json_string("format_long_name", &report.format_long_name),
-        json_string("time_base", &report.time_base),
-        json_number("probe_score", report.probe_score),
-    ];
-    if let Some(duration_ts) = report.duration_ts {
-        fields.push(json_number("duration_ts", duration_ts));
+fn stream_json_field(stream: &FfprobeStreamReport, field: &str) -> Option<String> {
+    match field {
+        "index" => Some(json_number("index", stream.index)),
+        "id" => Some(json_number("id", stream.id)),
+        "codec_name" => stream
+            .codec_name
+            .as_deref()
+            .map(|value| json_string("codec_name", value)),
+        "codec_long_name" => stream
+            .codec_long_name
+            .as_deref()
+            .map(|value| json_string("codec_long_name", value)),
+        "profile" => stream
+            .profile
+            .as_deref()
+            .map(|value| json_string("profile", value)),
+        "codec_type" => Some(json_string("codec_type", &stream.codec_type)),
+        "codec_tag_string" => stream
+            .codec_tag_string
+            .as_deref()
+            .map(|value| json_string("codec_tag_string", value)),
+        "codec_tag" => stream
+            .codec_tag
+            .as_deref()
+            .map(|value| json_string("codec_tag", value)),
+        "width" => stream.width.map(|value| json_number("width", value)),
+        "height" => stream.height.map(|value| json_number("height", value)),
+        "coded_width" => stream
+            .coded_width
+            .map(|value| json_number("coded_width", value)),
+        "coded_height" => stream
+            .coded_height
+            .map(|value| json_number("coded_height", value)),
+        "sample_rate" => stream
+            .sample_rate
+            .map(|value| json_string("sample_rate", &value.to_string())),
+        "channels" => stream.channels.map(|value| json_number("channels", value)),
+        "bits_per_sample" => stream
+            .bits_per_sample
+            .map(|value| json_number("bits_per_sample", value)),
+        "bits_per_raw_sample" => stream
+            .bits_per_raw_sample
+            .map(|value| json_number("bits_per_raw_sample", value)),
+        "extradata_size" => stream
+            .extradata_size
+            .map(|value| json_number("extradata_size", value)),
+        "is_avc" => stream
+            .is_avc
+            .map(|value| json_string("is_avc", bool_string(value))),
+        "nal_length_size" => stream
+            .nal_length_size
+            .map(|value| json_string("nal_length_size", &value.to_string())),
+        "sample_aspect_ratio" => stream
+            .sample_aspect_ratio
+            .as_deref()
+            .map(|value| json_string("sample_aspect_ratio", value)),
+        "display_aspect_ratio" => stream
+            .display_aspect_ratio
+            .as_deref()
+            .map(|value| json_string("display_aspect_ratio", value)),
+        "color_range" => stream
+            .color_range
+            .as_deref()
+            .map(|value| json_string("color_range", value)),
+        "color_space" => stream
+            .color_space
+            .as_deref()
+            .map(|value| json_string("color_space", value)),
+        "color_transfer" => stream
+            .color_transfer
+            .as_deref()
+            .map(|value| json_string("color_transfer", value)),
+        "color_primaries" => stream
+            .color_primaries
+            .as_deref()
+            .map(|value| json_string("color_primaries", value)),
+        "field_order" => stream
+            .field_order
+            .as_deref()
+            .map(|value| json_string("field_order", value)),
+        "level" => stream.level.map(|value| json_number("level", value)),
+        "time_base" => Some(json_string("time_base", &stream.time_base)),
+        "start_pts" => stream
+            .start_pts
+            .map(|value| json_number("start_pts", value)),
+        "start_time" => stream
+            .start_time
+            .as_deref()
+            .map(|value| json_string("start_time", value)),
+        "r_frame_rate" => stream
+            .r_frame_rate
+            .as_deref()
+            .map(|value| json_string("r_frame_rate", value)),
+        "avg_frame_rate" => stream
+            .avg_frame_rate
+            .as_deref()
+            .map(|value| json_string("avg_frame_rate", value)),
+        "duration_ts" => stream
+            .duration_ts
+            .map(|value| json_number("duration_ts", value)),
+        "duration" => stream
+            .duration
+            .as_deref()
+            .map(|value| json_string("duration", value)),
+        "nb_frames" => Some(json_number("nb_frames", stream.nb_frames)),
+        "nb_read_frames" => stream
+            .nb_read_frames
+            .map(|value| json_string("nb_read_frames", &value.to_string())),
+        "nb_read_packets" => stream
+            .nb_read_packets
+            .map(|value| json_string("nb_read_packets", &value.to_string())),
+        _ => None,
     }
-    if let Some(duration) = &report.duration {
-        fields.push(json_string("duration", duration));
-    }
-    if let Some(size) = report.size {
-        fields.push(json_string("size", &size.to_string()));
-    }
-    if !report.tags.is_empty() {
+}
+
+fn render_format_json(report: &FfprobeReport, selection: &NamedFieldSelection) -> String {
+    let mut fields = FORMAT_FIELD_ORDER
+        .iter()
+        .copied()
+        .filter(|field| selection.includes(field))
+        .filter_map(|field| format_json_field(report, field))
+        .collect::<Vec<_>>();
+    if selection.is_all() && !report.tags.is_empty() {
         fields.push(json_object("tags", &report.tags));
     }
     format!("{{{}}}", fields.join(", "))
+}
+
+fn format_json_field(report: &FfprobeReport, field: &str) -> Option<String> {
+    match field {
+        "filename" => Some(json_string("filename", &report.filename)),
+        "nb_streams" => Some(json_number("nb_streams", report.nb_streams)),
+        "nb_programs" => Some(json_number("nb_programs", report.nb_programs)),
+        "nb_stream_groups" => Some(json_number("nb_stream_groups", report.nb_stream_groups)),
+        "format_name" => Some(json_string("format_name", &report.format_name)),
+        "format_long_name" => Some(json_string("format_long_name", &report.format_long_name)),
+        "time_base" => Some(json_string("time_base", &report.time_base)),
+        "duration_ts" => report
+            .duration_ts
+            .map(|value| json_number("duration_ts", value)),
+        "duration" => report
+            .duration
+            .as_deref()
+            .map(|value| json_string("duration", value)),
+        "size" => report
+            .size
+            .map(|value| json_string("size", &value.to_string())),
+        "probe_score" => Some(json_number("probe_score", report.probe_score)),
+        _ => None,
+    }
 }
 
 fn bool_string(value: bool) -> &'static str {
@@ -2898,8 +2997,28 @@ mod tests {
     }
 
     #[test]
-    fn rejects_non_packet_show_entries_sections() {
-        let error = parse_ffprobe_args(&strings(&["-show_entries", "stream=index", "clip.mp4"]))
+    fn parses_stream_and_format_show_entries_and_implies_sections() {
+        let command = parse_ffprobe_args(&strings(&[
+            "-show_entries",
+            "stream=codec_type,index,unknown:format=size,format_name",
+            "clip.mp4",
+        ]))
+        .unwrap();
+
+        assert!(command.show_streams);
+        assert!(command.show_format);
+        assert!(!command.show_packets);
+        assert!(command.stream_fields.includes("index"));
+        assert!(command.stream_fields.includes("codec_type"));
+        assert!(!command.stream_fields.includes("width"));
+        assert!(command.format_fields.includes("format_name"));
+        assert!(command.format_fields.includes("size"));
+        assert!(!command.format_fields.includes("duration"));
+    }
+
+    #[test]
+    fn rejects_unsupported_show_entries_sections() {
+        let error = parse_ffprobe_args(&strings(&["-show_entries", "program=index", "clip.mp4"]))
             .unwrap_err();
 
         assert_eq!(error.kind, FfprobeErrorKind::Usage);
@@ -3464,6 +3583,121 @@ mod tests {
         assert_eq!(
             json,
             "{\n  \"packets\": [\n    {\"pts_time\": \"0.000000\", \"size\": \"3\", \"flags\": \"K__\"}\n  ]\n}\n"
+        );
+    }
+
+    #[test]
+    fn renders_selected_stream_and_format_fields_in_ffmpeg_order() {
+        let report = sample_report();
+
+        let default = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                "stream=codec_type,index,width:format=size,format_name",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+        assert_eq!(
+            default,
+            "[STREAM]\nindex=0\ncodec_type=video\nwidth=1920\n[/STREAM]\n[FORMAT]\nformat_name=mov,mp4,m4a,3gp,3g2,mj2\nsize=2048\n[/FORMAT]\n"
+        );
+
+        let compact = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                "stream=codec_type,index,width:format=size,format_name",
+                "-of",
+                "compact",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+        assert_eq!(
+            compact,
+            "stream|index=0|codec_type=video|width=1920\nformat|format_name=mov,mp4,m4a,3gp,3g2,mj2|size=2048\n"
+        );
+
+        let csv = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                "stream=codec_type,index,width:format=size,format_name",
+                "-of",
+                "csv",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+        assert_eq!(
+            csv,
+            "stream,0,video,1920\nformat,\"mov,mp4,m4a,3gp,3g2,mj2\",2048\n"
+        );
+
+        let flat = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                "stream=codec_type,index,width:format=size,format_name",
+                "-of",
+                "flat",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+        assert_eq!(
+            flat,
+            "streams.stream.0.index=0\nstreams.stream.0.codec_type=\"video\"\nstreams.stream.0.width=1920\nformat.format_name=\"mov,mp4,m4a,3gp,3g2,mj2\"\nformat.size=\"2048\"\n"
+        );
+
+        let ini = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                "stream=codec_type,index,width:format=size,format_name",
+                "-of",
+                "ini",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+        assert_eq!(
+            ini,
+            "# ffprobe output\n\n[streams.stream.0]\nindex=0\ncodec_type=video\nwidth=1920\n\n[format]\nformat_name=mov,mp4,m4a,3gp,3g2,mj2\nsize=2048\n\n"
+        );
+
+        let xml = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                "stream=codec_type,index,width:format=size,format_name",
+                "-of",
+                "xml",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+        assert_eq!(
+            xml,
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ffprobe>\n    <streams>\n        <stream index=\"0\" codec_type=\"video\" width=\"1920\"/>\n    </streams>\n    <format format_name=\"mov,mp4,m4a,3gp,3g2,mj2\" size=\"2048\"/>\n</ffprobe>\n"
+        );
+
+        let json = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                "stream=codec_type,index,width:format=size,format_name",
+                "-of",
+                "json",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+        assert_eq!(
+            json,
+            "{\n  \"streams\": [\n    {\"index\": 0, \"codec_type\": \"video\", \"width\": 1920}\n  ],\n  \"format\": {\"format_name\": \"mov,mp4,m4a,3gp,3g2,mj2\", \"size\": \"2048\"}\n}\n"
         );
     }
 

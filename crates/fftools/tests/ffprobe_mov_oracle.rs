@@ -68,6 +68,11 @@ const PACKET_DATA_HASH_FIELDS: &[&str] = &[
 ];
 
 const PACKET_SELECTED_FIELDS: &[&str] = &["pts_time", "size", "flags"];
+const MIXED_SHOW_ENTRIES: &str =
+    "packet=size,pts_time:stream=codec_type,index:format=size,format_name";
+const MIXED_PACKET_FIELDS: &[&str] = &["pts_time", "size"];
+const MIXED_STREAM_FIELDS: &[&str] = &["index", "codec_type"];
+const MIXED_FORMAT_FIELDS: &[&str] = &["format_name", "size"];
 
 #[test]
 fn parse_default_sections_reads_multiline_packet_data() {
@@ -489,6 +494,7 @@ fn mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle() {
     assert_packet_data_fields_match(&ffprobe, mov_arg.as_str(), "MOV");
     assert_packet_data_and_hash_fields_match(&ffprobe, mov_arg.as_str(), "MOV");
     assert_packet_selected_fields_match(&ffprobe, mov_arg.as_str(), "MOV");
+    assert_mixed_show_entries_fields_match(&ffprobe, mov_arg.as_str(), "MOV");
 }
 
 #[test]
@@ -648,6 +654,7 @@ fn avi_bgr24_ffprobe_packet_fields_match_ffmpeg_oracle() {
     assert_packet_data_fields_match(&ffprobe, avi_arg.as_str(), "AVI");
     assert_packet_data_and_hash_fields_match(&ffprobe, avi_arg.as_str(), "AVI");
     assert_packet_selected_fields_match(&ffprobe, avi_arg.as_str(), "AVI");
+    assert_mixed_show_entries_fields_match(&ffprobe, avi_arg.as_str(), "AVI");
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -754,6 +761,19 @@ fn assert_single_section_fields_match(
 ) {
     let rust = single_section(rust_sections, name);
     let oracle = single_section(oracle_sections, name);
+    assert_fields_match(rust, oracle, fields, name);
+}
+
+fn assert_single_section_exact_fields_match(
+    rust_sections: &[Section],
+    oracle_sections: &[Section],
+    name: &str,
+    fields: &[&str],
+) {
+    let rust = single_section(rust_sections, name);
+    let oracle = single_section(oracle_sections, name);
+    assert_exact_fields(rust, fields, &format!("Rust {name}"));
+    assert_exact_fields(oracle, fields, &format!("oracle {name}"));
     assert_fields_match(rust, oracle, fields, name);
 }
 
@@ -1163,6 +1183,60 @@ fn assert_packet_selected_fields_match(ffprobe: &Path, input: &str, label: &str)
     );
 }
 
+fn assert_mixed_show_entries_fields_match(ffprobe: &Path, input: &str, label: &str) {
+    let rust = ffprobe_output(&strings(&[
+        "-hide_banner",
+        "-show_entries",
+        MIXED_SHOW_ENTRIES,
+        input,
+    ]))
+    .unwrap_or_else(|err| {
+        panic!("Rust ffprobe {label} mixed show_entries path should execute: {err}")
+    });
+
+    let oracle = Command::new(ffprobe)
+        .args(["-v", "error", "-show_entries", MIXED_SHOW_ENTRIES, input])
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", ffprobe.display()));
+    assert!(
+        oracle.status.success(),
+        "oracle ffprobe mixed show_entries failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        oracle.status.code(),
+        String::from_utf8_lossy(&oracle.stdout),
+        String::from_utf8_lossy(&oracle.stderr)
+    );
+    let oracle_default =
+        String::from_utf8(oracle.stdout).expect("oracle ffprobe default output should be UTF-8");
+
+    let rust_sections = parse_default_sections(&rust);
+    let oracle_sections = parse_default_sections(&oracle_default);
+
+    assert_packet_sections_match(
+        sections_named(&rust_sections, "PACKET")
+            .into_iter()
+            .cloned()
+            .collect(),
+        sections_named(&oracle_sections, "PACKET")
+            .into_iter()
+            .cloned()
+            .collect(),
+        MIXED_PACKET_FIELDS,
+        &format!("{label} mixed show_entries packet"),
+    );
+    assert_single_section_exact_fields_match(
+        &rust_sections,
+        &oracle_sections,
+        "STREAM",
+        MIXED_STREAM_FIELDS,
+    );
+    assert_single_section_exact_fields_match(
+        &rust_sections,
+        &oracle_sections,
+        "FORMAT",
+        MIXED_FORMAT_FIELDS,
+    );
+}
+
 fn assert_packet_extra_fields_match(
     ffprobe: &Path,
     input: &str,
@@ -1401,15 +1475,19 @@ fn assert_packet_sections_match(
 }
 
 fn assert_exact_packet_fields(packet: &Section, fields: &[&str], label: &str) {
+    assert_exact_fields(packet, fields, label);
+}
+
+fn assert_exact_fields(section: &Section, fields: &[&str], label: &str) {
     assert_eq!(
-        packet.fields.len(),
+        section.fields.len(),
         fields.len(),
-        "{label} should have exact packet field count"
+        "{label} should have exact field count"
     );
-    for key in packet.fields.keys() {
+    for key in section.fields.keys() {
         assert!(
             fields.contains(&key.as_str()),
-            "{label} should not contain extra packet field `{key}`"
+            "{label} should not contain extra field `{key}`"
         );
     }
 }

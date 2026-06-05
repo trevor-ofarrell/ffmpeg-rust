@@ -2,6 +2,16 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest main-thread mixed show-entries media-integration slice: ffprobe-rs
+# now accepts bounded stream and format `-show_entries` sections alongside
+# packet sections, lets each selected section imply output, ignores unknown
+# field names, merges repeated section selections, rejects unsupported
+# sections, and renders selected packet/stream/format fields in FFmpeg
+# section order across default, JSON, compact, CSV, flat, INI, and XML
+# writers. The pinned MOV/AVI ffprobe rows now compare mixed
+# `packet=size,pts_time:stream=codec_type,index:format=size,format_name`
+# output against FFmpeg 8.1.1. This strengthens avutil-packet media evidence
+# only; the row remains fate_pass, not complete.
 # Latest main-thread packet show-entries media-integration slice: ffprobe-rs
 # now accepts bounded packet-only `-show_entries`, lets `packet=...` imply
 # packet output, ignores unknown packet field names, merges repeated packet
@@ -1338,6 +1348,10 @@ fuzz_targets = ["avutil_core_models"]
 notes = "Complete for the selected ffmpeg-8.1.1-default-native profile. The Rust model covers AV_TIME_BASE and AV_TIME_BASE_Q constants, direct av_rescale/av_rescale_rnd helpers, AV_ROUND_ZERO/INF/DOWN/UP/NEAR_INF rounding, AV_ROUND_PASS_MINMAX sentinel preservation for direct and rational rescale helpers, av_rescale_q/av_rescale_q_rnd behavior, av_compare_ts-style timestamp ordering, av_compare_mod-style centered modular timestamp comparison, av_rescale_delta-style stateful duration-preserving timestamp conversion for nonnegative FFmpeg-int durations, and av_add_stable-style stable increments. The ignored timebase_oracle differential harness compiles a test-only C helper against pinned third_party/ffmpeg-oracle/wsl/lib/libavutil.a and compares constants, direct rescale, rational rescale, pass-min/max, compare_ts, compare_mod, rescale_delta, and add_stable vectors against the Rust model. The oracle corrected the Rust model so exact negative av_add_stable increments follow FFmpeg's m < d no-op branch instead of subtracting. Unit tests cover constants, every modeled rounding mode, pass-min/max, invalid direct and rational rescale inputs, out-of-range rescale results, cross-timebase comparison, invalid compare time bases, modular wraparound, invalid moduli, rescale_delta first-call/zero-duration/stateful/clip/fallback/no-mutation error paths, exact positive stable increments, negative stable-increment no-op behavior, fractional no-drift updates, sub-tick increments, invalid stable-add time bases, and positive exact overflow. The avutil_core_models fuzz target build-checks direct rescale, rational rescale, compare_ts, compare_mod, rescale_delta, and add_stable helpers against independent small-range i128/u64 models, including constants, invalid terms, invalid compare inputs, invalid rescale_delta inputs and last-state preservation, signed stable-add inputs, exact stable-add overflow, and sentinel preservation. avutil-timebase does not parse untrusted byte streams, so long-running cargo-fuzz execution is not required for completion. Upstream FFmpeg FATE has no standalone libavutil timebase helper API target; this row documents that exception and uses the local FATE-runner smoke mapping plus pinned libavutil differential oracle as completion evidence. C-level undefined-overflow or assertion-only invalid cases remain outside the safe Rust API boundary and are rejected with typed errors where exposed."
 blocked_reason = ""
 
+# Latest update: MOV/AVI ffprobe media-integration coverage now compares mixed
+# packet/stream/format `-show_entries` selection with implicit section output
+# and exact selected field sets against pinned FFmpeg 8.1.1. This strengthens
+# media-path evidence only; avutil-packet remains fate_pass, not complete.
 # Latest update: MOV/AVI ffprobe media-integration coverage now compares
 # `-show_packets -show_data` packet payload dumps and combined
 # `-show_data -show_data_hash md5` ordering across default, JSON, compact, CSV,

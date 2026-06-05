@@ -9,6 +9,16 @@
 
 ## Compatible Today
 
+- Latest main-thread mixed show-entries media evidence: `ffprobe-rs` now
+  accepts bounded stream and format `-show_entries` sections alongside packet
+  selections, lets selected packet, stream, and format sections imply output,
+  ignores unknown field names, merges repeated section selections, rejects
+  unsupported sections, and renders selected fields in FFmpeg section order
+  across default, JSON, compact, CSV, flat, INI, and XML writers. The pinned
+  MOV and AVI ffprobe oracle rows compare mixed
+  `packet=size,pts_time:stream=codec_type,index:format=size,format_name`
+  selection against FFmpeg 8.1.1. `avutil-packet` remains `fate_pass`; strict
+  completion remains 11/96.
 - Latest main-thread packet show-entries media evidence: `ffprobe-rs` now
   accepts bounded packet-only `-show_entries`, supports implicit packet output
   through `packet=...`, ignores unknown packet field names, merges repeated

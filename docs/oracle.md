@@ -1641,6 +1641,10 @@ The same rows also compare packet-only
 packet output form without `-show_packets`, exact selected packet field sets,
 and FFmpeg packet field ordering across default, JSON, compact, CSV, flat,
 INI, and XML output.
+They also compare mixed
+`packet=size,pts_time:stream=codec_type,index:format=size,format_name`
+selection with implicit packet, stream, and format output, exact selected
+fields, and FFmpeg section-order rendering for default output.
 These targets are bounded evidence, not full ffprobe field-complete parity:
 
 ```sh
