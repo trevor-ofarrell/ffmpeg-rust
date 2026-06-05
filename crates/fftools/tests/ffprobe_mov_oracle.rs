@@ -7,6 +7,54 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+const PACKET_FIELDS: &[&str] = &[
+    "codec_type",
+    "stream_index",
+    "pts",
+    "pts_time",
+    "dts",
+    "dts_time",
+    "duration",
+    "duration_time",
+    "size",
+    "pos",
+    "flags",
+];
+
+#[test]
+fn parse_json_packet_sections_accepts_compact_and_pretty_packet_objects() {
+    let output = r#"{
+  "packets": [
+    {"codec_type": "video", "stream_index": 0, "pts": 0, "pts_time": "0.000000", "dts": 0, "dts_time": "0.000000", "duration": 1, "duration_time": "0.040000", "size": 6, "pos": 36, "flags": "K__"},
+    {
+      "codec_type": "video",
+      "stream_index": 0,
+      "pts": 1,
+      "pts_time": "0.040000",
+      "dts": 1,
+      "dts_time": "0.040000",
+      "duration": 1,
+      "duration_time": "0.040000",
+      "size": 6,
+      "pos": 42,
+      "flags": "___"
+    }
+  ]
+}
+"#;
+
+    let packets = parse_json_packet_sections(output);
+
+    assert_eq!(packets.len(), 2);
+    assert_eq!(packets[0].field("codec_type"), Some("\"video\""));
+    assert_eq!(packets[0].field("stream_index"), Some("0"));
+    assert_eq!(packets[0].field("pos"), Some("36"));
+    assert_eq!(packets[0].field("flags"), Some("\"K__\""));
+    assert_eq!(packets[1].field("pts"), Some("1"));
+    assert_eq!(packets[1].field("pos"), Some("42"));
+    assert_eq!(packets[1].field("flags"), Some("\"___\""));
+}
+
 #[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE/FFPROBE_ORACLE or install third_party/ffmpeg-oracle/build/bin"]
 fn mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle() {
@@ -154,22 +202,12 @@ fn mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle() {
         assert_fields_match(
             rust_packet,
             oracle_packet,
-            &[
-                "codec_type",
-                "stream_index",
-                "pts",
-                "pts_time",
-                "dts",
-                "dts_time",
-                "duration",
-                "duration_time",
-                "size",
-                "pos",
-                "flags",
-            ],
+            PACKET_FIELDS,
             &format!("PACKET[{index}]"),
         );
     }
+
+    assert_json_packet_fields_match(&ffprobe, mov_arg.as_str(), "MOV");
 }
 
 #[test]
@@ -314,22 +352,12 @@ fn avi_bgr24_ffprobe_packet_fields_match_ffmpeg_oracle() {
         assert_fields_match(
             rust_packet,
             oracle_packet,
-            &[
-                "codec_type",
-                "stream_index",
-                "pts",
-                "pts_time",
-                "dts",
-                "dts_time",
-                "duration",
-                "duration_time",
-                "size",
-                "pos",
-                "flags",
-            ],
+            PACKET_FIELDS,
             &format!("PACKET[{index}]"),
         );
     }
+
+    assert_json_packet_fields_match(&ffprobe, avi_arg.as_str(), "AVI");
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -410,6 +438,193 @@ fn assert_fields_match(rust: &Section, oracle: &Section, fields: &[&str], label:
             "{label}.{field} should match oracle"
         );
     }
+}
+
+fn assert_json_packet_fields_match(ffprobe: &Path, input: &str, label: &str) {
+    let rust_json = ffprobe_output(&strings(&[
+        "-hide_banner",
+        "-show_packets",
+        "-of",
+        "json",
+        input,
+    ]))
+    .unwrap_or_else(|err| panic!("Rust ffprobe {label} JSON packet path should execute: {err}"));
+
+    let oracle = Command::new(ffprobe)
+        .args(["-v", "error", "-show_packets", "-of", "json", input])
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", ffprobe.display()));
+
+    assert!(
+        oracle.status.success(),
+        "oracle ffprobe JSON failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        oracle.status.code(),
+        String::from_utf8_lossy(&oracle.stdout),
+        String::from_utf8_lossy(&oracle.stderr)
+    );
+
+    let oracle_json =
+        String::from_utf8(oracle.stdout).expect("oracle ffprobe JSON output should be UTF-8");
+    let rust_packets = parse_json_packet_sections(&rust_json);
+    let oracle_packets = parse_json_packet_sections(&oracle_json);
+    assert_eq!(
+        rust_packets.len(),
+        oracle_packets.len(),
+        "{label} JSON packet counts should match"
+    );
+
+    for (index, (rust_packet, oracle_packet)) in
+        rust_packets.iter().zip(oracle_packets.iter()).enumerate()
+    {
+        assert_fields_match(
+            rust_packet,
+            oracle_packet,
+            PACKET_FIELDS,
+            &format!("{label} JSON PACKET[{index}]"),
+        );
+    }
+}
+
+fn parse_json_packet_sections(output: &str) -> Vec<Section> {
+    let mut sections = Vec::new();
+    let Some(packets_key) = output.find("\"packets\"") else {
+        return sections;
+    };
+    let Some(array_offset) = output[packets_key..].find('[') else {
+        return sections;
+    };
+    let array_start = packets_key + array_offset;
+    let mut object_start: Option<usize> = None;
+    let mut object_depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for (offset, ch) in output[array_start + 1..].char_indices() {
+        let index = array_start + 1 + offset;
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+
+        match ch {
+            '"' => in_string = true,
+            '{' => {
+                if object_depth == 0 {
+                    object_start = Some(index);
+                }
+                object_depth += 1;
+            }
+            '}' => {
+                assert!(object_depth > 0, "unexpected JSON object close");
+                object_depth -= 1;
+                if object_depth == 0 {
+                    let start = object_start
+                        .take()
+                        .expect("JSON packet object should have a start offset");
+                    sections.push(parse_json_packet_object(&output[start..=index]));
+                }
+            }
+            ']' if object_depth == 0 => break,
+            _ => {}
+        }
+    }
+
+    assert_eq!(object_depth, 0, "unclosed JSON packet object");
+    sections
+}
+
+fn parse_json_packet_object(object: &str) -> Section {
+    let mut section = Section {
+        name: "PACKET".to_owned(),
+        fields: BTreeMap::new(),
+    };
+    let mut index = object
+        .find('{')
+        .map(|index| index + 1)
+        .expect("JSON packet object should start with `{`");
+
+    loop {
+        skip_json_ws_and_commas(object, &mut index);
+        if object[index..].starts_with('}') {
+            break;
+        }
+
+        let key = parse_json_string_token(object, &mut index);
+        skip_json_ws(object, &mut index);
+        assert!(
+            object[index..].starts_with(':'),
+            "JSON packet field should contain `:`"
+        );
+        index += 1;
+        skip_json_ws(object, &mut index);
+
+        let value_start = index;
+        if object[index..].starts_with('"') {
+            let _ = parse_json_string_token(object, &mut index);
+        } else {
+            while index < object.len() && !matches!(object.as_bytes()[index], b',' | b'}') {
+                index += 1;
+            }
+        }
+        let value = object[value_start..index].trim().to_owned();
+        section.fields.insert(key, value);
+    }
+
+    section
+}
+
+fn skip_json_ws_and_commas(input: &str, index: &mut usize) {
+    while *index < input.len()
+        && matches!(
+            input.as_bytes()[*index],
+            b' ' | b'\n' | b'\r' | b'\t' | b','
+        )
+    {
+        *index += 1;
+    }
+}
+
+fn skip_json_ws(input: &str, index: &mut usize) {
+    while *index < input.len() && matches!(input.as_bytes()[*index], b' ' | b'\n' | b'\r' | b'\t') {
+        *index += 1;
+    }
+}
+
+fn parse_json_string_token(input: &str, index: &mut usize) -> String {
+    assert!(
+        input[*index..].starts_with('"'),
+        "JSON string token should start with quote"
+    );
+    *index += 1;
+    let start = *index;
+    let mut escaped = false;
+    while *index < input.len() {
+        let byte = input.as_bytes()[*index];
+        if escaped {
+            escaped = false;
+            *index += 1;
+            continue;
+        }
+        match byte {
+            b'\\' => {
+                escaped = true;
+                *index += 1;
+            }
+            b'"' => {
+                let token = input[start..*index].to_owned();
+                *index += 1;
+                return token;
+            }
+            _ => *index += 1,
+        }
+    }
+    panic!("unterminated JSON string token");
 }
 
 fn single_section<'a>(sections: &'a [Section], name: &str) -> &'a Section {

@@ -9,6 +9,12 @@
 
 ## Compatible Today
 
+- Latest main-thread packet JSON media evidence: `ffprobe-rs -show_packets -of
+  json` now matches FFmpeg-shaped packet `size` and `pos` string typing, and
+  the pinned MOV and AVI ffprobe oracle rows compare JSON scalar packet fields
+  for codec type, stream index, PTS/DTS/time, duration/time, size, pos, and
+  flags against FFmpeg 8.1.1. `avutil-packet` remains `fate_pass`; strict
+  completion remains 11/96.
 - Latest main-thread packet unknown-flag evidence: pinned libavcodec row
   `packet:flags-unknown-unref` now proves `av_packet_unref()` clears retained
   unknown raw `AVPacket.flags` bits while resetting the packet to default

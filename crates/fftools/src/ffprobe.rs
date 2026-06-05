@@ -1636,8 +1636,8 @@ fn render_packet_json(packet: &FfprobePacketReport) -> String {
         json_optional_string("dts_time", packet.dts_time.as_deref()),
         json_number("duration", packet.duration),
         json_string("duration_time", &packet.duration_time),
-        json_number("size", packet.size),
-        json_optional_number("pos", packet.pos),
+        json_string("size", &packet.size.to_string()),
+        json_optional_display_string("pos", packet.pos),
         json_string("flags", &packet.flags),
     ];
     format!("{{{}}}", fields.join(", "))
@@ -1805,6 +1805,13 @@ fn json_optional_number(key: &str, value: Option<i64>) -> String {
 fn json_optional_string(key: &str, value: Option<&str>) -> String {
     match value {
         Some(value) => json_string(key, value),
+        None => json_null(key),
+    }
+}
+
+fn json_optional_display_string<T: fmt::Display>(key: &str, value: Option<T>) -> String {
+    match value {
+        Some(value) => json_string(key, &value.to_string()),
         None => json_null(key),
     }
 }
@@ -2674,7 +2681,8 @@ mod tests {
         assert!(stdout.contains("\"pts\": 1000"));
         assert!(stdout.contains("\"pts_time\": \"0.011111\""));
         assert!(stdout.contains("\"duration_time\": \"0.022222\""));
-        assert!(stdout.contains(&format!("\"pos\": {second_pos}")));
+        assert!(stdout.contains("\"size\": \"4\""));
+        assert!(stdout.contains(&format!("\"pos\": \"{second_pos}\"")));
         assert!(stdout.contains("\"flags\": \"___\""));
         assert!(!stdout.contains("\"streams\""));
         assert!(!stdout.contains("\"format\""));
