@@ -4827,6 +4827,33 @@ fn insert_packet_fifo_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:fifo-read-empty-ref-preserve-dst".to_string(),
         packet_fields(&empty_ref_preserve_dst),
     );
+    let mut empty_user_move_preserve_dst = packet_with_common_props();
+    let err = fifo
+        .read_with_flags(&mut empty_user_move_preserve_dst, PacketFifoFlags::USER)
+        .unwrap_err();
+    rows.insert(
+        "packet:fifo-read-empty-user-move-preserve-ret".to_string(),
+        vec![err.code().unwrap().raw().to_string()],
+    );
+    rows.insert(
+        "packet:fifo-read-empty-user-move-preserve-dst".to_string(),
+        packet_fields(&empty_user_move_preserve_dst),
+    );
+    let mut empty_user_ref_preserve_dst = packet_with_common_props();
+    let err = fifo
+        .read_with_flags(
+            &mut empty_user_ref_preserve_dst,
+            PacketFifoFlags::REF | PacketFifoFlags::USER,
+        )
+        .unwrap_err();
+    rows.insert(
+        "packet:fifo-read-empty-user-ref-preserve-ret".to_string(),
+        vec![err.code().unwrap().raw().to_string()],
+    );
+    rows.insert(
+        "packet:fifo-read-empty-user-ref-preserve-dst".to_string(),
+        packet_fields(&empty_user_ref_preserve_dst),
+    );
 
     fifo.clear();
     rows.insert(
@@ -12454,6 +12481,24 @@ static void exercise_packet_fifo_api(void) {
     print_packet("packet:fifo-read-empty-ref-preserve-dst",
                  empty_ref_preserve_dst);
     av_packet_free(&empty_ref_preserve_dst);
+
+    AVPacket *empty_user_move_preserve_dst = packet_with_common_props();
+    ret = av_container_fifo_read(
+        fifo, empty_user_move_preserve_dst, AV_CONTAINER_FIFO_FLAG_USER);
+    printf("packet:fifo-read-empty-user-move-preserve-ret|%d\n", ret);
+    print_packet("packet:fifo-read-empty-user-move-preserve-dst",
+                 empty_user_move_preserve_dst);
+    av_packet_free(&empty_user_move_preserve_dst);
+
+    AVPacket *empty_user_ref_preserve_dst = packet_with_common_props();
+    ret = av_container_fifo_read(
+        fifo,
+        empty_user_ref_preserve_dst,
+        AV_CONTAINER_FIFO_FLAG_REF | AV_CONTAINER_FIFO_FLAG_USER);
+    printf("packet:fifo-read-empty-user-ref-preserve-ret|%d\n", ret);
+    print_packet("packet:fifo-read-empty-user-ref-preserve-dst",
+                 empty_user_ref_preserve_dst);
+    av_packet_free(&empty_user_ref_preserve_dst);
 
     av_container_fifo_drain(fifo, 0);
     printf("packet:fifo-clear-empty-can-read|%zu\n",

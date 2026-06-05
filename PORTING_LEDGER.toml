@@ -2,6 +2,15 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest main-thread packet FIFO raw-flag empty-read slice: pinned libavcodec
+# rows `packet:fifo-read-empty-user-move-preserve-*` and
+# `packet:fifo-read-empty-user-ref-preserve-*` now prove
+# `av_container_fifo_read()` on an empty packet FIFO returns EINVAL without
+# mutating a populated destination packet under USER-only and REF|USER raw
+# flags. Rust `PacketFifo::read_with_flags()` already matched this empty-queue
+# preservation; focused unit, ignored oracle, mapped differential/FATE,
+# upstream fate-avpacket, clippy, and a WSL `avutil_core_models` sanitizer
+# smoke cover the bounded shape. avutil-packet remains fate_pass, not complete.
 # Latest main-thread packet media-integration slice: pinned ffprobe AVI rows
 # now compare a generated two-packet BGR24 AVI against FFmpeg 8.1.1 for
 # default `-count_packets -show_format -show_streams -show_packets` format,
@@ -1568,6 +1577,16 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: pinned libavcodec rows
+# `packet:fifo-read-empty-user-move-preserve-*` and
+# `packet:fifo-read-empty-user-ref-preserve-*` now validate
+# `av_container_fifo_read()` empty-queue failure with USER-only and REF|USER
+# flags. FFmpeg returns EINVAL without mutating the populated destination
+# packet's payload, timestamps, side data, opaque metadata, `opaque_ref`,
+# stream index, flags, or time base. Rust `PacketFifo::read_with_flags()` keeps
+# the same no-mutation shape, and `avutil_core_models` now carries the matching
+# deterministic raw-flag empty-read fixture. This strengthens FIFO flag
+# evidence only; the row remains fate_pass, not complete.
 # Latest update: pinned `ffprobe` media-integration coverage now includes the
 # `oracle-ffprobe-avi-packet-fields` row, which generates a two-packet BGR24
 # AVI with FFmpeg 8.1.1 and compares Rust ffprobe default-output format,

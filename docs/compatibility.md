@@ -9,6 +9,16 @@
 
 ## Compatible Today
 
+- Latest main-thread packet FIFO raw-flag empty-read evidence: pinned
+  libavcodec rows `packet:fifo-read-empty-user-move-preserve-*` and
+  `packet:fifo-read-empty-user-ref-preserve-*` now prove
+  `av_container_fifo_read()` on an empty packet FIFO returns EINVAL without
+  mutating a populated destination packet under USER-only and REF|USER flags.
+  Rust mirrors this through `PacketFifo::read_with_flags()`, focused unit
+  coverage, the ignored packet oracle, mapped differential/FATE rows, upstream
+  `fate-avpacket`, clippy, and WSL `avutil_core_models` sanitizer smoke
+  coverage. `avutil-packet` remains `fate_pass`; strict completion remains
+  11/96.
 - Latest main-thread FATE/oracle runner evidence: `{oracle_ffmpeg}` default
   resolution now prefers the Unix `ffmpeg` wrapper on WSL/Linux and the native
   `.exe` wrapper on Windows. The new unit coverage prevents the prior WSL

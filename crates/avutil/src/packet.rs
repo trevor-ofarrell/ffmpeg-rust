@@ -16531,6 +16531,71 @@ mod tests {
                 .data(),
             &[0x0d, 0x0e]
         );
+
+        let mut empty_user_move_preserve = Packet::from_data(vec![0x82, 0x83]).unwrap();
+        empty_user_move_preserve.set_pts(Some(505));
+        empty_user_move_preserve.set_duration(606).unwrap();
+        empty_user_move_preserve
+            .push_side_data(SideData::new("skip_samples", vec![0x11, 0x12]).unwrap());
+        empty_user_move_preserve.set_opaque_ref(Some(BufferRef::from_vec(vec![0x13, 0x14])));
+        let empty_user_move_payload = empty_user_move_preserve.data_buffer().clone();
+        let empty_user_move_opaque = empty_user_move_preserve.opaque_ref().unwrap().clone();
+        let read_err = fifo
+            .read_with_flags(&mut empty_user_move_preserve, PacketFifoFlags::USER)
+            .unwrap_err();
+        assert_eq!(read_err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(read_err.code(), Some(AvErrorCode::EINVAL));
+        assert_eq!(empty_user_move_preserve.data(), &[0x82, 0x83]);
+        assert_eq!(empty_user_move_preserve.pts(), Some(505));
+        assert_eq!(empty_user_move_preserve.duration(), 606);
+        assert!(empty_user_move_preserve
+            .data_buffer()
+            .shares_storage(&empty_user_move_payload));
+        assert!(empty_user_move_preserve
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(&empty_user_move_opaque));
+        assert_eq!(
+            empty_user_move_preserve
+                .side_data_by_kind("skip_samples")
+                .unwrap()
+                .data(),
+            &[0x11, 0x12]
+        );
+
+        let mut empty_user_ref_preserve = Packet::from_data(vec![0x84, 0x85]).unwrap();
+        empty_user_ref_preserve.set_pts(Some(707));
+        empty_user_ref_preserve.set_duration(808).unwrap();
+        empty_user_ref_preserve
+            .push_side_data(SideData::new("skip_samples", vec![0x15, 0x16]).unwrap());
+        empty_user_ref_preserve.set_opaque_ref(Some(BufferRef::from_vec(vec![0x17, 0x18])));
+        let empty_user_ref_payload = empty_user_ref_preserve.data_buffer().clone();
+        let empty_user_ref_opaque = empty_user_ref_preserve.opaque_ref().unwrap().clone();
+        let read_err = fifo
+            .read_with_flags(
+                &mut empty_user_ref_preserve,
+                PacketFifoFlags::REF | PacketFifoFlags::USER,
+            )
+            .unwrap_err();
+        assert_eq!(read_err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(read_err.code(), Some(AvErrorCode::EINVAL));
+        assert_eq!(empty_user_ref_preserve.data(), &[0x84, 0x85]);
+        assert_eq!(empty_user_ref_preserve.pts(), Some(707));
+        assert_eq!(empty_user_ref_preserve.duration(), 808);
+        assert!(empty_user_ref_preserve
+            .data_buffer()
+            .shares_storage(&empty_user_ref_payload));
+        assert!(empty_user_ref_preserve
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(&empty_user_ref_opaque));
+        assert_eq!(
+            empty_user_ref_preserve
+                .side_data_by_kind("skip_samples")
+                .unwrap()
+                .data(),
+            &[0x15, 0x16]
+        );
         let drain_err = fifo.drain(1).unwrap_err();
         assert_eq!(drain_err.code(), Some(AvErrorCode::EINVAL));
     }

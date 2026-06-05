@@ -595,6 +595,14 @@ the FIFO starts empty, and zero operation flags still move a packet through
 the queue. A warmed 64-run WSL `avutil_core_models` cargo-fuzz smoke passed
 with leak detection disabled after rebuilding the release fuzz target.
 
+The latest packet FIFO raw-flag empty-read fixture extends
+`avutil_core_models` with `PacketFifo::read_with_flags()` over an empty queue
+for USER-only and REF|USER flags. The pinned libavcodec rows prove
+`av_container_fifo_read()` returns EINVAL without mutating a populated
+destination packet under both raw flag shapes. A WSL one-input
+`avutil_core_models` sanitizer smoke passed with leak detection disabled after
+rebuilding the release fuzz target.
+
 The latest packet FIFO nullable-free fixture extends `avutil_core_models` with the safe Rust equivalent of `av_container_fifo_free(&fifo)` for `fifo == NULL` and an empty FIFO: `Option<PacketFifo>::take()` keeps `None` as `None`, drops an empty FIFO owner without queued entries, and leaves no release side effects to observe. A fresh-target WSL one-input sanitizer smoke passed after rebuilding `avutil_core_models`.
 
 The latest packet FIFO partial-drain fixture extends `avutil_core_models` with
@@ -967,6 +975,13 @@ The newest packet FIFO free rows prove `av_container_fifo_free()` on a packet FI
 The newest packet FIFO nullable-free rows prove `av_container_fifo_free(&fifo)` with `fifo == NULL` is a no-op and freeing an empty packet FIFO nulls the pointer. The oracle deliberately avoids `av_container_fifo_free(NULL)`, because pinned FFmpeg requires the pointer-to-pointer argument itself to be valid. Rust mirrors the supported nullable-pointee lifecycle with `Option<PacketFifo>::take()` unit coverage and the deterministic `avutil_core_models` fixture.
 
 The newest packet FIFO clear-equivalence rows use `av_container_fifo_drain(fifo, av_container_fifo_can_read(fifo))` because FFmpeg exposes no direct `av_container_fifo_clear()` API. They prove all-draining a mixed move/ref packet queue releases move-written payload and `opaque_ref` storage once, preserves a ref-written source until that source is freed, leaves the FIFO empty, and keeps an empty all-drain no-op. Rust covers the direct `PacketFifo::clear()` helper with unit and deterministic fuzz invariants against the same lifecycle.
+
+The newest packet FIFO raw-flag empty-read rows prove
+`av_container_fifo_read()` on an empty queue returns EINVAL and preserves a
+populated destination packet under USER-only and REF|USER flags, including
+payload, timestamps, side data, opaque metadata, `opaque_ref`, stream index,
+flags, and packet `time_base`. Rust `PacketFifo::read_with_flags()` plus
+`avutil_core_models` mirror that no-mutation lifecycle.
 
 The newest packet FIFO invalid-operation rows prove an out-of-range `av_container_fifo_peek()` on a mixed move/ref queue returns EINVAL without changing readable count or queued packet order. Follow-on rows read the moved packet first, then drain the ref packet while preserving the ref-written source packet, and the Rust `PacketFifo` plus `avutil_core_models` fixture mirror that no-mutation lifecycle.
 
