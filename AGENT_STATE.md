@@ -3,6 +3,49 @@
 ## Current Status
 
 Current authoritative turn status: main-thread WSL advanced the top incomplete
+`avutil-packet` row by expanding the native MOV/M4A packet side-data
+differential row across all bounded ffprobe writers. Required startup checks
+passed from a clean tree at `master...origin/master [ahead 135]`:
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15` reported 11/96 strict-complete components (11.5%) with `avutil-packet` as
+the first incomplete row, and `CARGO_TARGET_DIR=target-orch-fate cargo run -p
+xtask -- oracle-doctor` validated the pinned FFmpeg 8.1.1 oracle and ABI
+versions.
+
+Current main-thread slice: the existing
+`oracle-ffprobe-m4a-skip-samples-side-data` row still generates a tiny AAC/M4A
+file with FFmpeg 8.1.1 whose first packet exposes public `Skip Samples` side
+data through the Rust MOV demuxer -> Packet -> ffprobe path, but it now
+compares default, JSON, compact, CSV, flat, INI, and XML writer output.
+Default/compact/CSV/flat/INI/XML are byte-compared against oracle output; JSON
+is compared after insignificant-whitespace normalization because Rust emits
+compact packet objects while FFmpeg pretty-prints them. `ffprobe-rs` also now
+trims the extra final blank line from INI output while preserving blank lines
+between sections, matching the pinned oracle shape for nested packet
+side-data sections. `avutil-packet` remains `fate_pass`, not complete; strict
+completion remains 11/96 because broader safe API design, ABI/media breadth,
+broader packet integration, and sustained fuzz evidence remain pending.
+
+Validation for this slice: `cargo fmt --all`;
+`CARGO_TARGET_DIR=target-orch-fate cargo test -p fftools
+renders_ini_packet_sections -- --nocapture`;
+`CARGO_TARGET_DIR=target-orch-fate cargo test -p fftools
+renders_packet_side_data_in_ffmpeg_writer_shapes -- --nocapture`;
+`CARGO_TARGET_DIR=target-orch-fate
+FFMPEG_ORACLE=./third_party/ffmpeg-oracle/build/bin/ffmpeg cargo test -p
+fftools --test ffprobe_mov_oracle
+m4a_aac_skip_samples_packet_side_data_matches_ffmpeg_oracle -- --ignored
+--nocapture`; and `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner
+-- run --mappings tests/differential/mappings.txt --component avutil-packet
+--component avformat-mov-demuxer --component
+fftools-ffprobe-mov-show-packets --target
+oracle-ffprobe-m4a-skip-samples-side-data`. Initial focused oracle compile
+failed before running because the new JSON whitespace helper was missing; it
+was added and the rerun passed. One malformed two-filter `cargo test`
+invocation failed before running tests and was replaced by the two passing
+single-filter runs above.
+
+Current authoritative turn status: main-thread WSL advanced the top incomplete
 `avutil-packet` row with a native MOV/M4A packet side-data differential slice.
 Required startup checks passed from a clean tree at `master...origin/master
 [ahead 134]`: `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner --

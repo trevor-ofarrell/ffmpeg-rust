@@ -41,12 +41,13 @@ The doctor command locates the default local `ffmpeg` and `ffprobe` oracle wrapp
 
 The packet side-data ffprobe writer shape is calibrated from a tiny pinned
 AAC/M4A oracle sample whose first packet exposes `Skip Samples` side data. The
-current native Rust MOV/M4A path now has a pinned media differential row for
-the default writer: `oracle-ffprobe-m4a-skip-samples-side-data` generates that
-AAC/M4A shape with FFmpeg 8.1.1 and byte-compares selected packet plus
-`packet_side_data` output against Rust. Non-default writer shapes still use
-synthetic unit/oracle-shape coverage until more native side-data media rows are
-added.
+current native Rust MOV/M4A path has a pinned media differential row:
+`oracle-ffprobe-m4a-skip-samples-side-data` generates that AAC/M4A shape with
+FFmpeg 8.1.1 and compares selected packet plus `packet_side_data` output
+against Rust across default, JSON, compact, CSV, flat, INI, and XML writers.
+Default, compact, CSV, flat, INI, and XML are byte-compared; JSON is compared
+after insignificant-whitespace normalization because Rust emits compact packet
+objects while FFmpeg pretty-prints them.
 
 Ignored oracle harnesses that compile temporary C helpers should write those
 helpers under the active Cargo target directory when `CARGO_TARGET_DIR` is set.

@@ -79,6 +79,8 @@ const MOV_TAG_STREAM_FIELDS: &[&str] = &["TAG:handler_name"];
 const EMPTY_TAG_STREAM_FIELDS: &[&str] = &[];
 const AAC_SKIP_SAMPLES_SHOW_ENTRIES: &str =
     "packet=pts,dts,pts_time,dts_time,duration,size,flags:packet_side_data";
+const AAC_SKIP_SAMPLES_WRITERS: &[&str] =
+    &["default", "json", "compact", "csv", "flat", "ini", "xml"];
 
 #[test]
 fn parse_default_sections_reads_multiline_packet_data() {
@@ -148,6 +150,23 @@ fn parse_json_packet_sections_accepts_compact_and_pretty_packet_objects() {
     assert_eq!(packets[1].field("pts"), Some("1"));
     assert_eq!(packets[1].field("pos"), Some("42"));
     assert_eq!(packets[1].field("flags"), Some("\"___\""));
+}
+
+#[test]
+fn json_without_insignificant_whitespace_preserves_string_contents() {
+    let compact = json_without_insignificant_whitespace(
+        r#"{
+  "packets": [
+    {"side_data_type": "Skip Samples", "escaped": "a \"quoted\" value"}
+  ]
+}
+"#,
+    );
+
+    assert_eq!(
+        compact,
+        r#"{"packets":[{"side_data_type":"Skip Samples","escaped":"a \"quoted\" value"}]}"#
+    );
 }
 
 #[test]
@@ -710,6 +729,21 @@ fn m4a_aac_skip_samples_packet_side_data_matches_ffmpeg_oracle() {
         String::from_utf8_lossy(&generate.stderr)
     );
 
+    for writer in AAC_SKIP_SAMPLES_WRITERS {
+        let rust = assert_m4a_skip_samples_writer_matches_ffmpeg_oracle(
+            &ffprobe,
+            m4a_arg.as_str(),
+            writer,
+        );
+        assert_m4a_skip_samples_writer_evidence(writer, &rust);
+    }
+}
+
+fn assert_m4a_skip_samples_writer_matches_ffmpeg_oracle(
+    ffprobe: &Path,
+    input: &str,
+    writer: &str,
+) -> String {
     let args = [
         "-v",
         "error",
@@ -717,19 +751,20 @@ fn m4a_aac_skip_samples_packet_side_data_matches_ffmpeg_oracle() {
         "-show_entries",
         AAC_SKIP_SAMPLES_SHOW_ENTRIES,
         "-of",
-        "default",
-        m4a_arg.as_str(),
+        writer,
+        input,
     ];
-    let rust = ffprobe_output(&strings(&args))
-        .unwrap_or_else(|err| panic!("Rust ffprobe AAC/M4A side-data path should execute: {err}"));
+    let rust = ffprobe_output(&strings(&args)).unwrap_or_else(|err| {
+        panic!("Rust ffprobe AAC/M4A {writer} side-data path should execute: {err}")
+    });
 
-    let oracle = Command::new(&ffprobe)
+    let oracle = Command::new(ffprobe)
         .args(args)
         .output()
         .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", ffprobe.display()));
     assert!(
         oracle.status.success(),
-        "oracle ffprobe AAC/M4A side-data failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        "oracle ffprobe AAC/M4A {writer} side-data failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
         oracle.status.code(),
         String::from_utf8_lossy(&oracle.stdout),
         String::from_utf8_lossy(&oracle.stderr)
@@ -737,17 +772,67 @@ fn m4a_aac_skip_samples_packet_side_data_matches_ffmpeg_oracle() {
     let oracle_stdout =
         String::from_utf8(oracle.stdout).expect("oracle ffprobe output should be UTF-8");
 
-    assert_eq!(
-        rust, oracle_stdout,
-        "Rust and oracle AAC/M4A packet side-data output should match byte-for-byte"
+    if writer == "json" {
+        assert_eq!(
+            json_without_insignificant_whitespace(&rust),
+            json_without_insignificant_whitespace(&oracle_stdout),
+            "Rust and oracle AAC/M4A JSON packet side-data output should match after JSON whitespace normalization"
+        );
+    } else {
+        assert_eq!(
+            rust, oracle_stdout,
+            "Rust and oracle AAC/M4A {writer} packet side-data output should match byte-for-byte"
+        );
+    }
+
+    rust
+}
+
+fn assert_m4a_skip_samples_writer_evidence(writer: &str, output: &str) {
+    let (side_data, discard_flag) = match writer {
+        "default" => (
+            "[SIDE_DATA]\nside_data_type=Skip Samples\nskip_samples=1024\n",
+            "flags=KD_\n",
+        ),
+        "json" => (
+            r#""side_data_type":"Skip Samples","skip_samples":1024"#,
+            r#""flags":"KD_""#,
+        ),
+        "compact" => (
+            "side_datum/skip_samples:side_data_type=Skip Samples|side_datum/skip_samples:skip_samples=1024",
+            "|flags=KD_|",
+        ),
+        "csv" => (",KD_,Skip Samples,1024,0,0,0\n", ",KD_,"),
+        "flat" => (
+            "packets.packet.0.side_data_list.side_data.0.side_data_type=\"Skip Samples\"\npackets.packet.0.side_data_list.side_data.0.skip_samples=1024\n",
+            "packets.packet.0.flags=\"KD_\"\n",
+        ),
+        "ini" => (
+            "[packets.packet.0.side_data_list.side_data.0]\nside_data_type=Skip Samples\nskip_samples=1024\n",
+            "flags=KD_\n",
+        ),
+        "xml" => (
+            "<side_data type=\"Skip Samples\">\n<side_datum key=\"side_data_type\" value=\"Skip Samples\"/>\n<side_datum key=\"skip_samples\" value=\"1024\"/>",
+            "flags=\"KD_\"",
+        ),
+        _ => panic!("unsupported AAC/M4A side-data writer `{writer}`"),
+    };
+
+    let proof_output = if writer == "json" {
+        json_without_insignificant_whitespace(output)
+    } else if writer == "xml" {
+        output.lines().map(str::trim).collect::<Vec<_>>().join("\n")
+    } else {
+        output.to_owned()
+    };
+
+    assert!(
+        proof_output.contains(side_data),
+        "{writer} output should prove public Skip Samples packet side data"
     );
     assert!(
-        rust.contains("[SIDE_DATA]\nside_data_type=Skip Samples\nskip_samples=1024\n"),
-        "output should prove public Skip Samples packet side data"
-    );
-    assert!(
-        rust.contains("flags=KD_\n"),
-        "output should prove the priming packet discard flag"
+        proof_output.contains(discard_flag),
+        "{writer} output should prove the priming packet discard flag"
     );
 }
 
@@ -1974,6 +2059,35 @@ fn parse_json_packet_sections(output: &str) -> Vec<Section> {
 
     assert_eq!(object_depth, 0, "unclosed JSON packet object");
     sections
+}
+
+fn json_without_insignificant_whitespace(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for ch in input.chars() {
+        if in_string {
+            out.push(ch);
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+
+        if ch == '"' {
+            in_string = true;
+            out.push(ch);
+        } else if !ch.is_whitespace() {
+            out.push(ch);
+        }
+    }
+
+    out
 }
 
 fn parse_json_packet_object(object: &str) -> Section {

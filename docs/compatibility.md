@@ -15,19 +15,23 @@
   timestamp shift; marks the first `mp4a` priming packet discard; and emits
   public `Skip Samples` packet side data. The pinned
   `oracle-ffprobe-m4a-skip-samples-side-data` row generates an AAC/M4A sample
-  with FFmpeg 8.1.1 and byte-compares selected default
+  with FFmpeg 8.1.1 and compares selected
   `ffprobe -show_packets -show_entries
   packet=pts,dts,pts_time,dts_time,duration,size,flags:packet_side_data`
-  output against Rust. `avutil-packet` remains `fate_pass`; strict completion
-  remains 11/96.
+  output against Rust across default, JSON, compact, CSV, flat, INI, and XML
+  writers. Default/compact/CSV/flat/INI/XML are byte-compared; JSON is
+  compared after insignificant-whitespace normalization. `ffprobe-rs` now
+  trims the extra final INI blank line while preserving blank lines between
+  sections. `avutil-packet` remains `fate_pass`; strict completion remains
+  11/96.
 - Latest main-thread packet side-data ffprobe evidence: `ffprobe-rs` now
   accepts bounded `packet_side_data` `-show_entries` forms, lets side-data-only
   entries imply packet output without scalar packet fields, filters
   Rust/internal unknown packet side-data names from public ffprobe output, and
   renders oracle-shaped Skip Samples side data across default, JSON, compact,
-  CSV, flat, INI, and XML writers. This is synthetic unit/oracle-shape
-  coverage for non-MOV writer shapes; `avutil-packet` remains `fate_pass` and
-  strict completion remains 11/96.
+  CSV, flat, INI, and XML writers. The non-default writer shapes now also have
+  native MOV/M4A media coverage through the pinned skip-samples row above;
+  `avutil-packet` remains `fate_pass` and strict completion remains 11/96.
 - Latest main-thread stream-tag show-entries media evidence: `ffprobe-rs` now
   accepts bounded `stream_tags` and `format_tags` `-show_entries` sections,
   lets selected tag sections imply stream/format output without scalar fields,

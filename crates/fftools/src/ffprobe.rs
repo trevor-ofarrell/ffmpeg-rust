@@ -2368,6 +2368,9 @@ fn render_ini(command: &FfprobeCommand, report: &FfprobeReport) -> String {
             push_ini_section(&mut out, "format.tags", tags);
         }
     }
+    if out.len() > "# ffprobe output\n\n".len() && out.ends_with("\n\n") {
+        out.pop();
+    }
     out
 }
 
@@ -4238,7 +4241,7 @@ mod tests {
         );
         assert_eq!(
             ini,
-            "# ffprobe output\n\n[packets.packet.0]\npts_time=0.000000\nsize=3\nflags=K__\n\n"
+            "# ffprobe output\n\n[packets.packet.0]\npts_time=0.000000\nsize=3\nflags=K__\n"
         );
 
         let xml = render_report(
@@ -4353,7 +4356,7 @@ mod tests {
         );
         assert_eq!(
             ini,
-            "# ffprobe output\n\n[streams.stream.0]\nindex=0\ncodec_type=video\nwidth=1920\n\n[format]\nformat_name=mov,mp4,m4a,3gp,3g2,mj2\nsize=2048\n\n"
+            "# ffprobe output\n\n[streams.stream.0]\nindex=0\ncodec_type=video\nwidth=1920\n\n[format]\nformat_name=mov,mp4,m4a,3gp,3g2,mj2\nsize=2048\n"
         );
 
         let xml = render_report(
@@ -4650,7 +4653,7 @@ mod tests {
         );
         assert_eq!(
             ini,
-            "# ffprobe output\n\n[packets.packet.0]\npts_time=0.000000\nsize=3\nflags=K__\n\n[packets.packet.0.side_data_list.side_data.0]\nside_data_type=Skip Samples\nskip_samples=1024\ndiscard_padding=0\nskip_reason=0\ndiscard_reason=0\n\n"
+            "# ffprobe output\n\n[packets.packet.0]\npts_time=0.000000\nsize=3\nflags=K__\n\n[packets.packet.0.side_data_list.side_data.0]\nside_data_type=Skip Samples\nskip_samples=1024\ndiscard_padding=0\nskip_reason=0\ndiscard_reason=0\n"
         );
 
         let xml = render_report(
