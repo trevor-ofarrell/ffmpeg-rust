@@ -73,6 +73,10 @@ const MIXED_SHOW_ENTRIES: &str =
 const MIXED_PACKET_FIELDS: &[&str] = &["pts_time", "size"];
 const MIXED_STREAM_FIELDS: &[&str] = &["index", "codec_type"];
 const MIXED_FORMAT_FIELDS: &[&str] = &["format_name", "size"];
+const TAG_SHOW_ENTRIES: &str = "packet=size,pts_time:stream_tags=handler_name";
+const TAG_PACKET_FIELDS: &[&str] = &["pts_time", "size"];
+const MOV_TAG_STREAM_FIELDS: &[&str] = &["TAG:handler_name"];
+const EMPTY_TAG_STREAM_FIELDS: &[&str] = &[];
 
 #[test]
 fn parse_default_sections_reads_multiline_packet_data() {
@@ -495,6 +499,12 @@ fn mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle() {
     assert_packet_data_and_hash_fields_match(&ffprobe, mov_arg.as_str(), "MOV");
     assert_packet_selected_fields_match(&ffprobe, mov_arg.as_str(), "MOV");
     assert_mixed_show_entries_fields_match(&ffprobe, mov_arg.as_str(), "MOV");
+    assert_packet_and_stream_tag_show_entries_fields_match(
+        &ffprobe,
+        mov_arg.as_str(),
+        "MOV",
+        MOV_TAG_STREAM_FIELDS,
+    );
 }
 
 #[test]
@@ -655,6 +665,12 @@ fn avi_bgr24_ffprobe_packet_fields_match_ffmpeg_oracle() {
     assert_packet_data_and_hash_fields_match(&ffprobe, avi_arg.as_str(), "AVI");
     assert_packet_selected_fields_match(&ffprobe, avi_arg.as_str(), "AVI");
     assert_mixed_show_entries_fields_match(&ffprobe, avi_arg.as_str(), "AVI");
+    assert_packet_and_stream_tag_show_entries_fields_match(
+        &ffprobe,
+        avi_arg.as_str(),
+        "AVI",
+        EMPTY_TAG_STREAM_FIELDS,
+    );
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1234,6 +1250,59 @@ fn assert_mixed_show_entries_fields_match(ffprobe: &Path, input: &str, label: &s
         &oracle_sections,
         "FORMAT",
         MIXED_FORMAT_FIELDS,
+    );
+}
+
+fn assert_packet_and_stream_tag_show_entries_fields_match(
+    ffprobe: &Path,
+    input: &str,
+    label: &str,
+    stream_fields: &[&str],
+) {
+    let rust = ffprobe_output(&strings(&[
+        "-hide_banner",
+        "-show_entries",
+        TAG_SHOW_ENTRIES,
+        input,
+    ]))
+    .unwrap_or_else(|err| {
+        panic!("Rust ffprobe {label} tag show_entries path should execute: {err}")
+    });
+
+    let oracle = Command::new(ffprobe)
+        .args(["-v", "error", "-show_entries", TAG_SHOW_ENTRIES, input])
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", ffprobe.display()));
+    assert!(
+        oracle.status.success(),
+        "oracle ffprobe tag show_entries failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        oracle.status.code(),
+        String::from_utf8_lossy(&oracle.stdout),
+        String::from_utf8_lossy(&oracle.stderr)
+    );
+    let oracle_default =
+        String::from_utf8(oracle.stdout).expect("oracle ffprobe default output should be UTF-8");
+
+    let rust_sections = parse_default_sections(&rust);
+    let oracle_sections = parse_default_sections(&oracle_default);
+
+    assert_packet_sections_match(
+        sections_named(&rust_sections, "PACKET")
+            .into_iter()
+            .cloned()
+            .collect(),
+        sections_named(&oracle_sections, "PACKET")
+            .into_iter()
+            .cloned()
+            .collect(),
+        TAG_PACKET_FIELDS,
+        &format!("{label} tag show_entries packet"),
+    );
+    assert_single_section_exact_fields_match(
+        &rust_sections,
+        &oracle_sections,
+        "STREAM",
+        stream_fields,
     );
 }
 

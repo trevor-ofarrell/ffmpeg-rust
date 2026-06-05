@@ -1645,6 +1645,10 @@ They also compare mixed
 `packet=size,pts_time:stream=codec_type,index:format=size,format_name`
 selection with implicit packet, stream, and format output, exact selected
 fields, and FFmpeg section-order rendering for default output.
+They also compare
+`packet=size,pts_time:stream_tags=handler_name`, proving selected MOV
+`TAG:handler_name` output, the selected-empty AVI STREAM tag section, and
+packet fields against pinned FFmpeg 8.1.1.
 These targets are bounded evidence, not full ffprobe field-complete parity:
 
 ```sh

@@ -3,6 +3,59 @@
 ## Current Status
 
 Current authoritative turn status: main-thread WSL advanced the top incomplete
+`avutil-packet` row with MOV/AVI ffprobe `stream_tags` `-show_entries`
+media-integration evidence and fixed MOV handler-name tag normalization.
+Required startup checks passed from a clean tree at `master...origin/master
+[ahead 132]`: `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner --
+status --next 15` reported 11/96 strict-complete components (11.5%) with
+`avutil-packet` as the first incomplete row, and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validated the pinned FFmpeg 8.1.1 oracle and ABI versions.
+
+Current main-thread slice: `ffprobe-rs` now accepts bounded `stream_tags` and
+`format_tags` `-show_entries` sections, lets selected tag sections imply
+stream/format output without scalar fields, preserves selected-empty default
+sections, and renders selected tags across default, JSON, compact, CSV, flat,
+INI, and XML writers. The MOV parser now strips a bounded QuickTime/Pascal
+handler-name length byte when it exactly describes the remaining handler-name
+bytes, matching FFmpeg-generated MOV files whose stream handler tag is
+`VideoHandler` instead of `\u{c}VideoHandler`. The pinned MOV/AVI ffprobe
+oracle rows now compare
+`packet=size,pts_time:stream_tags=handler_name` against FFmpeg 8.1.1, proving
+selected MOV `TAG:handler_name`, selected-empty AVI STREAM tag sections, and
+packet fields in one row. `fftools-ffprobe-mov-handler-name-tag` advances to
+`differential_pass`; `avutil-packet` remains `fate_pass`, not complete;
+strict completion remains 11/96.
+
+Validation for this slice: `cargo fmt --all`; `CARGO_TARGET_DIR=target-orch-fate
+cargo test -p fftools show_entries -- --nocapture`;
+`CARGO_TARGET_DIR=target-orch-fate cargo test -p fftools
+selected_stream_and_format_tags -- --nocapture`;
+`CARGO_TARGET_DIR=target-orch-fate cargo test -p fftools selected_missing_tags
+-- --nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo test -p avformat
+extracts_pascal_media_handler_name_as_track_metadata -- --nocapture`;
+`CARGO_TARGET_DIR=target-orch-fate cargo test -p fftools --test
+ffprobe_mov_oracle mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle --
+--ignored --nocapture`; and `CARGO_TARGET_DIR=target-orch-fate cargo test -p
+fftools --test ffprobe_mov_oracle
+avi_bgr24_ffprobe_packet_fields_match_ffmpeg_oracle -- --ignored --nocapture`.
+Mapped and final guards also passed with `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt
+--component fftools-ffprobe-mov-handler-name-tag --target
+oracle-ffprobe-mov-core-fields`; `CARGO_TARGET_DIR=target-orch-fate cargo run
+-p fate-runner -- run --mappings tests/differential/mappings.txt --component
+avutil-packet --target oracle-ffprobe-mov-core-fields`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run --mappings
+tests/differential/mappings.txt --component avutil-packet --target
+oracle-ffprobe-avi-packet-fields`; `CARGO_TARGET_DIR=target-orch-fate cargo
+clippy -p avformat -p fftools --all-targets --all-features -- -D warnings`;
+`cargo fmt --all -- --check`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p
+fate-runner -- status --next 15`; `CARGO_TARGET_DIR=target-orch-fate cargo
+run -p xtask -- guard-runtime`; `CARGO_TARGET_DIR=target-orch-fate cargo run
+-p xtask -- oracle-doctor`; `git diff --check` with only existing Git
+line-ending warnings; and `test ! -d target`.
+
+Current authoritative turn status: main-thread WSL advanced the top incomplete
 `avutil-packet` row with mixed MOV/AVI ffprobe `-show_entries`
 media-integration evidence. Required startup checks passed from a dirty tree at
 `master...origin/master [ahead 131]`: `CARGO_TARGET_DIR=target-orch-fate

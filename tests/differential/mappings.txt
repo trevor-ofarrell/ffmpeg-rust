@@ -36,6 +36,7 @@ fftools-ffprobe-stream-time-base|oracle-ffprobe-mov-core-fields|.|cargo|env:FFMP
 fftools-ffprobe-stream-r-frame-rate|oracle-ffprobe-mov-core-fields|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|ffprobe_mov_oracle|mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle|--|--ignored
 fftools-ffprobe-stream-start-time|oracle-ffprobe-mov-core-fields|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|ffprobe_mov_oracle|mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle|--|--ignored
 fftools-ffprobe-stream-coded-dimensions|oracle-ffprobe-mov-core-fields|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|ffprobe_mov_oracle|mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle|--|--ignored
+fftools-ffprobe-mov-handler-name-tag|oracle-ffprobe-mov-core-fields|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|ffprobe_mov_oracle|mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle|--|--ignored
 fftools-ffprobe-count-packets|oracle-ffprobe-mov-core-fields|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|ffprobe_mov_oracle|mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle|--|--ignored
 fftools-ffprobe-count-frames|oracle-ffprobe-mov-core-fields|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|ffprobe_mov_oracle|mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle|--|--ignored
 fftools-ffprobe-stream-nb-frames|oracle-ffprobe-mov-core-fields|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|ffprobe_mov_oracle|mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle|--|--ignored

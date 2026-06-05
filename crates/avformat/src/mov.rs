@@ -5726,6 +5726,7 @@ fn parse_hdlr(payload: &[u8]) -> AvResult<HandlerInfo> {
         .iter()
         .position(|byte| *byte == 0)
         .map_or(name, |nul| &name[..nul]);
+    let name = normalize_hdlr_name(name);
     if name.is_empty() {
         return Ok(HandlerInfo {
             handler_type,
@@ -5739,6 +5740,18 @@ fn parse_hdlr(payload: &[u8]) -> AvResult<HandlerInfo> {
         handler_type,
         name: Some(name),
     })
+}
+
+fn normalize_hdlr_name(name: &[u8]) -> &[u8] {
+    let Some((&length, rest)) = name.split_first() else {
+        return name;
+    };
+    let length = usize::from(length);
+    if (1..0x20).contains(&length) && length == rest.len() {
+        rest
+    } else {
+        name
+    }
 }
 
 fn build_packets(
@@ -6170,6 +6183,17 @@ mod tests {
         assert_eq!(
             demuxer.info().tracks()[0].metadata().get("handler_name"),
             Some("Rust Video Handler")
+        );
+    }
+
+    #[test]
+    fn extracts_pascal_media_handler_name_as_track_metadata() {
+        let bytes = mp4_with_media_handler_name(b"\x0cVideoHandler\0");
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+
+        assert_eq!(
+            demuxer.info().tracks()[0].metadata().get("handler_name"),
+            Some("VideoHandler")
         );
     }
 

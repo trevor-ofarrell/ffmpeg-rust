@@ -9,6 +9,16 @@
 
 ## Compatible Today
 
+- Latest main-thread stream-tag show-entries media evidence: `ffprobe-rs` now
+  accepts bounded `stream_tags` and `format_tags` `-show_entries` sections,
+  lets selected tag sections imply stream/format output without scalar fields,
+  preserves selected-empty default sections, and renders selected tags across
+  default, JSON, compact, CSV, flat, INI, and XML writers. The MOV parser now
+  strips the bounded QuickTime/Pascal handler-name length byte emitted by
+  FFmpeg-generated MOV files. The pinned MOV and AVI ffprobe oracle rows
+  compare `packet=size,pts_time:stream_tags=handler_name` against FFmpeg
+  8.1.1. `fftools-ffprobe-mov-handler-name-tag` is `differential_pass`;
+  `avutil-packet` remains `fate_pass`; strict completion remains 11/96.
 - Latest main-thread mixed show-entries media evidence: `ffprobe-rs` now
   accepts bounded stream and format `-show_entries` sections alongside packet
   selections, lets selected packet, stream, and format sections imply output,

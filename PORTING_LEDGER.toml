@@ -2,6 +2,19 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest main-thread stream-tag show-entries media-integration slice:
+# ffprobe-rs now accepts bounded `stream_tags` and `format_tags`
+# `-show_entries` sections, lets selected tag sections imply stream/format
+# output without scalar fields, renders selected tags across default, JSON,
+# compact, CSV, flat, INI, and XML writers, and preserves selected-empty
+# default sections. The MOV parser now strips the bounded QuickTime/Pascal
+# handler-name length byte emitted by FFmpeg-generated MOV files. The pinned
+# MOV/AVI ffprobe rows now compare
+# `packet=size,pts_time:stream_tags=handler_name` against FFmpeg 8.1.1,
+# proving MOV handler_name tag parity and AVI selected-empty STREAM shape
+# alongside packet fields. This strengthens avutil-packet and
+# fftools-ffprobe-mov-handler-name-tag evidence only; strict completion
+# remains unchanged.
 # Latest main-thread mixed show-entries media-integration slice: ffprobe-rs
 # now accepts bounded stream and format `-show_entries` sections alongside
 # packet sections, lets each selected section imply output, ignores unknown
@@ -1348,6 +1361,11 @@ fuzz_targets = ["avutil_core_models"]
 notes = "Complete for the selected ffmpeg-8.1.1-default-native profile. The Rust model covers AV_TIME_BASE and AV_TIME_BASE_Q constants, direct av_rescale/av_rescale_rnd helpers, AV_ROUND_ZERO/INF/DOWN/UP/NEAR_INF rounding, AV_ROUND_PASS_MINMAX sentinel preservation for direct and rational rescale helpers, av_rescale_q/av_rescale_q_rnd behavior, av_compare_ts-style timestamp ordering, av_compare_mod-style centered modular timestamp comparison, av_rescale_delta-style stateful duration-preserving timestamp conversion for nonnegative FFmpeg-int durations, and av_add_stable-style stable increments. The ignored timebase_oracle differential harness compiles a test-only C helper against pinned third_party/ffmpeg-oracle/wsl/lib/libavutil.a and compares constants, direct rescale, rational rescale, pass-min/max, compare_ts, compare_mod, rescale_delta, and add_stable vectors against the Rust model. The oracle corrected the Rust model so exact negative av_add_stable increments follow FFmpeg's m < d no-op branch instead of subtracting. Unit tests cover constants, every modeled rounding mode, pass-min/max, invalid direct and rational rescale inputs, out-of-range rescale results, cross-timebase comparison, invalid compare time bases, modular wraparound, invalid moduli, rescale_delta first-call/zero-duration/stateful/clip/fallback/no-mutation error paths, exact positive stable increments, negative stable-increment no-op behavior, fractional no-drift updates, sub-tick increments, invalid stable-add time bases, and positive exact overflow. The avutil_core_models fuzz target build-checks direct rescale, rational rescale, compare_ts, compare_mod, rescale_delta, and add_stable helpers against independent small-range i128/u64 models, including constants, invalid terms, invalid compare inputs, invalid rescale_delta inputs and last-state preservation, signed stable-add inputs, exact stable-add overflow, and sentinel preservation. avutil-timebase does not parse untrusted byte streams, so long-running cargo-fuzz execution is not required for completion. Upstream FFmpeg FATE has no standalone libavutil timebase helper API target; this row documents that exception and uses the local FATE-runner smoke mapping plus pinned libavutil differential oracle as completion evidence. C-level undefined-overflow or assertion-only invalid cases remain outside the safe Rust API boundary and are rejected with typed errors where exposed."
 blocked_reason = ""
 
+# Latest update: MOV/AVI ffprobe media-integration coverage now compares
+# `packet=size,pts_time:stream_tags=handler_name` selection against pinned
+# FFmpeg 8.1.1, proving selected MOV `TAG:handler_name`, selected-empty AVI
+# STREAM tag sections, and packet fields in one oracle row. This strengthens
+# media-path evidence only; avutil-packet remains fate_pass, not complete.
 # Latest update: MOV/AVI ffprobe media-integration coverage now compares mixed
 # packet/stream/format `-show_entries` selection with implicit section output
 # and exact selected field sets against pinned FFmpeg 8.1.1. This strengthens
@@ -5726,20 +5744,24 @@ id = "fftools-ffprobe-mov-handler-name-tag"
 kind = "cli"
 ffmpeg_name = "ffprobe MOV stream handler_name tag"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 2
 oracle_command = "ffprobe -show_streams -of json <input.mp4>"
 rust_command = "cargo test -p avformat mov::tests; cargo test -p fftools ffprobe"
 unit_tests = [
   "mov::tests::extracts_media_handler_name_as_track_metadata",
+  "mov::tests::extracts_pascal_media_handler_name_as_track_metadata",
   "mov::tests::rejects_invalid_media_handler_name",
+  "ffprobe::tests::parses_stream_and_format_tag_show_entries_and_implies_sections",
+  "ffprobe::tests::renders_selected_stream_and_format_tags_in_ffmpeg_shapes",
+  "ffprobe::tests::renders_selected_missing_tags_as_empty_default_sections",
   "ffprobe::tests::outputs_mov_stream_json",
   "ffprobe::tests::outputs_mov_visual_stream_aspect_and_color_json",
 ]
-differential_tests = []
+differential_tests = ["tests/differential/mappings.txt:fftools-ffprobe-mov-handler-name-tag|oracle-ffprobe-mov-core-fields"]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-mov-handler-name-tag|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "MOV/MP4 mdia/hdlr boxes are now parsed for a UTF-8 handler name and exposed through existing stream metadata as handler_name, which ffprobe-rs renders as TAG:handler_name in default output and tags.handler_name in JSON. The parser rejects invalid UTF-8 handler names with a typed invalid-data error. No pinned-oracle differential, upstream-FATE, or fuzz coverage exists yet."
+notes = "MOV/MP4 mdia/hdlr boxes are now parsed for a UTF-8 handler name and exposed through existing stream metadata as handler_name, which ffprobe-rs renders as TAG:handler_name in default output and tags.handler_name in JSON. The handler parser preserves ordinary C-string names, strips the bounded QuickTime/Pascal leading length byte when it exactly describes the remaining name bytes, and rejects invalid UTF-8 handler names with a typed invalid-data error. The shared generated MOV core-fields oracle row now compares `packet=size,pts_time:stream_tags=handler_name` against pinned FFmpeg 8.1.1, proving selected MOV `TAG:handler_name` output through the Rust MOV demuxer and ffprobe show_entries path. Broader tag surfaces, JSON byte-identity, upstream FATE coverage, and fuzz execution remain pending."
 blocked_reason = ""
 
 [[component]]
@@ -7602,6 +7624,7 @@ unit_tests = [
   "mov::tests::extracts_cover_art_metadata_from_ilst_atoms",
   "mov::tests::extracts_track_metadata_from_track_udta",
   "mov::tests::extracts_media_handler_name_as_track_metadata",
+  "mov::tests::extracts_pascal_media_handler_name_as_track_metadata",
   "mov::tests::extracts_media_handler_type_without_handler_name",
   "mov::tests::extracts_media_language_as_track_metadata",
   "mov::tests::rejects_invalid_media_handler_name",

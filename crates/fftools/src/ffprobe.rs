@@ -33,6 +33,8 @@ struct FfprobeCommand {
     packet_fields: PacketFieldSelection,
     stream_fields: NamedFieldSelection,
     format_fields: NamedFieldSelection,
+    stream_tags: Option<TagSelection>,
+    format_tags: Option<TagSelection>,
     show_data: bool,
     show_data_hash: Option<HashAlgorithm>,
     count_frames: bool,
@@ -81,11 +83,35 @@ impl NamedFieldSelection {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum TagSelection {
+    All,
+    Only(Vec<String>),
+}
+
+impl TagSelection {
+    fn includes(&self, key: &str) -> bool {
+        match self {
+            Self::All => true,
+            Self::Only(keys) => keys.iter().any(|candidate| candidate == key),
+        }
+    }
+
+    fn requests_section(&self) -> bool {
+        match self {
+            Self::All => true,
+            Self::Only(keys) => !keys.is_empty(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct ShowEntrySelection {
     packet_fields: Option<PacketFieldSelection>,
     stream_fields: Option<NamedFieldSelection>,
     format_fields: Option<NamedFieldSelection>,
+    stream_tags: Option<TagSelection>,
+    format_tags: Option<TagSelection>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -867,6 +893,8 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
     let mut packet_fields = PacketFieldSelection::default();
     let mut stream_fields = NamedFieldSelection::default();
     let mut format_fields = NamedFieldSelection::default();
+    let mut stream_tags = None;
+    let mut format_tags = None;
     let mut show_data = false;
     let mut show_data_hash = None;
     let mut count_frames = false;
@@ -895,6 +923,8 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
             }
             "-show_entries" => {
                 let entries = parse_show_entries(take_value(args, index, arg)?)?;
+                let has_stream_fields = entries.stream_fields.is_some();
+                let has_format_fields = entries.format_fields.is_some();
                 if let Some(fields) = entries.packet_fields {
                     packet_fields = fields;
                     show_packets = true;
@@ -905,6 +935,20 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
                 }
                 if let Some(fields) = entries.format_fields {
                     format_fields = fields;
+                    show_format = true;
+                }
+                if let Some(tags) = entries.stream_tags {
+                    if !has_stream_fields {
+                        stream_fields = NamedFieldSelection::Only(Vec::new());
+                    }
+                    stream_tags = Some(tags);
+                    show_streams = true;
+                }
+                if let Some(tags) = entries.format_tags {
+                    if !has_format_fields {
+                        format_fields = NamedFieldSelection::Only(Vec::new());
+                    }
+                    format_tags = Some(tags);
                     show_format = true;
                 }
                 index += 2;
@@ -970,6 +1014,8 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
         packet_fields,
         stream_fields,
         format_fields,
+        stream_tags,
+        format_tags,
         show_data,
         show_data_hash,
         count_frames,
@@ -1019,6 +1065,8 @@ fn parse_show_entries(value: &str) -> Result<ShowEntrySelection, FfprobeError> {
             "packet" => entries.packet_fields = Some(PacketFieldSelection::All),
             "stream" => entries.stream_fields = Some(NamedFieldSelection::All),
             "format" => entries.format_fields = Some(NamedFieldSelection::All),
+            "stream_tags" => entries.stream_tags = Some(TagSelection::All),
+            "format_tags" => entries.format_tags = Some(TagSelection::All),
             _ => {
                 let Some((section_name, field_list)) = section.split_once('=') else {
                     return Err(FfprobeError::usage(format!(
@@ -1041,6 +1089,12 @@ fn parse_show_entries(value: &str) -> Result<ShowEntrySelection, FfprobeError> {
                             parse_format_field,
                         );
                     }
+                    "stream_tags" => {
+                        merge_tag_show_entry_fields(&mut entries.stream_tags, field_list);
+                    }
+                    "format_tags" => {
+                        merge_tag_show_entry_fields(&mut entries.format_tags, field_list);
+                    }
                     _ => {
                         return Err(FfprobeError::usage(format!(
                             "unsupported show_entries section `{section_name}`"
@@ -1054,9 +1108,11 @@ fn parse_show_entries(value: &str) -> Result<ShowEntrySelection, FfprobeError> {
     if entries.packet_fields.is_none()
         && entries.stream_fields.is_none()
         && entries.format_fields.is_none()
+        && entries.stream_tags.is_none()
+        && entries.format_tags.is_none()
     {
         return Err(FfprobeError::usage(
-            "ffprobe-rs currently supports packet, stream, and format show_entries only",
+            "ffprobe-rs currently supports packet, stream, format, stream_tags, and format_tags show_entries only",
         ));
     }
 
@@ -1114,6 +1170,29 @@ fn named_show_entry_fields(
         .split(',')
         .filter(|name| !name.is_empty())
         .filter_map(parse_field)
+}
+
+fn merge_tag_show_entry_fields(selection: &mut Option<TagSelection>, field_list: &str) {
+    let Some(existing) = selection else {
+        *selection = Some(TagSelection::Only(
+            tag_show_entry_fields(field_list).collect(),
+        ));
+        return;
+    };
+    if let TagSelection::Only(selected) = existing {
+        for key in tag_show_entry_fields(field_list) {
+            if !selected.contains(&key) {
+                selected.push(key);
+            }
+        }
+    }
+}
+
+fn tag_show_entry_fields(field_list: &str) -> impl Iterator<Item = String> + '_ {
+    field_list
+        .split(',')
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
 }
 
 fn parse_packet_field(value: &str) -> Option<PacketField> {
@@ -1913,8 +1992,13 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
 
     if command.show_streams {
         for stream in &report.streams {
+            let fields =
+                stream_default_fields(stream, &command.stream_fields, command.stream_tags.as_ref());
+            if fields.is_empty() && !tag_selection_requests_section(command.stream_tags.as_ref()) {
+                continue;
+            }
             out.push_str("[STREAM]\n");
-            for (key, value) in stream_default_fields(stream, &command.stream_fields) {
+            for (key, value) in fields {
                 out.push_str(&key);
                 out.push('=');
                 out.push_str(&value);
@@ -1925,14 +2009,22 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
     }
 
     if command.show_format {
-        out.push_str("[FORMAT]\n");
-        for (key, value) in format_default_fields(report, &command.format_fields) {
+        let fields =
+            format_default_fields(report, &command.format_fields, command.format_tags.as_ref());
+        let emit_format =
+            !fields.is_empty() || tag_selection_requests_section(command.format_tags.as_ref());
+        if emit_format {
+            out.push_str("[FORMAT]\n");
+        }
+        for (key, value) in fields {
             out.push_str(&key);
             out.push('=');
             out.push_str(&value);
             out.push('\n');
         }
-        out.push_str("[/FORMAT]\n");
+        if emit_format {
+            out.push_str("[/FORMAT]\n");
+        }
     }
     out
 }
@@ -1954,7 +2046,7 @@ fn render_compact(command: &FfprobeCommand, report: &FfprobeReport) -> String {
             push_compact_line(
                 &mut out,
                 "stream",
-                stream_scalar_fields(stream, &command.stream_fields),
+                stream_scalar_fields(stream, &command.stream_fields, command.stream_tags.as_ref()),
             );
         }
     }
@@ -1963,7 +2055,7 @@ fn render_compact(command: &FfprobeCommand, report: &FfprobeReport) -> String {
         push_compact_line(
             &mut out,
             "format",
-            format_scalar_fields(report, &command.format_fields),
+            format_scalar_fields(report, &command.format_fields, command.format_tags.as_ref()),
         );
     }
 
@@ -1986,7 +2078,7 @@ fn render_csv(command: &FfprobeCommand, report: &FfprobeReport) -> String {
             push_csv_line(
                 &mut out,
                 "stream",
-                stream_scalar_fields(stream, &command.stream_fields),
+                stream_scalar_fields(stream, &command.stream_fields, command.stream_tags.as_ref()),
             );
         }
     }
@@ -1994,7 +2086,7 @@ fn render_csv(command: &FfprobeCommand, report: &FfprobeReport) -> String {
         push_csv_line(
             &mut out,
             "format",
-            format_scalar_fields(report, &command.format_fields),
+            format_scalar_fields(report, &command.format_fields, command.format_tags.as_ref()),
         );
     }
     out
@@ -2016,7 +2108,7 @@ fn render_flat(command: &FfprobeCommand, report: &FfprobeReport) -> String {
             push_flat_fields(
                 &mut out,
                 &format!("streams.stream.{index}"),
-                stream_flat_fields(stream, &command.stream_fields),
+                stream_flat_fields(stream, &command.stream_fields, command.stream_tags.as_ref()),
             );
         }
     }
@@ -2024,7 +2116,7 @@ fn render_flat(command: &FfprobeCommand, report: &FfprobeReport) -> String {
         push_flat_fields(
             &mut out,
             "format",
-            format_flat_fields(report, &command.format_fields),
+            format_flat_fields(report, &command.format_fields, command.format_tags.as_ref()),
         );
     }
     out
@@ -2043,19 +2135,33 @@ fn render_ini(command: &FfprobeCommand, report: &FfprobeReport) -> String {
     }
     if command.show_streams {
         for (index, stream) in report.streams.iter().enumerate() {
-            push_ini_section(
-                &mut out,
-                &format!("streams.stream.{index}"),
-                stream_scalar_fields(stream, &command.stream_fields),
-            );
+            let fields = stream_selected_string_fields(stream, &command.stream_fields);
+            let tags =
+                stream_output_tags(stream, &command.stream_fields, command.stream_tags.as_ref());
+            if fields.is_empty()
+                && tags.is_empty()
+                && !tag_selection_requests_section(command.stream_tags.as_ref())
+            {
+                continue;
+            }
+            push_ini_section(&mut out, &format!("streams.stream.{index}"), fields);
+            if !tags.is_empty() {
+                push_ini_section(&mut out, &format!("streams.stream.{index}.tags"), tags);
+            }
         }
     }
     if command.show_format {
-        push_ini_section(
-            &mut out,
-            "format",
-            format_scalar_fields(report, &command.format_fields),
-        );
+        let fields = format_selected_string_fields(report, &command.format_fields);
+        let tags = format_output_tags(report, &command.format_fields, command.format_tags.as_ref());
+        if !fields.is_empty()
+            || !tags.is_empty()
+            || tag_selection_requests_section(command.format_tags.as_ref())
+        {
+            push_ini_section(&mut out, "format", fields);
+        }
+        if !tags.is_empty() {
+            push_ini_section(&mut out, "format.tags", tags);
+        }
     }
     out
 }
@@ -2077,22 +2183,30 @@ fn render_xml(command: &FfprobeCommand, report: &FfprobeReport) -> String {
     if command.show_streams {
         out.push_str("    <streams>\n");
         for stream in &report.streams {
-            push_xml_empty_element(
-                &mut out,
-                8,
-                "stream",
-                stream_scalar_fields(stream, &command.stream_fields),
-            );
+            let fields = stream_selected_string_fields(stream, &command.stream_fields);
+            let tags =
+                stream_output_tags(stream, &command.stream_fields, command.stream_tags.as_ref());
+            if fields.is_empty()
+                && tags.is_empty()
+                && !tag_selection_requests_section(command.stream_tags.as_ref())
+            {
+                continue;
+            }
+            push_xml_element(&mut out, 8, "stream", fields, tags);
         }
         out.push_str("    </streams>\n");
     }
     if command.show_format {
-        push_xml_empty_element(
-            &mut out,
-            4,
-            "format",
-            format_scalar_fields(report, &command.format_fields),
-        );
+        let fields = format_selected_string_fields(report, &command.format_fields);
+        let tags = format_output_tags(report, &command.format_fields, command.format_tags.as_ref());
+        if fields.is_empty()
+            && tags.is_empty()
+            && !tag_selection_requests_section(command.format_tags.as_ref())
+        {
+            out.push_str("</ffprobe>\n");
+            return out;
+        }
+        push_xml_element(&mut out, 4, "format", fields, tags);
     }
     out.push_str("</ffprobe>\n");
     out
@@ -2141,12 +2255,11 @@ fn packet_field_string_value(packet: &FfprobePacketReport, field: PacketField) -
 fn stream_default_fields(
     stream: &FfprobeStreamReport,
     selection: &NamedFieldSelection,
+    tag_selection: Option<&TagSelection>,
 ) -> Vec<(String, String)> {
     let mut fields = stream_selected_string_fields(stream, selection);
-    if selection.is_all() {
-        for (key, value) in &stream.tags {
-            fields.push((format!("TAG:{key}"), value.clone()));
-        }
+    for (key, value) in stream_output_tags(stream, selection, tag_selection) {
+        fields.push((format!("TAG:{key}"), value));
     }
     fields
 }
@@ -2154,14 +2267,21 @@ fn stream_default_fields(
 fn stream_scalar_fields(
     stream: &FfprobeStreamReport,
     selection: &NamedFieldSelection,
+    tag_selection: Option<&TagSelection>,
 ) -> Vec<(String, String)> {
     let mut fields = stream_selected_string_fields(stream, selection);
-    if selection.is_all() {
-        for (key, value) in &stream.tags {
-            fields.push((format!("tag:{key}"), value.clone()));
-        }
+    for (key, value) in stream_output_tags(stream, selection, tag_selection) {
+        fields.push((format!("tag:{key}"), value));
     }
     fields
+}
+
+fn stream_output_tags(
+    stream: &FfprobeStreamReport,
+    selection: &NamedFieldSelection,
+    tag_selection: Option<&TagSelection>,
+) -> Vec<(String, String)> {
+    selected_section_tags(&stream.tags, selection, tag_selection)
 }
 
 fn stream_selected_string_fields(
@@ -2223,12 +2343,11 @@ fn stream_field_string_value(stream: &FfprobeStreamReport, field: &str) -> Optio
 fn format_default_fields(
     report: &FfprobeReport,
     selection: &NamedFieldSelection,
+    tag_selection: Option<&TagSelection>,
 ) -> Vec<(String, String)> {
-    let mut fields = format_scalar_fields(report, selection);
-    if selection.is_all() {
-        for (key, value) in &report.tags {
-            fields.push((format!("TAG:{key}"), value.clone()));
-        }
+    let mut fields = format_selected_string_fields(report, selection);
+    for (key, value) in format_output_tags(report, selection, tag_selection) {
+        fields.push((format!("TAG:{key}"), value));
     }
     fields
 }
@@ -2236,14 +2355,41 @@ fn format_default_fields(
 fn format_scalar_fields(
     report: &FfprobeReport,
     selection: &NamedFieldSelection,
+    tag_selection: Option<&TagSelection>,
 ) -> Vec<(String, String)> {
     let mut fields = format_selected_string_fields(report, selection);
-    if selection.is_all() {
-        for (key, value) in &report.tags {
-            fields.push((format!("tag:{key}"), value.clone()));
-        }
+    for (key, value) in format_output_tags(report, selection, tag_selection) {
+        fields.push((format!("tag:{key}"), value));
     }
     fields
+}
+
+fn format_output_tags(
+    report: &FfprobeReport,
+    selection: &NamedFieldSelection,
+    tag_selection: Option<&TagSelection>,
+) -> Vec<(String, String)> {
+    selected_section_tags(&report.tags, selection, tag_selection)
+}
+
+fn selected_section_tags(
+    tags: &[(String, String)],
+    selection: &NamedFieldSelection,
+    tag_selection: Option<&TagSelection>,
+) -> Vec<(String, String)> {
+    match tag_selection {
+        Some(tag_selection) => tags
+            .iter()
+            .filter(|(key, _)| tag_selection.includes(key))
+            .cloned()
+            .collect(),
+        None if selection.is_all() => tags.to_vec(),
+        None => Vec::new(),
+    }
+}
+
+fn tag_selection_requests_section(tag_selection: Option<&TagSelection>) -> bool {
+    tag_selection.is_some_and(TagSelection::requests_section)
 }
 
 fn format_selected_string_fields(
@@ -2319,6 +2465,7 @@ fn packet_flat_field_value(
 fn stream_flat_fields(
     stream: &FfprobeStreamReport,
     selection: &NamedFieldSelection,
+    tag_selection: Option<&TagSelection>,
 ) -> Vec<(String, FlatValue)> {
     let mut fields = STREAM_FIELD_ORDER
         .iter()
@@ -2326,10 +2473,8 @@ fn stream_flat_fields(
         .filter(|field| selection.includes(field))
         .filter_map(|field| stream_flat_field_value(stream, field))
         .collect::<Vec<_>>();
-    if selection.is_all() {
-        for (key, value) in &stream.tags {
-            fields.push((format!("tags.{key}"), FlatValue::Quoted(value.clone())));
-        }
+    for (key, value) in stream_output_tags(stream, selection, tag_selection) {
+        fields.push((format!("tags.{key}"), FlatValue::Quoted(value)));
     }
     fields
 }
@@ -2384,6 +2529,7 @@ fn stream_flat_field_value(
 fn format_flat_fields(
     report: &FfprobeReport,
     selection: &NamedFieldSelection,
+    tag_selection: Option<&TagSelection>,
 ) -> Vec<(String, FlatValue)> {
     let mut fields = FORMAT_FIELD_ORDER
         .iter()
@@ -2391,10 +2537,8 @@ fn format_flat_fields(
         .filter(|field| selection.includes(field))
         .filter_map(|field| format_flat_field_value(report, field))
         .collect::<Vec<_>>();
-    if selection.is_all() {
-        for (key, value) in &report.tags {
-            fields.push((format!("tags.{key}"), FlatValue::Quoted(value.clone())));
-        }
+    for (key, value) in format_output_tags(report, selection, tag_selection) {
+        fields.push((format!("tags.{key}"), FlatValue::Quoted(value)));
     }
     fields
 }
@@ -2498,6 +2642,47 @@ fn push_xml_empty_element(
     out.push_str("/>\n");
 }
 
+fn push_xml_element(
+    out: &mut String,
+    indent: usize,
+    name: &str,
+    fields: Vec<(String, String)>,
+    tags: Vec<(String, String)>,
+) {
+    if tags.is_empty() {
+        push_xml_empty_element(out, indent, name, fields);
+        return;
+    }
+
+    out.push_str(&" ".repeat(indent));
+    out.push('<');
+    out.push_str(name);
+    for (key, value) in fields {
+        out.push(' ');
+        out.push_str(&key);
+        out.push_str("=\"");
+        out.push_str(&escape_xml_attribute(&value));
+        out.push('"');
+    }
+    out.push_str(">\n");
+    out.push_str(&" ".repeat(indent + 4));
+    out.push_str("<tags>\n");
+    for (key, value) in tags {
+        out.push_str(&" ".repeat(indent + 8));
+        out.push_str("<tag key=\"");
+        out.push_str(&escape_xml_attribute(&key));
+        out.push_str("\" value=\"");
+        out.push_str(&escape_xml_attribute(&value));
+        out.push_str("\"/>\n");
+    }
+    out.push_str(&" ".repeat(indent + 4));
+    out.push_str("</tags>\n");
+    out.push_str(&" ".repeat(indent));
+    out.push_str("</");
+    out.push_str(name);
+    out.push_str(">\n");
+}
+
 fn escape_compact_value(value: &str) -> String {
     let mut escaped = String::new();
     for ch in value.chars() {
@@ -2576,7 +2761,9 @@ fn render_json(command: &FfprobeCommand, report: &FfprobeReport) -> String {
         let streams = report
             .streams
             .iter()
-            .map(|stream| render_stream_json(stream, &command.stream_fields))
+            .map(|stream| {
+                render_stream_json(stream, &command.stream_fields, command.stream_tags.as_ref())
+            })
             .collect::<Vec<_>>()
             .join(",\n    ");
         sections.push(format!("  \"streams\": [\n    {streams}\n  ]"));
@@ -2584,7 +2771,7 @@ fn render_json(command: &FfprobeCommand, report: &FfprobeReport) -> String {
     if command.show_format {
         sections.push(format!(
             "  \"format\": {}",
-            render_format_json(report, &command.format_fields)
+            render_format_json(report, &command.format_fields, command.format_tags.as_ref())
         ));
     }
     format!("{{\n{}\n}}\n", sections.join(",\n"))
@@ -2621,15 +2808,20 @@ fn packet_json_field(packet: &FfprobePacketReport, field: PacketField) -> Option
     }
 }
 
-fn render_stream_json(stream: &FfprobeStreamReport, selection: &NamedFieldSelection) -> String {
+fn render_stream_json(
+    stream: &FfprobeStreamReport,
+    selection: &NamedFieldSelection,
+    tag_selection: Option<&TagSelection>,
+) -> String {
     let mut fields = STREAM_FIELD_ORDER
         .iter()
         .copied()
         .filter(|field| selection.includes(field))
         .filter_map(|field| stream_json_field(stream, field))
         .collect::<Vec<_>>();
-    if selection.is_all() && !stream.tags.is_empty() {
-        fields.push(json_object("tags", &stream.tags));
+    let tags = stream_output_tags(stream, selection, tag_selection);
+    if !tags.is_empty() {
+        fields.push(json_object("tags", &tags));
     }
     format!("{{{}}}", fields.join(", "))
 }
@@ -2749,15 +2941,20 @@ fn stream_json_field(stream: &FfprobeStreamReport, field: &str) -> Option<String
     }
 }
 
-fn render_format_json(report: &FfprobeReport, selection: &NamedFieldSelection) -> String {
+fn render_format_json(
+    report: &FfprobeReport,
+    selection: &NamedFieldSelection,
+    tag_selection: Option<&TagSelection>,
+) -> String {
     let mut fields = FORMAT_FIELD_ORDER
         .iter()
         .copied()
         .filter(|field| selection.includes(field))
         .filter_map(|field| format_json_field(report, field))
         .collect::<Vec<_>>();
-    if selection.is_all() && !report.tags.is_empty() {
-        fields.push(json_object("tags", &report.tags));
+    let tags = format_output_tags(report, selection, tag_selection);
+    if !tags.is_empty() {
+        fields.push(json_object("tags", &tags));
     }
     format!("{{{}}}", fields.join(", "))
 }
@@ -3014,6 +3211,35 @@ mod tests {
         assert!(command.format_fields.includes("format_name"));
         assert!(command.format_fields.includes("size"));
         assert!(!command.format_fields.includes("duration"));
+    }
+
+    #[test]
+    fn parses_stream_and_format_tag_show_entries_and_implies_sections() {
+        let command = parse_ffprobe_args(&strings(&[
+            "-show_entries",
+            "stream_tags=handler_name,language:format_tags=title,comment",
+            "clip.mp4",
+        ]))
+        .unwrap();
+
+        assert!(command.show_streams);
+        assert!(command.show_format);
+        assert_eq!(command.stream_fields, NamedFieldSelection::Only(Vec::new()));
+        assert_eq!(command.format_fields, NamedFieldSelection::Only(Vec::new()));
+        assert_eq!(
+            command.stream_tags,
+            Some(TagSelection::Only(vec![
+                "handler_name".to_string(),
+                "language".to_string()
+            ]))
+        );
+        assert_eq!(
+            command.format_tags,
+            Some(TagSelection::Only(vec![
+                "title".to_string(),
+                "comment".to_string()
+            ]))
+        );
     }
 
     #[test]
@@ -3699,6 +3925,143 @@ mod tests {
             json,
             "{\n  \"streams\": [\n    {\"index\": 0, \"codec_type\": \"video\", \"width\": 1920}\n  ],\n  \"format\": {\"format_name\": \"mov,mp4,m4a,3gp,3g2,mj2\", \"size\": \"2048\"}\n}\n"
         );
+    }
+
+    #[test]
+    fn renders_selected_stream_and_format_tags_in_ffmpeg_shapes() {
+        let mut report = sample_report();
+        report.streams[0].tags = vec![
+            ("language".to_string(), "eng".to_string()),
+            ("handler_name".to_string(), "Rust Handler".to_string()),
+        ];
+        let show_entries =
+            "stream=codec_type:stream_tags=handler_name:format=format_name:format_tags=title";
+
+        let default = render_report(
+            &parse_ffprobe_args(&strings(&["-show_entries", show_entries, "clip.mp4"])).unwrap(),
+            &report,
+        );
+        assert_eq!(
+            default,
+            "[STREAM]\ncodec_type=video\nTAG:handler_name=Rust Handler\n[/STREAM]\n[FORMAT]\nformat_name=mov,mp4,m4a,3gp,3g2,mj2\nTAG:title=Rust \"MOV\"\n[/FORMAT]\n"
+        );
+
+        let compact = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                show_entries,
+                "-of",
+                "compact",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+        assert_eq!(
+            compact,
+            "stream|codec_type=video|tag:handler_name=Rust Handler\nformat|format_name=mov,mp4,m4a,3gp,3g2,mj2|tag:title=Rust \"MOV\"\n"
+        );
+
+        let csv = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                show_entries,
+                "-of",
+                "csv",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+        assert_eq!(
+            csv,
+            "stream,video,Rust Handler\nformat,\"mov,mp4,m4a,3gp,3g2,mj2\",\"Rust \"\"MOV\"\"\"\n"
+        );
+
+        let flat = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                show_entries,
+                "-of",
+                "flat",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+        assert!(flat.contains("streams.stream.0.codec_type=\"video\"\n"));
+        assert!(flat.contains("streams.stream.0.tags.handler_name=\"Rust Handler\"\n"));
+        assert!(flat.contains("format.format_name=\"mov,mp4,m4a,3gp,3g2,mj2\"\n"));
+        assert!(flat.contains("format.tags.title=\"Rust \\\"MOV\\\"\"\n"));
+
+        let ini = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                show_entries,
+                "-of",
+                "ini",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+        assert!(ini.contains("[streams.stream.0]\ncodec_type=video\n\n"));
+        assert!(ini.contains("[streams.stream.0.tags]\nhandler_name=Rust Handler\n\n"));
+        assert!(ini.contains("[format]\nformat_name=mov,mp4,m4a,3gp,3g2,mj2\n\n"));
+        assert!(ini.contains("[format.tags]\ntitle=Rust \"MOV\"\n\n"));
+
+        let xml = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                show_entries,
+                "-of",
+                "xml",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+        assert!(xml.contains("        <stream codec_type=\"video\">\n"));
+        assert!(
+            xml.contains("                <tag key=\"handler_name\" value=\"Rust Handler\"/>\n")
+        );
+        assert!(xml.contains("    <format format_name=\"mov,mp4,m4a,3gp,3g2,mj2\">\n"));
+        assert!(xml.contains("            <tag key=\"title\" value=\"Rust &quot;MOV&quot;\"/>\n"));
+
+        let json = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                show_entries,
+                "-of",
+                "json",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+        assert!(json.contains(
+            "\"streams\": [\n    {\"codec_type\": \"video\", \"tags\": {\"handler_name\": \"Rust Handler\"}}\n  ]"
+        ));
+        assert!(json.contains(
+            "\"format\": {\"format_name\": \"mov,mp4,m4a,3gp,3g2,mj2\", \"tags\": {\"title\": \"Rust \\\"MOV\\\"\"}}"
+        ));
+    }
+
+    #[test]
+    fn renders_selected_missing_tags_as_empty_default_sections() {
+        let report = sample_report();
+
+        let default = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                "stream_tags=missing:format_tags=missing",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+
+        assert_eq!(default, "[STREAM]\n[/STREAM]\n[FORMAT]\n[/FORMAT]\n");
     }
 
     #[test]
