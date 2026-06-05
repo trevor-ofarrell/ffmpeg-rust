@@ -9,6 +9,13 @@
 
 ## Compatible Today
 
+- Latest main-thread packet data-hash media evidence: `ffprobe-rs` now accepts
+  bounded `-show_data_hash <algorithm>` for packet output, computes
+  canonical hashes from Rust packet payload bytes, and appends `data_hash`
+  after `flags` across default, JSON, compact, CSV, flat, INI, and XML packet
+  writers. The pinned MOV and AVI ffprobe oracle rows compare
+  `-show_packets -show_data_hash md5` fields against FFmpeg 8.1.1.
+  `avutil-packet` remains `fate_pass`; strict completion remains 11/96.
 - Latest main-thread packet XML media evidence: `ffprobe-rs -of xml` now
   renders bounded `<packet .../>` packet elements under
   `<ffprobe><packets>`, and the pinned MOV and AVI ffprobe oracle rows compare

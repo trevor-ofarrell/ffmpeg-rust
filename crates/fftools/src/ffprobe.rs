@@ -5,7 +5,7 @@ use avformat::{
     register_avi_probe, register_mov_probe, AviDemuxer, AviInfo, AviMediaType, MovDemuxer, MovInfo,
     MovTrackInfo, ProbeRegistry, ProbeRequest,
 };
-use avutil::{LogFlags, LogLevel};
+use avutil::{digest_to_hex, HashAlgorithm, HashContext, LogFlags, LogLevel};
 use std::{fmt, fs};
 
 const MOV_FORMAT_NAME: &str = "mov,mp4,m4a,3gp,3g2,mj2";
@@ -30,6 +30,7 @@ struct FfprobeCommand {
     show_format: bool,
     show_streams: bool,
     show_packets: bool,
+    show_data_hash: Option<HashAlgorithm>,
     count_frames: bool,
     count_packets: bool,
     writer_format: WriterFormat,
@@ -334,6 +335,7 @@ pub struct FfprobePacketReport {
     size: usize,
     pos: Option<i64>,
     flags: String,
+    data_hash: Option<String>,
 }
 
 impl FfprobePacketReport {
@@ -383,6 +385,10 @@ impl FfprobePacketReport {
 
     pub fn flags(&self) -> &str {
         &self.flags
+    }
+
+    pub fn data_hash(&self) -> Option<&str> {
+        self.data_hash.as_deref()
     }
 }
 
@@ -521,6 +527,7 @@ pub fn ffprobe_output(args: &[String]) -> Result<String, FfprobeError> {
         command.input_url.as_str(),
         collect_packets,
         command.input_format,
+        command.show_data_hash,
     )?;
     if command.count_frames {
         attach_frame_counts(&mut report);
@@ -541,6 +548,11 @@ fn validate_ffprobe_prefix(args: &[String]) -> Result<(), FfprobeError> {
         match arg.as_str() {
             "-hide_banner" | "-show_format" | "-show_streams" | "-show_packets"
             | "-count_frames" | "-count_packets" => index += 1,
+            "-show_data_hash" => {
+                let value = take_value(args, index, arg)?;
+                parse_hash_algorithm(value)?;
+                index += 2;
+            }
             "-of" | "-print_format" => {
                 let value = take_value(args, index, arg)?;
                 parse_writer_format(value)?;
@@ -583,13 +595,14 @@ fn is_invalid_loglevel_parse_error(error: &FfprobeError) -> bool {
 }
 
 pub fn probe_local_file(path: &str) -> Result<FfprobeReport, FfprobeError> {
-    probe_local_file_inner(path, false, None)
+    probe_local_file_inner(path, false, None, None)
 }
 
 fn probe_local_file_inner(
     path: &str,
     collect_packets: bool,
     forced_format: Option<ForcedInputFormat>,
+    show_data_hash: Option<HashAlgorithm>,
 ) -> Result<FfprobeReport, FfprobeError> {
     if path == "-" || path.starts_with("pipe:") {
         return Err(FfprobeError::unsupported(
@@ -602,8 +615,12 @@ fn probe_local_file_inner(
 
     if let Some(forced_format) = forced_format {
         return match forced_format {
-            ForcedInputFormat::Avi => probe_avi_bytes(path, &bytes, collect_packets),
-            ForcedInputFormat::Mov => probe_mov_bytes(path, &bytes, 100, collect_packets),
+            ForcedInputFormat::Avi => {
+                probe_avi_bytes(path, &bytes, collect_packets, show_data_hash)
+            }
+            ForcedInputFormat::Mov => {
+                probe_mov_bytes(path, &bytes, 100, collect_packets, show_data_hash)
+            }
         };
     }
 
@@ -618,8 +635,14 @@ fn probe_local_file_inner(
         .probe(ProbeRequest::new(&bytes).with_extension(path))
         .ok_or_else(|| FfprobeError::unsupported("unsupported input format"))?;
     match matched.descriptor().name() {
-        AVI_FORMAT_NAME => probe_avi_bytes(path, &bytes, collect_packets),
-        MOV_FORMAT_NAME => probe_mov_bytes(path, &bytes, matched.score().get(), collect_packets),
+        AVI_FORMAT_NAME => probe_avi_bytes(path, &bytes, collect_packets, show_data_hash),
+        MOV_FORMAT_NAME => probe_mov_bytes(
+            path,
+            &bytes,
+            matched.score().get(),
+            collect_packets,
+            show_data_hash,
+        ),
         name => Err(FfprobeError::unsupported(format!(
             "unsupported input format `{name}`"
         ))),
@@ -630,12 +653,13 @@ fn probe_avi_bytes(
     path: &str,
     bytes: &[u8],
     collect_packets: bool,
+    show_data_hash: Option<HashAlgorithm>,
 ) -> Result<FfprobeReport, FfprobeError> {
     let mut demuxer = AviDemuxer::open(bytes)
         .map_err(|err| FfprobeError::invalid_data(format!("failed to parse AVI input: {err}")))?;
     let mut report = report_from_avi(path, bytes.len() as u64, demuxer.info());
     if collect_packets {
-        report.packets = collect_avi_packets(&mut demuxer, &report.streams)?;
+        report.packets = collect_avi_packets(&mut demuxer, &report.streams, show_data_hash)?;
     }
     Ok(report)
 }
@@ -645,13 +669,14 @@ fn probe_mov_bytes(
     bytes: &[u8],
     probe_score: u8,
     collect_packets: bool,
+    show_data_hash: Option<HashAlgorithm>,
 ) -> Result<FfprobeReport, FfprobeError> {
     let mut demuxer = MovDemuxer::open(bytes).map_err(|err| {
         FfprobeError::invalid_data(format!("failed to parse MOV/MP4 input: {err}"))
     })?;
     let mut report = report_from_mov(path, probe_score, bytes.len() as u64, demuxer.info());
     if collect_packets {
-        report.packets = collect_mov_packets(&mut demuxer, &report.streams)?;
+        report.packets = collect_mov_packets(&mut demuxer, &report.streams, show_data_hash)?;
     }
     Ok(report)
 }
@@ -660,6 +685,7 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
     let mut show_format = false;
     let mut show_streams = false;
     let mut show_packets = false;
+    let mut show_data_hash = None;
     let mut count_frames = false;
     let mut count_packets = false;
     let mut writer_format = WriterFormat::Default;
@@ -683,6 +709,11 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
             "-show_packets" => {
                 show_packets = true;
                 index += 1;
+            }
+            "-show_data_hash" => {
+                let value = take_value(args, index, arg)?;
+                show_data_hash = Some(parse_hash_algorithm(value)?);
+                index += 2;
             }
             "-count_frames" => {
                 count_frames = true;
@@ -733,6 +764,7 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
         show_format,
         show_streams,
         show_packets,
+        show_data_hash,
         count_frames,
         count_packets,
         writer_format,
@@ -770,6 +802,11 @@ fn parse_writer_format(value: &str) -> Result<WriterFormat, FfprobeError> {
             "unsupported writer format `{value}`"
         ))),
     }
+}
+
+fn parse_hash_algorithm(value: &str) -> Result<HashAlgorithm, FfprobeError> {
+    HashAlgorithm::from_name(value)
+        .ok_or_else(|| FfprobeError::usage(format!("unknown hash algorithm `{value}`")))
 }
 
 fn parse_forced_input_format(value: &str) -> Result<ForcedInputFormat, FfprobeError> {
@@ -1031,6 +1068,7 @@ fn attach_frame_counts(report: &mut FfprobeReport) {
 fn collect_mov_packets(
     demuxer: &mut MovDemuxer<'_>,
     streams: &[FfprobeStreamReport],
+    show_data_hash: Option<HashAlgorithm>,
 ) -> Result<Vec<FfprobePacketReport>, FfprobeError> {
     let mut packets = Vec::new();
     while let Some(packet) = demuxer.read_packet().map_err(|err| {
@@ -1063,6 +1101,7 @@ fn collect_mov_packets(
             size: packet.data().len(),
             pos: packet.pos(),
             flags: packet_flags(packet.flags().bits()),
+            data_hash: packet_data_hash(packet.data(), show_data_hash),
         });
     }
     Ok(packets)
@@ -1071,6 +1110,7 @@ fn collect_mov_packets(
 fn collect_avi_packets(
     demuxer: &mut AviDemuxer,
     streams: &[FfprobeStreamReport],
+    show_data_hash: Option<HashAlgorithm>,
 ) -> Result<Vec<FfprobePacketReport>, FfprobeError> {
     let mut packets = Vec::new();
     while let Some(packet) = demuxer
@@ -1104,9 +1144,18 @@ fn collect_avi_packets(
             size: packet.data().len(),
             pos: packet.pos(),
             flags: packet_flags(packet.flags().bits()),
+            data_hash: packet_data_hash(packet.data(), show_data_hash),
         });
     }
     Ok(packets)
+}
+
+fn packet_data_hash(data: &[u8], algorithm: Option<HashAlgorithm>) -> Option<String> {
+    let algorithm = algorithm?;
+    let mut context = HashContext::from_algorithm(algorithm);
+    let name = context.name();
+    context.update(data);
+    Some(format!("{name}:{}", digest_to_hex(&context.finalize())))
 }
 
 fn mov_video_sample_entry(track: &MovTrackInfo) -> Option<&MovVideoSampleEntry> {
@@ -1473,6 +1522,9 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
             out.push_str(&format!("size={}\n", packet.size));
             out.push_str(&format!("pos={}\n", optional_i64(packet.pos)));
             out.push_str(&format!("flags={}\n", packet.flags));
+            if let Some(data_hash) = &packet.data_hash {
+                out.push_str(&format!("data_hash={data_hash}\n"));
+            }
             out.push_str("[/PACKET]\n");
         }
     }
@@ -1730,7 +1782,7 @@ fn render_xml(command: &FfprobeCommand, report: &FfprobeReport) -> String {
 }
 
 fn packet_scalar_fields(packet: &FfprobePacketReport) -> Vec<(String, String)> {
-    vec![
+    let mut fields = vec![
         ("codec_type".to_owned(), packet.codec_type.clone()),
         ("stream_index".to_owned(), packet.stream_index.to_string()),
         ("pts".to_owned(), optional_i64(packet.pts)),
@@ -1748,7 +1800,11 @@ fn packet_scalar_fields(packet: &FfprobePacketReport) -> Vec<(String, String)> {
         ("size".to_owned(), packet.size.to_string()),
         ("pos".to_owned(), optional_i64(packet.pos)),
         ("flags".to_owned(), packet.flags.clone()),
-    ]
+    ];
+    if let Some(data_hash) = &packet.data_hash {
+        fields.push(("data_hash".to_owned(), data_hash.clone()));
+    }
+    fields
 }
 
 fn stream_scalar_fields(stream: &FfprobeStreamReport) -> Vec<(String, String)> {
@@ -1844,7 +1900,7 @@ enum FlatValue {
 }
 
 fn packet_flat_fields(packet: &FfprobePacketReport) -> Vec<(String, FlatValue)> {
-    vec![
+    let mut fields = vec![
         (
             "codec_type".to_owned(),
             FlatValue::Quoted(packet.codec_type.clone()),
@@ -1880,7 +1936,11 @@ fn packet_flat_fields(packet: &FfprobePacketReport) -> Vec<(String, FlatValue)> 
             FlatValue::Quoted(optional_i64(packet.pos)),
         ),
         ("flags".to_owned(), FlatValue::Quoted(packet.flags.clone())),
-    ]
+    ];
+    if let Some(data_hash) = &packet.data_hash {
+        fields.push(("data_hash".to_owned(), FlatValue::Quoted(data_hash.clone())));
+    }
+    fields
 }
 
 fn stream_flat_fields(stream: &FfprobeStreamReport) -> Vec<(String, FlatValue)> {
@@ -2167,6 +2227,7 @@ fn escape_ini_value(value: &str) -> String {
     for ch in value.chars() {
         match ch {
             '\\' => escaped.push_str("\\\\"),
+            ':' => escaped.push_str("\\:"),
             '\n' => escaped.push_str("\\n"),
             '\r' => escaped.push_str("\\r"),
             _ => escaped.push(ch),
@@ -2235,7 +2296,7 @@ fn render_json(command: &FfprobeCommand, report: &FfprobeReport) -> String {
 }
 
 fn render_packet_json(packet: &FfprobePacketReport) -> String {
-    let fields = vec![
+    let mut fields = vec![
         json_string("codec_type", &packet.codec_type),
         json_number("stream_index", packet.stream_index),
         json_optional_number("pts", packet.pts),
@@ -2248,6 +2309,9 @@ fn render_packet_json(packet: &FfprobePacketReport) -> String {
         json_optional_display_string("pos", packet.pos),
         json_string("flags", &packet.flags),
     ];
+    if let Some(data_hash) = &packet.data_hash {
+        fields.push(json_string("data_hash", data_hash));
+    }
     format!("{{{}}}", fields.join(", "))
 }
 
@@ -2537,6 +2601,8 @@ mod tests {
             "error",
             "-show_streams",
             "-show_packets",
+            "-show_data_hash",
+            "md5",
             "-count_frames",
             "-count_packets",
             "-show_format",
@@ -2551,6 +2617,7 @@ mod tests {
         assert!(command.show_streams);
         assert!(command.show_format);
         assert!(command.show_packets);
+        assert_eq!(command.show_data_hash, Some(HashAlgorithm::Md5));
         assert!(command.count_frames);
         assert!(command.count_packets);
         assert_eq!(command.writer_format, WriterFormat::Json);
@@ -2599,6 +2666,19 @@ mod tests {
             parse_ffprobe_args(&strings(&["-show_packets", "-of", "xml", "clip.mp4"])).unwrap();
 
         assert_eq!(command.writer_format, WriterFormat::Xml);
+    }
+
+    #[test]
+    fn rejects_unknown_ffprobe_data_hash_algorithm() {
+        assert!(parse_ffprobe_args(&strings(&[
+            "-show_packets",
+            "-show_data_hash",
+            "not-a-hash",
+            "clip.mp4",
+        ]))
+        .unwrap_err()
+        .message()
+        .contains("unknown hash algorithm"));
     }
 
     #[test]
@@ -2872,6 +2952,74 @@ mod tests {
         assert!(!rendered.contains("packet,"));
         assert!(!rendered.contains("packet|"));
         assert!(!rendered.contains("packets.packet.0.codec_type"));
+    }
+
+    #[test]
+    fn renders_packet_data_hash_after_flags_in_all_packet_writers() {
+        let mut report = sample_report();
+        report.packets[0].data_hash = Some("MD5:0f0c725e025036e905dc2ed035406463".to_owned());
+
+        let default = render_report(
+            &parse_ffprobe_args(&strings(&["-show_packets", "clip.mp4"])).unwrap(),
+            &report,
+        );
+        assert!(default
+            .contains("flags=K__\ndata_hash=MD5:0f0c725e025036e905dc2ed035406463\n[/PACKET]"));
+
+        let compact = render_report(
+            &parse_ffprobe_args(&strings(&["-show_packets", "-of", "compact", "clip.mp4"]))
+                .unwrap(),
+            &report,
+        );
+        assert!(compact.contains("|flags=K__|data_hash=MD5:0f0c725e025036e905dc2ed035406463\n"));
+
+        let csv = render_report(
+            &parse_ffprobe_args(&strings(&["-show_packets", "-of", "csv", "clip.mp4"])).unwrap(),
+            &report,
+        );
+        assert_eq!(
+            csv,
+            "packet,video,0,0,0.000000,0,0.000000,1000,0.011111,3,123,K__,MD5:0f0c725e025036e905dc2ed035406463\n"
+        );
+
+        let flat = render_report(
+            &parse_ffprobe_args(&strings(&["-show_packets", "-of", "flat", "clip.mp4"])).unwrap(),
+            &report,
+        );
+        assert!(flat.contains(
+            "packets.packet.0.flags=\"K__\"\npackets.packet.0.data_hash=\"MD5:0f0c725e025036e905dc2ed035406463\"\n"
+        ));
+
+        let ini = render_report(
+            &parse_ffprobe_args(&strings(&["-show_packets", "-of", "ini", "clip.mp4"])).unwrap(),
+            &report,
+        );
+        assert!(ini.contains("flags=K__\ndata_hash=MD5\\:0f0c725e025036e905dc2ed035406463\n"));
+
+        let xml = render_report(
+            &parse_ffprobe_args(&strings(&["-show_packets", "-of", "xml", "clip.mp4"])).unwrap(),
+            &report,
+        );
+        assert!(
+            xml.contains(" flags=\"K__\" data_hash=\"MD5:0f0c725e025036e905dc2ed035406463\"/>\n")
+        );
+
+        let json = render_report(
+            &parse_ffprobe_args(&strings(&["-show_packets", "-of", "json", "clip.mp4"])).unwrap(),
+            &report,
+        );
+        assert!(json.contains(
+            "\"flags\": \"K__\", \"data_hash\": \"MD5:0f0c725e025036e905dc2ed035406463\""
+        ));
+    }
+
+    #[test]
+    fn packet_data_hash_uses_packet_payload_and_canonical_algorithm_name() {
+        assert_eq!(
+            packet_data_hash(&[0, 1, 2, 3], Some(HashAlgorithm::Md5)).as_deref(),
+            Some("MD5:37b59afd592725f9305e484a5d7f5168")
+        );
+        assert_eq!(packet_data_hash(&[0, 1, 2, 3], None), None);
     }
 
     #[test]
@@ -3892,6 +4040,7 @@ mod tests {
                 size: 3,
                 pos: Some(123),
                 flags: "K__".to_string(),
+                data_hash: None,
             }],
         }
     }

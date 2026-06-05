@@ -1629,7 +1629,11 @@ emits FFmpeg-shaped `packet|key=value` lines, the CSV writer emits
 FFmpeg-shaped value-only `packet,...` lines, and the flat writer emits
 FFmpeg-shaped `packets.packet.N.field=value` lines, the INI writer emits
 FFmpeg-shaped `[packets.packet.N]` sections, and the XML writer emits
-FFmpeg-shaped `<packet .../>` elements for the bounded packet surface.
+FFmpeg-shaped `<packet .../>` elements for the bounded packet surface. The
+same rows now compare `-show_packets -show_data_hash md5` across default,
+JSON, compact, CSV, flat, INI, and XML output, including FFmpeg's canonical
+`MD5:<hex>` value spelling, field placement after `flags`, JSON/flat/XML
+quoting, compact/CSV scalar output, and INI colon escaping.
 These targets are bounded evidence, not full ffprobe field-complete parity:
 
 ```sh

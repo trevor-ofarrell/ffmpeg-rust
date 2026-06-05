@@ -21,6 +21,21 @@ const PACKET_FIELDS: &[&str] = &[
     "flags",
 ];
 
+const PACKET_HASH_FIELDS: &[&str] = &[
+    "codec_type",
+    "stream_index",
+    "pts",
+    "pts_time",
+    "dts",
+    "dts_time",
+    "duration",
+    "duration_time",
+    "size",
+    "pos",
+    "flags",
+    "data_hash",
+];
+
 #[test]
 fn parse_json_packet_sections_accepts_compact_and_pretty_packet_objects() {
     let output = r#"{
@@ -357,6 +372,7 @@ fn mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle() {
     assert_flat_packet_fields_match(&ffprobe, mov_arg.as_str(), "MOV");
     assert_ini_packet_fields_match(&ffprobe, mov_arg.as_str(), "MOV");
     assert_xml_packet_fields_match(&ffprobe, mov_arg.as_str(), "MOV");
+    assert_packet_data_hash_fields_match(&ffprobe, mov_arg.as_str(), "MOV");
 }
 
 #[test]
@@ -512,6 +528,7 @@ fn avi_bgr24_ffprobe_packet_fields_match_ffmpeg_oracle() {
     assert_flat_packet_fields_match(&ffprobe, avi_arg.as_str(), "AVI");
     assert_ini_packet_fields_match(&ffprobe, avi_arg.as_str(), "AVI");
     assert_xml_packet_fields_match(&ffprobe, avi_arg.as_str(), "AVI");
+    assert_packet_data_hash_fields_match(&ffprobe, avi_arg.as_str(), "AVI");
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -864,6 +881,140 @@ fn assert_xml_packet_fields_match(ffprobe: &Path, input: &str, label: &str) {
     }
 }
 
+fn assert_packet_data_hash_fields_match(ffprobe: &Path, input: &str, label: &str) {
+    let rust_default = ffprobe_output(&strings(&[
+        "-hide_banner",
+        "-show_packets",
+        "-show_data_hash",
+        "md5",
+        input,
+    ]))
+    .unwrap_or_else(|err| panic!("Rust ffprobe {label} default hash path should execute: {err}"));
+
+    let oracle = Command::new(ffprobe)
+        .args([
+            "-v",
+            "error",
+            "-show_packets",
+            "-show_data_hash",
+            "md5",
+            input,
+        ])
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", ffprobe.display()));
+    assert!(
+        oracle.status.success(),
+        "oracle ffprobe default hash failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        oracle.status.code(),
+        String::from_utf8_lossy(&oracle.stdout),
+        String::from_utf8_lossy(&oracle.stderr)
+    );
+    let oracle_default =
+        String::from_utf8(oracle.stdout).expect("oracle ffprobe default output should be UTF-8");
+    assert_packet_sections_match(
+        parse_default_sections(&rust_default)
+            .into_iter()
+            .filter(|section| section.name == "PACKET")
+            .collect::<Vec<_>>(),
+        parse_default_sections(&oracle_default)
+            .into_iter()
+            .filter(|section| section.name == "PACKET")
+            .collect::<Vec<_>>(),
+        PACKET_HASH_FIELDS,
+        &format!("{label} default hash"),
+    );
+
+    assert_packet_hash_writer_fields_match(ffprobe, input, label, "json");
+    assert_packet_hash_writer_fields_match(ffprobe, input, label, "compact");
+    assert_packet_hash_writer_fields_match(ffprobe, input, label, "csv");
+    assert_packet_hash_writer_fields_match(ffprobe, input, label, "flat");
+    assert_packet_hash_writer_fields_match(ffprobe, input, label, "ini");
+    assert_packet_hash_writer_fields_match(ffprobe, input, label, "xml");
+}
+
+fn assert_packet_hash_writer_fields_match(ffprobe: &Path, input: &str, label: &str, writer: &str) {
+    let rust = ffprobe_output(&strings(&[
+        "-hide_banner",
+        "-show_packets",
+        "-show_data_hash",
+        "md5",
+        "-of",
+        writer,
+        input,
+    ]))
+    .unwrap_or_else(|err| panic!("Rust ffprobe {label} {writer} hash path should execute: {err}"));
+
+    let oracle = Command::new(ffprobe)
+        .args([
+            "-v",
+            "error",
+            "-show_packets",
+            "-show_data_hash",
+            "md5",
+            "-of",
+            writer,
+            input,
+        ])
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", ffprobe.display()));
+
+    assert!(
+        oracle.status.success(),
+        "oracle ffprobe {writer} hash failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        oracle.status.code(),
+        String::from_utf8_lossy(&oracle.stdout),
+        String::from_utf8_lossy(&oracle.stderr)
+    );
+
+    let oracle_output =
+        String::from_utf8(oracle.stdout).expect("oracle ffprobe output should be UTF-8");
+    let rust_packets = parse_packet_sections_for_writer(writer, &rust, PACKET_HASH_FIELDS);
+    let oracle_packets =
+        parse_packet_sections_for_writer(writer, &oracle_output, PACKET_HASH_FIELDS);
+    assert_packet_sections_match(
+        rust_packets,
+        oracle_packets,
+        PACKET_HASH_FIELDS,
+        &format!("{label} {writer} hash"),
+    );
+}
+
+fn parse_packet_sections_for_writer(writer: &str, output: &str, fields: &[&str]) -> Vec<Section> {
+    match writer {
+        "json" => parse_json_packet_sections(output),
+        "compact" => parse_compact_packet_sections(output),
+        "csv" => parse_csv_packet_sections_with_fields(output, fields),
+        "flat" => parse_flat_packet_sections(output),
+        "ini" => parse_ini_packet_sections(output),
+        "xml" => parse_xml_packet_sections(output),
+        _ => panic!("unsupported packet writer `{writer}`"),
+    }
+}
+
+fn assert_packet_sections_match(
+    rust_packets: Vec<Section>,
+    oracle_packets: Vec<Section>,
+    fields: &[&str],
+    label: &str,
+) {
+    assert_eq!(
+        rust_packets.len(),
+        oracle_packets.len(),
+        "{label} packet counts should match"
+    );
+
+    for (index, (rust_packet, oracle_packet)) in
+        rust_packets.iter().zip(oracle_packets.iter()).enumerate()
+    {
+        assert_fields_match(
+            rust_packet,
+            oracle_packet,
+            fields,
+            &format!("{label} PACKET[{index}]"),
+        );
+    }
+}
+
 fn parse_compact_packet_sections(output: &str) -> Vec<Section> {
     output
         .lines()
@@ -892,6 +1043,10 @@ fn parse_compact_packet_sections(output: &str) -> Vec<Section> {
 }
 
 fn parse_csv_packet_sections(output: &str) -> Vec<Section> {
+    parse_csv_packet_sections_with_fields(output, PACKET_FIELDS)
+}
+
+fn parse_csv_packet_sections_with_fields(output: &str, fields: &[&str]) -> Vec<Section> {
     output
         .lines()
         .filter_map(|line| {
@@ -900,14 +1055,14 @@ fn parse_csv_packet_sections(output: &str) -> Vec<Section> {
                 return None;
             }
             assert!(
-                values.len() > PACKET_FIELDS.len(),
+                values.len() > fields.len(),
                 "CSV packet row has too few fields: `{line}`"
             );
             let mut section = Section {
                 name: "PACKET".to_owned(),
                 fields: BTreeMap::new(),
             };
-            for (field, value) in PACKET_FIELDS.iter().zip(values.iter().skip(1)) {
+            for (field, value) in fields.iter().zip(values.iter().skip(1)) {
                 section.fields.insert((*field).to_owned(), value.clone());
             }
             Some(section)
