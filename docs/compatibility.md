@@ -9,6 +9,12 @@
 
 ## Compatible Today
 
+- Latest main-thread packet compact media evidence: `ffprobe-rs -of compact`
+  now renders bounded compact packet/stream/format lines, and the pinned MOV
+  and AVI ffprobe oracle rows compare compact packet fields for codec type,
+  stream index, PTS/DTS/time, duration/time, size, pos, and flags against
+  FFmpeg 8.1.1. `avutil-packet` remains `fate_pass`; strict completion
+  remains 11/96.
 - Latest main-thread packet JSON media evidence: `ffprobe-rs -show_packets -of
   json` now matches FFmpeg-shaped packet `size` and `pos` string typing, and
   the pinned MOV and AVI ffprobe oracle rows compare JSON scalar packet fields

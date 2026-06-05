@@ -2,6 +2,13 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest main-thread packet compact media-integration slice: ffprobe-rs now
+# accepts `-of compact` and renders bounded compact packet/stream/format lines.
+# The pinned MOV/AVI ffprobe oracle rows now also compare compact
+# `-show_packets` scalar packet fields for codec type, stream index,
+# PTS/DTS/time, duration/time, size, pos, and flags against FFmpeg 8.1.1. This
+# strengthens avutil-packet media evidence only; the row remains fate_pass, not
+# complete.
 # Latest main-thread packet JSON media-integration slice: ffprobe-rs now emits
 # FFmpeg-shaped JSON string values for packet `size` and `pos`, and the pinned
 # MOV/AVI ffprobe oracle rows compare JSON `-show_packets` scalar packet
@@ -1602,6 +1609,13 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: MOV/AVI ffprobe media-integration coverage now compares
+# compact `-show_packets` scalar packet fields against pinned FFmpeg 8.1.1.
+# Rust `ffprobe-rs` accepts `-of compact` and renders bounded compact
+# packet/stream/format lines, while the oracle rows compare compact packet
+# codec type, stream index, PTS/DTS/time, duration/time, size, pos, and flags.
+# This strengthens media-integration evidence only; the row remains fate_pass,
+# not complete.
 # Latest update: MOV/AVI ffprobe media-integration coverage now compares JSON
 # `-show_packets` scalar packet fields against pinned FFmpeg 8.1.1 as well as
 # default output. Rust `ffprobe-rs` now emits FFmpeg-shaped JSON strings for

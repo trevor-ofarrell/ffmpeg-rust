@@ -18,6 +18,7 @@ const AVI_PROBE_SCORE: u8 = 100;
 enum WriterFormat {
     Default,
     Json,
+    Compact,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -756,6 +757,7 @@ fn parse_writer_format(value: &str) -> Result<WriterFormat, FfprobeError> {
     match writer_name {
         "default" => Ok(WriterFormat::Default),
         "json" => Ok(WriterFormat::Json),
+        "compact" => Ok(WriterFormat::Compact),
         _ => Err(FfprobeError::unsupported(format!(
             "unsupported writer format `{value}`"
         ))),
@@ -1439,6 +1441,7 @@ fn render_report(command: &FfprobeCommand, report: &FfprobeReport) -> String {
     match command.writer_format {
         WriterFormat::Default => render_default(command, report),
         WriterFormat::Json => render_json(command, report),
+        WriterFormat::Compact => render_compact(command, report),
     }
 }
 
@@ -1598,6 +1601,194 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
         out.push_str("[/FORMAT]\n");
     }
     out
+}
+
+fn render_compact(command: &FfprobeCommand, report: &FfprobeReport) -> String {
+    let mut out = String::new();
+    if command.show_packets {
+        for packet in &report.packets {
+            push_compact_line(
+                &mut out,
+                "packet",
+                vec![
+                    ("codec_type".to_owned(), packet.codec_type.clone()),
+                    ("stream_index".to_owned(), packet.stream_index.to_string()),
+                    ("pts".to_owned(), optional_i64(packet.pts)),
+                    (
+                        "pts_time".to_owned(),
+                        optional_str(&packet.pts_time).to_owned(),
+                    ),
+                    ("dts".to_owned(), optional_i64(packet.dts)),
+                    (
+                        "dts_time".to_owned(),
+                        optional_str(&packet.dts_time).to_owned(),
+                    ),
+                    ("duration".to_owned(), packet.duration.to_string()),
+                    ("duration_time".to_owned(), packet.duration_time.clone()),
+                    ("size".to_owned(), packet.size.to_string()),
+                    ("pos".to_owned(), optional_i64(packet.pos)),
+                    ("flags".to_owned(), packet.flags.clone()),
+                ],
+            );
+        }
+    }
+
+    if command.show_streams {
+        for stream in &report.streams {
+            let mut fields = vec![
+                ("index".to_owned(), stream.index.to_string()),
+                ("id".to_owned(), stream.id.to_string()),
+                ("codec_type".to_owned(), stream.codec_type.clone()),
+                ("time_base".to_owned(), stream.time_base.clone()),
+                ("nb_frames".to_owned(), stream.nb_frames.to_string()),
+            ];
+            push_optional_compact_field(&mut fields, "codec_name", &stream.codec_name);
+            push_optional_compact_field(&mut fields, "codec_long_name", &stream.codec_long_name);
+            push_optional_compact_field(&mut fields, "profile", &stream.profile);
+            push_optional_compact_field(&mut fields, "codec_tag_string", &stream.codec_tag_string);
+            push_optional_compact_field(&mut fields, "codec_tag", &stream.codec_tag);
+            push_optional_number_compact_field(&mut fields, "width", stream.width);
+            push_optional_number_compact_field(&mut fields, "height", stream.height);
+            push_optional_number_compact_field(&mut fields, "coded_width", stream.coded_width);
+            push_optional_number_compact_field(&mut fields, "coded_height", stream.coded_height);
+            push_optional_number_compact_field(&mut fields, "sample_rate", stream.sample_rate);
+            push_optional_number_compact_field(&mut fields, "channels", stream.channels);
+            push_optional_number_compact_field(
+                &mut fields,
+                "bits_per_sample",
+                stream.bits_per_sample,
+            );
+            push_optional_number_compact_field(
+                &mut fields,
+                "bits_per_raw_sample",
+                stream.bits_per_raw_sample,
+            );
+            push_optional_number_compact_field(
+                &mut fields,
+                "extradata_size",
+                stream.extradata_size,
+            );
+            if let Some(is_avc) = stream.is_avc {
+                fields.push(("is_avc".to_owned(), bool_string(is_avc).to_owned()));
+            }
+            push_optional_number_compact_field(
+                &mut fields,
+                "nal_length_size",
+                stream.nal_length_size,
+            );
+            push_optional_compact_field(
+                &mut fields,
+                "sample_aspect_ratio",
+                &stream.sample_aspect_ratio,
+            );
+            push_optional_compact_field(
+                &mut fields,
+                "display_aspect_ratio",
+                &stream.display_aspect_ratio,
+            );
+            push_optional_compact_field(&mut fields, "color_range", &stream.color_range);
+            push_optional_compact_field(&mut fields, "color_space", &stream.color_space);
+            push_optional_compact_field(&mut fields, "color_transfer", &stream.color_transfer);
+            push_optional_compact_field(&mut fields, "color_primaries", &stream.color_primaries);
+            push_optional_compact_field(&mut fields, "field_order", &stream.field_order);
+            push_optional_number_compact_field(&mut fields, "level", stream.level);
+            push_optional_number_compact_field(&mut fields, "start_pts", stream.start_pts);
+            push_optional_compact_field(&mut fields, "start_time", &stream.start_time);
+            push_optional_compact_field(&mut fields, "r_frame_rate", &stream.r_frame_rate);
+            push_optional_compact_field(&mut fields, "avg_frame_rate", &stream.avg_frame_rate);
+            push_optional_number_compact_field(&mut fields, "duration_ts", stream.duration_ts);
+            push_optional_compact_field(&mut fields, "duration", &stream.duration);
+            push_optional_number_compact_field(
+                &mut fields,
+                "nb_read_frames",
+                stream.nb_read_frames,
+            );
+            push_optional_number_compact_field(
+                &mut fields,
+                "nb_read_packets",
+                stream.nb_read_packets,
+            );
+            for (key, value) in &stream.tags {
+                fields.push((format!("tag:{key}"), value.clone()));
+            }
+            push_compact_line(&mut out, "stream", fields);
+        }
+    }
+
+    if command.show_format {
+        let mut fields = vec![
+            ("filename".to_owned(), report.filename.clone()),
+            ("nb_streams".to_owned(), report.nb_streams.to_string()),
+            ("nb_programs".to_owned(), report.nb_programs.to_string()),
+            (
+                "nb_stream_groups".to_owned(),
+                report.nb_stream_groups.to_string(),
+            ),
+            ("format_name".to_owned(), report.format_name.clone()),
+            (
+                "format_long_name".to_owned(),
+                report.format_long_name.clone(),
+            ),
+            ("time_base".to_owned(), report.time_base.clone()),
+        ];
+        push_optional_number_compact_field(&mut fields, "duration_ts", report.duration_ts);
+        push_optional_compact_field(&mut fields, "duration", &report.duration);
+        push_optional_number_compact_field(&mut fields, "size", report.size);
+        fields.push(("probe_score".to_owned(), report.probe_score.to_string()));
+        for (key, value) in &report.tags {
+            fields.push((format!("tag:{key}"), value.clone()));
+        }
+        push_compact_line(&mut out, "format", fields);
+    }
+
+    out
+}
+
+fn push_optional_compact_field(
+    fields: &mut Vec<(String, String)>,
+    key: &str,
+    value: &Option<String>,
+) {
+    if let Some(value) = value {
+        fields.push((key.to_owned(), value.clone()));
+    }
+}
+
+fn push_optional_number_compact_field<T: fmt::Display>(
+    fields: &mut Vec<(String, String)>,
+    key: &str,
+    value: Option<T>,
+) {
+    if let Some(value) = value {
+        fields.push((key.to_owned(), value.to_string()));
+    }
+}
+
+fn push_compact_line(out: &mut String, section: &str, fields: Vec<(String, String)>) {
+    out.push_str(section);
+    for (key, value) in fields {
+        out.push('|');
+        out.push_str(&escape_compact_value(&key));
+        out.push('=');
+        out.push_str(&escape_compact_value(&value));
+    }
+    out.push('\n');
+}
+
+fn escape_compact_value(value: &str) -> String {
+    let mut escaped = String::new();
+    for ch in value.chars() {
+        match ch {
+            '\\' | '|' | '=' => {
+                escaped.push('\\');
+                escaped.push(ch);
+            }
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
 }
 
 fn render_json(command: &FfprobeCommand, report: &FfprobeReport) -> String {
@@ -1954,6 +2145,14 @@ mod tests {
     }
 
     #[test]
+    fn parses_ffprobe_compact_writer_format() {
+        let command =
+            parse_ffprobe_args(&strings(&["-show_packets", "-of", "compact", "clip.mp4"])).unwrap();
+
+        assert_eq!(command.writer_format, WriterFormat::Compact);
+    }
+
+    #[test]
     fn parses_and_rejects_ffprobe_loglevel_values() {
         let command =
             parse_ffprobe_args(&strings(&["-v", "-8", "-show_format", "clip.mp4"])).unwrap();
@@ -2123,6 +2322,22 @@ mod tests {
         assert!(rendered.contains("\"size\": \"2048\""));
         assert!(rendered.contains("\"title\": \"Rust \\\"MOV\\\"\""));
         assert!(!rendered.contains("\"streams\""));
+        assert!(!rendered.contains("\"packets\""));
+    }
+
+    #[test]
+    fn renders_compact_packet_sections() {
+        let command =
+            parse_ffprobe_args(&strings(&["-show_packets", "-of", "compact", "clip.mp4"])).unwrap();
+        let report = sample_report();
+
+        let rendered = render_report(&command, &report);
+
+        assert!(rendered.starts_with("packet|codec_type=video|stream_index=0|pts=0"));
+        assert!(rendered.contains("|pts_time=0.000000|dts=0|dts_time=0.000000"));
+        assert!(rendered.contains("|duration=1000|duration_time=0.011111"));
+        assert!(rendered.contains("|size=3|pos=123|flags=K__\n"));
+        assert!(!rendered.contains("[PACKET]"));
         assert!(!rendered.contains("\"packets\""));
     }
 
@@ -2689,6 +2904,40 @@ mod tests {
     }
 
     #[test]
+    fn outputs_mov_packet_compact_without_stream_or_format_sections() {
+        let mov = sampled_mov_file(&[b"abc".as_slice(), b"defg".as_slice()], &[1_000, 2_000]);
+        let first_pos = find_bytes(&mov, b"abc").unwrap();
+        let second_pos = find_bytes(&mov, b"defg").unwrap();
+        let path = write_temp_mov("show-packets-compact", &mov);
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let stdout = ffprobe_output(&strings(&[
+            "-show_packets",
+            "-of",
+            "compact",
+            path_arg.as_str(),
+        ]))
+        .expect("ffprobe command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        let lines = stdout.lines().collect::<Vec<_>>();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(
+            lines[0],
+            format!(
+                "packet|codec_type=video|stream_index=0|pts=0|pts_time=0.000000|dts=0|dts_time=0.000000|duration=1000|duration_time=0.011111|size=3|pos={first_pos}|flags=K__"
+            )
+        );
+        assert_eq!(
+            lines[1],
+            format!(
+                "packet|codec_type=video|stream_index=0|pts=1000|pts_time=0.011111|dts=1000|dts_time=0.011111|duration=2000|duration_time=0.022222|size=4|pos={second_pos}|flags=___"
+            )
+        );
+    }
+
+    #[test]
     fn opens_local_avi_file_for_show_format() {
         let first = [0, 1, 2, 3, 4, 5];
         let second = [6, 7, 8, 9, 10, 11];
@@ -2974,6 +3223,45 @@ mod tests {
         assert!(stdout.contains("pts=1\n"));
         assert!(stdout.contains("dts=1\n"));
         assert!(stdout.contains("pts_time=0.040000\n"));
+    }
+
+    #[test]
+    fn outputs_avi_packet_compact_without_stream_or_format_sections() {
+        let first = [0, 1, 2, 3, 4, 5];
+        let second = [6, 7, 8, 9, 10, 11];
+        let avi = avi_file_bytes(2, 1, Rational::new(25, 1).unwrap(), &[&first, &second]);
+        let first_pos = find_bytes(&avi, b"00dc").unwrap() + 8;
+        let second_pos = find_bytes(&avi[first_pos + first.len()..], b"00dc").unwrap()
+            + first_pos
+            + first.len()
+            + 8;
+        let path = write_temp_avi("avi-show-packets-compact", &avi);
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let stdout = ffprobe_output(&strings(&[
+            "-show_packets",
+            "-of",
+            "compact",
+            path_arg.as_str(),
+        ]))
+        .expect("ffprobe AVI command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        let lines = stdout.lines().collect::<Vec<_>>();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(
+            lines[0],
+            format!(
+                "packet|codec_type=video|stream_index=0|pts=0|pts_time=0.000000|dts=0|dts_time=0.000000|duration=1|duration_time=0.040000|size=8|pos={first_pos}|flags=K__"
+            )
+        );
+        assert_eq!(
+            lines[1],
+            format!(
+                "packet|codec_type=video|stream_index=0|pts=1|pts_time=0.040000|dts=1|dts_time=0.040000|duration=1|duration_time=0.040000|size=8|pos={second_pos}|flags=K__"
+            )
+        );
     }
 
     #[test]

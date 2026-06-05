@@ -846,11 +846,12 @@ is preserved as NULL/0 by move-ref.
 
 Additional `avutil-packet` differential rows now reuse generated media oracles
 whose packet metadata is already compared against pinned FFmpeg 8.1.1:
-generated MOV/AVI default-output and JSON `ffprobe -show_packets` fields,
-YUV4MPEG2 sample-aspect and color-range remux transfer, flexible YUV4MPEG2
-frame headers, empty rawvideo and WAV framecrc streams, odd PCM-to-WAV packet
-output, duplicate WAV data with an empty final data chunk, first duplicate WAV
-fmt preservation, and image2 gap/start-probe packet rows.
+generated MOV/AVI default-output, JSON, and compact
+`ffprobe -show_packets` fields, YUV4MPEG2 sample-aspect and color-range remux
+transfer, flexible YUV4MPEG2 frame headers, empty rawvideo and WAV framecrc
+streams, odd PCM-to-WAV packet output, duplicate WAV data with an empty final
+data chunk, first duplicate WAV fmt preservation, and image2 gap/start-probe
+packet rows.
 
 The newest `packet:side-free-preserves-fields`, `packet:side-free-empty`, and
 `packet:side-free-repeat-*` rows prove `av_packet_free_side_data()` clears
@@ -1605,7 +1606,7 @@ The same harness also checks that `--version` is not a clean successful version 
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component fftools-version --target oracle-double-dash-version-rejection --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
 ```
 
-`crates/fftools/tests/ffprobe_mov_oracle.rs` is an ignored oracle harness for bounded generated MOV and AVI `ffprobe` paths. It uses pinned FFmpeg 8.1.1 to create a two-frame rawvideo MOV fixture with edit lists disabled, then compares Rust `ffprobe-rs` default output against pinned `ffprobe` for selected shared fields: format counts/name/duration/size/probe score, stream codec/tag/dimensions/timing/count fields, and packet codec type, stream index, PTS/DTS, duration, size, sample-offset `pos`, and packet flags. It is wired into `tests/differential/mappings.txt` as the shared `oracle-ffprobe-mov-core-fields` target for the mapped `fftools-ffprobe-*` rows plus `avutil-packet`. The same harness also creates a two-packet BGR24 AVI fixture and maps `oracle-ffprobe-avi-packet-fields` to `fftools-ffprobe-avi-show-format-streams-packets`, `avformat-avi-demuxer`, and `avutil-packet`, comparing default-output format, stream, and packet fields for packet count, codec type, timing, padded payload size, RIFF chunk payload `pos`, and key flags. Both rows also compare JSON `-show_packets` scalar packet fields for codec type, stream index, PTS/DTS/time, duration/time, size, pos, and flags; the Rust JSON renderer matches FFmpeg's string typing for packet `size` and `pos`. These targets are bounded evidence, not full ffprobe field-complete parity:
+`crates/fftools/tests/ffprobe_mov_oracle.rs` is an ignored oracle harness for bounded generated MOV and AVI `ffprobe` paths. It uses pinned FFmpeg 8.1.1 to create a two-frame rawvideo MOV fixture with edit lists disabled, then compares Rust `ffprobe-rs` default output against pinned `ffprobe` for selected shared fields: format counts/name/duration/size/probe score, stream codec/tag/dimensions/timing/count fields, and packet codec type, stream index, PTS/DTS, duration, size, sample-offset `pos`, and packet flags. It is wired into `tests/differential/mappings.txt` as the shared `oracle-ffprobe-mov-core-fields` target for the mapped `fftools-ffprobe-*` rows plus `avutil-packet`. The same harness also creates a two-packet BGR24 AVI fixture and maps `oracle-ffprobe-avi-packet-fields` to `fftools-ffprobe-avi-show-format-streams-packets`, `avformat-avi-demuxer`, and `avutil-packet`, comparing default-output format, stream, and packet fields for packet count, codec type, timing, padded payload size, RIFF chunk payload `pos`, and key flags. Both rows also compare JSON and compact `-show_packets` scalar packet fields for codec type, stream index, PTS/DTS/time, duration/time, size, pos, and flags; the Rust JSON renderer matches FFmpeg's string typing for packet `size` and `pos`, and the compact writer emits FFmpeg-shaped `packet|key=value` lines for the bounded packet surface. These targets are bounded evidence, not full ffprobe field-complete parity:
 
 ```sh
 FFMPEG_ORACLE=./third_party/ffmpeg-oracle/build/bin/ffmpeg cargo test -p fftools --test ffprobe_mov_oracle mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle -- --ignored
