@@ -5,7 +5,7 @@ use avformat::{
     register_avi_probe, register_mov_probe, AviDemuxer, AviInfo, AviMediaType, MovDemuxer, MovInfo,
     MovTrackInfo, ProbeRegistry, ProbeRequest,
 };
-use avutil::{digest_to_hex, HashAlgorithm, HashContext, LogFlags, LogLevel};
+use avutil::{digest_to_hex, HashAlgorithm, HashContext, LogFlags, LogLevel, SideData};
 use std::{fmt, fs};
 
 const MOV_FORMAT_NAME: &str = "mov,mp4,m4a,3gp,3g2,mj2";
@@ -31,6 +31,7 @@ struct FfprobeCommand {
     show_streams: bool,
     show_packets: bool,
     packet_fields: PacketFieldSelection,
+    packet_side_data_fields: PacketSideDataFieldSelection,
     stream_fields: NamedFieldSelection,
     format_fields: NamedFieldSelection,
     stream_tags: Option<TagSelection>,
@@ -108,6 +109,7 @@ impl TagSelection {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct ShowEntrySelection {
     packet_fields: Option<PacketFieldSelection>,
+    packet_side_data_fields: Option<PacketSideDataFieldSelection>,
     stream_fields: Option<NamedFieldSelection>,
     format_fields: Option<NamedFieldSelection>,
     stream_tags: Option<TagSelection>,
@@ -165,6 +167,51 @@ const PACKET_FIELD_ORDER: &[PacketField] = &[
     PacketField::Flags,
     PacketField::Data,
     PacketField::DataHash,
+];
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+enum PacketSideDataFieldSelection {
+    #[default]
+    All,
+    Only(Vec<PacketSideDataField>),
+}
+
+impl PacketSideDataFieldSelection {
+    fn includes(&self, field: PacketSideDataField) -> bool {
+        match self {
+            Self::All => true,
+            Self::Only(fields) => fields.contains(&field),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PacketSideDataField {
+    SideDataType,
+    SkipSamples,
+    DiscardPadding,
+    SkipReason,
+    DiscardReason,
+}
+
+impl PacketSideDataField {
+    fn name(self) -> &'static str {
+        match self {
+            Self::SideDataType => "side_data_type",
+            Self::SkipSamples => "skip_samples",
+            Self::DiscardPadding => "discard_padding",
+            Self::SkipReason => "skip_reason",
+            Self::DiscardReason => "discard_reason",
+        }
+    }
+}
+
+const PACKET_SIDE_DATA_FIELD_ORDER: &[PacketSideDataField] = &[
+    PacketSideDataField::SideDataType,
+    PacketSideDataField::SkipSamples,
+    PacketSideDataField::DiscardPadding,
+    PacketSideDataField::SkipReason,
+    PacketSideDataField::DiscardReason,
 ];
 
 const STREAM_FIELD_ORDER: &[&str] = &[
@@ -517,6 +564,7 @@ pub struct FfprobePacketReport {
     flags: String,
     data: Option<String>,
     data_hash: Option<String>,
+    side_data: Vec<FfprobePacketSideDataReport>,
 }
 
 impl FfprobePacketReport {
@@ -575,6 +623,31 @@ impl FfprobePacketReport {
     pub fn data_hash(&self) -> Option<&str> {
         self.data_hash.as_deref()
     }
+
+    pub fn side_data(&self) -> &[FfprobePacketSideDataReport] {
+        &self.side_data
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FfprobePacketSideDataReport {
+    side_data_type: String,
+    compact_name: String,
+    skip_samples: Option<FfprobePacketSkipSamplesReport>,
+}
+
+impl FfprobePacketSideDataReport {
+    pub fn side_data_type(&self) -> &str {
+        &self.side_data_type
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FfprobePacketSkipSamplesReport {
+    skip_samples: u32,
+    discard_padding: u32,
+    skip_reason: u8,
+    discard_reason: u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -891,6 +964,7 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
     let mut show_streams = false;
     let mut show_packets = false;
     let mut packet_fields = PacketFieldSelection::default();
+    let mut packet_side_data_fields = PacketSideDataFieldSelection::default();
     let mut stream_fields = NamedFieldSelection::default();
     let mut format_fields = NamedFieldSelection::default();
     let mut stream_tags = None;
@@ -923,10 +997,18 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
             }
             "-show_entries" => {
                 let entries = parse_show_entries(take_value(args, index, arg)?)?;
+                let has_packet_fields = entries.packet_fields.is_some();
                 let has_stream_fields = entries.stream_fields.is_some();
                 let has_format_fields = entries.format_fields.is_some();
                 if let Some(fields) = entries.packet_fields {
                     packet_fields = fields;
+                    show_packets = true;
+                }
+                if let Some(fields) = entries.packet_side_data_fields {
+                    if !has_packet_fields {
+                        packet_fields = PacketFieldSelection::Only(Vec::new());
+                    }
+                    packet_side_data_fields = fields;
                     show_packets = true;
                 }
                 if let Some(fields) = entries.stream_fields {
@@ -1012,6 +1094,7 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
         show_streams,
         show_packets,
         packet_fields,
+        packet_side_data_fields,
         stream_fields,
         format_fields,
         stream_tags,
@@ -1063,6 +1146,9 @@ fn parse_show_entries(value: &str) -> Result<ShowEntrySelection, FfprobeError> {
     for section in value.split(':') {
         match section {
             "packet" => entries.packet_fields = Some(PacketFieldSelection::All),
+            "packet_side_data" => {
+                entries.packet_side_data_fields = Some(PacketSideDataFieldSelection::All)
+            }
             "stream" => entries.stream_fields = Some(NamedFieldSelection::All),
             "format" => entries.format_fields = Some(NamedFieldSelection::All),
             "stream_tags" => entries.stream_tags = Some(TagSelection::All),
@@ -1075,6 +1161,9 @@ fn parse_show_entries(value: &str) -> Result<ShowEntrySelection, FfprobeError> {
                 };
                 match section_name {
                     "packet" => merge_packet_show_entry_fields(&mut entries, field_list),
+                    "packet_side_data" => {
+                        merge_packet_side_data_show_entry_fields(&mut entries, field_list);
+                    }
                     "stream" => {
                         merge_named_show_entry_fields(
                             &mut entries.stream_fields,
@@ -1108,11 +1197,12 @@ fn parse_show_entries(value: &str) -> Result<ShowEntrySelection, FfprobeError> {
     if entries.packet_fields.is_none()
         && entries.stream_fields.is_none()
         && entries.format_fields.is_none()
+        && entries.packet_side_data_fields.is_none()
         && entries.stream_tags.is_none()
         && entries.format_tags.is_none()
     {
         return Err(FfprobeError::usage(
-            "ffprobe-rs currently supports packet, stream, format, stream_tags, and format_tags show_entries only",
+            "ffprobe-rs currently supports packet, packet_side_data, stream, format, stream_tags, and format_tags show_entries only",
         ));
     }
 
@@ -1140,6 +1230,31 @@ fn packet_show_entry_fields(field_list: &str) -> impl Iterator<Item = PacketFiel
         .split(',')
         .filter(|name| !name.is_empty())
         .filter_map(parse_packet_field)
+}
+
+fn merge_packet_side_data_show_entry_fields(entries: &mut ShowEntrySelection, field_list: &str) {
+    let Some(selection) = &mut entries.packet_side_data_fields else {
+        entries.packet_side_data_fields = Some(PacketSideDataFieldSelection::Only(
+            packet_side_data_show_entry_fields(field_list).collect(),
+        ));
+        return;
+    };
+    if let PacketSideDataFieldSelection::Only(selected) = selection {
+        for field in packet_side_data_show_entry_fields(field_list) {
+            if !selected.contains(&field) {
+                selected.push(field);
+            }
+        }
+    }
+}
+
+fn packet_side_data_show_entry_fields(
+    field_list: &str,
+) -> impl Iterator<Item = PacketSideDataField> + '_ {
+    field_list
+        .split(',')
+        .filter(|name| !name.is_empty())
+        .filter_map(parse_packet_side_data_field)
 }
 
 fn merge_named_show_entry_fields(
@@ -1210,6 +1325,17 @@ fn parse_packet_field(value: &str) -> Option<PacketField> {
         "flags" => Some(PacketField::Flags),
         "data" => Some(PacketField::Data),
         "data_hash" => Some(PacketField::DataHash),
+        _ => None,
+    }
+}
+
+fn parse_packet_side_data_field(value: &str) -> Option<PacketSideDataField> {
+    match value {
+        "side_data_type" => Some(PacketSideDataField::SideDataType),
+        "skip_samples" => Some(PacketSideDataField::SkipSamples),
+        "discard_padding" => Some(PacketSideDataField::DiscardPadding),
+        "skip_reason" => Some(PacketSideDataField::SkipReason),
+        "discard_reason" => Some(PacketSideDataField::DiscardReason),
         _ => None,
     }
 }
@@ -1528,6 +1654,7 @@ fn collect_mov_packets(
             flags: packet_flags(packet.flags().bits()),
             data: packet_data_dump(packet.data(), show_data),
             data_hash: packet_data_hash(packet.data(), show_data_hash),
+            side_data: packet_side_data_reports(packet.side_data())?,
         });
     }
     Ok(packets)
@@ -1573,9 +1700,46 @@ fn collect_avi_packets(
             flags: packet_flags(packet.flags().bits()),
             data: packet_data_dump(packet.data(), show_data),
             data_hash: packet_data_hash(packet.data(), show_data_hash),
+            side_data: packet_side_data_reports(packet.side_data())?,
         });
     }
     Ok(packets)
+}
+
+fn packet_side_data_reports(
+    side_data: &[SideData],
+) -> Result<Vec<FfprobePacketSideDataReport>, FfprobeError> {
+    side_data
+        .iter()
+        .filter_map(packet_side_data_report)
+        .collect()
+}
+
+fn packet_side_data_report(
+    side_data: &SideData,
+) -> Option<Result<FfprobePacketSideDataReport, FfprobeError>> {
+    let side_data_type = side_data.kind_id().ffmpeg_side_data_name()?.to_owned();
+    let compact_name = side_data.kind_id().name().to_owned();
+    let skip_samples = match side_data.skip_samples() {
+        Ok(Some(skip_samples)) => Some(FfprobePacketSkipSamplesReport {
+            skip_samples: skip_samples.start(),
+            discard_padding: skip_samples.end(),
+            skip_reason: skip_samples.start_reason().as_byte(),
+            discard_reason: skip_samples.end_reason().as_byte(),
+        }),
+        Ok(None) => None,
+        Err(err) => {
+            return Some(Err(FfprobeError::invalid_data(format!(
+                "failed to parse packet side data `{}`: {err}",
+                side_data.kind_id().name()
+            ))));
+        }
+    };
+    Some(Ok(FfprobePacketSideDataReport {
+        side_data_type,
+        compact_name,
+        skip_samples,
+    }))
 }
 
 fn packet_data_dump(data: &[u8], show_data: bool) -> Option<String> {
@@ -1986,6 +2150,19 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
                     out.push('\n');
                 }
             }
+            for side_data in &packet.side_data {
+                out.push_str("[SIDE_DATA]\n");
+                for (field, value) in packet_side_data_selected_string_fields(
+                    side_data,
+                    &command.packet_side_data_fields,
+                ) {
+                    out.push_str(field.name());
+                    out.push('=');
+                    out.push_str(&value);
+                    out.push('\n');
+                }
+                out.push_str("[/SIDE_DATA]\n");
+            }
             out.push_str("[/PACKET]\n");
         }
     }
@@ -2036,7 +2213,11 @@ fn render_compact(command: &FfprobeCommand, report: &FfprobeReport) -> String {
             push_compact_line(
                 &mut out,
                 "packet",
-                packet_scalar_fields(packet, &command.packet_fields),
+                packet_compact_fields(
+                    packet,
+                    &command.packet_fields,
+                    &command.packet_side_data_fields,
+                ),
             );
         }
     }
@@ -2069,7 +2250,11 @@ fn render_csv(command: &FfprobeCommand, report: &FfprobeReport) -> String {
             push_csv_line(
                 &mut out,
                 "packet",
-                packet_scalar_fields(packet, &command.packet_fields),
+                packet_csv_fields(
+                    packet,
+                    &command.packet_fields,
+                    &command.packet_side_data_fields,
+                ),
             );
         }
     }
@@ -2101,6 +2286,13 @@ fn render_flat(command: &FfprobeCommand, report: &FfprobeReport) -> String {
                 &format!("packets.packet.{index}"),
                 packet_flat_fields(packet, &command.packet_fields),
             );
+            for (side_data_index, side_data) in packet.side_data.iter().enumerate() {
+                push_flat_fields(
+                    &mut out,
+                    &format!("packets.packet.{index}.side_data_list.side_data.{side_data_index}"),
+                    packet_side_data_flat_fields(side_data, &command.packet_side_data_fields),
+                );
+            }
         }
     }
     if command.show_streams {
@@ -2131,6 +2323,13 @@ fn render_ini(command: &FfprobeCommand, report: &FfprobeReport) -> String {
                 &format!("packets.packet.{index}"),
                 packet_scalar_fields(packet, &command.packet_fields),
             );
+            for (side_data_index, side_data) in packet.side_data.iter().enumerate() {
+                push_ini_section(
+                    &mut out,
+                    &format!("packets.packet.{index}.side_data_list.side_data.{side_data_index}"),
+                    packet_side_data_scalar_fields(side_data, &command.packet_side_data_fields),
+                );
+            }
         }
     }
     if command.show_streams {
@@ -2171,11 +2370,12 @@ fn render_xml(command: &FfprobeCommand, report: &FfprobeReport) -> String {
     if command.show_packets {
         out.push_str("    <packets>\n");
         for packet in &report.packets {
-            push_xml_empty_element(
+            push_xml_packet_element(
                 &mut out,
                 8,
-                "packet",
                 packet_scalar_fields(packet, &command.packet_fields),
+                &packet.side_data,
+                &command.packet_side_data_fields,
             );
         }
         out.push_str("    </packets>\n");
@@ -2250,6 +2450,81 @@ fn packet_field_string_value(packet: &FfprobePacketReport, field: PacketField) -
         PacketField::Data => packet.data.clone(),
         PacketField::DataHash => packet.data_hash.clone(),
     }
+}
+
+fn packet_side_data_scalar_fields(
+    side_data: &FfprobePacketSideDataReport,
+    selection: &PacketSideDataFieldSelection,
+) -> Vec<(String, String)> {
+    packet_side_data_selected_string_fields(side_data, selection)
+        .into_iter()
+        .map(|(field, value)| (field.name().to_owned(), value))
+        .collect()
+}
+
+fn packet_side_data_selected_string_fields(
+    side_data: &FfprobePacketSideDataReport,
+    selection: &PacketSideDataFieldSelection,
+) -> Vec<(PacketSideDataField, String)> {
+    PACKET_SIDE_DATA_FIELD_ORDER
+        .iter()
+        .copied()
+        .filter(|field| selection.includes(*field))
+        .filter_map(|field| {
+            packet_side_data_field_string_value(side_data, field).map(|value| (field, value))
+        })
+        .collect()
+}
+
+fn packet_side_data_field_string_value(
+    side_data: &FfprobePacketSideDataReport,
+    field: PacketSideDataField,
+) -> Option<String> {
+    match field {
+        PacketSideDataField::SideDataType => Some(side_data.side_data_type.clone()),
+        PacketSideDataField::SkipSamples => Some(side_data.skip_samples?.skip_samples.to_string()),
+        PacketSideDataField::DiscardPadding => {
+            Some(side_data.skip_samples?.discard_padding.to_string())
+        }
+        PacketSideDataField::SkipReason => Some(side_data.skip_samples?.skip_reason.to_string()),
+        PacketSideDataField::DiscardReason => {
+            Some(side_data.skip_samples?.discard_reason.to_string())
+        }
+    }
+}
+
+fn packet_compact_fields(
+    packet: &FfprobePacketReport,
+    packet_selection: &PacketFieldSelection,
+    side_data_selection: &PacketSideDataFieldSelection,
+) -> Vec<(String, String)> {
+    let mut fields = packet_scalar_fields(packet, packet_selection);
+    for side_data in &packet.side_data {
+        for (field, value) in
+            packet_side_data_selected_string_fields(side_data, side_data_selection)
+        {
+            fields.push((
+                format!("side_datum/{}:{}", side_data.compact_name, field.name()),
+                value,
+            ));
+        }
+    }
+    fields
+}
+
+fn packet_csv_fields(
+    packet: &FfprobePacketReport,
+    packet_selection: &PacketFieldSelection,
+    side_data_selection: &PacketSideDataFieldSelection,
+) -> Vec<(String, String)> {
+    let mut fields = packet_scalar_fields(packet, packet_selection);
+    for side_data in &packet.side_data {
+        fields.extend(packet_side_data_scalar_fields(
+            side_data,
+            side_data_selection,
+        ));
+    }
+    fields
 }
 
 fn stream_default_fields(
@@ -2462,6 +2737,40 @@ fn packet_flat_field_value(
     Some((field.name().to_owned(), value))
 }
 
+fn packet_side_data_flat_fields(
+    side_data: &FfprobePacketSideDataReport,
+    selection: &PacketSideDataFieldSelection,
+) -> Vec<(String, FlatValue)> {
+    PACKET_SIDE_DATA_FIELD_ORDER
+        .iter()
+        .copied()
+        .filter(|field| selection.includes(*field))
+        .filter_map(|field| packet_side_data_flat_field_value(side_data, field))
+        .collect()
+}
+
+fn packet_side_data_flat_field_value(
+    side_data: &FfprobePacketSideDataReport,
+    field: PacketSideDataField,
+) -> Option<(String, FlatValue)> {
+    let value = match field {
+        PacketSideDataField::SideDataType => FlatValue::Quoted(side_data.side_data_type.clone()),
+        PacketSideDataField::SkipSamples => {
+            FlatValue::Bare(side_data.skip_samples?.skip_samples.to_string())
+        }
+        PacketSideDataField::DiscardPadding => {
+            FlatValue::Bare(side_data.skip_samples?.discard_padding.to_string())
+        }
+        PacketSideDataField::SkipReason => {
+            FlatValue::Bare(side_data.skip_samples?.skip_reason.to_string())
+        }
+        PacketSideDataField::DiscardReason => {
+            FlatValue::Bare(side_data.skip_samples?.discard_reason.to_string())
+        }
+    };
+    Some((field.name().to_owned(), value))
+}
+
 fn stream_flat_fields(
     stream: &FfprobeStreamReport,
     selection: &NamedFieldSelection,
@@ -2642,6 +2951,53 @@ fn push_xml_empty_element(
     out.push_str("/>\n");
 }
 
+fn push_xml_packet_element(
+    out: &mut String,
+    indent: usize,
+    fields: Vec<(String, String)>,
+    side_data: &[FfprobePacketSideDataReport],
+    side_data_selection: &PacketSideDataFieldSelection,
+) {
+    if side_data.is_empty() {
+        push_xml_empty_element(out, indent, "packet", fields);
+        return;
+    }
+
+    out.push_str(&" ".repeat(indent));
+    out.push_str("<packet");
+    for (key, value) in fields {
+        out.push(' ');
+        out.push_str(&key);
+        out.push_str("=\"");
+        out.push_str(&escape_xml_attribute(&value));
+        out.push('"');
+    }
+    out.push_str(">\n");
+    out.push_str(&" ".repeat(indent + 4));
+    out.push_str("<side_data_list>\n");
+    for entry in side_data {
+        let fields = packet_side_data_scalar_fields(entry, side_data_selection);
+        out.push_str(&" ".repeat(indent + 8));
+        out.push_str("<side_data type=\"");
+        out.push_str(&escape_xml_attribute(&entry.side_data_type));
+        out.push_str("\">\n");
+        for (key, value) in fields {
+            out.push_str(&" ".repeat(indent + 12));
+            out.push_str("<side_datum key=\"");
+            out.push_str(&escape_xml_attribute(&key));
+            out.push_str("\" value=\"");
+            out.push_str(&escape_xml_attribute(&value));
+            out.push_str("\"/>\n");
+        }
+        out.push_str(&" ".repeat(indent + 8));
+        out.push_str("</side_data>\n");
+    }
+    out.push_str(&" ".repeat(indent + 4));
+    out.push_str("</side_data_list>\n");
+    out.push_str(&" ".repeat(indent));
+    out.push_str("</packet>\n");
+}
+
 fn push_xml_element(
     out: &mut String,
     indent: usize,
@@ -2752,7 +3108,13 @@ fn render_json(command: &FfprobeCommand, report: &FfprobeReport) -> String {
         let packets = report
             .packets
             .iter()
-            .map(|packet| render_packet_json(packet, &command.packet_fields))
+            .map(|packet| {
+                render_packet_json(
+                    packet,
+                    &command.packet_fields,
+                    &command.packet_side_data_fields,
+                )
+            })
             .collect::<Vec<_>>()
             .join(",\n    ");
         sections.push(format!("  \"packets\": [\n    {packets}\n  ]"));
@@ -2777,13 +3139,23 @@ fn render_json(command: &FfprobeCommand, report: &FfprobeReport) -> String {
     format!("{{\n{}\n}}\n", sections.join(",\n"))
 }
 
-fn render_packet_json(packet: &FfprobePacketReport, selection: &PacketFieldSelection) -> String {
-    let fields = PACKET_FIELD_ORDER
+fn render_packet_json(
+    packet: &FfprobePacketReport,
+    selection: &PacketFieldSelection,
+    side_data_selection: &PacketSideDataFieldSelection,
+) -> String {
+    let mut fields = PACKET_FIELD_ORDER
         .iter()
         .copied()
         .filter(|field| selection.includes(*field))
         .filter_map(|field| packet_json_field(packet, field))
         .collect::<Vec<_>>();
+    if !packet.side_data.is_empty() {
+        fields.push(render_packet_side_data_list_json(
+            &packet.side_data,
+            side_data_selection,
+        ));
+    }
     format!("{{{}}}", fields.join(", "))
 }
 
@@ -2805,6 +3177,58 @@ fn packet_json_field(packet: &FfprobePacketReport, field: PacketField) -> Option
             .data_hash
             .as_deref()
             .map(|data_hash| json_string("data_hash", data_hash)),
+    }
+}
+
+fn render_packet_side_data_list_json(
+    side_data: &[FfprobePacketSideDataReport],
+    selection: &PacketSideDataFieldSelection,
+) -> String {
+    let entries = side_data
+        .iter()
+        .map(|side_data| render_packet_side_data_json(side_data, selection))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("\"side_data_list\": [{entries}]")
+}
+
+fn render_packet_side_data_json(
+    side_data: &FfprobePacketSideDataReport,
+    selection: &PacketSideDataFieldSelection,
+) -> String {
+    let fields = PACKET_SIDE_DATA_FIELD_ORDER
+        .iter()
+        .copied()
+        .filter(|field| selection.includes(*field))
+        .filter_map(|field| packet_side_data_json_field(side_data, field))
+        .collect::<Vec<_>>();
+    format!("{{{}}}", fields.join(", "))
+}
+
+fn packet_side_data_json_field(
+    side_data: &FfprobePacketSideDataReport,
+    field: PacketSideDataField,
+) -> Option<String> {
+    match field {
+        PacketSideDataField::SideDataType => {
+            Some(json_string("side_data_type", &side_data.side_data_type))
+        }
+        PacketSideDataField::SkipSamples => Some(json_number(
+            "skip_samples",
+            side_data.skip_samples?.skip_samples,
+        )),
+        PacketSideDataField::DiscardPadding => Some(json_number(
+            "discard_padding",
+            side_data.skip_samples?.discard_padding,
+        )),
+        PacketSideDataField::SkipReason => Some(json_number(
+            "skip_reason",
+            side_data.skip_samples?.skip_reason,
+        )),
+        PacketSideDataField::DiscardReason => Some(json_number(
+            "discard_reason",
+            side_data.skip_samples?.discard_reason,
+        )),
     }
 }
 
@@ -3091,7 +3515,7 @@ fn optional_str(value: &Option<String>) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use avutil::{Packet, Rational};
+    use avutil::{Packet, PacketSkipSamples, PacketSkipSamplesReason, Rational, SideData};
     use std::{
         fs,
         path::PathBuf,
@@ -3240,6 +3664,31 @@ mod tests {
                 "comment".to_string()
             ]))
         );
+    }
+
+    #[test]
+    fn parses_packet_side_data_show_entries_and_implies_packets() {
+        let command = parse_ffprobe_args(&strings(&[
+            "-show_entries",
+            "packet_side_data=side_data_type,skip_samples,unknown",
+            "clip.mp4",
+        ]))
+        .unwrap();
+
+        assert!(command.show_packets);
+        assert_eq!(
+            command.packet_fields,
+            PacketFieldSelection::Only(Vec::new())
+        );
+        assert!(command
+            .packet_side_data_fields
+            .includes(PacketSideDataField::SideDataType));
+        assert!(command
+            .packet_side_data_fields
+            .includes(PacketSideDataField::SkipSamples));
+        assert!(!command
+            .packet_side_data_fields
+            .includes(PacketSideDataField::DiscardPadding));
     }
 
     #[test]
@@ -4086,6 +4535,163 @@ mod tests {
             &report,
         );
         assert_eq!(compact, "packet\n");
+    }
+
+    #[test]
+    fn packet_side_data_reports_public_skip_samples_and_filters_internal_side_data() {
+        let skip_samples = SideData::new_skip_samples(PacketSkipSamples::new(
+            1024,
+            0,
+            PacketSkipSamplesReason::PaddingSilence,
+            PacketSkipSamplesReason::PaddingSilence,
+        ))
+        .unwrap();
+        let internal = SideData::new("mov_track_id", vec![1, 0, 0, 0]).unwrap();
+
+        let reports = packet_side_data_reports(&[skip_samples, internal]).unwrap();
+
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].side_data_type(), "Skip Samples");
+        assert_eq!(
+            packet_side_data_scalar_fields(&reports[0], &PacketSideDataFieldSelection::All),
+            vec![
+                ("side_data_type".to_string(), "Skip Samples".to_string()),
+                ("skip_samples".to_string(), "1024".to_string()),
+                ("discard_padding".to_string(), "0".to_string()),
+                ("skip_reason".to_string(), "0".to_string()),
+                ("discard_reason".to_string(), "0".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn renders_packet_side_data_in_ffmpeg_writer_shapes() {
+        let mut report = sample_report();
+        report.packets[0].side_data = vec![sample_skip_samples_side_data_report()];
+        let show_entries = "packet=pts_time,size,flags:packet_side_data";
+
+        let default = render_report(
+            &parse_ffprobe_args(&strings(&["-show_entries", show_entries, "clip.mp4"])).unwrap(),
+            &report,
+        );
+        assert_eq!(
+            default,
+            "[PACKET]\npts_time=0.000000\nsize=3\nflags=K__\n[SIDE_DATA]\nside_data_type=Skip Samples\nskip_samples=1024\ndiscard_padding=0\nskip_reason=0\ndiscard_reason=0\n[/SIDE_DATA]\n[/PACKET]\n"
+        );
+
+        let compact = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                show_entries,
+                "-of",
+                "compact",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+        assert_eq!(
+            compact,
+            "packet|pts_time=0.000000|size=3|flags=K__|side_datum/skip_samples:side_data_type=Skip Samples|side_datum/skip_samples:skip_samples=1024|side_datum/skip_samples:discard_padding=0|side_datum/skip_samples:skip_reason=0|side_datum/skip_samples:discard_reason=0\n"
+        );
+
+        let csv = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                show_entries,
+                "-of",
+                "csv",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+        assert_eq!(csv, "packet,0.000000,3,K__,Skip Samples,1024,0,0,0\n");
+
+        let flat = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                show_entries,
+                "-of",
+                "flat",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+        assert_eq!(
+            flat,
+            "packets.packet.0.pts_time=\"0.000000\"\npackets.packet.0.size=\"3\"\npackets.packet.0.flags=\"K__\"\npackets.packet.0.side_data_list.side_data.0.side_data_type=\"Skip Samples\"\npackets.packet.0.side_data_list.side_data.0.skip_samples=1024\npackets.packet.0.side_data_list.side_data.0.discard_padding=0\npackets.packet.0.side_data_list.side_data.0.skip_reason=0\npackets.packet.0.side_data_list.side_data.0.discard_reason=0\n"
+        );
+
+        let ini = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                show_entries,
+                "-of",
+                "ini",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+        assert_eq!(
+            ini,
+            "# ffprobe output\n\n[packets.packet.0]\npts_time=0.000000\nsize=3\nflags=K__\n\n[packets.packet.0.side_data_list.side_data.0]\nside_data_type=Skip Samples\nskip_samples=1024\ndiscard_padding=0\nskip_reason=0\ndiscard_reason=0\n\n"
+        );
+
+        let xml = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                show_entries,
+                "-of",
+                "xml",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+        assert_eq!(
+            xml,
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ffprobe>\n    <packets>\n        <packet pts_time=\"0.000000\" size=\"3\" flags=\"K__\">\n            <side_data_list>\n                <side_data type=\"Skip Samples\">\n                    <side_datum key=\"side_data_type\" value=\"Skip Samples\"/>\n                    <side_datum key=\"skip_samples\" value=\"1024\"/>\n                    <side_datum key=\"discard_padding\" value=\"0\"/>\n                    <side_datum key=\"skip_reason\" value=\"0\"/>\n                    <side_datum key=\"discard_reason\" value=\"0\"/>\n                </side_data>\n            </side_data_list>\n        </packet>\n    </packets>\n</ffprobe>\n"
+        );
+
+        let json = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                show_entries,
+                "-of",
+                "json",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+        assert_eq!(
+            json,
+            "{\n  \"packets\": [\n    {\"pts_time\": \"0.000000\", \"size\": \"3\", \"flags\": \"K__\", \"side_data_list\": [{\"side_data_type\": \"Skip Samples\", \"skip_samples\": 1024, \"discard_padding\": 0, \"skip_reason\": 0, \"discard_reason\": 0}]}\n  ]\n}\n"
+        );
+    }
+
+    #[test]
+    fn renders_empty_packet_side_data_show_entries_sections() {
+        let mut report = sample_report();
+        report.packets[0].side_data = vec![sample_skip_samples_side_data_report()];
+
+        let default = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                "packet=pts_time:packet_side_data=",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+
+        assert_eq!(
+            default,
+            "[PACKET]\npts_time=0.000000\n[SIDE_DATA]\n[/SIDE_DATA]\n[/PACKET]\n"
+        );
     }
 
     #[test]
@@ -5129,7 +5735,21 @@ mod tests {
                 flags: "K__".to_string(),
                 data: None,
                 data_hash: None,
+                side_data: Vec::new(),
             }],
+        }
+    }
+
+    fn sample_skip_samples_side_data_report() -> FfprobePacketSideDataReport {
+        FfprobePacketSideDataReport {
+            side_data_type: "Skip Samples".to_string(),
+            compact_name: "skip_samples".to_string(),
+            skip_samples: Some(FfprobePacketSkipSamplesReport {
+                skip_samples: 1024,
+                discard_padding: 0,
+                skip_reason: 0,
+                discard_reason: 0,
+            }),
         }
     }
 

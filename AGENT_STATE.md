@@ -3,6 +3,43 @@
 ## Current Status
 
 Current authoritative turn status: main-thread WSL advanced the top incomplete
+`avutil-packet` row with a bounded ffprobe packet side-data report slice.
+Required startup checks passed from a clean tree at `master...origin/master
+[ahead 133]`: `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner --
+status --next 15` reported 11/96 strict-complete components (11.5%) with
+`avutil-packet` as the first incomplete row, and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validated the pinned FFmpeg 8.1.1 oracle and ABI versions.
+
+Current main-thread slice: `ffprobe-rs` now models public packet side-data
+report sections, accepts bounded `packet_side_data` `-show_entries` forms,
+lets side-data-only entries imply packet output with no scalar packet fields,
+filters Rust/internal unknown packet side-data names out of public ffprobe
+output, and renders oracle-shaped Skip Samples side data across default, JSON,
+compact, CSV, flat, INI, and XML writers. This is synthetic unit/oracle-shape
+evidence only; there is no status promotion because a pinned media
+differential row still needs a Rust demuxer path that emits public packet side
+data. `avutil-packet` remains `fate_pass`; strict completion remains 11/96.
+
+Validation for this slice: `cargo fmt --all`;
+`CARGO_TARGET_DIR=target-orch-fate cargo test -p fftools packet_side_data --
+--nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo test -p fftools
+show_entries -- --nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo test
+-p fftools renders_selected_packet_fields_in_ffmpeg_field_order --
+--nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo test -p fftools
+renders_packet_data -- --nocapture`; and `CARGO_TARGET_DIR=target-orch-fate
+cargo test -p fftools renders_ -- --nocapture`;
+`cargo fmt --all -- --check`; `CARGO_TARGET_DIR=target-orch-fate cargo clippy
+-p fftools --all-targets --all-features -- -D warnings`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- guard-runtime`;
+`git diff --check` with only existing Git line-ending warnings; and
+`test ! -d target`. One malformed grouped `cargo test` invocation with
+multiple test filters failed before running tests; it was replaced by the
+passing `renders_` run.
+
+Current authoritative turn status: main-thread WSL advanced the top incomplete
 `avutil-packet` row with MOV/AVI ffprobe `stream_tags` `-show_entries`
 media-integration evidence and fixed MOV handler-name tag normalization.
 Required startup checks passed from a clean tree at `master...origin/master

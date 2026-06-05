@@ -2,6 +2,14 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest main-thread packet side-data ffprobe slice: ffprobe-rs now models
+# public packet side-data report sections, parses bounded `packet_side_data`
+# `-show_entries`, filters Rust/internal unknown side-data names from public
+# ffprobe output, and renders oracle-shaped Skip Samples side data across
+# default, JSON, compact, CSV, flat, INI, and XML writers. This is synthetic
+# unit/oracle-shape evidence only until a Rust demuxer emits public packet side
+# data for a pinned media differential row; avutil-packet remains fate_pass,
+# not complete.
 # Latest main-thread stream-tag show-entries media-integration slice:
 # ffprobe-rs now accepts bounded `stream_tags` and `format_tags`
 # `-show_entries` sections, lets selected tag sections imply stream/format
@@ -1380,6 +1388,13 @@ blocked_reason = ""
 # compact, CSV, flat, INI, and XML writers, including FFmpeg field-order
 # rendering and implicit packet output. This strengthens media-path evidence
 # only; avutil-packet remains fate_pass, not complete.
+# Latest update: ffprobe packet side-data output now has synthetic
+# oracle-shaped coverage for public Skip Samples side data across default,
+# JSON, compact, CSV, flat, INI, and XML writers, plus `packet_side_data`
+# `-show_entries` parsing and filtering for Rust/internal unknown side-data
+# names. This strengthens report-surface evidence only; a pinned media
+# differential row still needs a Rust demuxer path that emits public packet
+# side data, so avutil-packet remains fate_pass, not complete.
 [[component]]
 id = "avutil-packet"
 kind = "utility"
@@ -1586,6 +1601,10 @@ unit_tests = [
   "packet::tests::packet_fifo_clear_releases_moved_packets_and_preserves_ref_sources",
   "packet::tests::packet_fifo_partial_drain_releases_only_removed_entries",
   "packet::tests::packet_time_base_defaults_copies_resets_and_rescale_preserves",
+  "ffprobe::tests::parses_packet_side_data_show_entries_and_implies_packets",
+  "ffprobe::tests::packet_side_data_reports_public_skip_samples_and_filters_internal_side_data",
+  "ffprobe::tests::renders_packet_side_data_in_ffmpeg_writer_shapes",
+  "ffprobe::tests::renders_empty_packet_side_data_show_entries_sections",
 ]
 differential_tests = [
   "tests/differential/mappings.txt:avutil-packet|oracle-libavcodec-packet-core",

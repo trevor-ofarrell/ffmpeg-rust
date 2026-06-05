@@ -9,6 +9,14 @@
 
 ## Compatible Today
 
+- Latest main-thread packet side-data ffprobe evidence: `ffprobe-rs` now
+  accepts bounded `packet_side_data` `-show_entries` forms, lets side-data-only
+  entries imply packet output without scalar packet fields, filters
+  Rust/internal unknown packet side-data names from public ffprobe output, and
+  renders oracle-shaped Skip Samples side data across default, JSON, compact,
+  CSV, flat, INI, and XML writers. This is synthetic unit/oracle-shape
+  coverage, not a media differential row; `avutil-packet` remains `fate_pass`
+  and strict completion remains 11/96.
 - Latest main-thread stream-tag show-entries media evidence: `ffprobe-rs` now
   accepts bounded `stream_tags` and `format_tags` `-show_entries` sections,
   lets selected tag sections imply stream/format output without scalar fields,
