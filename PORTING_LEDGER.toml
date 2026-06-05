@@ -2,6 +2,13 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest main-thread packet INI media-integration slice: ffprobe-rs now accepts
+# `-of ini` and renders bounded `[packets.packet.N]` sections with unquoted
+# scalar packet fields. The pinned MOV/AVI ffprobe oracle rows now also
+# compare INI `-show_packets` scalar packet fields for codec type, stream
+# index, PTS/DTS/time, duration/time, size, pos, and flags against FFmpeg
+# 8.1.1. This strengthens avutil-packet media evidence only; the row remains
+# fate_pass, not complete.
 # Latest main-thread packet flat media-integration slice: ffprobe-rs now
 # accepts `-of flat` and renders bounded `packets.packet.N.field=value` packet
 # lines with FFmpeg-shaped quoting for scalar packet fields. The pinned
@@ -1623,6 +1630,12 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: MOV/AVI ffprobe media-integration coverage now compares INI
+# `-show_packets` scalar packet fields against pinned FFmpeg 8.1.1.
+# Rust `ffprobe-rs` accepts `-of ini` and renders bounded `[packets.packet.N]`
+# sections, while the oracle rows compare INI packet codec type, stream index,
+# PTS/DTS/time, duration/time, size, pos, and flags. This strengthens
+# media-integration evidence only; the row remains fate_pass, not complete.
 # Latest update: MOV/AVI ffprobe media-integration coverage now compares flat
 # `-show_packets` scalar packet fields against pinned FFmpeg 8.1.1.
 # Rust `ffprobe-rs` accepts `-of flat` and renders bounded
@@ -5397,15 +5410,17 @@ rust_command = "cargo test -p fftools ffprobe"
 unit_tests = [
   "ffprobe::tests::parses_ffprobe_show_options_and_input",
   "ffprobe::tests::parses_ffprobe_flat_writer_format",
+  "ffprobe::tests::parses_ffprobe_ini_writer_format",
   "ffprobe::tests::renders_default_packet_sections",
   "ffprobe::tests::renders_flat_packet_sections",
+  "ffprobe::tests::renders_ini_packet_sections",
   "ffprobe::tests::outputs_mov_packet_sections",
   "ffprobe::tests::outputs_mov_packet_json_without_stream_or_format_sections",
 ]
 differential_tests = ["tests/differential/mappings.txt:fftools-ffprobe-mov-show-packets|oracle-ffprobe-mov-core-fields"]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-mov-show-packets|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "Initial ffprobe-rs -show_packets support collects packets from the Rust MOV demuxer for local seekable one-track MOV/MP4 inputs and renders packet codec type, stream index, PTS/DTS, time fields, duration, size, sample-offset `pos`, and key flags in default, json, compact, csv, and flat writers. The flat writer accepts `-of flat` and emits bounded `packets.packet.N.field=value` packet scalar lines with FFmpeg-shaped quoted string fields. Output is a constrained deterministic subset, not byte-identical to upstream, and the generated MOV core-fields oracle row now provides bounded pinned-oracle differential coverage for the selected rawvideo MOV packet fields across default-output, JSON, compact, CSV, and flat packet surfaces including `codec_type` and `pos`; broader inputs, full writer byte-identity, tags, field-order/id/disposition deltas, and upstream FATE coverage remain pending."
+notes = "Initial ffprobe-rs -show_packets support collects packets from the Rust MOV demuxer for local seekable one-track MOV/MP4 inputs and renders packet codec type, stream index, PTS/DTS, time fields, duration, size, sample-offset `pos`, and key flags in default, json, compact, csv, flat, and ini writers. The flat writer accepts `-of flat` and emits bounded `packets.packet.N.field=value` packet scalar lines with FFmpeg-shaped quoted string fields; the INI writer accepts `-of ini` and emits bounded `[packets.packet.N]` sections with unquoted packet scalar fields. Output is a constrained deterministic subset, not byte-identical to upstream, and the generated MOV core-fields oracle row now provides bounded pinned-oracle differential coverage for the selected rawvideo MOV packet fields across default-output, JSON, compact, CSV, flat, and INI packet surfaces including `codec_type` and `pos`; broader inputs, full writer byte-identity, tags, field-order/id/disposition deltas, and upstream FATE coverage remain pending."
 blocked_reason = ""
 
 [[component]]
@@ -5423,6 +5438,7 @@ unit_tests = [
   "ffprobe::tests::outputs_avi_stream_json",
   "ffprobe::tests::outputs_avi_packet_sections",
   "ffprobe::tests::renders_flat_packet_sections",
+  "ffprobe::tests::renders_ini_packet_sections",
   "ffprobe::tests::rejects_bad_avi_input",
 ]
 differential_tests = [
@@ -5431,7 +5447,7 @@ differential_tests = [
 ]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-avi-show-format-streams-packets|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "Initial ffprobe-rs AVI reporting uses the shared ProbeRegistry with the hand-written AVI descriptor for RIFF/AVI signature or .avi extension detection, opens the Rust AviDemuxer, and renders constrained video-only format, stream, and packet summaries through the existing default, json, compact, csv, and flat writers. Format reports include local input byte length as size plus zero nb_programs/nb_stream_groups counters for the current no-program/no-stream-group demuxer model. Stream reports include initial codec_name, codec_long_name, codec_type, codec_tag_string, numeric codec_tag, width/height, constrained coded_width/coded_height mirroring parsed dimensions, field_order=unknown because AVI interlace metadata is not parsed yet, bits_per_raw_sample from BITMAPINFOHEADER bit count, time_base from parsed stream scale/rate, start_pts/start_time for non-empty zero-origin streams, r_frame_rate/avg_frame_rate fields for the constrained video stream, duration_ts/duration from parsed stream length and time base, constrained nb_read_frames when -count_frames is requested, and nb_read_packets when -count_packets is requested. The pinned `oracle-ffprobe-avi-packet-fields` row now generates a two-packet BGR24 AVI with FFmpeg 8.1.1 and compares Rust default-output format, stream, and packet fields plus JSON, compact, CSV, and flat `-show_packets` scalar packet fields against oracle ffprobe, covering packet count, packet codec type, packet timing, padded packet size, RIFF chunk payload `pos`, and key flags. Output remains a constrained deterministic subset rather than full byte-identity; broader inputs, full writer byte-identity, tags, field-order/id/disposition deltas, and upstream FATE coverage remain pending."
+notes = "Initial ffprobe-rs AVI reporting uses the shared ProbeRegistry with the hand-written AVI descriptor for RIFF/AVI signature or .avi extension detection, opens the Rust AviDemuxer, and renders constrained video-only format, stream, and packet summaries through the existing default, json, compact, csv, flat, and ini writers. Format reports include local input byte length as size plus zero nb_programs/nb_stream_groups counters for the current no-program/no-stream-group demuxer model. Stream reports include initial codec_name, codec_long_name, codec_type, codec_tag_string, numeric codec_tag, width/height, constrained coded_width/coded_height mirroring parsed dimensions, field_order=unknown because AVI interlace metadata is not parsed yet, bits_per_raw_sample from BITMAPINFOHEADER bit count, time_base from parsed stream scale/rate, start_pts/start_time for non-empty zero-origin streams, r_frame_rate/avg_frame_rate fields for the constrained video stream, duration_ts/duration from parsed stream length and time base, constrained nb_read_frames when -count_frames is requested, and nb_read_packets when -count_packets is requested. The pinned `oracle-ffprobe-avi-packet-fields` row now generates a two-packet BGR24 AVI with FFmpeg 8.1.1 and compares Rust default-output format, stream, and packet fields plus JSON, compact, CSV, flat, and INI `-show_packets` scalar packet fields against oracle ffprobe, covering packet count, packet codec type, packet timing, padded packet size, RIFF chunk payload `pos`, and key flags. Output remains a constrained deterministic subset rather than full byte-identity; broader inputs, full writer byte-identity, tags, field-order/id/disposition deltas, and upstream FATE coverage remain pending."
 blocked_reason = ""
 
 [[component]]

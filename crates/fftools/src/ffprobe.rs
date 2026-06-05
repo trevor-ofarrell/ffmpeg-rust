@@ -21,6 +21,7 @@ enum WriterFormat {
     Compact,
     Csv,
     Flat,
+    Ini,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -762,6 +763,7 @@ fn parse_writer_format(value: &str) -> Result<WriterFormat, FfprobeError> {
         "compact" => Ok(WriterFormat::Compact),
         "csv" => Ok(WriterFormat::Csv),
         "flat" => Ok(WriterFormat::Flat),
+        "ini" => Ok(WriterFormat::Ini),
         _ => Err(FfprobeError::unsupported(format!(
             "unsupported writer format `{value}`"
         ))),
@@ -1448,6 +1450,7 @@ fn render_report(command: &FfprobeCommand, report: &FfprobeReport) -> String {
         WriterFormat::Compact => render_compact(command, report),
         WriterFormat::Csv => render_csv(command, report),
         WriterFormat::Flat => render_flat(command, report),
+        WriterFormat::Ini => render_ini(command, report),
     }
 }
 
@@ -1670,6 +1673,32 @@ fn render_flat(command: &FfprobeCommand, report: &FfprobeReport) -> String {
     }
     if command.show_format {
         push_flat_fields(&mut out, "format", format_flat_fields(report));
+    }
+    out
+}
+
+fn render_ini(command: &FfprobeCommand, report: &FfprobeReport) -> String {
+    let mut out = String::from("# ffprobe output\n\n");
+    if command.show_packets {
+        for (index, packet) in report.packets.iter().enumerate() {
+            push_ini_section(
+                &mut out,
+                &format!("packets.packet.{index}"),
+                packet_scalar_fields(packet),
+            );
+        }
+    }
+    if command.show_streams {
+        for (index, stream) in report.streams.iter().enumerate() {
+            push_ini_section(
+                &mut out,
+                &format!("streams.stream.{index}"),
+                stream_scalar_fields(stream),
+            );
+        }
+    }
+    if command.show_format {
+        push_ini_section(&mut out, "format", format_scalar_fields(report));
     }
     out
 }
@@ -2059,6 +2088,19 @@ fn push_flat_value(out: &mut String, value: FlatValue) {
     }
 }
 
+fn push_ini_section(out: &mut String, section: &str, fields: Vec<(String, String)>) {
+    out.push('[');
+    out.push_str(section);
+    out.push_str("]\n");
+    for (key, value) in fields {
+        out.push_str(&key);
+        out.push('=');
+        out.push_str(&escape_ini_value(&value));
+        out.push('\n');
+    }
+    out.push('\n');
+}
+
 fn escape_compact_value(value: &str) -> String {
     let mut escaped = String::new();
     for ch in value.chars() {
@@ -2067,6 +2109,19 @@ fn escape_compact_value(value: &str) -> String {
                 escaped.push('\\');
                 escaped.push(ch);
             }
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
+}
+
+fn escape_ini_value(value: &str) -> String {
+    let mut escaped = String::new();
+    for ch in value.chars() {
+        match ch {
+            '\\' => escaped.push_str("\\\\"),
             '\n' => escaped.push_str("\\n"),
             '\r' => escaped.push_str("\\r"),
             _ => escaped.push(ch),
@@ -2469,6 +2524,14 @@ mod tests {
     }
 
     #[test]
+    fn parses_ffprobe_ini_writer_format() {
+        let command =
+            parse_ffprobe_args(&strings(&["-show_packets", "-of", "ini", "clip.mp4"])).unwrap();
+
+        assert_eq!(command.writer_format, WriterFormat::Ini);
+    }
+
+    #[test]
     fn parses_and_rejects_ffprobe_loglevel_values() {
         let command =
             parse_ffprobe_args(&strings(&["-v", "-8", "-show_format", "clip.mp4"])).unwrap();
@@ -2694,6 +2757,30 @@ mod tests {
         assert!(!rendered.contains("[PACKET]"));
         assert!(!rendered.contains("packet,"));
         assert!(!rendered.contains("packet|"));
+    }
+
+    #[test]
+    fn renders_ini_packet_sections() {
+        let command =
+            parse_ffprobe_args(&strings(&["-show_packets", "-of", "ini", "clip.mp4"])).unwrap();
+        let report = sample_report();
+
+        let rendered = render_report(&command, &report);
+
+        assert!(rendered.starts_with("# ffprobe output\n\n[packets.packet.0]\n"));
+        assert!(rendered.contains("codec_type=video\n"));
+        assert!(rendered.contains("stream_index=0\n"));
+        assert!(rendered.contains("pts=0\n"));
+        assert!(rendered.contains("pts_time=0.000000\n"));
+        assert!(rendered.contains("duration=1000\n"));
+        assert!(rendered.contains("duration_time=0.011111\n"));
+        assert!(rendered.contains("size=3\n"));
+        assert!(rendered.contains("pos=123\n"));
+        assert!(rendered.contains("flags=K__\n"));
+        assert!(!rendered.contains("[PACKET]"));
+        assert!(!rendered.contains("packet,"));
+        assert!(!rendered.contains("packet|"));
+        assert!(!rendered.contains("packets.packet.0.codec_type"));
     }
 
     #[test]

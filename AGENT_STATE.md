@@ -3,6 +3,47 @@
 ## Current Status
 
 Current authoritative turn status: main-thread WSL advanced the top incomplete
+`avutil-packet` row with MOV/AVI ffprobe INI packet-field media-integration
+evidence. Required startup checks passed from a clean tree at
+`master...origin/master [ahead 126]`: `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- status --next 15` reported 11/96 strict-complete
+components (11.5%) with `avutil-packet` as the first incomplete row, and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validated the pinned FFmpeg 8.1.1 oracle and ABI versions.
+
+Current main-thread slice: `ffprobe-rs -of ini` now accepts the bounded INI
+writer and renders `# ffprobe output` plus `[packets.packet.N]` packet
+sections with unquoted scalar `key=value` fields for the current modeled packet
+surface. The pinned MOV and AVI ffprobe oracle rows now compare INI
+`-show_packets` scalar packet fields for codec type, stream index,
+PTS/DTS/time, duration/time, size, pos, and flags against FFmpeg 8.1.1
+alongside the existing default, JSON, compact, CSV, and flat checks.
+`avutil-packet` remains `fate_pass`, not complete; strict completion remains
+11/96 because broader safe API design, broader packet integration,
+ABI/media-integration breadth, and sustained fuzz evidence remain pending.
+
+Validation for this slice so far: `cargo fmt --all`;
+`CARGO_TARGET_DIR=target-orch-fate cargo test -p fftools ini -- --nocapture`;
+`CARGO_TARGET_DIR=target-orch-fate cargo test -p fftools packet --
+--nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo test -p fftools --test
+ffprobe_mov_oracle mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle --
+--ignored --nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo test -p
+fftools --test ffprobe_mov_oracle
+avi_bgr24_ffprobe_packet_fields_match_ffmpeg_oracle -- --ignored --nocapture`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- run --mappings
+tests/differential/mappings.txt --component avutil-packet --target
+oracle-ffprobe-mov-core-fields`; `CARGO_TARGET_DIR=target-orch-fate cargo run
+-p fate-runner -- run --mappings tests/differential/mappings.txt --component
+avutil-packet --target oracle-ffprobe-avi-packet-fields`; and
+`CARGO_TARGET_DIR=target-orch-fate cargo clippy -p fftools --all-targets
+--all-features -- -D warnings`. Final guards passed with `cargo fmt --all --
+--check`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner --
+status --next 15`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask --
+guard-runtime`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask --
+oracle-doctor`; `git diff --check` with only existing Git line-ending
+warnings; and `test ! -d target`.
+
+Current authoritative turn status: main-thread WSL advanced the top incomplete
 `avutil-packet` row with MOV/AVI ffprobe flat packet-field media-integration
 evidence. Required startup checks passed from a dirty tree at
 `master...origin/master [ahead 125]`: `CARGO_TARGET_DIR=target-orch-fate
