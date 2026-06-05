@@ -9,6 +9,11 @@
 
 ## Compatible Today
 
+- Latest main-thread packet CSV media evidence: `ffprobe-rs -of csv` now
+  renders value-only CSV packet lines, and the pinned MOV and AVI ffprobe
+  oracle rows compare CSV packet fields for codec type, stream index,
+  PTS/DTS/time, duration/time, size, pos, and flags against FFmpeg 8.1.1.
+  `avutil-packet` remains `fate_pass`; strict completion remains 11/96.
 - Latest main-thread packet compact media evidence: `ffprobe-rs -of compact`
   now renders bounded compact packet/stream/format lines, and the pinned MOV
   and AVI ffprobe oracle rows compare compact packet fields for codec type,

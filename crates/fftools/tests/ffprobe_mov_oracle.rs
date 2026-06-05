@@ -75,6 +75,25 @@ packet|codec_type=video|stream_index=0|pts=1|pts_time=0.040000|dts=1|dts_time=0.
 }
 
 #[test]
+fn parse_csv_packet_sections_reads_packet_lines() {
+    let output = "\
+packet,video,0,0,0.000000,0,0.000000,1,0.040000,6,36,K__
+packet,video,0,1,0.040000,1,0.040000,1,0.040000,6,42,___
+";
+
+    let packets = parse_csv_packet_sections(output);
+
+    assert_eq!(packets.len(), 2);
+    assert_eq!(packets[0].field("codec_type"), Some("video"));
+    assert_eq!(packets[0].field("stream_index"), Some("0"));
+    assert_eq!(packets[0].field("pos"), Some("36"));
+    assert_eq!(packets[0].field("flags"), Some("K__"));
+    assert_eq!(packets[1].field("pts"), Some("1"));
+    assert_eq!(packets[1].field("pos"), Some("42"));
+    assert_eq!(packets[1].field("flags"), Some("___"));
+}
+
+#[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE/FFPROBE_ORACLE or install third_party/ffmpeg-oracle/build/bin"]
 fn mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle() {
     let ffmpeg = oracle_tool("ffmpeg");
@@ -228,6 +247,7 @@ fn mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle() {
 
     assert_json_packet_fields_match(&ffprobe, mov_arg.as_str(), "MOV");
     assert_compact_packet_fields_match(&ffprobe, mov_arg.as_str(), "MOV");
+    assert_csv_packet_fields_match(&ffprobe, mov_arg.as_str(), "MOV");
 }
 
 #[test]
@@ -379,6 +399,7 @@ fn avi_bgr24_ffprobe_packet_fields_match_ffmpeg_oracle() {
 
     assert_json_packet_fields_match(&ffprobe, avi_arg.as_str(), "AVI");
     assert_compact_packet_fields_match(&ffprobe, avi_arg.as_str(), "AVI");
+    assert_csv_packet_fields_match(&ffprobe, avi_arg.as_str(), "AVI");
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -551,6 +572,51 @@ fn assert_compact_packet_fields_match(ffprobe: &Path, input: &str, label: &str) 
     }
 }
 
+fn assert_csv_packet_fields_match(ffprobe: &Path, input: &str, label: &str) {
+    let rust_csv = ffprobe_output(&strings(&[
+        "-hide_banner",
+        "-show_packets",
+        "-of",
+        "csv",
+        input,
+    ]))
+    .unwrap_or_else(|err| panic!("Rust ffprobe {label} CSV packet path should execute: {err}"));
+
+    let oracle = Command::new(ffprobe)
+        .args(["-v", "error", "-show_packets", "-of", "csv", input])
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", ffprobe.display()));
+
+    assert!(
+        oracle.status.success(),
+        "oracle ffprobe CSV failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        oracle.status.code(),
+        String::from_utf8_lossy(&oracle.stdout),
+        String::from_utf8_lossy(&oracle.stderr)
+    );
+
+    let oracle_csv =
+        String::from_utf8(oracle.stdout).expect("oracle ffprobe CSV output should be UTF-8");
+    let rust_packets = parse_csv_packet_sections(&rust_csv);
+    let oracle_packets = parse_csv_packet_sections(&oracle_csv);
+    assert_eq!(
+        rust_packets.len(),
+        oracle_packets.len(),
+        "{label} CSV packet counts should match"
+    );
+
+    for (index, (rust_packet, oracle_packet)) in
+        rust_packets.iter().zip(oracle_packets.iter()).enumerate()
+    {
+        assert_fields_match(
+            rust_packet,
+            oracle_packet,
+            PACKET_FIELDS,
+            &format!("{label} CSV PACKET[{index}]"),
+        );
+    }
+}
+
 fn parse_compact_packet_sections(output: &str) -> Vec<Section> {
     output
         .lines()
@@ -576,6 +642,56 @@ fn parse_compact_packet_sections(output: &str) -> Vec<Section> {
             }
         })
         .collect()
+}
+
+fn parse_csv_packet_sections(output: &str) -> Vec<Section> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let values = split_csv_line(line.trim_end_matches('\r'));
+            if values.first().map(String::as_str) != Some("packet") {
+                return None;
+            }
+            assert!(
+                values.len() > PACKET_FIELDS.len(),
+                "CSV packet row has too few fields: `{line}`"
+            );
+            let mut section = Section {
+                name: "PACKET".to_owned(),
+                fields: BTreeMap::new(),
+            };
+            for (field, value) in PACKET_FIELDS.iter().zip(values.iter().skip(1)) {
+                section.fields.insert((*field).to_owned(), value.clone());
+            }
+            Some(section)
+        })
+        .collect()
+}
+
+fn split_csv_line(line: &str) -> Vec<String> {
+    let mut values = Vec::new();
+    let mut current = String::new();
+    let mut chars = line.chars().peekable();
+    let mut in_quotes = false;
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' if in_quotes && chars.peek() == Some(&'"') => {
+                current.push('"');
+                let _ = chars.next();
+            }
+            '"' => in_quotes = !in_quotes,
+            ',' if !in_quotes => {
+                values.push(current);
+                current = String::new();
+            }
+            _ => current.push(ch),
+        }
+    }
+
+    assert!(!in_quotes, "unterminated CSV quoted field: `{line}`");
+    values.push(current);
+    values
 }
 
 fn unescape_compact_value(value: &str) -> String {
