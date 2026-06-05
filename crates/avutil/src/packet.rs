@@ -6942,6 +6942,16 @@ mod tests {
         assert_raw_flags(&cloned);
         assert!(cloned.data_buffer().shares_storage(source.data_buffer()));
 
+        let mut unref = source.clone();
+        unref.unref();
+        assert!(unref.flags().is_empty());
+        assert!(unref.is_empty());
+        assert_eq!(unref.pts(), None);
+        assert_eq!(unref.dts(), None);
+        assert_eq!(unref.duration(), 0);
+        assert_eq!(unref.pos(), None);
+        assert_eq!(unref.time_base(), Rational::ZERO);
+
         let mut moved_src = source.clone();
         let mut moved_dst = Packet::default();
         moved_dst.move_ref_from(&mut moved_src);

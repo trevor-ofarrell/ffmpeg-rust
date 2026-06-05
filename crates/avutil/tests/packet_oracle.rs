@@ -1473,6 +1473,13 @@ fn insert_packet_unknown_flag_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:flags-unknown-move-src".to_string(),
         packet_fields(&moved_src),
     );
+
+    let mut unref = src.clone();
+    unref.unref();
+    rows.insert(
+        "packet:flags-unknown-unref".to_string(),
+        packet_fields(&unref),
+    );
 }
 
 fn packet_with_zero_opaque_ref() -> Packet {
@@ -13322,6 +13329,9 @@ int main(void) {
     av_packet_move_ref(unknown_flags_move_dst, unknown_flags_move_src);
     print_packet("packet:flags-unknown-move-dst", unknown_flags_move_dst);
     print_packet("packet:flags-unknown-move-src", unknown_flags_move_src);
+
+    av_packet_unref(unknown_flags_src);
+    print_packet("packet:flags-unknown-unref", unknown_flags_src);
 
     av_packet_free(&unknown_flags_move_dst);
     av_packet_free(&unknown_flags_move_src);

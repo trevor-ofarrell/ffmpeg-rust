@@ -2,6 +2,12 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest main-thread packet unknown-flag unref slice: pinned libavcodec row
+# `packet:flags-unknown-unref` now proves `av_packet_unref()` clears retained
+# unknown raw `AVPacket.flags` bits while resetting the packet to default
+# fields. Rust unit coverage and `avutil_core_models` mirror the reset. This
+# strengthens avutil-packet evidence only; the row remains fate_pass, not
+# complete.
 # Latest main-thread packet codec-type media-integration slice: ffprobe-rs now
 # renders packet `codec_type` in default and JSON packet sections, populated
 # from the packet's stream report, and the pinned MOV and AVI ffprobe oracle
@@ -1588,6 +1594,13 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: pinned libavcodec row `packet:flags-unknown-unref` now
+# validates that `av_packet_unref()` clears retained unknown raw
+# `AVPacket.flags` bits after the existing copy-props/ref/clone/move rows prove
+# those bits survive ordinary packet lifecycles. Rust
+# `packet_unknown_flags_survive_lifecycle_helpers` and `avutil_core_models`
+# mirror the unref reset. This strengthens flag lifecycle evidence only; the
+# row remains fate_pass, not complete.
 # Latest update: MOV/AVI ffprobe media-integration coverage now carries packet
 # `codec_type` through the Rust demuxer -> stream report -> Packet -> ffprobe
 # path. The pinned `oracle-ffprobe-mov-core-fields` and
@@ -1906,7 +1919,9 @@ fuzz_targets = ["avutil_core_models"]
 # Packet handoff in those constrained demuxer -> framecrc paths.
 # Latest AVPacket raw-flag update: pinned libavcodec rows now prove
 # AVPacket.flags retains unknown raw bits such as 0x4000 through copy-props,
-# ref, clone, and move operations, with move resetting the source. Rust
+# ref, clone, and move operations, with move resetting the source, and the
+# later `packet:flags-unknown-unref` row proves unref clears those raw bits
+# while resetting the packet. Rust
 # PacketFlags::from_bits_retain/known_bits/unknown_bits plus Packet::set_flags
 # lifecycle unit coverage, oracle rows, and deterministic `avutil_core_models`
 # fixtures cover the bounded surface. Earlier WSL sanitizer rebuild attempts

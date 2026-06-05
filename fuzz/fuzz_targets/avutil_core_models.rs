@@ -13809,6 +13809,15 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(unknown_lifecycle_ref.flags().bits(), raw_flags);
     let unknown_lifecycle_clone = unknown_lifecycle_source.clone();
     assert_eq!(unknown_lifecycle_clone.flags().bits(), raw_flags);
+    let mut unknown_lifecycle_unref = unknown_lifecycle_source.clone();
+    unknown_lifecycle_unref.unref();
+    assert!(unknown_lifecycle_unref.flags().is_empty());
+    assert!(unknown_lifecycle_unref.is_empty());
+    assert_eq!(unknown_lifecycle_unref.pts(), None);
+    assert_eq!(unknown_lifecycle_unref.dts(), None);
+    assert_eq!(unknown_lifecycle_unref.duration(), 0);
+    assert_eq!(unknown_lifecycle_unref.pos(), None);
+    assert_eq!(unknown_lifecycle_unref.time_base(), Rational::ZERO);
     let mut unknown_lifecycle_move_src = unknown_lifecycle_source.clone();
     let mut unknown_lifecycle_move_dst = Packet::default();
     unknown_lifecycle_move_dst.move_ref_from(&mut unknown_lifecycle_move_src);

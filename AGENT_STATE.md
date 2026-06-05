@@ -2,6 +2,46 @@
 
 ## Current Status
 
+Current authoritative turn status: main-thread WSL committed the prior
+`avutil-packet` ffprobe packet `codec_type` media-integration slice as
+`60f110a7`, then advanced the same top incomplete row with unknown raw packet
+flag unref evidence. Required startup checks passed from the post-commit clean
+tree at `master...origin/master [ahead 121]`: `CARGO_TARGET_DIR=target-orch-fate
+cargo run -p fate-runner -- status --next 15` reported 11/96 strict-complete
+components (11.5%) with `avutil-packet` as the first incomplete row, and
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`
+validated the pinned FFmpeg 8.1.1 oracle and ABI versions.
+
+Current main-thread slice: the pinned libavcodec packet oracle now emits
+`packet:flags-unknown-unref`, proving `av_packet_unref()` clears retained
+unknown raw `AVPacket.flags` bits while resetting the packet to default fields.
+Rust `packet_unknown_flags_survive_lifecycle_helpers` now checks the same
+unref reset after copy-props/ref/clone/move retention, and
+`avutil_core_models` mirrors the deterministic invariant. `avutil-packet`
+remains `fate_pass`, not complete; strict completion remains 11/96 because
+broader safe API design, broader packet integration, ABI/media-integration
+breadth, and sustained fuzz evidence remain pending.
+
+Validation for this slice so far: `cargo fmt --all`; `CARGO_TARGET_DIR=target-orch-avutil
+cargo test -p avutil packet_unknown_flags_survive_lifecycle_helpers --
+--nocapture`; `CARGO_TARGET_DIR=target-orch-avutil cargo test -p avutil --test
+packet_oracle libavcodec_packet_core_lifecycle_matches_packet_model --
+--ignored --nocapture`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p
+fate-runner -- run --mappings tests/differential/mappings.txt --component
+avutil-packet --target oracle-libavcodec-packet-core`;
+`CARGO_TARGET_DIR=target-orch-avutil cargo clippy -p avutil --all-targets
+--all-features -- -D warnings`; `CARGO_TARGET_DIR=target-wsl-fuzz cargo clippy
+--manifest-path fuzz/Cargo.toml --all-targets -- -D warnings`; and
+`CARGO_TARGET_DIR=target-wsl-fuzz ASAN_OPTIONS=detect_leaks=0 cargo fuzz run
+avutil_core_models -- -runs=1`, which rebuilt the sanitizer target in 7m30s,
+loaded the four tracked seed files, reached `DONE` after 5 runs, and found no
+crash. Final guards passed with `cargo fmt --all -- --check`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p fate-runner -- status --next
+15`; `CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- guard-runtime`;
+`CARGO_TARGET_DIR=target-orch-fate cargo run -p xtask -- oracle-doctor`;
+`git diff --check` with only existing Git line-ending warnings; and
+`test ! -d target`.
+
 Current authoritative turn status: main-thread WSL advanced the top incomplete
 `avutil-packet` row with MOV/AVI ffprobe packet `codec_type`
 media-integration evidence. Required startup checks passed from a clean tree at
