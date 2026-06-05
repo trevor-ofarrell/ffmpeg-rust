@@ -173,6 +173,7 @@ const PACKET_FIELD_ORDER: &[PacketField] = &[
 enum PacketSideDataFieldSelection {
     #[default]
     All,
+    Hidden,
     Only(Vec<PacketSideDataField>),
 }
 
@@ -180,8 +181,13 @@ impl PacketSideDataFieldSelection {
     fn includes(&self, field: PacketSideDataField) -> bool {
         match self {
             Self::All => true,
+            Self::Hidden => false,
             Self::Only(fields) => fields.contains(&field),
         }
+    }
+
+    fn is_hidden(&self) -> bool {
+        matches!(self, Self::Hidden)
     }
 }
 
@@ -1001,6 +1007,11 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
                 let has_stream_fields = entries.stream_fields.is_some();
                 let has_format_fields = entries.format_fields.is_some();
                 if let Some(fields) = entries.packet_fields {
+                    if matches!(fields, PacketFieldSelection::Only(_))
+                        && entries.packet_side_data_fields.is_none()
+                    {
+                        packet_side_data_fields = PacketSideDataFieldSelection::Hidden;
+                    }
                     packet_fields = fields;
                     show_packets = true;
                 }
@@ -2156,18 +2167,20 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
                     out.push('\n');
                 }
             }
-            for side_data in &packet.side_data {
-                out.push_str("[SIDE_DATA]\n");
-                for (field, value) in packet_side_data_selected_string_fields(
-                    side_data,
-                    &command.packet_side_data_fields,
-                ) {
-                    out.push_str(field.name());
-                    out.push('=');
-                    out.push_str(&value);
-                    out.push('\n');
+            if !command.packet_side_data_fields.is_hidden() {
+                for side_data in &packet.side_data {
+                    out.push_str("[SIDE_DATA]\n");
+                    for (field, value) in packet_side_data_selected_string_fields(
+                        side_data,
+                        &command.packet_side_data_fields,
+                    ) {
+                        out.push_str(field.name());
+                        out.push('=');
+                        out.push_str(&value);
+                        out.push('\n');
+                    }
+                    out.push_str("[/SIDE_DATA]\n");
                 }
-                out.push_str("[/SIDE_DATA]\n");
             }
             out.push_str("[/PACKET]\n");
         }
@@ -2292,12 +2305,16 @@ fn render_flat(command: &FfprobeCommand, report: &FfprobeReport) -> String {
                 &format!("packets.packet.{index}"),
                 packet_flat_fields(packet, &command.packet_fields),
             );
-            for (side_data_index, side_data) in packet.side_data.iter().enumerate() {
-                push_flat_fields(
-                    &mut out,
-                    &format!("packets.packet.{index}.side_data_list.side_data.{side_data_index}"),
-                    packet_side_data_flat_fields(side_data, &command.packet_side_data_fields),
-                );
+            if !command.packet_side_data_fields.is_hidden() {
+                for (side_data_index, side_data) in packet.side_data.iter().enumerate() {
+                    push_flat_fields(
+                        &mut out,
+                        &format!(
+                            "packets.packet.{index}.side_data_list.side_data.{side_data_index}"
+                        ),
+                        packet_side_data_flat_fields(side_data, &command.packet_side_data_fields),
+                    );
+                }
             }
         }
     }
@@ -2324,17 +2341,25 @@ fn render_ini(command: &FfprobeCommand, report: &FfprobeReport) -> String {
     let mut out = String::from("# ffprobe output\n\n");
     if command.show_packets {
         for (index, packet) in report.packets.iter().enumerate() {
-            push_ini_section(
-                &mut out,
-                &format!("packets.packet.{index}"),
-                packet_scalar_fields(packet, &command.packet_fields),
-            );
-            for (side_data_index, side_data) in packet.side_data.iter().enumerate() {
-                push_ini_section(
-                    &mut out,
-                    &format!("packets.packet.{index}.side_data_list.side_data.{side_data_index}"),
-                    packet_side_data_scalar_fields(side_data, &command.packet_side_data_fields),
-                );
+            let fields = packet_scalar_fields(packet, &command.packet_fields);
+            let has_visible_side_data =
+                !command.packet_side_data_fields.is_hidden() && !packet.side_data.is_empty();
+            let section = format!("packets.packet.{index}");
+            if fields.is_empty() && has_visible_side_data {
+                push_ini_section_header(&mut out, &section);
+            } else {
+                push_ini_section(&mut out, &section, fields);
+            }
+            if !command.packet_side_data_fields.is_hidden() {
+                for (side_data_index, side_data) in packet.side_data.iter().enumerate() {
+                    push_ini_section(
+                        &mut out,
+                        &format!(
+                            "packets.packet.{index}.side_data_list.side_data.{side_data_index}"
+                        ),
+                        packet_side_data_scalar_fields(side_data, &command.packet_side_data_fields),
+                    );
+                }
             }
         }
     }
@@ -2508,14 +2533,16 @@ fn packet_compact_fields(
     side_data_selection: &PacketSideDataFieldSelection,
 ) -> Vec<(String, String)> {
     let mut fields = packet_scalar_fields(packet, packet_selection);
-    for side_data in &packet.side_data {
-        for (field, value) in
-            packet_side_data_selected_string_fields(side_data, side_data_selection)
-        {
-            fields.push((
-                format!("side_datum/{}:{}", side_data.compact_name, field.name()),
-                value,
-            ));
+    if !side_data_selection.is_hidden() {
+        for side_data in &packet.side_data {
+            for (field, value) in
+                packet_side_data_selected_string_fields(side_data, side_data_selection)
+            {
+                fields.push((
+                    format!("side_datum/{}:{}", side_data.compact_name, field.name()),
+                    value,
+                ));
+            }
         }
     }
     fields
@@ -2527,11 +2554,13 @@ fn packet_csv_fields(
     side_data_selection: &PacketSideDataFieldSelection,
 ) -> Vec<(String, String)> {
     let mut fields = packet_scalar_fields(packet, packet_selection);
-    for side_data in &packet.side_data {
-        fields.extend(packet_side_data_scalar_fields(
-            side_data,
-            side_data_selection,
-        ));
+    if !side_data_selection.is_hidden() {
+        for side_data in &packet.side_data {
+            fields.extend(packet_side_data_scalar_fields(
+                side_data,
+                side_data_selection,
+            ));
+        }
     }
     fields
 }
@@ -2888,6 +2917,9 @@ fn flat_optional_i64(value: Option<i64>) -> FlatValue {
 
 fn push_compact_line(out: &mut String, section: &str, fields: Vec<(String, String)>) {
     out.push_str(section);
+    if fields.is_empty() {
+        out.push('|');
+    }
     for (key, value) in fields {
         out.push('|');
         out.push_str(&escape_compact_value(&key));
@@ -2899,6 +2931,9 @@ fn push_compact_line(out: &mut String, section: &str, fields: Vec<(String, Strin
 
 fn push_csv_line(out: &mut String, section: &str, fields: Vec<(String, String)>) {
     out.push_str(&escape_csv_value(section));
+    if fields.is_empty() {
+        out.push(',');
+    }
     for (_, value) in fields {
         out.push(',');
         out.push_str(&escape_csv_value(&value));
@@ -2929,9 +2964,7 @@ fn push_flat_value(out: &mut String, value: FlatValue) {
 }
 
 fn push_ini_section(out: &mut String, section: &str, fields: Vec<(String, String)>) {
-    out.push('[');
-    out.push_str(section);
-    out.push_str("]\n");
+    push_ini_section_header(out, section);
     for (key, value) in fields {
         out.push_str(&key);
         out.push('=');
@@ -2939,6 +2972,12 @@ fn push_ini_section(out: &mut String, section: &str, fields: Vec<(String, String
         out.push('\n');
     }
     out.push('\n');
+}
+
+fn push_ini_section_header(out: &mut String, section: &str) {
+    out.push('[');
+    out.push_str(section);
+    out.push_str("]\n");
 }
 
 fn push_xml_empty_element(
@@ -2957,7 +2996,11 @@ fn push_xml_empty_element(
         out.push_str(&escape_xml_attribute(&value));
         out.push('"');
     }
-    out.push_str("/>\n");
+    if out.ends_with(name) {
+        out.push_str(" />\n");
+    } else {
+        out.push_str("/>\n");
+    }
 }
 
 fn push_xml_packet_element(
@@ -2967,19 +3010,23 @@ fn push_xml_packet_element(
     side_data: &[FfprobePacketSideDataReport],
     side_data_selection: &PacketSideDataFieldSelection,
 ) {
-    if side_data.is_empty() {
+    if side_data.is_empty() || side_data_selection.is_hidden() {
         push_xml_empty_element(out, indent, "packet", fields);
         return;
     }
 
     out.push_str(&" ".repeat(indent));
     out.push_str("<packet");
+    let had_fields = !fields.is_empty();
     for (key, value) in fields {
         out.push(' ');
         out.push_str(&key);
         out.push_str("=\"");
         out.push_str(&escape_xml_attribute(&value));
         out.push('"');
+    }
+    if !had_fields {
+        out.push(' ');
     }
     out.push_str(">\n");
     out.push_str(&" ".repeat(indent + 4));
@@ -3159,7 +3206,7 @@ fn render_packet_json(
         .filter(|field| selection.includes(*field))
         .filter_map(|field| packet_json_field(packet, field))
         .collect::<Vec<_>>();
-    if !packet.side_data.is_empty() {
+    if !packet.side_data.is_empty() && !side_data_selection.is_hidden() {
         fields.push(render_packet_side_data_list_json(
             &packet.side_data,
             side_data_selection,
@@ -3609,6 +3656,21 @@ mod tests {
         assert!(command.packet_fields.includes(PacketField::Size));
         assert!(command.packet_fields.includes(PacketField::Flags));
         assert!(!command.packet_fields.includes(PacketField::CodecType));
+        assert!(!command
+            .packet_side_data_fields
+            .includes(PacketSideDataField::SideDataType));
+    }
+
+    #[test]
+    fn parses_packet_all_show_entries_preserves_side_data_children() {
+        let command =
+            parse_ffprobe_args(&strings(&["-show_entries", "packet", "clip.mp4"])).unwrap();
+
+        assert!(command.show_packets);
+        assert!(command.packet_fields.includes(PacketField::CodecType));
+        assert!(command
+            .packet_side_data_fields
+            .includes(PacketSideDataField::SideDataType));
     }
 
     #[test]
@@ -4169,7 +4231,8 @@ mod tests {
 
     #[test]
     fn renders_selected_packet_fields_in_ffmpeg_field_order() {
-        let report = sample_report();
+        let mut report = sample_report();
+        report.packets[0].side_data = vec![sample_skip_samples_side_data_report()];
 
         let default = render_report(
             &parse_ffprobe_args(&strings(&[
@@ -4275,6 +4338,12 @@ mod tests {
             json,
             "{\n  \"packets\": [\n    {\"pts_time\": \"0.000000\", \"size\": \"3\", \"flags\": \"K__\"}\n  ]\n}\n"
         );
+        for rendered in [&default, &compact, &csv, &flat, &ini, &xml, &json] {
+            assert!(
+                !rendered.contains("Skip Samples"),
+                "selected packet fields should not implicitly render packet side data"
+            );
+        }
     }
 
     #[test]
@@ -4531,7 +4600,8 @@ mod tests {
 
     #[test]
     fn renders_empty_packet_show_entries_sections() {
-        let report = sample_report();
+        let mut report = sample_report();
+        report.packets[0].side_data = vec![sample_skip_samples_side_data_report()];
 
         let default = render_report(
             &parse_ffprobe_args(&strings(&["-show_entries", "packet=", "clip.mp4"])).unwrap(),
@@ -4550,7 +4620,20 @@ mod tests {
             .unwrap(),
             &report,
         );
-        assert_eq!(compact, "packet\n");
+        assert_eq!(compact, "packet|\n");
+
+        let csv = render_report(
+            &parse_ffprobe_args(&strings(&[
+                "-show_entries",
+                "packet=unknown",
+                "-of",
+                "csv",
+                "clip.mp4",
+            ]))
+            .unwrap(),
+            &report,
+        );
+        assert_eq!(csv, "packet,\n");
     }
 
     #[test]

@@ -79,8 +79,39 @@ const MOV_TAG_STREAM_FIELDS: &[&str] = &["TAG:handler_name"];
 const EMPTY_TAG_STREAM_FIELDS: &[&str] = &[];
 const AAC_SKIP_SAMPLES_SHOW_ENTRIES: &str =
     "packet=pts,dts,pts_time,dts_time,duration,size,flags:packet_side_data";
+const AAC_SKIP_SAMPLES_SIDE_DATA_ONLY_SHOW_ENTRIES: &str = "packet_side_data";
+const AAC_SKIP_SAMPLES_SIDE_DATA_SELECTED_SHOW_ENTRIES: &str =
+    "packet_side_data=side_data_type,skip_samples";
 const AAC_SKIP_SAMPLES_WRITERS: &[&str] =
     &["default", "json", "compact", "csv", "flat", "ini", "xml"];
+const AAC_SKIP_SAMPLES_CASES: &[M4aSkipSamplesCase] = &[
+    M4aSkipSamplesCase {
+        name: "packet-fields-plus-side-data",
+        show_packets: true,
+        show_entries: AAC_SKIP_SAMPLES_SHOW_ENTRIES,
+        expect_discard_flag: true,
+    },
+    M4aSkipSamplesCase {
+        name: "side-data-only",
+        show_packets: false,
+        show_entries: AAC_SKIP_SAMPLES_SIDE_DATA_ONLY_SHOW_ENTRIES,
+        expect_discard_flag: false,
+    },
+    M4aSkipSamplesCase {
+        name: "selected-side-data-fields",
+        show_packets: false,
+        show_entries: AAC_SKIP_SAMPLES_SIDE_DATA_SELECTED_SHOW_ENTRIES,
+        expect_discard_flag: false,
+    },
+];
+
+#[derive(Debug, Clone, Copy)]
+struct M4aSkipSamplesCase {
+    name: &'static str,
+    show_packets: bool,
+    show_entries: &'static str,
+    expect_discard_flag: bool,
+}
 
 #[test]
 fn parse_default_sections_reads_multiline_packet_data() {
@@ -729,42 +760,45 @@ fn m4a_aac_skip_samples_packet_side_data_matches_ffmpeg_oracle() {
         String::from_utf8_lossy(&generate.stderr)
     );
 
-    for writer in AAC_SKIP_SAMPLES_WRITERS {
-        let rust = assert_m4a_skip_samples_writer_matches_ffmpeg_oracle(
-            &ffprobe,
-            m4a_arg.as_str(),
-            writer,
-        );
-        assert_m4a_skip_samples_writer_evidence(writer, &rust);
+    for case in AAC_SKIP_SAMPLES_CASES {
+        for writer in AAC_SKIP_SAMPLES_WRITERS {
+            let rust = assert_m4a_skip_samples_writer_matches_ffmpeg_oracle(
+                &ffprobe,
+                m4a_arg.as_str(),
+                case,
+                writer,
+            );
+            assert_m4a_skip_samples_writer_evidence(writer, case.expect_discard_flag, &rust);
+        }
     }
 }
 
 fn assert_m4a_skip_samples_writer_matches_ffmpeg_oracle(
     ffprobe: &Path,
     input: &str,
+    case: &M4aSkipSamplesCase,
     writer: &str,
 ) -> String {
-    let args = [
-        "-v",
-        "error",
-        "-show_packets",
-        "-show_entries",
-        AAC_SKIP_SAMPLES_SHOW_ENTRIES,
-        "-of",
-        writer,
-        input,
-    ];
+    let mut args = vec!["-v", "error"];
+    if case.show_packets {
+        args.push("-show_packets");
+    }
+    args.extend_from_slice(&["-show_entries", case.show_entries, "-of", writer, input]);
     let rust = ffprobe_output(&strings(&args)).unwrap_or_else(|err| {
-        panic!("Rust ffprobe AAC/M4A {writer} side-data path should execute: {err}")
+        panic!(
+            "Rust ffprobe AAC/M4A {writer} {} side-data path should execute: {err}",
+            case.name
+        )
     });
 
     let oracle = Command::new(ffprobe)
-        .args(args)
+        .args(&args)
         .output()
         .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", ffprobe.display()));
     assert!(
         oracle.status.success(),
-        "oracle ffprobe AAC/M4A {writer} side-data failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        "oracle ffprobe AAC/M4A {writer} {} side-data failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        case.name,
         oracle.status.code(),
         String::from_utf8_lossy(&oracle.stdout),
         String::from_utf8_lossy(&oracle.stderr)
@@ -776,19 +810,21 @@ fn assert_m4a_skip_samples_writer_matches_ffmpeg_oracle(
         assert_eq!(
             json_without_insignificant_whitespace(&rust),
             json_without_insignificant_whitespace(&oracle_stdout),
-            "Rust and oracle AAC/M4A JSON packet side-data output should match after JSON whitespace normalization"
+            "Rust and oracle AAC/M4A JSON {} side-data output should match after JSON whitespace normalization",
+            case.name
         );
     } else {
         assert_eq!(
             rust, oracle_stdout,
-            "Rust and oracle AAC/M4A {writer} packet side-data output should match byte-for-byte"
+            "Rust and oracle AAC/M4A {writer} {} side-data output should match byte-for-byte",
+            case.name
         );
     }
 
     rust
 }
 
-fn assert_m4a_skip_samples_writer_evidence(writer: &str, output: &str) {
+fn assert_m4a_skip_samples_writer_evidence(writer: &str, expect_discard_flag: bool, output: &str) {
     let (side_data, discard_flag) = match writer {
         "default" => (
             "[SIDE_DATA]\nside_data_type=Skip Samples\nskip_samples=1024\n",
@@ -802,7 +838,7 @@ fn assert_m4a_skip_samples_writer_evidence(writer: &str, output: &str) {
             "side_datum/skip_samples:side_data_type=Skip Samples|side_datum/skip_samples:skip_samples=1024",
             "|flags=KD_|",
         ),
-        "csv" => (",KD_,Skip Samples,1024,0,0,0\n", ",KD_,"),
+        "csv" => ("Skip Samples,1024", ",KD_,"),
         "flat" => (
             "packets.packet.0.side_data_list.side_data.0.side_data_type=\"Skip Samples\"\npackets.packet.0.side_data_list.side_data.0.skip_samples=1024\n",
             "packets.packet.0.flags=\"KD_\"\n",
@@ -830,10 +866,12 @@ fn assert_m4a_skip_samples_writer_evidence(writer: &str, output: &str) {
         proof_output.contains(side_data),
         "{writer} output should prove public Skip Samples packet side data"
     );
-    assert!(
-        proof_output.contains(discard_flag),
-        "{writer} output should prove the priming packet discard flag"
-    );
+    if expect_discard_flag {
+        assert!(
+            proof_output.contains(discard_flag),
+            "{writer} output should prove the priming packet discard flag"
+        );
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

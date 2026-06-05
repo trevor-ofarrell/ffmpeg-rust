@@ -43,11 +43,15 @@ The packet side-data ffprobe writer shape is calibrated from a tiny pinned
 AAC/M4A oracle sample whose first packet exposes `Skip Samples` side data. The
 current native Rust MOV/M4A path has a pinned media differential row:
 `oracle-ffprobe-m4a-skip-samples-side-data` generates that AAC/M4A shape with
-FFmpeg 8.1.1 and compares selected packet plus `packet_side_data` output
-against Rust across default, JSON, compact, CSV, flat, INI, and XML writers.
-Default, compact, CSV, flat, INI, and XML are byte-compared; JSON is compared
-after insignificant-whitespace normalization because Rust emits compact packet
-objects while FFmpeg pretty-prints them.
+FFmpeg 8.1.1 and compares packet fields plus `packet_side_data`,
+side-data-only `packet_side_data`, and selected
+`packet_side_data=side_data_type,skip_samples` output against Rust across
+default, JSON, compact, CSV, flat, INI, and XML writers. Default, compact,
+CSV, flat, INI, and XML are byte-compared; JSON is compared after
+insignificant-whitespace normalization because Rust emits compact packet
+objects while FFmpeg pretty-prints them. The same row pins FFmpeg's empty
+compact/CSV packet row delimiters, INI empty-parent plus nested-side-data
+shape, and XML no-attribute packet spacing.
 
 Ignored oracle harnesses that compile temporary C helpers should write those
 helpers under the active Cargo target directory when `CARGO_TARGET_DIR` is set.

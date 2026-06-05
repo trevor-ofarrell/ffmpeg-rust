@@ -2,6 +2,19 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest main-thread M4A packet side-data selection slice: ffprobe-rs now
+# hides packet side-data children when `-show_entries packet=<fields>` selects
+# packet scalar fields without explicit `packet_side_data`, while preserving
+# side-data children for plain `packet` and explicit `packet_side_data`
+# selections. Empty compact/CSV packet rows now match FFmpeg's `packet|` and
+# `packet,` spellings, INI side-data-only output emits an empty parent packet
+# section immediately before nested side data, and XML matches FFmpeg's
+# `<packet />` and `<packet >` no-attribute packet forms. The pinned
+# `oracle-ffprobe-m4a-skip-samples-side-data` row now compares packet fields
+# plus side data, side-data-only, and selected side-data fields across default,
+# JSON, compact, CSV, flat, INI, and XML writers. This strengthens
+# avutil-packet and fftools MOV packet evidence only; strict completion remains
+# unchanged.
 # Latest main-thread M4A packet side-data media slice: the MOV demuxer now
 # accepts a bounded single-entry `edts/elst` edit list, applies positive
 # `media_time` as a packet timestamp shift, marks the first `mp4a` priming
@@ -1616,7 +1629,11 @@ unit_tests = [
   "packet::tests::packet_time_base_defaults_copies_resets_and_rescale_preserves",
   "mov::tests::applies_single_entry_aac_edit_list_as_skip_samples_side_data",
   "ffprobe::tests::formats_negative_packet_times_with_ffmpeg_microsecond_rounding",
+  "ffprobe::tests::parses_packet_show_entries_and_implies_packets",
+  "ffprobe::tests::parses_packet_all_show_entries_preserves_side_data_children",
   "ffprobe::tests::parses_packet_side_data_show_entries_and_implies_packets",
+  "ffprobe::tests::renders_selected_packet_fields_in_ffmpeg_field_order",
+  "ffprobe::tests::renders_empty_packet_show_entries_sections",
   "ffprobe::tests::packet_side_data_reports_public_skip_samples_and_filters_internal_side_data",
   "ffprobe::tests::renders_ini_packet_sections",
   "ffprobe::tests::renders_packet_side_data_in_ffmpeg_writer_shapes",
@@ -1749,13 +1766,13 @@ fuzz_targets = ["avutil_core_models"]
 # priming packet discard so ffprobe prints `KD_`, and emits typed public Skip
 # Samples side data. The new
 # `oracle-ffprobe-m4a-skip-samples-side-data` differential row compares
-# selected `ffprobe -show_packets -show_entries
-# packet=pts,dts,pts_time,dts_time,duration,size,flags:packet_side_data`
-# output against FFmpeg 8.1.1 across default, JSON, compact, CSV, flat, INI,
-# and XML writers. Default/compact/CSV/flat/INI/XML are byte-compared, JSON is
-# compared after insignificant-whitespace normalization, and the INI writer now
-# trims the extra final blank line to match the oracle. This strengthens native
-# demuxer packet side-data evidence only; the row remains fate_pass, not
+# packet fields plus `packet_side_data`, side-data-only `packet_side_data`,
+# and selected `packet_side_data=side_data_type,skip_samples` output against
+# FFmpeg 8.1.1 across default, JSON, compact, CSV, flat, INI, and XML writers.
+# Default/compact/CSV/flat/INI/XML are byte-compared, JSON is compared after
+# insignificant-whitespace normalization, and the INI/XML plus empty
+# compact/CSV packet row spellings now match the oracle. This strengthens
+# native demuxer packet side-data evidence only; the row remains fate_pass, not
 # complete.
 # Latest update: MOV/AVI ffprobe media-integration coverage now compares
 # `-show_packets -show_data_hash md5` packet fields against pinned FFmpeg
@@ -5552,6 +5569,13 @@ unit_tests = [
   "ffprobe::tests::renders_ini_packet_sections",
   "ffprobe::tests::renders_xml_packet_sections",
   "ffprobe::tests::formats_negative_packet_times_with_ffmpeg_microsecond_rounding",
+  "ffprobe::tests::parses_packet_show_entries_and_implies_packets",
+  "ffprobe::tests::parses_packet_all_show_entries_preserves_side_data_children",
+  "ffprobe::tests::parses_packet_side_data_show_entries_and_implies_packets",
+  "ffprobe::tests::renders_selected_packet_fields_in_ffmpeg_field_order",
+  "ffprobe::tests::renders_empty_packet_show_entries_sections",
+  "ffprobe::tests::renders_empty_packet_side_data_show_entries_sections",
+  "ffprobe::tests::renders_packet_side_data_in_ffmpeg_writer_shapes",
   "ffprobe::tests::outputs_mov_packet_sections",
   "ffprobe::tests::outputs_mov_packet_json_without_stream_or_format_sections",
 ]
@@ -5562,7 +5586,7 @@ differential_tests = [
 ]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-mov-show-packets|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "Initial ffprobe-rs -show_packets support collects packets from the Rust MOV demuxer for local seekable one-track MOV/MP4 inputs and renders packet codec type, stream index, PTS/DTS, rounded time fields including negative AAC priming timestamps, duration, size, sample-offset `pos`, key/discard/corrupt flags, and public packet side-data sections in default, json, compact, csv, flat, ini, and xml writers. The flat writer accepts `-of flat` and emits bounded `packets.packet.N.field=value` packet scalar lines with FFmpeg-shaped quoted string fields; the INI writer accepts `-of ini` and emits bounded `[packets.packet.N]` sections with unquoted packet scalar fields; the XML writer accepts `-of xml` and emits bounded `<packet .../>` elements under `<ffprobe><packets>`. Output is a constrained deterministic subset, not byte-identical to upstream. The generated MOV core-fields oracle row provides bounded pinned-oracle differential coverage for selected rawvideo MOV packet fields across default-output, JSON, compact, CSV, flat, INI, and XML packet surfaces including `codec_type` and `pos`; the M4A skip-samples row byte-compares selected default `packet_side_data` output for a pinned FFmpeg-generated AAC/M4A file whose first packet carries `Skip Samples` and `KD_`; broader inputs, full writer byte-identity, tags, field-order/id/disposition deltas, and upstream FATE coverage remain pending."
+notes = "Initial ffprobe-rs -show_packets support collects packets from the Rust MOV demuxer for local seekable one-track MOV/MP4 inputs and renders packet codec type, stream index, PTS/DTS, rounded time fields including negative AAC priming timestamps, duration, size, sample-offset `pos`, key/discard/corrupt flags, and public packet side-data sections in default, json, compact, csv, flat, ini, and xml writers. The flat writer accepts `-of flat` and emits bounded `packets.packet.N.field=value` packet scalar lines with FFmpeg-shaped quoted string fields; the INI writer accepts `-of ini` and emits bounded `[packets.packet.N]` sections with unquoted packet scalar fields; the XML writer accepts `-of xml` and emits bounded `<packet .../>` elements under `<ffprobe><packets>`. Output is a constrained deterministic subset, not byte-identical to upstream. The generated MOV core-fields oracle row provides bounded pinned-oracle differential coverage for selected rawvideo MOV packet fields across default-output, JSON, compact, CSV, flat, INI, and XML packet surfaces including `codec_type` and `pos`; the M4A skip-samples row compares packet fields plus `packet_side_data`, side-data-only `packet_side_data`, and selected `packet_side_data=side_data_type,skip_samples` output for a pinned FFmpeg-generated AAC/M4A file whose first packet carries `Skip Samples` and `KD_`, including FFmpeg-shaped empty compact/CSV packet rows, INI nested side-data sections, and XML no-attribute packet spacing; broader inputs, full writer byte-identity, tags, field-order/id/disposition deltas, and upstream FATE coverage remain pending."
 blocked_reason = ""
 
 [[component]]
