@@ -155,6 +155,7 @@ fn mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle() {
             rust_packet,
             oracle_packet,
             &[
+                "codec_type",
                 "stream_index",
                 "pts",
                 "pts_time",
@@ -314,6 +315,7 @@ fn avi_bgr24_ffprobe_packet_fields_match_ffmpeg_oracle() {
             rust_packet,
             oracle_packet,
             &[
+                "codec_type",
                 "stream_index",
                 "pts",
                 "pts_time",

@@ -318,6 +318,7 @@ impl FfprobeStreamReport {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FfprobePacketReport {
     index: usize,
+    codec_type: String,
     stream_index: usize,
     pts: Option<i64>,
     pts_time: Option<String>,
@@ -333,6 +334,10 @@ pub struct FfprobePacketReport {
 impl FfprobePacketReport {
     pub fn index(&self) -> usize {
         self.index
+    }
+
+    pub fn codec_type(&self) -> &str {
+        &self.codec_type
     }
 
     pub fn stream_index(&self) -> usize {
@@ -1029,6 +1034,7 @@ fn collect_mov_packets(
         let duration = packet.duration();
         packets.push(FfprobePacketReport {
             index: packets.len(),
+            codec_type: stream.codec_type.clone(),
             stream_index: packet.stream_index(),
             pts,
             pts_time: pts.map(|pts| {
@@ -1069,6 +1075,7 @@ fn collect_avi_packets(
         let duration = packet.duration();
         packets.push(FfprobePacketReport {
             index: packets.len(),
+            codec_type: stream.codec_type.clone(),
             stream_index: packet.stream_index(),
             pts,
             pts_time: pts.map(|pts| {
@@ -1440,6 +1447,7 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
     if command.show_packets {
         for packet in &report.packets {
             out.push_str("[PACKET]\n");
+            out.push_str(&format!("codec_type={}\n", packet.codec_type));
             out.push_str(&format!("stream_index={}\n", packet.stream_index));
             out.push_str(&format!("pts={}\n", optional_i64(packet.pts)));
             out.push_str(&format!("pts_time={}\n", optional_str(&packet.pts_time)));
@@ -1620,6 +1628,7 @@ fn render_json(command: &FfprobeCommand, report: &FfprobeReport) -> String {
 
 fn render_packet_json(packet: &FfprobePacketReport) -> String {
     let fields = vec![
+        json_string("codec_type", &packet.codec_type),
         json_number("stream_index", packet.stream_index),
         json_optional_number("pts", packet.pts),
         json_optional_string("pts_time", packet.pts_time.as_deref()),
@@ -2081,6 +2090,7 @@ mod tests {
         let rendered = render_report(&command, &report);
 
         assert!(rendered.starts_with("[PACKET]\n"));
+        assert!(rendered.contains("codec_type=video\n"));
         assert!(rendered.contains("stream_index=0\n"));
         assert!(rendered.contains("pts=0\n"));
         assert!(rendered.contains("pts_time=0.000000\n"));
@@ -2625,6 +2635,7 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         assert!(stdout.contains("[PACKET]\n"));
+        assert!(stdout.contains("codec_type=video\n"));
         assert!(stdout.contains("stream_index=0\n"));
         assert!(stdout.contains("pts=0\n"));
         assert!(stdout.contains("dts=0\n"));
@@ -2658,6 +2669,7 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         assert!(stdout.contains("\"packets\""));
+        assert!(stdout.contains("\"codec_type\": \"video\""));
         assert!(stdout.contains("\"stream_index\": 0"));
         assert!(stdout.contains("\"pts\": 1000"));
         assert!(stdout.contains("\"pts_time\": \"0.011111\""));
@@ -2940,6 +2952,7 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         assert!(stdout.contains("[PACKET]\n"));
+        assert!(stdout.contains("codec_type=video\n"));
         assert!(stdout.contains("stream_index=0\n"));
         assert!(stdout.contains("pts=0\n"));
         assert!(stdout.contains("pts_time=0.000000\n"));
@@ -3039,6 +3052,7 @@ mod tests {
             }],
             packets: vec![FfprobePacketReport {
                 index: 0,
+                codec_type: "video".to_string(),
                 stream_index: 0,
                 pts: Some(0),
                 pts_time: Some("0.000000".to_string()),

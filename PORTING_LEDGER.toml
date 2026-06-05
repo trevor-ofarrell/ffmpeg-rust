@@ -2,6 +2,11 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest main-thread packet codec-type media-integration slice: ffprobe-rs now
+# renders packet `codec_type` in default and JSON packet sections, populated
+# from the packet's stream report, and the pinned MOV and AVI ffprobe oracle
+# rows compare it against FFmpeg 8.1.1. avutil-packet remains fate_pass, not
+# complete.
 # Latest main-thread packet-position media-integration slice: MOV demuxing now
 # assigns packet `pos` from sample byte offsets, AVI demuxing assigns packet
 # `pos` from RIFF chunk payload offsets, and ffprobe-rs renders `pos` in
@@ -1584,6 +1589,12 @@ fate_tests = [
 ]
 fuzz_targets = ["avutil_core_models"]
 # Latest update: MOV/AVI ffprobe media-integration coverage now carries packet
+# `codec_type` through the Rust demuxer -> stream report -> Packet -> ffprobe
+# path. The pinned `oracle-ffprobe-mov-core-fields` and
+# `oracle-ffprobe-avi-packet-fields` rows compare packet `codec_type=video`
+# against FFmpeg 8.1.1. This strengthens media-integration evidence only; the
+# row remains fate_pass, not complete.
+# Latest update: MOV/AVI ffprobe media-integration coverage now carries packet
 # `pos` through the Rust demuxer -> Packet -> ffprobe path. MOV packet `pos`
 # uses sample byte offsets, AVI packet `pos` uses RIFF chunk payload offsets,
 # and the pinned `oracle-ffprobe-mov-core-fields` plus
@@ -1605,10 +1616,10 @@ fuzz_targets = ["avutil_core_models"]
 # AVI with FFmpeg 8.1.1 and compares Rust ffprobe default-output format,
 # stream, and packet fields against oracle `ffprobe -count_packets
 # -show_format -show_streams -show_packets`. This proves the bounded AVI
-# demuxer -> Packet -> ffprobe packet-section path for packet count, timing,
-# padded payload size, and key flags, but broader packet integration and
-# sustained fuzz evidence remain pending; the row remains fate_pass, not
-# complete.
+# demuxer -> Packet -> ffprobe packet-section path for packet count, codec
+# type, timing, padded payload size, `pos`, and key flags, but broader packet
+# integration and sustained fuzz evidence remain pending; the row remains
+# fate_pass, not complete.
 # Latest update: warmed WSL `avutil_core_models` sanitizer coverage for packet
 # invariants now includes a 65,536-run temporary-corpus pass with
 # `CARGO_TARGET_DIR=target-wsl-fuzz` and leak detection disabled. libFuzzer
@@ -5320,7 +5331,7 @@ unit_tests = [
 differential_tests = ["tests/differential/mappings.txt:fftools-ffprobe-mov-show-packets|oracle-ffprobe-mov-core-fields"]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-mov-show-packets|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "Initial ffprobe-rs -show_packets support collects packets from the Rust MOV demuxer for local seekable one-track MOV/MP4 inputs and renders packet stream index, PTS/DTS, time fields, duration, size, sample-offset `pos`, and key flags in default and json writers. Output is a constrained deterministic subset, not byte-identical to upstream, and the generated MOV core-fields oracle row now provides bounded pinned-oracle differential coverage for the selected rawvideo MOV default-output packet fields including `pos`; broader inputs, full JSON byte-identity, tags, field-order/id/disposition deltas, and upstream FATE coverage remain pending."
+notes = "Initial ffprobe-rs -show_packets support collects packets from the Rust MOV demuxer for local seekable one-track MOV/MP4 inputs and renders packet codec type, stream index, PTS/DTS, time fields, duration, size, sample-offset `pos`, and key flags in default and json writers. Output is a constrained deterministic subset, not byte-identical to upstream, and the generated MOV core-fields oracle row now provides bounded pinned-oracle differential coverage for the selected rawvideo MOV default-output packet fields including `codec_type` and `pos`; broader inputs, full JSON byte-identity, tags, field-order/id/disposition deltas, and upstream FATE coverage remain pending."
 blocked_reason = ""
 
 [[component]]
@@ -5345,7 +5356,7 @@ differential_tests = [
 ]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-avi-show-format-streams-packets|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "Initial ffprobe-rs AVI reporting uses the shared ProbeRegistry with the hand-written AVI descriptor for RIFF/AVI signature or .avi extension detection, opens the Rust AviDemuxer, and renders constrained video-only format, stream, and packet summaries through the existing default and json writers. Format reports include local input byte length as size plus zero nb_programs/nb_stream_groups counters for the current no-program/no-stream-group demuxer model. Stream reports include initial codec_name, codec_long_name, codec_type, codec_tag_string, numeric codec_tag, width/height, constrained coded_width/coded_height mirroring parsed dimensions, field_order=unknown because AVI interlace metadata is not parsed yet, bits_per_raw_sample from BITMAPINFOHEADER bit count, time_base from parsed stream scale/rate, start_pts/start_time for non-empty zero-origin streams, r_frame_rate/avg_frame_rate fields for the constrained video stream, duration_ts/duration from parsed stream length and time base, constrained nb_read_frames when -count_frames is requested, and nb_read_packets when -count_packets is requested. The pinned `oracle-ffprobe-avi-packet-fields` row now generates a two-packet BGR24 AVI with FFmpeg 8.1.1 and compares Rust default-output format, stream, and packet fields against oracle `ffprobe -count_packets -show_format -show_streams -show_packets`, covering packet count, packet timing, padded packet size, RIFF chunk payload `pos`, and key flags. Output remains a constrained deterministic subset rather than full byte-identity; broader inputs, full JSON byte-identity, tags, field-order/id/disposition deltas, and upstream FATE coverage remain pending."
+notes = "Initial ffprobe-rs AVI reporting uses the shared ProbeRegistry with the hand-written AVI descriptor for RIFF/AVI signature or .avi extension detection, opens the Rust AviDemuxer, and renders constrained video-only format, stream, and packet summaries through the existing default and json writers. Format reports include local input byte length as size plus zero nb_programs/nb_stream_groups counters for the current no-program/no-stream-group demuxer model. Stream reports include initial codec_name, codec_long_name, codec_type, codec_tag_string, numeric codec_tag, width/height, constrained coded_width/coded_height mirroring parsed dimensions, field_order=unknown because AVI interlace metadata is not parsed yet, bits_per_raw_sample from BITMAPINFOHEADER bit count, time_base from parsed stream scale/rate, start_pts/start_time for non-empty zero-origin streams, r_frame_rate/avg_frame_rate fields for the constrained video stream, duration_ts/duration from parsed stream length and time base, constrained nb_read_frames when -count_frames is requested, and nb_read_packets when -count_packets is requested. The pinned `oracle-ffprobe-avi-packet-fields` row now generates a two-packet BGR24 AVI with FFmpeg 8.1.1 and compares Rust default-output format, stream, and packet fields against oracle `ffprobe -count_packets -show_format -show_streams -show_packets`, covering packet count, packet codec type, packet timing, padded packet size, RIFF chunk payload `pos`, and key flags. Output remains a constrained deterministic subset rather than full byte-identity; broader inputs, full JSON byte-identity, tags, field-order/id/disposition deltas, and upstream FATE coverage remain pending."
 blocked_reason = ""
 
 [[component]]
@@ -7382,7 +7393,7 @@ differential_tests = [
 ]
 fate_tests = ["tests/fate/mappings.txt:avformat-avi-demuxer|local-avformat-avi-unit"]
 fuzz_targets = ["avformat_avi"]
-notes = "Initial RIFF AVI demuxer parses constrained video-only AVI files with avih/strh/strf metadata, simple movi packet extraction, rec-list traversal, chunk bounds checks, unsupported stream rejection, packet timing side data, and FFmpeg-shaped packet `pos` from the RIFF chunk payload offset. It accepts FFmpeg's top-down negative BITMAPINFOHEADER height by exposing the positive stream height. It has a hand-written ProbeRegistry descriptor for RIFF/AVI signature, .avi extension, and common AVI MIME types, and is wired to constrained ffmpeg-rs AVI input to stdout null/framecrc output paths and ffprobe-rs AVI format/stream/packet summaries. The pinned raw bgr24 to AVI oracle row parses FFmpeg 8.1.1 `-c:v rawvideo -f avi` output through the Rust demuxer and compares stream metadata plus demuxed 00dc packet payloads against Rust AVI output. The generated RGB24 AVI framecrc oracle row compares the Rust AVI demuxer -> Packet -> framecrc muxer path against pinned FFmpeg 8.1.1 `-c:v copy -f framecrc`, proving bounded packet timing, DIB-padded sizes, and checksums for demuxed AVI packets. The pinned `oracle-ffprobe-avi-packet-fields` row now compares ffprobe default-output format, stream, and packet fields for a generated two-packet BGR24 AVI, covering the AVI demuxer -> Packet -> ffprobe path for packet count, timing, padded packet size, RIFF chunk payload position, and key flags. Build-checked cargo-fuzz target avformat_avi exercises chunk parsing, stream metadata, packet timing, and side-data invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Audio streams, indexes, OpenDML, palette handling, non-BI_RGB video, interleaving semantics, seeking, broader CLI wiring, upstream FATE, and sustained fuzz execution remain pending."
+notes = "Initial RIFF AVI demuxer parses constrained video-only AVI files with avih/strh/strf metadata, simple movi packet extraction, rec-list traversal, chunk bounds checks, unsupported stream rejection, packet timing side data, and FFmpeg-shaped packet `pos` from the RIFF chunk payload offset. It accepts FFmpeg's top-down negative BITMAPINFOHEADER height by exposing the positive stream height. It has a hand-written ProbeRegistry descriptor for RIFF/AVI signature, .avi extension, and common AVI MIME types, and is wired to constrained ffmpeg-rs AVI input to stdout null/framecrc output paths and ffprobe-rs AVI format/stream/packet summaries. The pinned raw bgr24 to AVI oracle row parses FFmpeg 8.1.1 `-c:v rawvideo -f avi` output through the Rust demuxer and compares stream metadata plus demuxed 00dc packet payloads against Rust AVI output. The generated RGB24 AVI framecrc oracle row compares the Rust AVI demuxer -> Packet -> framecrc muxer path against pinned FFmpeg 8.1.1 `-c:v copy -f framecrc`, proving bounded packet timing, DIB-padded sizes, and checksums for demuxed AVI packets. The pinned `oracle-ffprobe-avi-packet-fields` row now compares ffprobe default-output format, stream, and packet fields for a generated two-packet BGR24 AVI, covering the AVI demuxer -> Packet -> ffprobe path for packet count, codec type, timing, padded packet size, RIFF chunk payload position, and key flags. Build-checked cargo-fuzz target avformat_avi exercises chunk parsing, stream metadata, packet timing, and side-data invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Audio streams, indexes, OpenDML, palette handling, non-BI_RGB video, interleaving semantics, seeking, broader CLI wiring, upstream FATE, and sustained fuzz execution remain pending."
 blocked_reason = ""
 
 [[component]]
