@@ -94,6 +94,45 @@ packet,video,0,1,0.040000,1,0.040000,1,0.040000,6,42,___
 }
 
 #[test]
+fn parse_flat_packet_sections_reads_packet_lines() {
+    let output = "\
+packets.packet.0.codec_type=\"video\"
+packets.packet.0.stream_index=0
+packets.packet.0.pts=0
+packets.packet.0.pts_time=\"0.000000\"
+packets.packet.0.dts=0
+packets.packet.0.dts_time=\"0.000000\"
+packets.packet.0.duration=1
+packets.packet.0.duration_time=\"0.040000\"
+packets.packet.0.size=\"6\"
+packets.packet.0.pos=\"36\"
+packets.packet.0.flags=\"K__\"
+packets.packet.1.codec_type=\"video\"
+packets.packet.1.stream_index=0
+packets.packet.1.pts=1
+packets.packet.1.pts_time=\"0.040000\"
+packets.packet.1.dts=1
+packets.packet.1.dts_time=\"0.040000\"
+packets.packet.1.duration=1
+packets.packet.1.duration_time=\"0.040000\"
+packets.packet.1.size=\"6\"
+packets.packet.1.pos=\"42\"
+packets.packet.1.flags=\"___\"
+";
+
+    let packets = parse_flat_packet_sections(output);
+
+    assert_eq!(packets.len(), 2);
+    assert_eq!(packets[0].field("codec_type"), Some("\"video\""));
+    assert_eq!(packets[0].field("stream_index"), Some("0"));
+    assert_eq!(packets[0].field("pos"), Some("\"36\""));
+    assert_eq!(packets[0].field("flags"), Some("\"K__\""));
+    assert_eq!(packets[1].field("pts"), Some("1"));
+    assert_eq!(packets[1].field("pos"), Some("\"42\""));
+    assert_eq!(packets[1].field("flags"), Some("\"___\""));
+}
+
+#[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE/FFPROBE_ORACLE or install third_party/ffmpeg-oracle/build/bin"]
 fn mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle() {
     let ffmpeg = oracle_tool("ffmpeg");
@@ -248,6 +287,7 @@ fn mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle() {
     assert_json_packet_fields_match(&ffprobe, mov_arg.as_str(), "MOV");
     assert_compact_packet_fields_match(&ffprobe, mov_arg.as_str(), "MOV");
     assert_csv_packet_fields_match(&ffprobe, mov_arg.as_str(), "MOV");
+    assert_flat_packet_fields_match(&ffprobe, mov_arg.as_str(), "MOV");
 }
 
 #[test]
@@ -400,6 +440,7 @@ fn avi_bgr24_ffprobe_packet_fields_match_ffmpeg_oracle() {
     assert_json_packet_fields_match(&ffprobe, avi_arg.as_str(), "AVI");
     assert_compact_packet_fields_match(&ffprobe, avi_arg.as_str(), "AVI");
     assert_csv_packet_fields_match(&ffprobe, avi_arg.as_str(), "AVI");
+    assert_flat_packet_fields_match(&ffprobe, avi_arg.as_str(), "AVI");
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -617,6 +658,51 @@ fn assert_csv_packet_fields_match(ffprobe: &Path, input: &str, label: &str) {
     }
 }
 
+fn assert_flat_packet_fields_match(ffprobe: &Path, input: &str, label: &str) {
+    let rust_flat = ffprobe_output(&strings(&[
+        "-hide_banner",
+        "-show_packets",
+        "-of",
+        "flat",
+        input,
+    ]))
+    .unwrap_or_else(|err| panic!("Rust ffprobe {label} flat packet path should execute: {err}"));
+
+    let oracle = Command::new(ffprobe)
+        .args(["-v", "error", "-show_packets", "-of", "flat", input])
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", ffprobe.display()));
+
+    assert!(
+        oracle.status.success(),
+        "oracle ffprobe flat failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        oracle.status.code(),
+        String::from_utf8_lossy(&oracle.stdout),
+        String::from_utf8_lossy(&oracle.stderr)
+    );
+
+    let oracle_flat =
+        String::from_utf8(oracle.stdout).expect("oracle ffprobe flat output should be UTF-8");
+    let rust_packets = parse_flat_packet_sections(&rust_flat);
+    let oracle_packets = parse_flat_packet_sections(&oracle_flat);
+    assert_eq!(
+        rust_packets.len(),
+        oracle_packets.len(),
+        "{label} flat packet counts should match"
+    );
+
+    for (index, (rust_packet, oracle_packet)) in
+        rust_packets.iter().zip(oracle_packets.iter()).enumerate()
+    {
+        assert_fields_match(
+            rust_packet,
+            oracle_packet,
+            PACKET_FIELDS,
+            &format!("{label} flat PACKET[{index}]"),
+        );
+    }
+}
+
 fn parse_compact_packet_sections(output: &str) -> Vec<Section> {
     output
         .lines()
@@ -692,6 +778,36 @@ fn split_csv_line(line: &str) -> Vec<String> {
     assert!(!in_quotes, "unterminated CSV quoted field: `{line}`");
     values.push(current);
     values
+}
+
+fn parse_flat_packet_sections(output: &str) -> Vec<Section> {
+    let mut sections: BTreeMap<usize, Section> = BTreeMap::new();
+
+    for raw_line in output.lines() {
+        let line = raw_line.trim_end_matches('\r');
+        let Some(rest) = line.strip_prefix("packets.packet.") else {
+            continue;
+        };
+        let Some((index, rest)) = rest.split_once('.') else {
+            panic!("flat packet line should include packet index and field: `{line}`");
+        };
+        let index = index
+            .parse::<usize>()
+            .unwrap_or_else(|err| panic!("flat packet index should be numeric in `{line}`: {err}"));
+        let Some((field, value)) = rest.split_once('=') else {
+            panic!("flat packet line should contain `=`: `{line}`");
+        };
+        sections
+            .entry(index)
+            .or_insert_with(|| Section {
+                name: "PACKET".to_owned(),
+                fields: BTreeMap::new(),
+            })
+            .fields
+            .insert(field.to_owned(), value.to_owned());
+    }
+
+    sections.into_values().collect()
 }
 
 fn unescape_compact_value(value: &str) -> String {

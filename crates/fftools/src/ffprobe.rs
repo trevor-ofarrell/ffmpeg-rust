@@ -20,6 +20,7 @@ enum WriterFormat {
     Json,
     Compact,
     Csv,
+    Flat,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -760,6 +761,7 @@ fn parse_writer_format(value: &str) -> Result<WriterFormat, FfprobeError> {
         "json" => Ok(WriterFormat::Json),
         "compact" => Ok(WriterFormat::Compact),
         "csv" => Ok(WriterFormat::Csv),
+        "flat" => Ok(WriterFormat::Flat),
         _ => Err(FfprobeError::unsupported(format!(
             "unsupported writer format `{value}`"
         ))),
@@ -1445,6 +1447,7 @@ fn render_report(command: &FfprobeCommand, report: &FfprobeReport) -> String {
         WriterFormat::Json => render_json(command, report),
         WriterFormat::Compact => render_compact(command, report),
         WriterFormat::Csv => render_csv(command, report),
+        WriterFormat::Flat => render_flat(command, report),
     }
 }
 
@@ -1645,6 +1648,32 @@ fn render_csv(command: &FfprobeCommand, report: &FfprobeReport) -> String {
     out
 }
 
+fn render_flat(command: &FfprobeCommand, report: &FfprobeReport) -> String {
+    let mut out = String::new();
+    if command.show_packets {
+        for (index, packet) in report.packets.iter().enumerate() {
+            push_flat_fields(
+                &mut out,
+                &format!("packets.packet.{index}"),
+                packet_flat_fields(packet),
+            );
+        }
+    }
+    if command.show_streams {
+        for (index, stream) in report.streams.iter().enumerate() {
+            push_flat_fields(
+                &mut out,
+                &format!("streams.stream.{index}"),
+                stream_flat_fields(stream),
+            );
+        }
+    }
+    if command.show_format {
+        push_flat_fields(&mut out, "format", format_flat_fields(report));
+    }
+    out
+}
+
 fn packet_scalar_fields(packet: &FfprobePacketReport) -> Vec<(String, String)> {
     vec![
         ("codec_type".to_owned(), packet.codec_type.clone()),
@@ -1753,6 +1782,202 @@ fn format_scalar_fields(report: &FfprobeReport) -> Vec<(String, String)> {
     fields
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum FlatValue {
+    Bare(String),
+    Quoted(String),
+}
+
+fn packet_flat_fields(packet: &FfprobePacketReport) -> Vec<(String, FlatValue)> {
+    vec![
+        (
+            "codec_type".to_owned(),
+            FlatValue::Quoted(packet.codec_type.clone()),
+        ),
+        (
+            "stream_index".to_owned(),
+            FlatValue::Bare(packet.stream_index.to_string()),
+        ),
+        ("pts".to_owned(), flat_optional_i64(packet.pts)),
+        (
+            "pts_time".to_owned(),
+            FlatValue::Quoted(optional_str(&packet.pts_time).to_owned()),
+        ),
+        ("dts".to_owned(), flat_optional_i64(packet.dts)),
+        (
+            "dts_time".to_owned(),
+            FlatValue::Quoted(optional_str(&packet.dts_time).to_owned()),
+        ),
+        (
+            "duration".to_owned(),
+            FlatValue::Bare(packet.duration.to_string()),
+        ),
+        (
+            "duration_time".to_owned(),
+            FlatValue::Quoted(packet.duration_time.clone()),
+        ),
+        (
+            "size".to_owned(),
+            FlatValue::Quoted(packet.size.to_string()),
+        ),
+        (
+            "pos".to_owned(),
+            FlatValue::Quoted(optional_i64(packet.pos)),
+        ),
+        ("flags".to_owned(), FlatValue::Quoted(packet.flags.clone())),
+    ]
+}
+
+fn stream_flat_fields(stream: &FfprobeStreamReport) -> Vec<(String, FlatValue)> {
+    let mut fields = vec![
+        (
+            "index".to_owned(),
+            FlatValue::Bare(stream.index.to_string()),
+        ),
+        ("id".to_owned(), FlatValue::Bare(stream.id.to_string())),
+        (
+            "codec_type".to_owned(),
+            FlatValue::Quoted(stream.codec_type.clone()),
+        ),
+        (
+            "time_base".to_owned(),
+            FlatValue::Quoted(stream.time_base.clone()),
+        ),
+        (
+            "nb_frames".to_owned(),
+            FlatValue::Quoted(stream.nb_frames.to_string()),
+        ),
+    ];
+    push_optional_flat_quoted(&mut fields, "codec_name", stream.codec_name.clone());
+    push_optional_flat_quoted(
+        &mut fields,
+        "codec_long_name",
+        stream.codec_long_name.clone(),
+    );
+    push_optional_flat_quoted(&mut fields, "profile", stream.profile.clone());
+    push_optional_flat_quoted(
+        &mut fields,
+        "codec_tag_string",
+        stream.codec_tag_string.clone(),
+    );
+    push_optional_flat_quoted(&mut fields, "codec_tag", stream.codec_tag.clone());
+    push_optional_flat_bare(&mut fields, "width", stream.width);
+    push_optional_flat_bare(&mut fields, "height", stream.height);
+    push_optional_flat_bare(&mut fields, "coded_width", stream.coded_width);
+    push_optional_flat_bare(&mut fields, "coded_height", stream.coded_height);
+    push_optional_flat_bare(&mut fields, "sample_rate", stream.sample_rate);
+    push_optional_flat_bare(&mut fields, "channels", stream.channels);
+    push_optional_flat_bare(&mut fields, "bits_per_sample", stream.bits_per_sample);
+    push_optional_flat_quoted(
+        &mut fields,
+        "bits_per_raw_sample",
+        stream.bits_per_raw_sample.map(|value| value.to_string()),
+    );
+    push_optional_flat_bare(&mut fields, "extradata_size", stream.extradata_size);
+    if let Some(is_avc) = stream.is_avc {
+        fields.push((
+            "is_avc".to_owned(),
+            FlatValue::Bare(bool_string(is_avc).to_owned()),
+        ));
+    }
+    push_optional_flat_bare(&mut fields, "nal_length_size", stream.nal_length_size);
+    push_optional_flat_quoted(
+        &mut fields,
+        "sample_aspect_ratio",
+        stream.sample_aspect_ratio.clone(),
+    );
+    push_optional_flat_quoted(
+        &mut fields,
+        "display_aspect_ratio",
+        stream.display_aspect_ratio.clone(),
+    );
+    push_optional_flat_quoted(&mut fields, "color_range", stream.color_range.clone());
+    push_optional_flat_quoted(&mut fields, "color_space", stream.color_space.clone());
+    push_optional_flat_quoted(&mut fields, "color_transfer", stream.color_transfer.clone());
+    push_optional_flat_quoted(
+        &mut fields,
+        "color_primaries",
+        stream.color_primaries.clone(),
+    );
+    push_optional_flat_quoted(&mut fields, "field_order", stream.field_order.clone());
+    push_optional_flat_bare(&mut fields, "level", stream.level);
+    push_optional_flat_bare(&mut fields, "start_pts", stream.start_pts);
+    push_optional_flat_quoted(&mut fields, "start_time", stream.start_time.clone());
+    push_optional_flat_quoted(&mut fields, "r_frame_rate", stream.r_frame_rate.clone());
+    push_optional_flat_quoted(&mut fields, "avg_frame_rate", stream.avg_frame_rate.clone());
+    push_optional_flat_bare(&mut fields, "duration_ts", stream.duration_ts);
+    push_optional_flat_quoted(&mut fields, "duration", stream.duration.clone());
+    push_optional_flat_quoted(
+        &mut fields,
+        "nb_read_frames",
+        stream.nb_read_frames.map(|value| value.to_string()),
+    );
+    push_optional_flat_quoted(
+        &mut fields,
+        "nb_read_packets",
+        stream.nb_read_packets.map(|value| value.to_string()),
+    );
+    for (key, value) in &stream.tags {
+        fields.push((format!("tags.{key}"), FlatValue::Quoted(value.clone())));
+    }
+    fields
+}
+
+fn format_flat_fields(report: &FfprobeReport) -> Vec<(String, FlatValue)> {
+    let mut fields = vec![
+        (
+            "filename".to_owned(),
+            FlatValue::Quoted(report.filename.clone()),
+        ),
+        (
+            "nb_streams".to_owned(),
+            FlatValue::Bare(report.nb_streams.to_string()),
+        ),
+        (
+            "nb_programs".to_owned(),
+            FlatValue::Bare(report.nb_programs.to_string()),
+        ),
+        (
+            "nb_stream_groups".to_owned(),
+            FlatValue::Bare(report.nb_stream_groups.to_string()),
+        ),
+        (
+            "format_name".to_owned(),
+            FlatValue::Quoted(report.format_name.clone()),
+        ),
+        (
+            "format_long_name".to_owned(),
+            FlatValue::Quoted(report.format_long_name.clone()),
+        ),
+        (
+            "time_base".to_owned(),
+            FlatValue::Quoted(report.time_base.clone()),
+        ),
+    ];
+    push_optional_flat_bare(&mut fields, "duration_ts", report.duration_ts);
+    push_optional_flat_quoted(&mut fields, "duration", report.duration.clone());
+    push_optional_flat_quoted(
+        &mut fields,
+        "size",
+        report.size.map(|value| value.to_string()),
+    );
+    fields.push((
+        "probe_score".to_owned(),
+        FlatValue::Bare(report.probe_score.to_string()),
+    ));
+    for (key, value) in &report.tags {
+        fields.push((format!("tags.{key}"), FlatValue::Quoted(value.clone())));
+    }
+    fields
+}
+
+fn flat_optional_i64(value: Option<i64>) -> FlatValue {
+    value.map_or_else(
+        || FlatValue::Quoted("N/A".to_owned()),
+        |value| FlatValue::Bare(value.to_string()),
+    )
+}
+
 fn push_optional_compact_field(
     fields: &mut Vec<(String, String)>,
     key: &str,
@@ -1770,6 +1995,25 @@ fn push_optional_number_compact_field<T: fmt::Display>(
 ) {
     if let Some(value) = value {
         fields.push((key.to_owned(), value.to_string()));
+    }
+}
+
+fn push_optional_flat_quoted<T>(fields: &mut Vec<(String, FlatValue)>, key: &str, value: Option<T>)
+where
+    T: Into<String>,
+{
+    if let Some(value) = value {
+        fields.push((key.to_owned(), FlatValue::Quoted(value.into())));
+    }
+}
+
+fn push_optional_flat_bare<T: fmt::Display>(
+    fields: &mut Vec<(String, FlatValue)>,
+    key: &str,
+    value: Option<T>,
+) {
+    if let Some(value) = value {
+        fields.push((key.to_owned(), FlatValue::Bare(value.to_string())));
     }
 }
 
@@ -1791,6 +2035,28 @@ fn push_csv_line(out: &mut String, section: &str, fields: Vec<(String, String)>)
         out.push_str(&escape_csv_value(&value));
     }
     out.push('\n');
+}
+
+fn push_flat_fields(out: &mut String, prefix: &str, fields: Vec<(String, FlatValue)>) {
+    for (key, value) in fields {
+        out.push_str(prefix);
+        out.push('.');
+        out.push_str(&key);
+        out.push('=');
+        push_flat_value(out, value);
+        out.push('\n');
+    }
+}
+
+fn push_flat_value(out: &mut String, value: FlatValue) {
+    match value {
+        FlatValue::Bare(value) => out.push_str(&value),
+        FlatValue::Quoted(value) => {
+            out.push('"');
+            out.push_str(&escape_json(&value));
+            out.push('"');
+        }
+    }
 }
 
 fn escape_compact_value(value: &str) -> String {
@@ -2195,6 +2461,14 @@ mod tests {
     }
 
     #[test]
+    fn parses_ffprobe_flat_writer_format() {
+        let command =
+            parse_ffprobe_args(&strings(&["-show_packets", "-of", "flat", "clip.mp4"])).unwrap();
+
+        assert_eq!(command.writer_format, WriterFormat::Flat);
+    }
+
+    #[test]
     fn parses_and_rejects_ffprobe_loglevel_values() {
         let command =
             parse_ffprobe_args(&strings(&["-v", "-8", "-show_format", "clip.mp4"])).unwrap();
@@ -2398,6 +2672,28 @@ mod tests {
         assert!(!rendered.contains("[PACKET]"));
         assert!(!rendered.contains("codec_type="));
         assert!(!rendered.contains("\"packets\""));
+    }
+
+    #[test]
+    fn renders_flat_packet_sections() {
+        let command =
+            parse_ffprobe_args(&strings(&["-show_packets", "-of", "flat", "clip.mp4"])).unwrap();
+        let report = sample_report();
+
+        let rendered = render_report(&command, &report);
+
+        assert!(rendered.starts_with("packets.packet.0.codec_type=\"video\"\n"));
+        assert!(rendered.contains("packets.packet.0.stream_index=0\n"));
+        assert!(rendered.contains("packets.packet.0.pts=0\n"));
+        assert!(rendered.contains("packets.packet.0.pts_time=\"0.000000\"\n"));
+        assert!(rendered.contains("packets.packet.0.duration=1000\n"));
+        assert!(rendered.contains("packets.packet.0.duration_time=\"0.011111\"\n"));
+        assert!(rendered.contains("packets.packet.0.size=\"3\"\n"));
+        assert!(rendered.contains("packets.packet.0.pos=\"123\"\n"));
+        assert!(rendered.contains("packets.packet.0.flags=\"K__\"\n"));
+        assert!(!rendered.contains("[PACKET]"));
+        assert!(!rendered.contains("packet,"));
+        assert!(!rendered.contains("packet|"));
     }
 
     #[test]
