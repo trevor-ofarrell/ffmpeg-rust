@@ -41,6 +41,9 @@ fftools-ffprobe-count-packets|oracle-ffprobe-mov-core-fields|.|cargo|env:FFMPEG_
 fftools-ffprobe-count-frames|oracle-ffprobe-mov-core-fields|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|ffprobe_mov_oracle|mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle|--|--ignored
 fftools-ffprobe-stream-nb-frames|oracle-ffprobe-mov-core-fields|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|ffprobe_mov_oracle|mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle|--|--ignored
 avutil-packet|oracle-ffprobe-mov-core-fields|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|ffprobe_mov_oracle|mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle|--|--ignored
+fftools-ffprobe-mov-show-packets|oracle-ffprobe-m4a-skip-samples-side-data|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|ffprobe_mov_oracle|m4a_aac_skip_samples_packet_side_data_matches_ffmpeg_oracle|--|--ignored
+avformat-mov-demuxer|oracle-ffprobe-m4a-skip-samples-side-data|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|ffprobe_mov_oracle|m4a_aac_skip_samples_packet_side_data_matches_ffmpeg_oracle|--|--ignored
+avutil-packet|oracle-ffprobe-m4a-skip-samples-side-data|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|ffprobe_mov_oracle|m4a_aac_skip_samples_packet_side_data_matches_ffmpeg_oracle|--|--ignored
 fftools-ffmpeg-image2-file-output|oracle-image2-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|image2_oracle|image2_ppm_single_file_output_matches_ffmpeg_oracle|--|--ignored
 avformat-image2-demuxer|oracle-image2-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|image2_oracle|image2_ppm_single_file_output_matches_ffmpeg_oracle|--|--ignored
 avformat-image2-muxer|oracle-image2-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|image2_oracle|image2_ppm_single_file_output_matches_ffmpeg_oracle|--|--ignored

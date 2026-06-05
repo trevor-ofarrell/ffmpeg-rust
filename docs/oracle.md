@@ -39,11 +39,14 @@ cargo run -p xtask -- oracle-doctor
 
 The doctor command locates the default local `ffmpeg` and `ffprobe` oracle wrappers, runs `-version`, and fails unless both tools report FFmpeg 8.1.1 with the pinned library ABI versions (`libavutil 60.26.101`, `libavcodec 62.28.101`, `libavformat 62.12.101`, `libavdevice 62.3.101`, `libavfilter 11.14.101`, `libswscale 9.5.101`, and `libswresample 6.3.101`). Non-default paths can be checked with `--ffmpeg <path>` and `--ffprobe <path>`.
 
-The packet side-data ffprobe writer shape is currently calibrated from a tiny
-pinned AAC/M4A oracle sample whose first packet exposes `Skip Samples` side
-data. Rust coverage for this shape is synthetic unit evidence until a native
-Rust demuxer emits public packet side data for a pinned media differential
-row.
+The packet side-data ffprobe writer shape is calibrated from a tiny pinned
+AAC/M4A oracle sample whose first packet exposes `Skip Samples` side data. The
+current native Rust MOV/M4A path now has a pinned media differential row for
+the default writer: `oracle-ffprobe-m4a-skip-samples-side-data` generates that
+AAC/M4A shape with FFmpeg 8.1.1 and byte-compares selected packet plus
+`packet_side_data` output against Rust. Non-default writer shapes still use
+synthetic unit/oracle-shape coverage until more native side-data media rows are
+added.
 
 Ignored oracle harnesses that compile temporary C helpers should write those
 helpers under the active Cargo target directory when `CARGO_TARGET_DIR` is set.

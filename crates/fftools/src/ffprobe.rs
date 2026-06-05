@@ -2114,11 +2114,17 @@ fn gcd_u128(mut left: u128, mut right: u128) -> u128 {
 }
 
 fn packet_flags(bits: u32) -> String {
-    if bits & 1 != 0 {
-        "K__".to_string()
-    } else {
-        "___".to_string()
+    let mut flags = *b"___";
+    if bits & avutil::PacketFlags::KEY.bits() != 0 {
+        flags[0] = b'K';
     }
+    if bits & avutil::PacketFlags::DISCARD.bits() != 0 {
+        flags[1] = b'D';
+    }
+    if bits & avutil::PacketFlags::CORRUPT.bits() != 0 {
+        flags[2] = b'C';
+    }
+    String::from_utf8(flags.to_vec()).expect("packet flags should be ASCII")
 }
 
 fn render_report(command: &FfprobeCommand, report: &FfprobeReport) -> String {
@@ -3491,16 +3497,16 @@ fn format_duration(duration_ts: u64, timescale: u32) -> String {
 }
 
 fn format_rational_duration(duration_ts: u64, time_base_num: u32, time_base_den: u32) -> String {
-    let micros = (u128::from(duration_ts) * u128::from(time_base_num) * 1_000_000)
-        / u128::from(time_base_den);
+    let den = u128::from(time_base_den);
+    let micros = (u128::from(duration_ts) * u128::from(time_base_num) * 1_000_000 + den / 2) / den;
     format!("{}.{:06}", micros / 1_000_000, micros % 1_000_000)
 }
 
 fn format_rational_signed_time(value: i64, time_base_num: u32, time_base_den: u32) -> String {
-    let micros =
-        (i128::from(value) * i128::from(time_base_num) * 1_000_000) / i128::from(time_base_den);
-    let sign = if micros < 0 { "-" } else { "" };
-    let abs = micros.abs();
+    let numerator = i128::from(value) * i128::from(time_base_num) * 1_000_000;
+    let den = u128::from(time_base_den);
+    let abs = (numerator.unsigned_abs() + den / 2) / den;
+    let sign = if numerator < 0 { "-" } else { "" };
     format!("{sign}{}.{:06}", abs / 1_000_000, abs % 1_000_000)
 }
 
@@ -3886,6 +3892,13 @@ mod tests {
         assert!(rendered.contains("format_name=mov,mp4,m4a,3gp,3g2,mj2\n"));
         assert!(rendered.contains("duration=5.000000\n"));
         assert!(rendered.contains("size=2048\n"));
+    }
+
+    #[test]
+    fn formats_negative_packet_times_with_ffmpeg_microsecond_rounding() {
+        assert_eq!(format_rational_signed_time(-1_024, 1, 44_100), "-0.023220");
+        assert_eq!(format_rational_signed_time(1_024, 1, 44_100), "0.023220");
+        assert_eq!(format_rational_duration(1_024, 1, 44_100), "0.023220");
     }
 
     #[test]

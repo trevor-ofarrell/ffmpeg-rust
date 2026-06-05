@@ -77,6 +77,8 @@ const TAG_SHOW_ENTRIES: &str = "packet=size,pts_time:stream_tags=handler_name";
 const TAG_PACKET_FIELDS: &[&str] = &["pts_time", "size"];
 const MOV_TAG_STREAM_FIELDS: &[&str] = &["TAG:handler_name"];
 const EMPTY_TAG_STREAM_FIELDS: &[&str] = &[];
+const AAC_SKIP_SAMPLES_SHOW_ENTRIES: &str =
+    "packet=pts,dts,pts_time,dts_time,duration,size,flags:packet_side_data";
 
 #[test]
 fn parse_default_sections_reads_multiline_packet_data() {
@@ -670,6 +672,82 @@ fn avi_bgr24_ffprobe_packet_fields_match_ffmpeg_oracle() {
         avi_arg.as_str(),
         "AVI",
         EMPTY_TAG_STREAM_FIELDS,
+    );
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE/FFPROBE_ORACLE or install third_party/ffmpeg-oracle/build/bin"]
+fn m4a_aac_skip_samples_packet_side_data_matches_ffmpeg_oracle() {
+    let ffmpeg = oracle_tool("ffmpeg");
+    let ffprobe = oracle_tool("ffprobe");
+    let temp = TempDir::new("ffmpegrust-ffprobe-m4a-skip-samples");
+    let m4a_path = temp.path().join("input.m4a");
+    let m4a_arg = m4a_path.to_string_lossy().into_owned();
+
+    let generate = Command::new(&ffmpeg)
+        .args([
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=1000:duration=0.02",
+            "-c:a",
+            "aac",
+            m4a_arg.as_str(),
+        ])
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", ffmpeg.display()));
+
+    assert!(
+        generate.status.success(),
+        "oracle AAC/M4A generation failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        generate.status.code(),
+        String::from_utf8_lossy(&generate.stdout),
+        String::from_utf8_lossy(&generate.stderr)
+    );
+
+    let args = [
+        "-v",
+        "error",
+        "-show_packets",
+        "-show_entries",
+        AAC_SKIP_SAMPLES_SHOW_ENTRIES,
+        "-of",
+        "default",
+        m4a_arg.as_str(),
+    ];
+    let rust = ffprobe_output(&strings(&args))
+        .unwrap_or_else(|err| panic!("Rust ffprobe AAC/M4A side-data path should execute: {err}"));
+
+    let oracle = Command::new(&ffprobe)
+        .args(args)
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", ffprobe.display()));
+    assert!(
+        oracle.status.success(),
+        "oracle ffprobe AAC/M4A side-data failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        oracle.status.code(),
+        String::from_utf8_lossy(&oracle.stdout),
+        String::from_utf8_lossy(&oracle.stderr)
+    );
+    let oracle_stdout =
+        String::from_utf8(oracle.stdout).expect("oracle ffprobe output should be UTF-8");
+
+    assert_eq!(
+        rust, oracle_stdout,
+        "Rust and oracle AAC/M4A packet side-data output should match byte-for-byte"
+    );
+    assert!(
+        rust.contains("[SIDE_DATA]\nside_data_type=Skip Samples\nskip_samples=1024\n"),
+        "output should prove public Skip Samples packet side data"
+    );
+    assert!(
+        rust.contains("flags=KD_\n"),
+        "output should prove the priming packet discard flag"
     );
 }
 

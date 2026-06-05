@@ -1,5 +1,8 @@
 use crate::probe::{ProbeDescriptor, ProbeRegistry};
-use avutil::{AvError, AvErrorKind, AvResult, BitReader, ByteReader, Dictionary, Packet, SideData};
+use avutil::{
+    AvError, AvErrorKind, AvResult, BitReader, ByteReader, Dictionary, Packet, PacketFlags,
+    PacketSkipSamples, PacketSkipSamplesReason, SideData,
+};
 
 const FTYP_ID: &[u8; 4] = b"ftyp";
 const MOOV_ID: &[u8; 4] = b"moov";
@@ -9,6 +12,7 @@ const MOOF_ID: &[u8; 4] = b"moof";
 const TRAK_ID: &[u8; 4] = b"trak";
 const TKHD_ID: &[u8; 4] = b"tkhd";
 const EDTS_ID: &[u8; 4] = b"edts";
+const ELST_ID: &[u8; 4] = b"elst";
 const UDTA_ID: &[u8; 4] = b"udta";
 const META_ID: &[u8; 4] = b"meta";
 const ILST_ID: &[u8; 4] = b"ilst";
@@ -2170,6 +2174,7 @@ struct MovieData {
 struct TrackData {
     info: MovTrackInfo,
     sample_table: Option<SampleTable>,
+    edit_list: Option<MovEditList>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2193,6 +2198,11 @@ struct MediaData {
     handler_type: Option<String>,
     metadata: Dictionary,
     sample_table: Option<SampleTable>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MovEditList {
+    media_time: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2283,16 +2293,13 @@ fn parse_moov(input: &[u8], moov: &BoxHeader) -> AvResult<MovieData> {
 fn parse_trak(input: &[u8], trak: &BoxHeader) -> AvResult<TrackData> {
     let mut track_header = None;
     let mut media_data = None;
+    let mut edit_list = None;
     let mut metadata = ParsedMetadata::new();
 
     for child in read_box_headers(input, trak.payload_start, trak.payload_end, "MOV/MP4 trak")? {
         match &child.box_type {
             TKHD_ID => track_header = Some(parse_tkhd(child.payload(input))?),
-            EDTS_ID => {
-                return Err(AvError::unsupported(
-                    "MOV/MP4 edit lists with edts/elst boxes are not implemented",
-                ));
-            }
+            EDTS_ID => edit_list = parse_edts(input, &child)?,
             MDIA_ID => media_data = Some(parse_mdia(input, &child)?),
             UDTA_ID => merge_metadata(&mut metadata, parse_udta(input, &child)?)?,
             _ => {}
@@ -2330,7 +2337,78 @@ fn parse_trak(input: &[u8], trak: &BoxHeader) -> AvResult<TrackData> {
             sample_count,
         },
         sample_table: media_data.sample_table,
+        edit_list,
     })
+}
+
+fn parse_edts(input: &[u8], edts: &BoxHeader) -> AvResult<Option<MovEditList>> {
+    let mut edit_list = None;
+    for child in read_box_headers(input, edts.payload_start, edts.payload_end, "MOV/MP4 edts")? {
+        if &child.box_type == ELST_ID {
+            if edit_list.is_some() {
+                return Err(AvError::invalid_data(
+                    "MOV/MP4 edts contains duplicate elst boxes",
+                ));
+            }
+            edit_list = Some(parse_elst(child.payload(input))?);
+        }
+    }
+    Ok(edit_list)
+}
+
+fn parse_elst(payload: &[u8]) -> AvResult<MovEditList> {
+    let mut reader = ByteReader::new(payload);
+    let (version, flags) = read_full_box_header(&mut reader, "MOV/MP4 elst")?;
+    if version > 1 {
+        return Err(AvError::unsupported(format!(
+            "unsupported MOV/MP4 elst version {version}"
+        )));
+    }
+    if flags != [0, 0, 0] {
+        return Err(AvError::unsupported(
+            "MOV/MP4 elst flags other than zero are not implemented",
+        ));
+    }
+
+    ensure_remaining(&reader, 4, "MOV/MP4 elst")?;
+    let entry_count = reader.read_u32_be()?;
+    if entry_count != 1 {
+        return Err(AvError::unsupported(
+            "MOV/MP4 elst edit lists with other than one entry are not implemented",
+        ));
+    }
+
+    let (segment_duration, media_time) = if version == 0 {
+        ensure_remaining(&reader, 12, "MOV/MP4 elst entry")?;
+        (
+            u64::from(reader.read_u32_be()?),
+            i64::from(reader.read_i32_be()?),
+        )
+    } else {
+        ensure_remaining(&reader, 20, "MOV/MP4 elst entry")?;
+        (reader.read_u64_be()?, reader.read_i64_be()?)
+    };
+    let media_rate_integer = reader.read_i16_be()?;
+    let media_rate_fraction = reader.read_u16_be()?;
+    ensure_box_consumed(&reader, "MOV/MP4 elst")?;
+
+    if segment_duration == 0 {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 elst segment duration must be non-zero",
+        ));
+    }
+    if media_time < 0 {
+        return Err(AvError::unsupported(
+            "MOV/MP4 elst empty edits are not implemented",
+        ));
+    }
+    if media_rate_integer != 1 || media_rate_fraction != 0 {
+        return Err(AvError::unsupported(
+            "MOV/MP4 elst media rates other than 1.0 are not implemented",
+        ));
+    }
+
+    Ok(MovEditList { media_time })
 }
 
 fn parse_mdia(input: &[u8], mdia: &BoxHeader) -> AvResult<MediaData> {
@@ -5786,7 +5864,10 @@ fn build_packets(
     let (stream_index, track, table) = tracks_with_tables[0];
     let sample_spans = build_sample_spans(table)?;
     let mut packets = Vec::with_capacity(sample_spans.len());
-    let mut dts = 0_i64;
+    let edit_media_time = track.edit_list.map_or(0_i64, |edit| edit.media_time);
+    let mut dts = 0_i64
+        .checked_sub(edit_media_time)
+        .ok_or_else(|| AvError::invalid_data("MOV/MP4 edit-list media time overflows DTS"))?;
 
     for (sample_index, span) in sample_spans.into_iter().enumerate() {
         let start = usize::try_from(span.offset)
@@ -5820,6 +5901,21 @@ fn build_packets(
             "mov_codec_tag",
             table.codec_parameters.codec_tag.as_bytes().to_vec(),
         )?);
+        if sample_index == 0
+            && edit_media_time > 0
+            && table.codec_parameters.codec_tag.as_bytes() == b"mp4a"
+        {
+            let skip_samples = u32::try_from(edit_media_time).map_err(|_| {
+                AvError::unsupported("MOV/MP4 mp4a edit-list media time exceeds Skip Samples range")
+            })?;
+            packet.set_flag(PacketFlags::DISCARD, true);
+            packet.push_side_data(SideData::new_skip_samples(PacketSkipSamples::new(
+                skip_samples,
+                0,
+                PacketSkipSamplesReason::PaddingSilence,
+                PacketSkipSamplesReason::PaddingSilence,
+            ))?);
+        }
         dts = dts
             .checked_add(i64::from(span.duration))
             .ok_or_else(|| AvError::invalid_data("MOV/MP4 packet DTS overflow"))?;
@@ -6667,9 +6763,13 @@ mod tests {
     }
 
     #[test]
-    fn rejects_edit_lists_explicitly() {
+    fn parses_single_entry_edit_list_without_sample_table() {
+        let bytes = mp4_with_edit_list();
+        let mut demuxer = MovDemuxer::open(&bytes).unwrap();
+
+        assert_eq!(demuxer.info().tracks()[0].sample_count(), 0);
         assert_eq!(
-            MovDemuxer::open(&mp4_with_edit_list()).unwrap_err().kind(),
+            demuxer.read_packet().unwrap_err().kind(),
             AvErrorKind::Unsupported
         );
     }
@@ -9497,6 +9597,58 @@ mod tests {
     }
 
     #[test]
+    fn applies_single_entry_aac_edit_list_as_skip_samples_side_data() {
+        let bytes = mp4_with_aac_samples_and_edit(
+            &[b"priming".as_slice(), b"tail".as_slice()],
+            &[1_024, 882],
+            1_024,
+        );
+        let mut demuxer = MovDemuxer::open(&bytes).unwrap();
+
+        let track = &demuxer.info().tracks()[0];
+        assert_eq!(track.codec_tag(), Some("mp4a"));
+        assert_eq!(track.media_timescale(), 44_100);
+        assert_eq!(track.media_duration(), Some(1_906));
+        assert_eq!(track.sample_count(), 2);
+
+        let first = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(first.data(), b"priming");
+        assert_eq!(first.dts(), Some(-1_024));
+        assert_eq!(first.pts(), Some(-1_024));
+        assert_eq!(first.duration(), 1_024);
+        assert!(first.flags().contains(PacketFlags::KEY));
+        assert!(first.flags().contains(PacketFlags::DISCARD));
+        let skip_samples = first
+            .side_data()
+            .iter()
+            .find_map(|side_data| side_data.skip_samples().unwrap())
+            .expect("first AAC packet should carry Skip Samples side data");
+        assert_eq!(skip_samples.start(), 1_024);
+        assert_eq!(skip_samples.end(), 0);
+        assert_eq!(
+            skip_samples.start_reason(),
+            PacketSkipSamplesReason::PaddingSilence
+        );
+        assert_eq!(
+            skip_samples.end_reason(),
+            PacketSkipSamplesReason::PaddingSilence
+        );
+
+        let second = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(second.data(), b"tail");
+        assert_eq!(second.dts(), Some(0));
+        assert_eq!(second.pts(), Some(0));
+        assert_eq!(second.duration(), 882);
+        assert!(second.flags().contains(PacketFlags::KEY));
+        assert!(!second.flags().contains(PacketFlags::DISCARD));
+        assert!(second
+            .side_data()
+            .iter()
+            .all(|side_data| side_data.skip_samples().unwrap().is_none()));
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
     fn rejects_invalid_sample_tables_and_truncated_mdat_payloads() {
         assert_eq!(
             MovDemuxer::open(&mp4_with_mismatched_sample_counts())
@@ -9775,13 +9927,7 @@ mod tests {
     }
 
     fn mp4_with_edit_list() -> Vec<u8> {
-        let mut edit_entry = Vec::new();
-        edit_entry.extend_from_slice(&1_u32.to_be_bytes());
-        edit_entry.extend_from_slice(&1_000_u32.to_be_bytes());
-        edit_entry.extend_from_slice(&0_i32.to_be_bytes());
-        edit_entry.extend_from_slice(&1_i16.to_be_bytes());
-        edit_entry.extend_from_slice(&0_u16.to_be_bytes());
-        let edts = box_(*EDTS_ID, &box_(*b"elst", &full_box(0, &edit_entry)));
+        let edts = edts_elst_v0_box(1_000, 0);
         let mdia = box_(*MDIA_ID, &mdhd_v0(90_000, 450_000));
         let trak = box_(
             *TRAK_ID,
@@ -9871,6 +10017,42 @@ mod tests {
             None,
             Some((ctts_version, composition_entries)),
         )
+    }
+
+    fn mp4_with_aac_samples_and_edit(
+        samples: &[&[u8]],
+        durations: &[u32],
+        edit_media_time: i32,
+    ) -> Vec<u8> {
+        let ftyp = ftyp_box();
+        let sample_sizes = samples
+            .iter()
+            .map(|sample| u32::try_from(sample.len()).unwrap())
+            .collect::<Vec<_>>();
+        let mdat_payload = samples.concat();
+        let sample_description = stsd_box_with_entry(
+            b"mp4a",
+            1,
+            &audio_sample_entry_extra_data(2, 16, 44_100, &[]),
+        );
+        let placeholder_moov_payload = moov_v0_with_aac_edit_payload(
+            0,
+            &sample_sizes,
+            durations,
+            sample_description.clone(),
+            edit_media_time,
+        );
+        let placeholder_moov = box_(*MOOV_ID, &placeholder_moov_payload);
+        let chunk_offset = u64::try_from(ftyp.len() + placeholder_moov.len() + 8).unwrap();
+        let moov = moov_v0_with_aac_edit_payload(
+            chunk_offset,
+            &sample_sizes,
+            durations,
+            sample_description,
+            edit_media_time,
+        );
+
+        [ftyp, box_(*MOOV_ID, &moov), box_(*MDAT_ID, &mdat_payload)].concat()
     }
 
     fn mp4_with_chunk_layout(
@@ -10206,6 +10388,39 @@ mod tests {
             &[tkhd_v0(1, media_duration, 1_920, 1_080), mdia].concat(),
         );
         [mvhd_v0(1_000, media_duration), trak].concat()
+    }
+
+    fn moov_v0_with_aac_edit_payload(
+        chunk_offset: u64,
+        sample_sizes: &[u32],
+        durations: &[u32],
+        sample_description_box: Vec<u8>,
+        edit_media_time: i32,
+    ) -> Vec<u8> {
+        let media_duration = durations.iter().copied().sum::<u32>();
+        let movie_duration = 20;
+        let stbl = stbl_box_with_stsd(
+            sample_description_box,
+            chunk_offset,
+            sample_sizes,
+            durations,
+            false,
+            1,
+            None,
+            None,
+        );
+        let minf = box_(*MINF_ID, &stbl);
+        let mdia = box_(*MDIA_ID, &[mdhd_v0(44_100, media_duration), minf].concat());
+        let trak = box_(
+            *TRAK_ID,
+            &[
+                tkhd_v0(1, movie_duration, 0, 0),
+                edts_elst_v0_box(movie_duration, edit_media_time),
+                mdia,
+            ]
+            .concat(),
+        );
+        [mvhd_v0(1_000, movie_duration), trak].concat()
     }
 
     fn moov_v0_with_chunk_layout_payload(
@@ -11210,6 +11425,16 @@ mod tests {
         body.extend_from_slice(&color_type);
         body.extend_from_slice(profile);
         box_(*COLR_ID, &body)
+    }
+
+    fn edts_elst_v0_box(segment_duration: u32, media_time: i32) -> Vec<u8> {
+        let mut edit_entry = Vec::new();
+        edit_entry.extend_from_slice(&1_u32.to_be_bytes());
+        edit_entry.extend_from_slice(&segment_duration.to_be_bytes());
+        edit_entry.extend_from_slice(&media_time.to_be_bytes());
+        edit_entry.extend_from_slice(&1_i16.to_be_bytes());
+        edit_entry.extend_from_slice(&0_u16.to_be_bytes());
+        box_(*EDTS_ID, &box_(*ELST_ID, &full_box(0, &edit_entry)))
     }
 
     fn stts_box(durations: &[u32]) -> Vec<u8> {

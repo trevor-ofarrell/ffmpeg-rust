@@ -2,6 +2,15 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest main-thread M4A packet side-data media slice: the MOV demuxer now
+# accepts a bounded single-entry `edts/elst` edit list, applies positive
+# `media_time` as a packet timestamp shift, marks the first `mp4a` priming
+# packet discard, and emits public `Skip Samples` packet side data. The pinned
+# `oracle-ffprobe-m4a-skip-samples-side-data` row generates an AAC/M4A sample
+# with FFmpeg 8.1.1 and byte-compares selected default `ffprobe` packet plus
+# `packet_side_data` output against Rust. This closes the previous synthetic
+# side-data rendering gap for one native demuxer path, but avutil-packet
+# remains fate_pass, not complete.
 # Latest main-thread packet side-data ffprobe slice: ffprobe-rs now models
 # public packet side-data report sections, parses bounded `packet_side_data`
 # `-show_entries`, filters Rust/internal unknown side-data names from public
@@ -1601,6 +1610,8 @@ unit_tests = [
   "packet::tests::packet_fifo_clear_releases_moved_packets_and_preserves_ref_sources",
   "packet::tests::packet_fifo_partial_drain_releases_only_removed_entries",
   "packet::tests::packet_time_base_defaults_copies_resets_and_rescale_preserves",
+  "mov::tests::applies_single_entry_aac_edit_list_as_skip_samples_side_data",
+  "ffprobe::tests::formats_negative_packet_times_with_ffmpeg_microsecond_rounding",
   "ffprobe::tests::parses_packet_side_data_show_entries_and_implies_packets",
   "ffprobe::tests::packet_side_data_reports_public_skip_samples_and_filters_internal_side_data",
   "ffprobe::tests::renders_packet_side_data_in_ffmpeg_writer_shapes",
@@ -1614,6 +1625,7 @@ differential_tests = [
   "tests/differential/mappings.txt:avutil-packet|oracle-ffprobe-avi-packet-fields",
   "tests/differential/mappings.txt:avutil-packet|oracle-mov-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-ffprobe-mov-core-fields",
+  "tests/differential/mappings.txt:avutil-packet|oracle-ffprobe-m4a-skip-samples-side-data",
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-yuv4mpegpipe-file-output",
   "tests/differential/mappings.txt:avutil-packet|oracle-yuv4mpegpipe-sar-file-output",
   "tests/differential/mappings.txt:avutil-packet|oracle-yuv4mpegpipe-framecrc-records",
@@ -1669,6 +1681,7 @@ differential_tests = [
   "ffprobe_mov_oracle::avi_bgr24_ffprobe_packet_fields_match_ffmpeg_oracle",
   "mov_oracle::mov_rgb24_framecrc_records_match_ffmpeg_oracle",
   "ffprobe_mov_oracle::mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle",
+  "ffprobe_mov_oracle::m4a_aac_skip_samples_packet_side_data_matches_ffmpeg_oracle",
   "yuv4mpegpipe_oracle::rawvideo_yuv420p_yuv4mpegpipe_file_output_matches_ffmpeg_oracle",
   "yuv4mpegpipe_oracle::yuv4mpegpipe_sample_aspect_ratio_header_matches_ffmpeg_oracle",
   "yuv4mpegpipe_oracle::yuv4mpegpipe_yuv420p_framecrc_records_match_ffmpeg_oracle",
@@ -1723,6 +1736,17 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: MOV/M4A packet side-data media-integration coverage now
+# compares a pinned FFmpeg-generated AAC/M4A file whose first packet exposes
+# `Skip Samples` side data. Rust parses the bounded single-entry `edts/elst`
+# priming edit, shifts first-packet DTS/PTS to -1024 at 44.1 kHz, marks the
+# priming packet discard so ffprobe prints `KD_`, and emits typed public Skip
+# Samples side data. The new
+# `oracle-ffprobe-m4a-skip-samples-side-data` differential row byte-compares
+# selected default `ffprobe -show_packets -show_entries
+# packet=pts,dts,pts_time,dts_time,duration,size,flags:packet_side_data`
+# output against FFmpeg 8.1.1. This strengthens native demuxer packet
+# side-data evidence only; the row remains fate_pass, not complete.
 # Latest update: MOV/AVI ffprobe media-integration coverage now compares
 # `-show_packets -show_data_hash md5` packet fields against pinned FFmpeg
 # 8.1.1 across default, JSON, compact, CSV, flat, INI, and XML writers. Rust
@@ -5517,13 +5541,18 @@ unit_tests = [
   "ffprobe::tests::renders_flat_packet_sections",
   "ffprobe::tests::renders_ini_packet_sections",
   "ffprobe::tests::renders_xml_packet_sections",
+  "ffprobe::tests::formats_negative_packet_times_with_ffmpeg_microsecond_rounding",
   "ffprobe::tests::outputs_mov_packet_sections",
   "ffprobe::tests::outputs_mov_packet_json_without_stream_or_format_sections",
 ]
-differential_tests = ["tests/differential/mappings.txt:fftools-ffprobe-mov-show-packets|oracle-ffprobe-mov-core-fields"]
+differential_tests = [
+  "tests/differential/mappings.txt:fftools-ffprobe-mov-show-packets|oracle-ffprobe-mov-core-fields",
+  "tests/differential/mappings.txt:fftools-ffprobe-mov-show-packets|oracle-ffprobe-m4a-skip-samples-side-data",
+  "ffprobe_mov_oracle::m4a_aac_skip_samples_packet_side_data_matches_ffmpeg_oracle",
+]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-mov-show-packets|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "Initial ffprobe-rs -show_packets support collects packets from the Rust MOV demuxer for local seekable one-track MOV/MP4 inputs and renders packet codec type, stream index, PTS/DTS, time fields, duration, size, sample-offset `pos`, and key flags in default, json, compact, csv, flat, ini, and xml writers. The flat writer accepts `-of flat` and emits bounded `packets.packet.N.field=value` packet scalar lines with FFmpeg-shaped quoted string fields; the INI writer accepts `-of ini` and emits bounded `[packets.packet.N]` sections with unquoted packet scalar fields; the XML writer accepts `-of xml` and emits bounded `<packet .../>` elements under `<ffprobe><packets>`. Output is a constrained deterministic subset, not byte-identical to upstream, and the generated MOV core-fields oracle row now provides bounded pinned-oracle differential coverage for the selected rawvideo MOV packet fields across default-output, JSON, compact, CSV, flat, INI, and XML packet surfaces including `codec_type` and `pos`; broader inputs, full writer byte-identity, tags, field-order/id/disposition deltas, and upstream FATE coverage remain pending."
+notes = "Initial ffprobe-rs -show_packets support collects packets from the Rust MOV demuxer for local seekable one-track MOV/MP4 inputs and renders packet codec type, stream index, PTS/DTS, rounded time fields including negative AAC priming timestamps, duration, size, sample-offset `pos`, key/discard/corrupt flags, and public packet side-data sections in default, json, compact, csv, flat, ini, and xml writers. The flat writer accepts `-of flat` and emits bounded `packets.packet.N.field=value` packet scalar lines with FFmpeg-shaped quoted string fields; the INI writer accepts `-of ini` and emits bounded `[packets.packet.N]` sections with unquoted packet scalar fields; the XML writer accepts `-of xml` and emits bounded `<packet .../>` elements under `<ffprobe><packets>`. Output is a constrained deterministic subset, not byte-identical to upstream. The generated MOV core-fields oracle row provides bounded pinned-oracle differential coverage for selected rawvideo MOV packet fields across default-output, JSON, compact, CSV, flat, INI, and XML packet surfaces including `codec_type` and `pos`; the M4A skip-samples row byte-compares selected default `packet_side_data` output for a pinned FFmpeg-generated AAC/M4A file whose first packet carries `Skip Samples` and `KD_`; broader inputs, full writer byte-identity, tags, field-order/id/disposition deltas, and upstream FATE coverage remain pending."
 blocked_reason = ""
 
 [[component]]
@@ -7650,7 +7679,7 @@ unit_tests = [
   "mov::tests::rejects_malformed_movie_metadata_atom_boundaries",
   "mov::tests::registers_mov_probe_descriptor_for_signature_extension_and_mime",
   "mov::tests::rejects_fragmented_movie_boxes_explicitly",
-  "mov::tests::rejects_edit_lists_explicitly",
+  "mov::tests::parses_single_entry_edit_list_without_sample_table",
   "mov::tests::rejects_multiple_populated_tracks_explicitly",
   "mov::tests::reads_packets_from_simple_sample_table",
   "mov::tests::parses_sample_description_codec_parameters",
@@ -7691,11 +7720,14 @@ unit_tests = [
   "mov::tests::reads_sync_sample_table_for_key_flags",
   "mov::tests::reads_composition_offsets_for_packet_pts",
   "mov::tests::reads_signed_composition_offsets_for_packet_pts",
+  "mov::tests::applies_single_entry_aac_edit_list_as_skip_samples_side_data",
   "mov::tests::rejects_invalid_sample_tables_and_truncated_mdat_payloads",
 ]
 differential_tests = [
   "tests/differential/mappings.txt:avformat-mov-demuxer|oracle-mov-framecrc-records",
+  "tests/differential/mappings.txt:avformat-mov-demuxer|oracle-ffprobe-m4a-skip-samples-side-data",
   "mov_oracle::mov_rgb24_framecrc_records_match_ffmpeg_oracle",
+  "ffprobe_mov_oracle::m4a_aac_skip_samples_packet_side_data_matches_ffmpeg_oracle",
 ]
 fate_tests = ["tests/fate/mappings.txt:avformat-mov-demuxer|local-mov-unit"]
 # Local smoke mapping only; upstream FFmpeg FATE media parity remains pending.
@@ -7708,7 +7740,8 @@ fate_tests = ["tests/fate/mappings.txt:avformat-mov-demuxer|local-mov-unit"]
 # Current wvtt sample payload coverage parses vttc/vtte/vtta samples, typed cue child boxes, packet side-data counts, and malformed payload rejection.
 # Latest subtitle/data sample-entry coverage includes typed optional btrt parsing for stpp, wvtt, and metx, preserved metx child boxes, and malformed duplicate/truncated btrt rejection.
 # Latest MOV framecrc oracle coverage validates a pinned FFmpeg-generated two-frame rgb24 MOV fixture with edit lists disabled through the Rust MOV demuxer and framecrc muxer against FFmpeg streamcopy packet records.
+# Latest MOV/M4A side-data oracle coverage validates a pinned FFmpeg-generated AAC/M4A fixture with a bounded single-entry edit list, proving native demuxer timestamp shift, first-packet discard, and public Skip Samples packet side data through ffprobe default output.
 # Current avformat_mov fuzz build coverage seeds tx3g/stpp/sbtt/stxt/wvtt/metx/mett/urim MOV fixtures and asserts typed sample-entry detail invariants; actual fuzz execution remains blocked.
 fuzz_targets = ["avformat_mov"]
-notes = "Initial MOV/MP4 demuxer validates classic, extended-size, and size-zero boxes; parses ftyp, mvhd, tkhd, mdhd language metadata, and mdia/hdlr handler type plus handler-name metadata; extracts common movie-level and track-level udta/meta/ilst data values for UTF-8 and UTF-16 text fields, classic gnre genre indexes, one-byte integer/boolean atoms, iTunes-style freeform ---- atoms, covr cover-art payloads, and track/disc number pairs while rejecting malformed metadata atoms, invalid text encodings, malformed hdlr names, malformed genre indexes, short integer/boolean payloads, malformed freeform payloads, and short cover-art data payloads; registers a hand-written ftyp/extension/MIME probe descriptor; records generic stsd codec parameters with codec tag, data reference index, and sample-entry extra data; parses AudioSampleEntry version/revision/vendor/base channel-count/sample-size/compression-id/packet-size/sample-rate/child boxes for known audio sample-entry tags including samr/sawb/fLaC/alac, including version-1 samples-per-packet/bytes-per-packet/bytes-per-frame/bytes-per-sample fields, version-2 sizeOfStructOnly/audioSampleRate/numAudioChannels/constBitsPerChannel/formatSpecificFlags/constBytesPerAudioPacket/constLPCMFramesPerAudioPacket fields, direct esds full-box descriptor payloads, btrt buffer-size/max-bitrate/average-bitrate fields, damr AMR vendor/decoder-version/mode-set/mode-change-period/frames-per-sample fields, required AC-3 dac3 fscod/bsid/bsmod/acmod/lfeon/bit-rate-code fields for ac-3 sample entries, required E-AC-3 dec3 data-rate/independent-substream/dependent-substream/chan-loc fields for ec-3 sample entries, mandatory Opus dOps version/output-channel-count/pre-skip/input-sample-rate/output-gain/channel-mapping-family fields plus optional stream-count/coupled-count/channel-mapping tables for Opus sample entries, required FLAC dfLa version/flags/native-metadata-block fields plus parsed STREAMINFO sample-rate/channel-count/bit-depth/block-size/total-samples/MD5 fields for fLaC sample entries, required ALAC alac full-box fields plus parsed frame-length/compatible-version/bit-depth/tuning/channel-count/max-run/max-frame-bytes/average-bit-rate/sample-rate fields and optional ALAC channel-layout info for alac sample entries in both direct and wave/alac compatibility forms, structured wave extension atoms with nested frma original format, esds full-box descriptor payload, nested alac compatibility payloads, and terminator validation, and structured chan channel-layout atoms with channel layout tag, bitmap, labels, flags, and coordinate bits; parses tx3g timed-text sample-entry display/default-box/default-style fields and child boxes; parses stpp XML subtitle sample-entry null-terminated namespace, schema-location, auxiliary-MIME-types strings, and optional child boxes; parses sbtt text subtitle and stxt simple text content-encoding/MIME strings plus optional btrt/txtC child boxes; parses wvtt WebVTT sample-entry child boxes including required vttC configuration text and optional vlab source labels; parses boxed wvtt WebVTT media samples with vttc cue boxes, vtte empty cues, vtta additional text, vsid/iden/ctim/sttg/payl cue children, source-label validation, and packet side-data counts; parses metx XML metadata strings, mett text metadata strings with optional btrt/txtC child boxes, and urim URI metadata sample entries with required uri full boxes, optional uriI initialization full boxes, optional btrt, and preserved child boxes; parses VisualSampleEntry width, height, frame count, compressor name, depth, child boxes, structured avcC version/profile/level/NAL-length-size/SPS/PPS data, structured hvcC profile/timing/NAL-length-size/NAL-array data, pasp pixel aspect ratio, and nclx/nclc/rICC/prof colr color information for known video sample entries and raw entries with full visual payloads; explicitly rejects fragmented mvex/moof layouts, edit-list edts boxes, multiple populated tracks, multiple stsd sample entries, and sample description indexes other than 1; parses simple stsd/stts/ctts/stsc/stsz/stss/stco/co64 tables for one populated track including multi-chunk stsc transitions and sample ranges split across multiple mdat boxes; emits packets with PTS/DTS/duration, sample byte-position `pos`, key flags, and side data; and rejects malformed sample tables, unknown/truncated AudioSampleEntry versions, invalid version-2 struct offsets or sample rates, malformed direct AudioSampleEntry esds, btrt, damr, dac3, dec3, dOps, dfLa, or alac payloads, duplicate or missing required AC-3 dac3 boxes, duplicate or missing required E-AC-3 dec3 boxes, duplicate or missing required Opus dOps boxes, duplicate or missing required FLAC dfLa boxes, duplicate/missing/conflicting required ALAC alac boxes, malformed FLAC metadata block sequences or STREAMINFO payloads, mismatched FLAC sample-entry channel/bit-depth fields, malformed ALAC config/channel-layout payloads, mismatched ALAC sample-entry channel/bit-depth/sample-rate fields, malformed AudioSampleEntry wave/frma/esds/alac/terminator data, malformed chan version/flags/descriptor payloads, malformed AudioSampleEntry child boxes, malformed tx3g/stpp/sbtt/stxt/wvtt/metx/mett/urim sample-entry payloads, malformed wvtt media sample payloads, malformed VisualSampleEntry child boxes, malformed avcC/hvcC/pasp/colr payloads, and truncated media data. Build-checked cargo-fuzz target avformat_mov exercises box parsing, sample-table packet extraction, stream metadata, packet timing, WebVTT sample payload parsing, and side-data invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Packet extraction for multiple populated tracks, actual fragment parsing, edit-list timeline application, additional codec-specific audio extensions beyond direct esds/btrt/damr/dac3/dec3/dOps/dfLa/alac/wave/chan, WebVTT rendering/timing parity, broader subtitle/data sample-entry coverage, deeper VPS/SPS/PPS bitstream validation, CLI wiring, differential tests, and FATE are pending."
+notes = "Initial MOV/MP4 demuxer validates classic, extended-size, and size-zero boxes; parses ftyp, mvhd, tkhd, mdhd language metadata, and mdia/hdlr handler type plus handler-name metadata; extracts common movie-level and track-level udta/meta/ilst data values for UTF-8 and UTF-16 text fields, classic gnre genre indexes, one-byte integer/boolean atoms, iTunes-style freeform ---- atoms, covr cover-art payloads, and track/disc number pairs while rejecting malformed metadata atoms, invalid text encodings, malformed hdlr names, malformed genre indexes, short integer/boolean payloads, malformed freeform payloads, and short cover-art data payloads; registers a hand-written ftyp/extension/MIME probe descriptor; records generic stsd codec parameters with codec tag, data reference index, and sample-entry extra data; parses AudioSampleEntry version/revision/vendor/base channel-count/sample-size/compression-id/packet-size/sample-rate/child boxes for known audio sample-entry tags including samr/sawb/fLaC/alac, including version-1 samples-per-packet/bytes-per-packet/bytes-per-frame/bytes-per-sample fields, version-2 sizeOfStructOnly/audioSampleRate/numAudioChannels/constBitsPerChannel/formatSpecificFlags/constBytesPerAudioPacket/constLPCMFramesPerAudioPacket fields, direct esds full-box descriptor payloads, btrt buffer-size/max-bitrate/average-bitrate fields, damr AMR vendor/decoder-version/mode-set/mode-change-period/frames-per-sample fields, required AC-3 dac3 fscod/bsid/bsmod/acmod/lfeon/bit-rate-code fields for ac-3 sample entries, required E-AC-3 dec3 data-rate/independent-substream/dependent-substream/chan-loc fields for ec-3 sample entries, mandatory Opus dOps version/output-channel-count/pre-skip/input-sample-rate/output-gain/channel-mapping-family fields plus optional stream-count/coupled-count/channel-mapping tables for Opus sample entries, required FLAC dfLa version/flags/native-metadata-block fields plus parsed STREAMINFO sample-rate/channel-count/bit-depth/block-size/total-samples/MD5 fields for fLaC sample entries, required ALAC alac full-box fields plus parsed frame-length/compatible-version/bit-depth/tuning/channel-count/max-run/max-frame-bytes/average-bit-rate/sample-rate fields and optional ALAC channel-layout info for alac sample entries in both direct and wave/alac compatibility forms, structured wave extension atoms with nested frma original format, esds full-box descriptor payload, nested alac compatibility payloads, and terminator validation, and structured chan channel-layout atoms with channel layout tag, bitmap, labels, flags, and coordinate bits; parses tx3g timed-text sample-entry display/default-box/default-style fields and child boxes; parses stpp XML subtitle sample-entry null-terminated namespace, schema-location, auxiliary-MIME-types strings, and optional child boxes; parses sbtt text subtitle and stxt simple text content-encoding/MIME strings plus optional btrt/txtC child boxes; parses wvtt WebVTT sample-entry child boxes including required vttC configuration text and optional vlab source labels; parses boxed wvtt WebVTT media samples with vttc cue boxes, vtte empty cues, vtta additional text, vsid/iden/ctim/sttg/payl cue children, source-label validation, and packet side-data counts; parses metx XML metadata strings, mett text metadata strings with optional btrt/txtC child boxes, and urim URI metadata sample entries with required uri full boxes, optional uriI initialization full boxes, optional btrt, and preserved child boxes; parses VisualSampleEntry width, height, frame count, compressor name, depth, child boxes, structured avcC version/profile/level/NAL-length-size/SPS/PPS data, structured hvcC profile/timing/NAL-length-size/NAL-array data, pasp pixel aspect ratio, and nclx/nclc/rICC/prof colr color information for known video sample entries and raw entries with full visual payloads; explicitly rejects fragmented mvex/moof layouts, multi-entry, empty, or rate-scaled edit-list forms, multiple populated tracks, multiple stsd sample entries, and sample description indexes other than 1; parses simple stsd/stts/ctts/stsc/stsz/stss/stco/co64 tables for one populated track including multi-chunk stsc transitions and sample ranges split across multiple mdat boxes; emits packets with PTS/DTS/duration, bounded single-entry edit-list timestamp shifts, sample byte-position `pos`, key/discard flags, typed public Skip Samples side data for `mp4a` priming edits, and internal MOV side data; and rejects malformed sample tables, unknown/truncated AudioSampleEntry versions, invalid version-2 struct offsets or sample rates, malformed direct AudioSampleEntry esds, btrt, damr, dac3, dec3, dOps, dfLa, or alac payloads, duplicate or missing required AC-3 dac3 boxes, duplicate or missing required E-AC-3 dec3 boxes, duplicate or missing required Opus dOps boxes, duplicate or missing required FLAC dfLa boxes, duplicate/missing/conflicting required ALAC alac boxes, malformed FLAC metadata block sequences or STREAMINFO payloads, mismatched FLAC sample-entry channel/bit-depth fields, malformed ALAC config/channel-layout payloads, mismatched ALAC sample-entry channel/bit-depth/sample-rate fields, malformed AudioSampleEntry wave/frma/esds/alac/terminator data, malformed chan version/flags/descriptor payloads, malformed AudioSampleEntry child boxes, malformed tx3g/stpp/sbtt/stxt/wvtt/metx/mett/urim sample-entry payloads, malformed wvtt media sample payloads, malformed VisualSampleEntry child boxes, malformed avcC/hvcC/pasp/colr payloads, and truncated media data. Build-checked cargo-fuzz target avformat_mov exercises box parsing, sample-table packet extraction, stream metadata, packet timing, WebVTT sample payload parsing, and side-data invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Packet extraction for multiple populated tracks, actual fragment parsing, broader edit-list timeline application beyond the current single-entry AAC priming shape, additional codec-specific audio extensions beyond direct esds/btrt/damr/dac3/dec3/dOps/dfLa/alac/wave/chan, WebVTT rendering/timing parity, broader subtitle/data sample-entry coverage, deeper VPS/SPS/PPS bitstream validation, CLI wiring, broader differential tests, and FATE are pending."
 blocked_reason = ""
