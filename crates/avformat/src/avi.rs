@@ -175,13 +175,17 @@ impl AviDemuxer {
         for chunk in read_chunks(&input[12..riff_end], "AVI RIFF")? {
             if chunk.id == *LIST_ID {
                 let (list_type, payload) = split_list_payload(chunk.payload, "AVI LIST")?;
+                let list_payload_offset = 12_usize
+                    .checked_add(chunk.payload_start)
+                    .and_then(|offset| offset.checked_add(4))
+                    .ok_or_else(|| AvError::invalid_data("AVI LIST payload offset overflow"))?;
                 match &list_type {
                     HDRL_LIST => {
                         let (header, parsed_streams) = parse_hdrl(payload)?;
                         main_header = Some(header);
                         streams = parsed_streams;
                     }
-                    MOVI_LIST => movi_payload = Some(payload),
+                    MOVI_LIST => movi_payload = Some((payload, list_payload_offset)),
                     _ => {}
                 }
             }
@@ -199,9 +203,9 @@ impl AviDemuxer {
                 streams.len()
             )));
         }
-        let movi_payload =
+        let (movi_payload, movi_payload_offset) =
             movi_payload.ok_or_else(|| AvError::invalid_data("AVI missing movi list"))?;
-        let packets = parse_movi(movi_payload, &streams)?;
+        let packets = parse_movi(movi_payload, movi_payload_offset, &streams)?;
         let packet_count = packets.len();
 
         Ok(Self {
@@ -418,6 +422,7 @@ struct AviBitmapInfo {
 #[derive(Debug, Clone, Copy)]
 struct RiffChunk<'a> {
     id: [u8; 4],
+    payload_start: usize,
     payload: &'a [u8],
 }
 
@@ -852,15 +857,26 @@ fn parse_bitmap_info(data: &[u8]) -> AvResult<AviBitmapInfo> {
     })
 }
 
-fn parse_movi(payload: &[u8], streams: &[AviStreamInfo]) -> AvResult<Vec<Packet>> {
+fn parse_movi(
+    payload: &[u8],
+    payload_offset: usize,
+    streams: &[AviStreamInfo],
+) -> AvResult<Vec<Packet>> {
     let mut packets = Vec::new();
     let mut next_pts = vec![0_i64; streams.len()];
-    parse_movi_payload(payload, streams, &mut next_pts, &mut packets)?;
+    parse_movi_payload(
+        payload,
+        payload_offset,
+        streams,
+        &mut next_pts,
+        &mut packets,
+    )?;
     Ok(packets)
 }
 
 fn parse_movi_payload(
     payload: &[u8],
+    payload_offset: usize,
     streams: &[AviStreamInfo],
     next_pts: &mut [i64],
     packets: &mut Vec<Packet>,
@@ -869,7 +885,11 @@ fn parse_movi_payload(
         if chunk.id == *LIST_ID {
             let (list_type, payload) = split_list_payload(chunk.payload, "AVI movi LIST")?;
             if list_type == *REC_LIST {
-                parse_movi_payload(payload, streams, next_pts, packets)?;
+                let nested_payload_offset = payload_offset
+                    .checked_add(chunk.payload_start)
+                    .and_then(|offset| offset.checked_add(4))
+                    .ok_or_else(|| AvError::invalid_data("AVI rec payload offset overflow"))?;
+                parse_movi_payload(payload, nested_payload_offset, streams, next_pts, packets)?;
             }
             continue;
         }
@@ -895,6 +915,14 @@ fn parse_movi_payload(
         packet.set_pts(Some(pts));
         packet.set_dts(Some(pts));
         packet.set_duration(1)?;
+        packet.set_pos(Some(
+            i64::try_from(
+                payload_offset
+                    .checked_add(chunk.payload_start)
+                    .ok_or_else(|| AvError::invalid_data("AVI packet offset overflow"))?,
+            )
+            .map_err(|_| AvError::invalid_data("AVI packet offset exceeds i64"))?,
+        ))?;
         packet.set_flag(PacketFlags::KEY, true);
         packet.push_side_data(SideData::new("avi_chunk_id", chunk.id.to_vec())?);
         next_pts[stream_index] = pts
@@ -954,6 +982,7 @@ fn read_chunks<'a>(data: &'a [u8], context: &str) -> AvResult<Vec<RiffChunk<'a>>
 
         chunks.push(RiffChunk {
             id,
+            payload_start,
             payload: &data[payload_start..payload_end],
         });
         position = payload_end;
@@ -1039,6 +1068,9 @@ mod tests {
         let first = frame_bytes(12, 0x10);
         let second = frame_bytes(12, 0x80);
         let bytes = avi_fixture(&[&first, &second]);
+        let first_packet_pos = find_bytes(&bytes, b"00db").unwrap() + 8;
+        let second_packet_pos =
+            first_packet_pos + find_bytes(&bytes[first_packet_pos..], b"00db").unwrap() + 8;
         let mut demuxer = AviDemuxer::open(&bytes).unwrap();
 
         assert_eq!(demuxer.info().microseconds_per_frame(), 40_000);
@@ -1067,12 +1099,20 @@ mod tests {
         assert_eq!(first_packet.pts(), Some(0));
         assert_eq!(first_packet.dts(), Some(0));
         assert_eq!(first_packet.duration(), 1);
+        assert_eq!(
+            first_packet.pos(),
+            Some(i64::try_from(first_packet_pos).unwrap())
+        );
         assert_eq!(first_packet.side_data()[0].kind(), "avi_chunk_id");
         assert_eq!(first_packet.side_data()[0].data(), b"00db");
 
         let second_packet = demuxer.read_packet().unwrap().unwrap();
         assert_eq!(second_packet.data(), second);
         assert_eq!(second_packet.pts(), Some(1));
+        assert_eq!(
+            second_packet.pos(),
+            Some(i64::try_from(second_packet_pos).unwrap())
+        );
         assert!(demuxer.read_packet().unwrap().is_none());
     }
 
@@ -1083,10 +1123,12 @@ mod tests {
             chunk(*b"JUNK", b"abc"),
             list(*REC_LIST, &[chunk(*b"00db", &frame)]),
         ]);
+        let packet_pos = find_bytes(&bytes, b"00db").unwrap() + 8;
         let mut demuxer = AviDemuxer::open(&bytes).unwrap();
 
         let packet = demuxer.read_packet().unwrap().unwrap();
         assert_eq!(packet.data(), frame);
+        assert_eq!(packet.pos(), Some(i64::try_from(packet_pos).unwrap()));
         assert!(demuxer.read_packet().unwrap().is_none());
     }
 

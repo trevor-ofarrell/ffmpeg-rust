@@ -5795,6 +5795,9 @@ fn build_packets(
         packet.set_pts(Some(pts));
         packet.set_dts(Some(dts));
         packet.set_duration(i64::from(span.duration))?;
+        packet.set_pos(Some(i64::try_from(start).map_err(|_| {
+            AvError::invalid_data("MOV/MP4 sample offset exceeds i64")
+        })?))?;
         packet.set_key(is_sync_sample(table, sample_index));
         packet.push_side_data(SideData::new(
             "mov_track_id",
@@ -6677,6 +6680,13 @@ mod tests {
         let first = demuxer.read_packet().unwrap().unwrap();
         assert_eq!(first.stream_index(), 0);
         assert_eq!(first.data(), b"abc");
+        assert_eq!(
+            first.pos(),
+            bytes
+                .windows(b"abc".len())
+                .position(|window| window == b"abc")
+                .map(|offset| i64::try_from(offset).unwrap())
+        );
         assert_eq!(first.pts(), Some(0));
         assert_eq!(first.dts(), Some(0));
         assert_eq!(first.duration(), 1_000);
@@ -6688,6 +6698,13 @@ mod tests {
 
         let second = demuxer.read_packet().unwrap().unwrap();
         assert_eq!(second.data(), b"defg");
+        assert_eq!(
+            second.pos(),
+            bytes
+                .windows(b"defg".len())
+                .position(|window| window == b"defg")
+                .map(|offset| i64::try_from(offset).unwrap())
+        );
         assert_eq!(second.pts(), Some(1_000));
         assert_eq!(second.dts(), Some(1_000));
         assert_eq!(second.duration(), 2_000);

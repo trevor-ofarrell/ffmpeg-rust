@@ -9,6 +9,13 @@
 
 ## Compatible Today
 
+- Latest main-thread packet-position media evidence: MOV demuxing now carries
+  packet `pos` from sample byte offsets, AVI demuxing carries packet `pos` from
+  RIFF chunk payload offsets, and `ffprobe-rs -show_packets` renders `pos` in
+  default and JSON packet sections. The pinned MOV and AVI ffprobe oracle rows
+  now compare `pos` against FFmpeg 8.1.1; the AVI row corrected an initial
+  header-offset interpretation to FFmpeg's payload-offset behavior.
+  `avutil-packet` remains `fate_pass`; strict completion remains 11/96.
 - Latest main-thread packet FIFO raw-flag empty-read evidence: pinned
   libavcodec rows `packet:fifo-read-empty-user-move-preserve-*` and
   `packet:fifo-read-empty-user-ref-preserve-*` now prove

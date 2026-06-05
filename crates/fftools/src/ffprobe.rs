@@ -326,6 +326,7 @@ pub struct FfprobePacketReport {
     duration: i64,
     duration_time: String,
     size: usize,
+    pos: Option<i64>,
     flags: String,
 }
 
@@ -364,6 +365,10 @@ impl FfprobePacketReport {
 
     pub fn size(&self) -> usize {
         self.size
+    }
+
+    pub fn pos(&self) -> Option<i64> {
+        self.pos
     }
 
     pub fn flags(&self) -> &str {
@@ -1040,6 +1045,7 @@ fn collect_mov_packets(
                 stream.time_base_den,
             ),
             size: packet.data().len(),
+            pos: packet.pos(),
             flags: packet_flags(packet.flags().bits()),
         });
     }
@@ -1079,6 +1085,7 @@ fn collect_avi_packets(
                 stream.time_base_den,
             ),
             size: packet.data().len(),
+            pos: packet.pos(),
             flags: packet_flags(packet.flags().bits()),
         });
     }
@@ -1441,6 +1448,7 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
             out.push_str(&format!("duration={}\n", packet.duration));
             out.push_str(&format!("duration_time={}\n", packet.duration_time));
             out.push_str(&format!("size={}\n", packet.size));
+            out.push_str(&format!("pos={}\n", optional_i64(packet.pos)));
             out.push_str(&format!("flags={}\n", packet.flags));
             out.push_str("[/PACKET]\n");
         }
@@ -1620,6 +1628,7 @@ fn render_packet_json(packet: &FfprobePacketReport) -> String {
         json_number("duration", packet.duration),
         json_string("duration_time", &packet.duration_time),
         json_number("size", packet.size),
+        json_optional_number("pos", packet.pos),
         json_string("flags", &packet.flags),
     ];
     format!("{{{}}}", fields.join(", "))
@@ -2077,6 +2086,7 @@ mod tests {
         assert!(rendered.contains("pts_time=0.000000\n"));
         assert!(rendered.contains("duration_time=0.011111\n"));
         assert!(rendered.contains("size=3\n"));
+        assert!(rendered.contains("pos=123\n"));
         assert!(rendered.contains("flags=K__\n"));
         assert!(rendered.contains("[FORMAT]\n"));
     }
@@ -2603,10 +2613,10 @@ mod tests {
 
     #[test]
     fn outputs_mov_packet_sections() {
-        let path = write_temp_mov(
-            "show-packets",
-            &sampled_mov_file(&[b"abc".as_slice(), b"defg".as_slice()], &[1_000, 2_000]),
-        );
+        let mov = sampled_mov_file(&[b"abc".as_slice(), b"defg".as_slice()], &[1_000, 2_000]);
+        let first_pos = find_bytes(&mov, b"abc").unwrap();
+        let second_pos = find_bytes(&mov, b"defg").unwrap();
+        let path = write_temp_mov("show-packets", &mov);
         let path_arg = path.to_string_lossy().into_owned();
 
         let stdout = ffprobe_output(&strings(&["-show_packets", path_arg.as_str()]))
@@ -2621,19 +2631,20 @@ mod tests {
         assert!(stdout.contains("duration=1000\n"));
         assert!(stdout.contains("duration_time=0.011111\n"));
         assert!(stdout.contains("size=3\n"));
+        assert!(stdout.contains(&format!("pos={first_pos}\n")));
         assert!(stdout.contains("flags=K__\n"));
         assert!(stdout.contains("pts=1000\n"));
         assert!(stdout.contains("duration=2000\n"));
         assert!(stdout.contains("size=4\n"));
+        assert!(stdout.contains(&format!("pos={second_pos}\n")));
         assert!(stdout.contains("flags=___\n"));
     }
 
     #[test]
     fn outputs_mov_packet_json_without_stream_or_format_sections() {
-        let path = write_temp_mov(
-            "show-packets-json",
-            &sampled_mov_file(&[b"abc".as_slice(), b"defg".as_slice()], &[1_000, 2_000]),
-        );
+        let mov = sampled_mov_file(&[b"abc".as_slice(), b"defg".as_slice()], &[1_000, 2_000]);
+        let second_pos = find_bytes(&mov, b"defg").unwrap();
+        let path = write_temp_mov("show-packets-json", &mov);
         let path_arg = path.to_string_lossy().into_owned();
 
         let stdout = ffprobe_output(&strings(&[
@@ -2651,6 +2662,7 @@ mod tests {
         assert!(stdout.contains("\"pts\": 1000"));
         assert!(stdout.contains("\"pts_time\": \"0.011111\""));
         assert!(stdout.contains("\"duration_time\": \"0.022222\""));
+        assert!(stdout.contains(&format!("\"pos\": {second_pos}")));
         assert!(stdout.contains("\"flags\": \"___\""));
         assert!(!stdout.contains("\"streams\""));
         assert!(!stdout.contains("\"format\""));
@@ -2917,10 +2929,9 @@ mod tests {
     fn outputs_avi_packet_sections() {
         let first = [0, 1, 2, 3, 4, 5];
         let second = [6, 7, 8, 9, 10, 11];
-        let path = write_temp_avi(
-            "avi-show-packets",
-            &avi_file_bytes(2, 1, Rational::new(25, 1).unwrap(), &[&first, &second]),
-        );
+        let avi = avi_file_bytes(2, 1, Rational::new(25, 1).unwrap(), &[&first, &second]);
+        let first_pos = find_bytes(&avi, b"00dc").unwrap() + 8;
+        let path = write_temp_avi("avi-show-packets", &avi);
         let path_arg = path.to_string_lossy().into_owned();
 
         let stdout = ffprobe_output(&strings(&["-show_packets", path_arg.as_str()]))
@@ -2937,6 +2948,7 @@ mod tests {
         assert!(stdout.contains("duration=1\n"));
         assert!(stdout.contains("duration_time=0.040000\n"));
         assert!(stdout.contains("size=8\n"));
+        assert!(stdout.contains(&format!("pos={first_pos}\n")));
         assert!(stdout.contains("flags=K__\n"));
         assert!(stdout.contains("pts=1\n"));
         assert!(stdout.contains("dts=1\n"));
@@ -3035,6 +3047,7 @@ mod tests {
                 duration: 1_000,
                 duration_time: "0.011111".to_string(),
                 size: 3,
+                pos: Some(123),
                 flags: "K__".to_string(),
             }],
         }
@@ -3042,6 +3055,12 @@ mod tests {
 
     fn strings(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| value.to_string()).collect()
+    }
+
+    fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+        haystack
+            .windows(needle.len())
+            .position(|window| window == needle)
     }
 
     fn write_temp_mov(label: &str, bytes: &[u8]) -> PathBuf {
