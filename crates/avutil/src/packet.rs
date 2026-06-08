@@ -661,36 +661,52 @@ impl PacketSideDataKind {
             "mastering_display_metadata" | "masteringdisplaymetadata" => {
                 Some(Self::MasteringDisplayMetadata)
             }
-            "spherical" => Some(Self::Spherical),
-            "content_light_level" | "contentlightlevel" => Some(Self::ContentLightLevel),
+            "webvtt_id" => Some(Self::WebVttIdentifier),
+            "spherical" | "spherical_mapping" => Some(Self::Spherical),
+            "content_light_level" | "contentlightlevel" | "content_light_level_metadata" => {
+                Some(Self::ContentLightLevel)
+            }
             "a53_cc" | "a53cc" | "a53_closed_captions" => Some(Self::A53ClosedCaptions),
-            "encryption_init_info" | "encryptioninitinfo" => Some(Self::EncryptionInitInfo),
+            "encryption_init_info" | "encryptioninitinfo" | "encryption_initialization_data" => {
+                Some(Self::EncryptionInitInfo)
+            }
             "encryption_info" | "encryptioninfo" => Some(Self::EncryptionInfo),
-            "afd" | "active_format_description" => Some(Self::ActiveFormatDescription),
+            "afd" | "active_format_description" | "active_format_description_data" => {
+                Some(Self::ActiveFormatDescription)
+            }
             "prft" | "producer_reference_time" => Some(Self::ProducerReferenceTime),
             "icc_profile" | "iccprofile" => Some(Self::IccProfile),
-            "dovi_conf" | "doviconf" | "dolby_vision_conf" => Some(Self::DolbyVisionConf),
-            "s12m_timecode" | "s12mtimecode" => Some(Self::S12mTimecode),
-            "dynamic_hdr10_plus" | "dynamichdr10plus" | "hdr10_plus" => {
-                Some(Self::DynamicHdr10Plus)
+            "dovi_conf" | "doviconf" | "dolby_vision_conf" | "dovi_configuration_record" => {
+                Some(Self::DolbyVisionConf)
             }
-            "iamf_mix_gain_param" | "iamfmixgainparam" => Some(Self::IamfMixGainParam),
-            "iamf_demixing_info_param" | "iamfdemixinginfoparam" => {
-                Some(Self::IamfDemixingInfoParam)
+            "s12m_timecode"
+            | "s12mtimecode"
+            | "smpte_st_12_12014_timecode"
+            | "smpte_st_12_1_2014_timecode" => Some(Self::S12mTimecode),
+            "dynamic_hdr10_plus"
+            | "dynamichdr10plus"
+            | "hdr10_plus"
+            | "hdr10_dynamic_metadata_smpte_2094_40" => Some(Self::DynamicHdr10Plus),
+            "iamf_mix_gain_param" | "iamfmixgainparam" | "iamf_mix_gain_parameter_data" => {
+                Some(Self::IamfMixGainParam)
             }
-            "iamf_recon_gain_info_param" | "iamfrecongaininfoparam" => {
-                Some(Self::IamfReconGainInfoParam)
-            }
+            "iamf_demixing_info_param"
+            | "iamfdemixinginfoparam"
+            | "iamf_demixing_info_parameter_data" => Some(Self::IamfDemixingInfoParam),
+            "iamf_recon_gain_info_param"
+            | "iamfrecongaininfoparam"
+            | "iamf_recon_gain_info_parameter_data" => Some(Self::IamfReconGainInfoParam),
             "ambient_viewing_environment" | "ambientviewingenvironment" => {
                 Some(Self::AmbientViewingEnvironment)
             }
             "frame_cropping" | "framecropping" => Some(Self::FrameCropping),
-            "lcevc" => Some(Self::Lcevc),
-            "3d_reference_displays" | "3dreferencedisplays" | "three_d_reference_displays" => {
-                Some(Self::ThreeDReferenceDisplays)
-            }
+            "lcevc" | "lcevc_nal_data" => Some(Self::Lcevc),
+            "3d_reference_displays"
+            | "3dreferencedisplays"
+            | "three_d_reference_displays"
+            | "3d_reference_displays_info" => Some(Self::ThreeDReferenceDisplays),
             "rtcp_sr" | "rtcpsr" | "rtcp_sender_report" => Some(Self::RtcpSenderReport),
-            "exif" => Some(Self::Exif),
+            "exif" | "exif_metadata" => Some(Self::Exif),
             _ => None,
         }
     }
@@ -7187,6 +7203,16 @@ mod tests {
             PacketSideDataKind::from_name("rtcp_sender_report").unwrap(),
             PacketSideDataKind::RtcpSenderReport
         );
+        for kind in PacketSideDataKind::KNOWN {
+            assert_eq!(
+                PacketSideDataKind::from_name(kind.ffmpeg_constant().unwrap()).unwrap(),
+                kind.clone()
+            );
+            assert_eq!(
+                PacketSideDataKind::from_name(kind.ffmpeg_side_data_name().unwrap()).unwrap(),
+                kind.clone()
+            );
+        }
 
         let unknown = PacketSideDataKind::from_name("vendor.packet").unwrap();
         assert_eq!(unknown.name(), "vendor.packet");

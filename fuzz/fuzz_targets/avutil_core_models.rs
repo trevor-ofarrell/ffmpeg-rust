@@ -19751,6 +19751,14 @@ fn exercise_fixtures() {
             PacketSideDataKind::ffmpeg_side_data_name_for_value(index as i32),
             kind.ffmpeg_side_data_name()
         );
+        assert_eq!(
+            PacketSideDataKind::from_name(kind.ffmpeg_constant().unwrap()).unwrap(),
+            kind.clone()
+        );
+        assert_eq!(
+            PacketSideDataKind::from_name(kind.ffmpeg_side_data_name().unwrap()).unwrap(),
+            kind.clone()
+        );
     }
     assert_eq!(PacketSideDataKind::from_ffmpeg_value(-1), None);
     assert_eq!(PacketSideDataKind::from_ffmpeg_value(i32::MIN), None);
